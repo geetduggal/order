@@ -46,19 +46,19 @@ type DownloadPageContent = {
 
 const PLATFORM_METADATA: Record<StablePlatformKey, { buttonLabel: string; label: string }> = {
   'darwin-aarch64': {
-    buttonLabel: 'Download Tolaria for macOS Apple Silicon',
+    buttonLabel: 'Download Order for macOS Apple Silicon',
     label: 'macOS Apple Silicon',
   },
   'darwin-x86_64': {
-    buttonLabel: 'Download Tolaria for Intel Mac',
+    buttonLabel: 'Download Order for Intel Mac',
     label: 'macOS Intel',
   },
   'linux-x86_64': {
-    buttonLabel: 'Download Tolaria for Linux',
+    buttonLabel: 'Download Order for Linux',
     label: 'Linux',
   },
   'windows-x86_64': {
-    buttonLabel: 'Download Tolaria for Windows',
+    buttonLabel: 'Download Order for Windows',
     label: 'Windows',
   },
 }
@@ -381,17 +381,17 @@ function buildStableDownloadPageContent(
   if (Object.keys(downloads).length > 0) {
     return {
       helperText: 'Your download should start automatically. If it does not, use one of the platform links below.',
-      message: 'Preparing the latest stable Tolaria download for your platform.',
+      message: 'Preparing the latest stable Order download for your platform.',
       shouldRedirect: true,
-      title: 'Tolaria Stable Download',
+      title: 'Order Stable Download',
     }
   }
 
   return {
     helperText: 'Use the button below to check the latest release history.',
-    message: 'No stable Tolaria downloads are available yet.',
+    message: 'No stable Order downloads are available yet.',
     shouldRedirect: false,
-    title: 'Tolaria Stable Download Unavailable',
+    title: 'Order Stable Download Unavailable',
   }
 }
 
@@ -427,7 +427,7 @@ function buildDownloadsMarkup(downloads: StableDownloadTargets): string {
 function buildDownloadFrameMarkup(downloads: StableDownloadTargets): string {
   if (Object.keys(downloads).length === 0) return ''
 
-  return `<iframe title="Tolaria installer download" name="${DOWNLOAD_FRAME_NAME}" sandbox="allow-downloads" hidden></iframe>`
+  return `<iframe title="Order installer download" name="${DOWNLOAD_FRAME_NAME}" sandbox="allow-downloads" hidden></iframe>`
 }
 
 function buildRedirectMarkup(downloads: StableDownloadTargets): string {
@@ -486,7 +486,7 @@ function buildRedirectMarkup(downloads: StableDownloadTargets): string {
           return 'Choose the Apple Silicon or Intel Mac download below.';
         }
 
-        return 'Starting the latest stable Tolaria download for ' + target.label + '.';
+        return 'Starting the latest stable Order download for ' + target.label + '.';
       }
 
       function updateDownloadMessage(target, requiresMacChoice) {

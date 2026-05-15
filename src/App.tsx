@@ -1329,7 +1329,7 @@ function App() {
       const checkedChannel = normalizeReleaseChannel(settings.release_channel)
       setToastMessage(`No newer ${checkedChannel} update is available right now`)
     } else if (result.kind === 'available') {
-      setToastMessage(`Tolaria ${result.displayVersion} is available`)
+      setToastMessage(`Order ${result.displayVersion} is available`)
     } else {
       setToastMessage(result.message)
     }
@@ -1348,7 +1348,7 @@ function App() {
     }
   }, [refreshVaultAiGuidance, resolvedPath, vault, setToastMessage])
 
-  const restoreVaultAiGuidance = useCallback(async (successToast: string | null = 'Tolaria AI guidance restored') => {
+  const restoreVaultAiGuidance = useCallback(async (successToast: string | null = 'Order AI guidance restored') => {
     if (!resolvedPath) return
     try {
       const tauriInvoke = isTauri() ? invoke : mockInvoke
@@ -1357,7 +1357,7 @@ function App() {
       await refreshVaultAiGuidance()
       if (successToast) setToastMessage(successToast)
     } catch (err) {
-      setToastMessage(`Failed to restore Tolaria AI guidance: ${err}`)
+      setToastMessage(`Failed to restore Order AI guidance: ${err}`)
     }
   }, [refreshVaultAiGuidance, resolvedPath, vault, setToastMessage])
 

@@ -99,7 +99,7 @@ const CONTRIBUTION_BUTTON_CLASSES: Record<ContributionTone, string> = {
 
 const SPONSOR_SUPPORT_PATH: ContributionPath = {
   title: 'Sponsor / Support',
-  description: 'Luca here 👋 my full-time job is running Refactoring, a newsletter for 170K+ engineers about how to run good teams and ship software with AI. I write about workflows, interview tech leaders (e.g. DHH, Martin Fowler, and more) and run a private community of 2000+ engineers with monthly live coaching, AI club, and more.\n\nTolaria is FOSS and always will be. If you like it, the best way to support it is to subscribe to the newsletter.',
+  description: 'Luca here 👋 my full-time job is running Refactoring, a newsletter for 170K+ engineers about how to run good teams and ship software with AI. I write about workflows, interview tech leaders (e.g. DHH, Martin Fowler, and more) and run a private community of 2000+ engineers with monthly live coaching, AI club, and more.\n\nOrder is FOSS and always will be. If you like it, the best way to support it is to subscribe to the newsletter.',
   ctaLabel: 'Check out Refactoring',
   label: 'Refactoring',
   url: REFACTORING_HOME_URL,
@@ -437,7 +437,7 @@ export function FeedbackDialog({
         <DialogHeader className="space-y-2">
           <DialogTitle className="flex items-center gap-2">
             <Megaphone size={18} weight="duotone" />
-            Contribute to Tolaria
+            Contribute to Order
           </DialogTitle>
           <DialogDescription>
             Pick the path that fits what you want to do! Any type of help is appreciated

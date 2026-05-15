@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Tolaria connects to local model servers you configure for AI chat.</string>
+  <string>Order connects to local model servers you configure for AI chat.</string>
 </dict>
 </plist>

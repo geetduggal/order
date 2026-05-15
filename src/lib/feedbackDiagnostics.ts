@@ -126,7 +126,7 @@ export function buildSanitizedDiagnosticBundle({
   releaseChannel,
 }: DiagnosticBundleContext): string {
   const lines = [
-    'Tolaria sanitized diagnostics',
+    'Order sanitized diagnostics',
     `Generated: ${new Date().toISOString()}`,
     `Build: ${buildNumber ?? 'unknown'}`,
     `Release channel: ${releaseChannel ?? 'stable'}`,

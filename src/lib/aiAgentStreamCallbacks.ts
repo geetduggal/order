@@ -32,7 +32,7 @@ function finalResponseText(response: string, agent: AiAgentId): string {
     return [
       'OpenCode returned no assistant text.',
       'Check the selected provider/model context limit or retry the request.',
-      'For large active notes, Tolaria sends a compact note snapshot and OpenCode can read the full file with get_note(path).',
+      'For large active notes, Order sends a compact note snapshot and OpenCode can read the full file with get_note(path).',
     ].join(' ')
   }
 
