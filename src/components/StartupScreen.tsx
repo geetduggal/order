@@ -65,11 +65,9 @@ function welcomeOnboardingState(params: StartupScreenParams): OnboardingState {
   return params.onboarding
 }
 
-function shouldShowAiAgentsOnboarding(params: StartupScreenParams): boolean {
-  return !params.noteWindowParams
-    && params.onboarding.state.status === 'ready'
-    && params.aiAgentsOnboarding.showPrompt
-    && !params.showMcpSetupDialog
+function shouldShowAiAgentsOnboarding(_params: StartupScreenParams): boolean {
+  // Order disables the AI agents onboarding prompt — AI features are opt-in.
+  return false
 }
 
 function WelcomeView({ onboarding, isOffline }: { onboarding: OnboardingState; isOffline: boolean }) {

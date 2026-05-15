@@ -277,7 +277,7 @@ function getWelcomeScreenPresentation(
       heroBackground: 'transparent',
       heroIcon: <img src={orderIcon} alt="Order icon" style={BRAND_ICON_STYLE} />,
       openFolderLabel: 'Open existing vault',
-      subtitle: 'Markdown knowledge management for the age of AI',
+      subtitle: 'Weather-resistant productivity for your markdown notes',
       templateDescription: isOffline
         ? `Requires internet — clone later. Suggested path: ${defaultVaultPath}`
         : 'Download the getting started vault',

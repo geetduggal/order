@@ -49,7 +49,7 @@
   --border-strong: #D9D9D6;
   --border-input: #E9E9E7;
   --border-dialog: #E9E9E7;
-  --border-focus: #155DFF;
+  --border-focus: #4169E1;
 
   /* --- Interaction states (light mode) --- */
   --state-hover: #EBEBEA;
@@ -57,15 +57,22 @@
   --state-selected: #E8F4FE;
   --state-selected-strong: #D8ECFE;
   --state-active: #E8F4FE;
-  --state-focus-ring: #155DFF;
-  --state-drag-target: #155DFF18;
+  --state-focus-ring: #4169E1;
+  --state-drag-target: #4169E118;
   --state-disabled: #F0F0EF;
 
-  /* --- Accent roles (light mode) --- */
-  --accent-blue: #155DFF;
-  --accent-blue-bg: #155DFF18;
-  --accent-blue-hover: #0D4AD6;
-  --accent-blue-light: #155DFF14;
+  /* --- Accent roles (light mode) ---
+     Order palette: Royal Blue (#4169E1) primary + Coral (#FF7F50) secondary.
+     The blue tokens drive most chrome (focus rings, selection, links); coral
+     is reserved for selective accents (active tabs, key indicators). */
+  --accent-blue: #4169E1;
+  --accent-blue-bg: #4169E118;
+  --accent-blue-hover: #2D4FB8;
+  --accent-blue-light: #4169E114;
+  --accent-coral: #FF7F50;
+  --accent-coral-bg: #FF7F5018;
+  --accent-coral-hover: #E66236;
+  --accent-coral-light: #FF7F5014;
   --accent-green: #38A169;
   --accent-green-light: rgba(56, 161, 105, 0.1);
   --accent-orange: #D9730D;
@@ -201,7 +208,7 @@
   --border-strong: #46433B;
   --border-input: #3A3832;
   --border-dialog: #3A3832;
-  --border-focus: #78A4FF;
+  --border-focus: #8AA8F2;
 
   /* --- Interaction states (dark mode) --- */
   --state-hover: #2D2B27;
@@ -209,15 +216,20 @@
   --state-selected: #1E344C;
   --state-selected-strong: #25415F;
   --state-active: #203A55;
-  --state-focus-ring: #78A4FF;
+  --state-focus-ring: #8AA8F2;
   --state-drag-target: rgba(120, 164, 255, 0.2);
   --state-disabled: #292824;
 
-  /* --- Accent roles (dark mode) --- */
-  --accent-blue: #78A4FF;
-  --accent-blue-bg: rgba(120, 164, 255, 0.2);
-  --accent-blue-hover: #9BBEFF;
-  --accent-blue-light: rgba(120, 164, 255, 0.16);
+  /* --- Accent roles (dark mode) ---
+     Order palette: Royal Blue + Coral, lifted for dark backgrounds. */
+  --accent-blue: #8AA8F2;
+  --accent-blue-bg: rgba(138, 168, 242, 0.2);
+  --accent-blue-hover: #A8BFFF;
+  --accent-blue-light: rgba(138, 168, 242, 0.16);
+  --accent-coral: #FF9678;
+  --accent-coral-bg: rgba(255, 150, 120, 0.2);
+  --accent-coral-hover: #FFAA92;
+  --accent-coral-light: rgba(255, 150, 120, 0.16);
   --accent-green: #79D89D;
   --accent-green-light: rgba(121, 216, 157, 0.16);
   --accent-orange: #F3A15B;
