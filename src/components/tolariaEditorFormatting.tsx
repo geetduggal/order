@@ -54,8 +54,8 @@ import {
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import {
-  filterOrderFormattingToolbarItems,
-  getOrderBlockTypeSelectItems,
+  filterTolariaFormattingToolbarItems,
+  getTolariaBlockTypeSelectItems,
 } from './tolariaEditorFormattingConfig'
 import { useBlockNoteFormattingToolbarHoverGuard } from './blockNoteFormattingToolbarHoverGuard'
 import { openEditorAttachmentOrUrl } from './editorAttachmentActions'
@@ -205,7 +205,7 @@ const FORMATTING_TOOLBAR_FILE_BLOCK_TYPES = new Set([
 ])
 
 type OrderBlockTypeSelectOption = ReturnType<
-  typeof getOrderBlockTypeSelectItems
+  typeof getTolariaBlockTypeSelectItems
 >[number] & {
   iconElement: ReactElement
   isSelected: boolean
@@ -290,14 +290,14 @@ function getBasicTextStyleButtonState(
 }
 
 function getBlockTypeItemIconElement(
-  item: ReturnType<typeof getOrderBlockTypeSelectItems>[number],
+  item: ReturnType<typeof getTolariaBlockTypeSelectItems>[number],
 ) {
   const Icon = item.icon
   return <Icon size={16} />
 }
 
 function isSelectedBlockTypeItem(
-  item: ReturnType<typeof getOrderBlockTypeSelectItems>[number],
+  item: ReturnType<typeof getTolariaBlockTypeSelectItems>[number],
   firstSelectedBlock: OrderSelectedBlock,
 ) {
   if (item.type !== firstSelectedBlock.type) return false
@@ -312,7 +312,7 @@ function getOrderBlockTypeSelectOptions(
   editor: BlockNoteEditor<BlockSchema, InlineContentSchema, StyleSchema>,
   firstSelectedBlock: OrderSelectedBlock,
 ) {
-  return getOrderBlockTypeSelectItems()
+  return getTolariaBlockTypeSelectItems()
     .filter((item) =>
       editorHasBlockWithType(
         editor,
@@ -381,7 +381,7 @@ function getFormattingToolbarAnchorElement(
 function updateSelectedBlocksToType(
   editor: BlockNoteEditor<BlockSchema, InlineContentSchema, StyleSchema>,
   selectedBlocks: OrderSelectedBlock[],
-  item: ReturnType<typeof getOrderBlockTypeSelectItems>[number],
+  item: ReturnType<typeof getTolariaBlockTypeSelectItems>[number],
 ) {
   editor.focus()
   editor.transact(() => {
@@ -574,10 +574,10 @@ function insertInlineCodeButton(items: ReactElement[]) {
   ]
 }
 
-function getOrderFormattingToolbarItems(vaultPath?: string) {
+function getTolariaFormattingToolbarItems(vaultPath?: string) {
   return insertInlineCodeButton(
     replaceToolbarControls(
-      filterOrderFormattingToolbarItems(
+      filterTolariaFormattingToolbarItems(
         getFormattingToolbarItems(),
       ),
       vaultPath,
@@ -585,11 +585,11 @@ function getOrderFormattingToolbarItems(vaultPath?: string) {
   )
 }
 
-export function OrderFormattingToolbar({ vaultPath }: { vaultPath?: string } = {}) {
-  return <FormattingToolbar>{getOrderFormattingToolbarItems(vaultPath)}</FormattingToolbar>
+export function TolariaFormattingToolbar({ vaultPath }: { vaultPath?: string } = {}) {
+  return <FormattingToolbar>{getTolariaFormattingToolbarItems(vaultPath)}</FormattingToolbar>
 }
 
-export function OrderFormattingToolbarController(props: {
+export function TolariaFormattingToolbarController(props: {
   formattingToolbar?: FC<FormattingToolbarProps>;
   floatingUIOptions?: FloatingUIOptions;
 }) {
@@ -700,7 +700,7 @@ export function OrderFormattingToolbarController(props: {
     ],
   )
 
-  const Component = props.formattingToolbar || OrderFormattingToolbar
+  const Component = props.formattingToolbar || TolariaFormattingToolbar
 
   return (
     <PositionPopover position={position} {...floatingUIOptions}>

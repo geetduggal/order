@@ -34,7 +34,7 @@ import { MATH_BLOCK_TYPE } from '../utils/mathMarkdown'
 import { MERMAID_BLOCK_TYPE, mermaidFenceSource } from '../utils/mermaidMarkdown'
 import { TLDRAW_BLOCK_TYPE, TLDRAW_DEFAULT_HEIGHT } from '../utils/tldrawMarkdown'
 
-type OrderSlashMenuItem = DefaultReactSuggestionItem & { key: string }
+type TolariaSlashMenuItem = DefaultReactSuggestionItem & { key: string }
 type OrderBlockTypeSelectItem = {
   name: string
   type: string
@@ -132,7 +132,7 @@ function createBoardId(): string {
 
 function createWhiteboardSlashMenuItem(
   editor: Parameters<typeof getDefaultReactSlashMenuItems>[0],
-): OrderSlashMenuItem {
+): TolariaSlashMenuItem {
   return createBlockSlashMenuItem(editor, {
     key: 'whiteboard',
     title: 'Whiteboard',
@@ -149,7 +149,7 @@ function createWhiteboardSlashMenuItem(
 
 function createMermaidSlashMenuItem(
   editor: Parameters<typeof getDefaultReactSlashMenuItems>[0],
-): OrderSlashMenuItem {
+): TolariaSlashMenuItem {
   return createBlockSlashMenuItem(editor, {
     key: 'mermaid',
     title: 'Mermaid',
@@ -165,7 +165,7 @@ function createMermaidSlashMenuItem(
 export function createMathSlashMenuItem(
   editor: Parameters<typeof getDefaultReactSlashMenuItems>[0],
   labels: OrderSlashMenuLabels = { mathTitle: 'Math' },
-): OrderSlashMenuItem {
+): TolariaSlashMenuItem {
   return createBlockSlashMenuItem(editor, {
     key: 'math',
     title: labels.mathTitle,
@@ -181,7 +181,7 @@ export function createMathSlashMenuItem(
 function createBlockSlashMenuItem(
   editor: Parameters<typeof getDefaultReactSlashMenuItems>[0],
   config: BlockSlashMenuItemConfig,
-): OrderSlashMenuItem {
+): TolariaSlashMenuItem {
   const blockEditor = editor as unknown as SlashInsertEditor
 
   return {
@@ -197,13 +197,13 @@ function createBlockSlashMenuItem(
       })
       if (config.eventName) trackEvent(config.eventName)
     },
-  } as OrderSlashMenuItem
+  } as TolariaSlashMenuItem
 }
 
 export function addItemsToMediaGroup(
-  items: OrderSlashMenuItem[],
-  mediaItems: OrderSlashMenuItem[],
-): OrderSlashMenuItem[] {
+  items: TolariaSlashMenuItem[],
+  mediaItems: TolariaSlashMenuItem[],
+): TolariaSlashMenuItem[] {
   const nextItems = [...items]
   const insertIndex = nextItems.findIndex((item) => item.key === 'emoji')
 
@@ -235,11 +235,11 @@ function createOrderSlashMenuIcon(Icon: PhosphorIcon) {
   )
 }
 
-export function getOrderBlockTypeSelectItems() {
+export function getTolariaBlockTypeSelectItems() {
   return TOLARIA_BLOCK_TYPE_SELECT_ITEMS
 }
 
-export function filterOrderFormattingToolbarItems<T extends ReactElement>(
+export function filterTolariaFormattingToolbarItems<T extends ReactElement>(
   items: T[],
 ): T[] {
   return items.filter(
@@ -247,7 +247,7 @@ export function filterOrderFormattingToolbarItems<T extends ReactElement>(
   )
 }
 
-export function filterOrderSlashMenuItems<T extends OrderSlashMenuItem>(
+export function filterTolariaSlashMenuItems<T extends TolariaSlashMenuItem>(
   items: T[],
 ): T[] {
   return items
@@ -263,13 +263,13 @@ export function filterOrderSlashMenuItems<T extends OrderSlashMenuItem>(
     }) as T[]
 }
 
-export function getOrderSlashMenuItems(
+export function getTolariaSlashMenuItems(
   editor: Parameters<typeof getDefaultReactSlashMenuItems>[0],
   query: string,
   labels?: OrderSlashMenuLabels,
 ) {
   const items = addItemsToMediaGroup(
-    getDefaultReactSlashMenuItems(editor) as OrderSlashMenuItem[],
+    getDefaultReactSlashMenuItems(editor) as TolariaSlashMenuItem[],
     [
       createMermaidSlashMenuItem(editor),
       createMathSlashMenuItem(editor, labels),
@@ -278,7 +278,7 @@ export function getOrderSlashMenuItems(
   )
 
   return filterSuggestionItems(
-    filterOrderSlashMenuItems(
+    filterTolariaSlashMenuItems(
       items,
     ),
     query,
