@@ -278,8 +278,6 @@ fn setup_common_plugins(app: &mut tauri::App) -> Result<(), Box<dyn std::error::
 #[cfg(desktop)]
 fn setup_desktop_plugins(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     setup_macos_webview_shortcut_prevention(app)?;
-    app.handle()
-        .plugin(tauri_plugin_updater::Builder::new().build())?;
     app.handle().plugin(tauri_plugin_process::init())?;
     app.handle().plugin(tauri_plugin_opener::init())?;
     #[cfg(not(target_os = "linux"))]
