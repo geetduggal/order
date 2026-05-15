@@ -6,6 +6,7 @@ import { CMEditor } from "./CMEditor";
 type Props = {
   note: Note;
   editing: boolean;
+  saving: boolean;
   onOpen: () => void;
   onClose: () => void;
   onChange: (body: string) => void;
@@ -13,7 +14,7 @@ type Props = {
   onStartResize: (e: React.MouseEvent, axis: "x" | "y" | "xy") => void;
 };
 
-export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, onStartResize }: Props) {
+export function NoteCard({ note, editing, saving, onOpen, onClose, onChange, readBody, onStartResize }: Props) {
   const [body, setBody] = useState<string | null>(null);
   const day = note.frontmatter?.date as string | undefined;
   const time = note.frontmatter?.startTime as string | undefined;
@@ -38,7 +39,7 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
       className={"note" + (editing ? " editing" : "")}
       data-folder={folder}
       onDoubleClick={(e) => {
-        if (e.target instanceof HTMLElement && e.target.closest(".resize-handle, .note-edit-btn")) return;
+        if (e.target instanceof HTMLElement && e.target.closest(".resize-handle, .note-edit-btn, .note-done-btn")) return;
         if (!editing) { e.stopPropagation(); onOpen(); }
       }}
     >
@@ -48,11 +49,12 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
         <span className="dot-sep">·</span>
         <span><em>{folder}</em></span>
         {pub && <><span className="dot-sep">·</span><span className="pub">● Public</span></>}
+        {editing && <span className="note-saving">{saving ? "saving…" : "saved"}</span>}
       </div>
       {editing ? (
         body === null
           ? <div className="note-loading">Loading…</div>
-          : <CMEditor doc={body} onChange={update} onBlur={onClose} autofocus />
+          : <CMEditor doc={body} onChange={update} onDone={onClose} autofocus />
       ) : (
         <div className="note-body">
           {hasTitle(note) && <h3>{note.title}</h3>}
@@ -64,6 +66,15 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
           ✎
         </button>
       )}
+      {editing && (
+        <button
+          className="note-done-btn"
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+          title="Done (Esc or ⌘↵)"
+        >
+          done
+        </button>
+      )}
       <div className="resize-handle resize-h" onMouseDown={e => onStartResize(e, "x")} />
       <div className="resize-handle resize-v" onMouseDown={e => onStartResize(e, "y")} />
       <div className="resize-handle resize-c" onMouseDown={e => onStartResize(e, "xy")} />
@@ -72,9 +83,6 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
 }
 
 function hasTitle(n: Note): boolean {
-  // Render a title above the body only if the title isn't already the same as
-  // the snippet's leading sentence — avoids "Cold this morning… / Cold this
-  // morning. Light came in…" duplication for log notes with no headings.
   const t = n.title.trim();
   if (!t) return false;
   return !n.snippet.toLowerCase().startsWith(t.toLowerCase());

@@ -11,6 +11,7 @@ type Props = {
   notes: Note[];
   selected: Set<string>;
   editingPath: string | null;
+  saving: boolean;
   onOpen: (n: Note) => void;
   onClose: () => void;
   onChange: (n: Note, body: string) => void;
@@ -19,7 +20,7 @@ type Props = {
   loading: boolean;
 };
 
-export function RecentGrid({ notes, selected, editingPath, onOpen, onClose, onChange, onQuickCapture, readBody, loading }: Props) {
+export function RecentGrid({ notes, selected, editingPath, saving, onOpen, onClose, onChange, onQuickCapture, readBody, loading }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [capture, setCapture] = useState("");
 
@@ -122,6 +123,7 @@ export function RecentGrid({ notes, selected, editingPath, onOpen, onClose, onCh
             key={n.path}
             note={n}
             editing={editingPath === n.path}
+            saving={saving && editingPath === n.path}
             onOpen={() => onOpen(n)}
             onClose={onClose}
             onChange={body => onChange(n, body)}

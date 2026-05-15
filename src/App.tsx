@@ -57,6 +57,7 @@ export default function App() {
                 notes={vault.notes}
                 selected={filters.selected}
                 editingPath={editor.editingPath}
+                saving={editor.saving}
                 onOpen={editor.open}
                 onClose={editor.close}
                 onChange={changeBody}

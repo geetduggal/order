@@ -44,14 +44,14 @@ export function NotableSection({ note, editing, onOpen, onClose, onChange, readB
         <span className="notable-meta">
           {isPublic ? "Public" : "Private"} · updated {timeSince(note.modified)}
         </span>
-        {!editing && (
-          <button className="notable-edit-btn" onClick={onOpen} title="Edit (or double-click)">✎ Edit</button>
-        )}
+        {!editing
+          ? <button className="notable-edit-btn" onClick={onOpen} title="Edit (or double-click)">✎ Edit</button>
+          : <button className="notable-edit-btn" onMouseDown={(e) => { e.preventDefault(); onClose() }} title="Done (Esc or ⌘↵)">Done</button>}
       </div>
       <h1 className="notable-title">{note.title}</h1>
       {editing ? (
         body === null ? <div className="note-loading">…</div>
-          : <CMEditor doc={body} onChange={update} onBlur={onClose} autofocus />
+          : <CMEditor doc={body} onChange={update} onDone={onClose} autofocus />
       ) : (
         <div className="notable-doc">
           {body === null

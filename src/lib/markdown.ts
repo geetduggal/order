@@ -2,7 +2,7 @@
 // Off the cursor line, syntax markers (#, *, _, `, [[ ]]) are hidden.
 // On the cursor line, raw markdown is visible so you can edit it.
 
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -97,10 +97,17 @@ const editorTheme = EditorView.theme({
   ".cm-cursor": { borderLeftColor: "#FF7F50", borderLeftWidth: "2px" },
 });
 
-export function buildEditorState(doc: string, onChange: (doc: string) => void) {
+export function buildEditorState(
+  doc: string,
+  onChange: (doc: string) => void,
+  extra: Extension = [],
+) {
   return EditorState.create({
     doc,
     extensions: [
+      // Caller's extras (e.g. Esc-to-close) get highest precedence so they
+      // outrank defaultKeymap's own handlers for the same chords.
+      extra,
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
