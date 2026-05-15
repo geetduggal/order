@@ -44,6 +44,9 @@ export function NotableSection({ note, editing, onOpen, onClose, onChange, readB
         <span className="notable-meta">
           {isPublic ? "Public" : "Private"} · updated {timeSince(note.modified)}
         </span>
+        {!editing && (
+          <button className="notable-edit-btn" onClick={onOpen} title="Edit (or double-click)">✎ Edit</button>
+        )}
       </div>
       <h1 className="notable-title">{note.title}</h1>
       {editing ? (

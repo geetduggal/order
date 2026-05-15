@@ -38,7 +38,7 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
       className={"note" + (editing ? " editing" : "")}
       data-folder={folder}
       onDoubleClick={(e) => {
-        if (e.target instanceof HTMLElement && e.target.classList.contains("resize-handle")) return;
+        if (e.target instanceof HTMLElement && e.target.closest(".resize-handle, .note-edit-btn")) return;
         if (!editing) { e.stopPropagation(); onOpen(); }
       }}
     >
@@ -51,7 +51,7 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
       </div>
       {editing ? (
         body === null
-          ? <div className="note-loading">…</div>
+          ? <div className="note-loading">Loading…</div>
           : <CMEditor doc={body} onChange={update} onBlur={onClose} autofocus />
       ) : (
         <div className="note-body">
@@ -59,7 +59,11 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, o
           <p>{note.snippet}</p>
         </div>
       )}
-      <span className="edit-hint">double-click to edit</span>
+      {!editing && (
+        <button className="note-edit-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }} title="Edit (or double-click)">
+          ✎
+        </button>
+      )}
       <div className="resize-handle resize-h" onMouseDown={e => onStartResize(e, "x")} />
       <div className="resize-handle resize-v" onMouseDown={e => onStartResize(e, "y")} />
       <div className="resize-handle resize-c" onMouseDown={e => onStartResize(e, "xy")} />

@@ -362,26 +362,23 @@ fn make_snippet(body: &str, max: usize) -> String {
 
 fn strip_inline_markdown(s: &str) -> String {
     // [[wikilink]] → wikilink ; **bold** / __bold__ / _em_ / *em* / `code` → text
+    // Iterate by char (UTF-32 code point) so multi-byte characters survive.
     let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
-        if c == '[' && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
-            i += 2;
-            while i < bytes.len() {
-                if bytes[i] == b']' && i + 1 < bytes.len() && bytes[i + 1] == b']' {
-                    i += 2;
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '[' && chars.peek() == Some(&'[') {
+            chars.next();
+            while let Some(c2) = chars.next() {
+                if c2 == ']' && chars.peek() == Some(&']') {
+                    chars.next();
                     break;
                 }
-                out.push(bytes[i] as char);
-                i += 1;
+                out.push(c2);
             }
         } else if c == '*' || c == '_' || c == '`' {
-            i += 1;
+            // skip the marker
         } else {
             out.push(c);
-            i += 1;
         }
     }
     out
