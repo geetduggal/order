@@ -15,9 +15,10 @@ type Props = {
   onClose: () => void;
   onChange: (n: Note, body: string) => void;
   onQuickCapture: (text: string) => Promise<void>;
+  loading: boolean;
 };
 
-export function RecentGrid({ notes, selected, editingPath, onOpen, onClose, onChange, onQuickCapture }: Props) {
+export function RecentGrid({ notes, selected, editingPath, onOpen, onClose, onChange, onQuickCapture, loading }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [capture, setCapture] = useState("");
 
@@ -55,9 +56,17 @@ export function RecentGrid({ notes, selected, editingPath, onOpen, onClose, onCh
           value={capture}
           onChange={e => setCapture(e.target.value)}
           onKeyDown={onCaptureKey}
+          placeholder="What are you thinking?"
           rows={1}
         />
       </div>
+      {visible.length === 0 && !loading && (
+        <div className="empty-state">
+          {notes.length === 0
+            ? <>No markdown files in this vault yet. Type above and press <kbd>⌘ ↵</kbd> to create one in <em>Log</em>.</>
+            : <>No notes match the current selection. Toggle a folder in the right sidebar.</>}
+        </div>
+      )}
       <div className="stream-grid" ref={gridRef}>
         {visible.map(n => (
           <NoteCard

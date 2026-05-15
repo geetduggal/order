@@ -17,6 +17,13 @@ export function useVault() {
   const [dirty, setDirty] = useState(0); // count of unpublished public changes
 
   const setVault = useCallback(async (path: string) => {
+    if (!path) {
+      // Empty string = reset to picker.
+      localStorage.removeItem(VAULT_KEY);
+      setVaultPathState(null);
+      setNotes([]);
+      return;
+    }
     localStorage.setItem(VAULT_KEY, path);
     setVaultPathState(path);
     await invoke("set_vault", { path });
@@ -29,6 +36,8 @@ export function useVault() {
       const list = await invoke<Note[]>("scan_vault", { path: vaultPath });
       list.sort((a, b) => b.modified - a.modified);
       setNotes(list);
+    } catch (e) {
+      console.error("scan_vault failed", e);
     } finally {
       setLoading(false);
     }

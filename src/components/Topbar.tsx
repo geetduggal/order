@@ -3,12 +3,17 @@ type Props = {
   setView: (v: "stream" | "calendar") => void;
   dirty: number;
   onPublish: () => void;
+  vaultPath: string;
+  onChangeVault: () => void;
 };
 
-export function Topbar({ view, setView, dirty, onPublish }: Props) {
+export function Topbar({ view, setView, dirty, onPublish, vaultPath, onChangeVault }: Props) {
+  const vaultName = vaultPath.split("/").filter(Boolean).pop() || vaultPath;
   return (
     <header className="topbar">
-      <div className="crumb">All notes</div>
+      <button className="crumb crumb-btn" onClick={onChangeVault} title={vaultPath}>
+        {vaultName} <span className="crumb-change">↻</span>
+      </button>
       <div className="spacer" />
       <nav className="view-switch">
         <button className={view === "stream" ? "on" : ""} onClick={() => setView("stream")}>Stream</button>
