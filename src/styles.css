@@ -203,6 +203,48 @@ a { color: inherit; text-decoration: none; }
 .note.editing { outline: 2px solid var(--royal-soft); outline-offset: 4px; }
 .cm-host { font-family: var(--serif); font-size: 15px; line-height: 1.55; }
 
+/* Live-preview line decorations — fenced code and blockquote
+   blocks get a full-line surface so the editor renders markdown
+   blocks the way the user expects, not as plain serif lines. */
+.cm-host .cm-line.cm-codeblock {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg-elev);
+  padding: 0 8px;
+  border-left: 2px solid var(--rule);
+  color: var(--ink);
+}
+.cm-host .cm-line.cm-codeblock:first-of-type {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  padding-top: 4px;
+}
+.cm-host .cm-line.cm-codeblock:last-of-type {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  padding-bottom: 4px;
+}
+.cm-host .cm-line.cm-blockquote {
+  border-left: 3px solid var(--coral-soft);
+  padding-left: 12px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.cm-host .cm-inline-code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: var(--bg-elev);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+}
+/* Don't double-apply the pill when an inline-code span happens to be
+   inside a fenced code line (rare, but possible during edits). */
+.cm-host .cm-line.cm-codeblock .cm-inline-code {
+  background: none; border: none; padding: 0; font-size: inherit;
+}
+
 .note-loading {
   font-family: var(--sans); font-size: 11px; color: var(--ink-faint);
   letter-spacing: 0.2em; padding: 4px 0;

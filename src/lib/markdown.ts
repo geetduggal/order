@@ -109,21 +109,82 @@ function pushWikilinkBracketRanges(
   }
 }
 
+// Line-class decorations: every line inside a FencedCode block gets
+// .cm-codeblock, every line inside a Blockquote gets .cm-blockquote.
+// CSS in styles.css handles the surface (bg, monospace, left border, etc.)
+interface LineClass { line: number; cls: string }
+
+function collectBlockLines(view: EditorView): LineClass[] {
+  const lines: LineClass[] = [];
+  for (const { from, to } of view.visibleRanges) {
+    syntaxTree(view.state).iterate({
+      from, to,
+      enter(node) {
+        let cls: string | null = null;
+        if (node.name === "FencedCode" || node.name === "CodeBlock") cls = "cm-codeblock";
+        else if (node.name === "Blockquote") cls = "cm-blockquote";
+        if (!cls) return;
+        const startLine = view.state.doc.lineAt(node.from).number;
+        const endLine = view.state.doc.lineAt(node.to).number;
+        for (let n = startLine; n <= endLine; n++) lines.push({ line: n, cls });
+      },
+    });
+  }
+  return lines;
+}
+
+// Inline code spans (backtick-delimited, not inside a fenced block) get
+// the "pill" styling via a mark decoration with class .cm-inline-code.
+const inlineCodeMark = Decoration.mark({ class: "cm-inline-code" });
+
+function collectInlineCodeRanges(view: EditorView): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  for (const { from, to } of view.visibleRanges) {
+    syntaxTree(view.state).iterate({
+      from, to,
+      enter(node) {
+        if (node.name !== "InlineCode") return;
+        out.push({ from: node.from, to: node.to });
+      },
+    });
+  }
+  return out;
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const cursorBlock = findCursorBlock(view.state, view.state.selection.main.head);
   const ranges: [number, number][] = [];
 
   pushSyntaxMarkRanges(view, cursorBlock, ranges);
   pushWikilinkBracketRanges(view, cursorBlock, ranges);
-
   ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const builder = new RangeSetBuilder<Decoration>();
+
+  const lineClasses = collectBlockLines(view);
+  const inlineCodes = collectInlineCodeRanges(view);
+
+  // Build a flat entry list: line decorations (from === to at line start),
+  // inline-code mark decorations, and hide-replace decorations. Sort by
+  // from, then by length (smaller first per CM's RangeSet contract).
+  type Entry = { from: number; to: number; deco: Decoration };
+  const entries: Entry[] = [];
+
+  for (const lc of lineClasses) {
+    const line = view.state.doc.line(lc.line);
+    entries.push({ from: line.from, to: line.from, deco: Decoration.line({ attributes: { class: lc.cls } }) });
+  }
+  for (const ic of inlineCodes) {
+    entries.push({ from: ic.from, to: ic.to, deco: inlineCodeMark });
+  }
   let lastTo = -1;
   for (const [f, end] of ranges) {
     if (f < lastTo) continue;
-    builder.add(f, end, hide);
+    entries.push({ from: f, to: end, deco: hide });
     lastTo = end;
   }
+
+  entries.sort((a, b) => a.from - b.from || (a.to - a.from) - (b.to - b.from));
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const e of entries) builder.add(e.from, e.to, e.deco);
   return builder.finish();
 }
 
@@ -152,7 +213,10 @@ const orderHighlight = HighlightStyle.define([
   { tag: t.strikethrough, textDecoration: "line-through", color: "#8a8a87" },
   { tag: t.link, color: "#27408B", textDecoration: "none", borderBottom: "1px solid #e7edfb" },
   { tag: t.url, color: "#4169E1" },
-  { tag: t.monospace, fontFamily: "var(--mono)", background: "#f5f5f3", padding: "1px 4px", borderRadius: "3px" },
+  // Only font-family here so the rule doesn't fight with .cm-codeblock's
+  // block-level surface. Inline code's "pill" background is applied via
+  // a separate mark decoration (see inlineCodeMark below).
+  { tag: t.monospace, fontFamily: "var(--mono)" },
   { tag: t.quote, color: "#4f4f4d", fontStyle: "italic" },
 ]);
 
