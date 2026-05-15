@@ -1,0 +1,32 @@
+[package]
+name = "order"
+version = "0.1.0"
+description = "Order — your notes, at home at last."
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "order_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+gray_matter = "0.2"
+serde_yaml = "0.9"
+walkdir = "2"
+notify = "6"
+notify-debouncer-full = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+dirs = "5"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri Mobile generated
+src-tauri/gen/apple/
+src-tauri/gen/android/
+
+# Editor
+.vscode/
+.idea/
