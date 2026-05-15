@@ -5,7 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use walkdir::WalkDir;
-use gray_matter::{Matter, engine::YAML};
+use serde_yaml::Value as YamlValue;
+use crate::vault::split_frontmatter;
 
 #[tauri::command]
 pub fn publish_public(vault: String) -> Result<u32, String> {
@@ -13,7 +14,6 @@ pub fn publish_public(vault: String) -> Result<u32, String> {
     let public_dir = root.join("public");
     fs::create_dir_all(&public_dir).map_err(|e| e.to_string())?;
 
-    let matter = Matter::<YAML>::new();
     let mut count = 0u32;
 
     for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
@@ -23,12 +23,11 @@ pub fn publish_public(vault: String) -> Result<u32, String> {
         if p.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
 
         let raw = match fs::read_to_string(p) { Ok(s) => s, Err(_) => continue };
-        let parsed = matter.parse(&raw);
-        let is_public = parsed.data.as_ref().and_then(|pod| {
-            serde_json::to_string(pod).ok()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                .and_then(|v| v.get("public").and_then(|x| x.as_bool()))
-        }).unwrap_or(false);
+        let (fm_str, _body) = split_frontmatter(&raw);
+        let is_public = serde_yaml::from_str::<YamlValue>(fm_str)
+            .ok()
+            .and_then(|v| v.get("public").and_then(YamlValue::as_bool))
+            .unwrap_or(false);
 
         if !is_public { continue; }
 

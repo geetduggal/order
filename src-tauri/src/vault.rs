@@ -3,7 +3,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use gray_matter::{Matter, engine::YAML};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use walkdir::WalkDir;
@@ -53,9 +52,9 @@ pub fn read_note(path: String) -> Result<Note, String> {
 
 #[tauri::command]
 pub fn save_note(path: String, body: String, frontmatter: serde_json::Value) -> Result<(), String> {
-    let yaml = json_to_yaml(&frontmatter).map_err(|e| e.to_string())?;
-    let yaml_str = serde_yaml::to_string(&yaml).map_err(|e| e.to_string())?;
-    let content = if frontmatter.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+    let has_fm = frontmatter.as_object().map(|o| !o.is_empty()).unwrap_or(false);
+    let content = if has_fm {
+        let yaml_str = json_to_yaml_string(&frontmatter).map_err(|e| e.to_string())?;
         format!("---\n{}---\n{}", yaml_str, body)
     } else {
         body
@@ -84,20 +83,16 @@ pub fn delete_note(path: String) -> Result<(), String> {
 
 fn parse_note(path: &Path, root: &Path) -> anyhow::Result<Note> {
     let raw = fs::read_to_string(path)?;
-    let matter = Matter::<YAML>::new();
-    let parsed = matter.parse(&raw);
-
-    // gray_matter returns Pod; convert to serde_json::Value via JSON round-trip.
-    let fm: serde_json::Value = match parsed.data {
-        Some(pod) => {
-            let s = serde_json::to_string(&pod).unwrap_or_else(|_| "{}".into());
-            serde_json::from_str(&s).unwrap_or(serde_json::Value::Object(Default::default()))
-        }
-        None => serde_json::Value::Object(Default::default()),
+    let (fm_str, body) = split_frontmatter(&raw);
+    let frontmatter = if fm_str.trim().is_empty() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        let yaml: YamlValue = serde_yaml::from_str(fm_str)
+            .unwrap_or(YamlValue::Mapping(Default::default()));
+        yaml_to_json(&yaml)
     };
 
-    let body = parsed.content;
-    let title = fm.get("title")
+    let title = frontmatter.get("title")
         .and_then(|v| v.as_str())
         .map(String::from)
         .or_else(|| extract_h1(&body))
@@ -125,9 +120,40 @@ fn parse_note(path: &Path, root: &Path) -> anyhow::Result<Note> {
         rel_path,
         title,
         body,
-        frontmatter: fm,
+        frontmatter,
         modified,
     })
+}
+
+// Split a markdown file into (front-matter YAML text, body).
+// Accepts files with or without front matter.
+pub fn split_frontmatter(raw: &str) -> (&str, String) {
+    let trimmed = raw.strip_prefix('\u{FEFF}').unwrap_or(raw); // strip BOM if any
+    if !(trimmed.starts_with("---\n") || trimmed.starts_with("---\r\n")) {
+        return ("", trimmed.to_string());
+    }
+    let lead_len = if trimmed.starts_with("---\r\n") { 5 } else { 4 };
+    let rest = &trimmed[lead_len..];
+    // Find closing --- on its own line.
+    let end = rest.find("\n---\n")
+        .or_else(|| rest.find("\n---\r\n"))
+        .or_else(|| if rest.ends_with("\n---") { Some(rest.len() - 4) } else { None });
+    match end {
+        Some(at) => {
+            let fm = &rest[..at];
+            // skip past "\n---\n" or similar to the body
+            let after = &rest[at..];
+            let body_offset = after.find('\n').map(|i| i + 1).unwrap_or(0);
+            let after2 = &after[body_offset..];
+            let body_offset2 = if after2.starts_with("---\n") { 4 }
+                else if after2.starts_with("---\r\n") { 5 }
+                else if after2 == "---" { 3 }
+                else { 0 };
+            let body = &after2[body_offset2..];
+            (fm, body.to_string())
+        }
+        None => ("", raw.to_string()),
+    }
 }
 
 fn extract_h1(body: &str) -> Option<String> {
@@ -137,8 +163,38 @@ fn extract_h1(body: &str) -> Option<String> {
         .map(|l| l.trim_start_matches('#').trim().to_string())
 }
 
-// Convert serde_json::Value → serde_yaml::Value preserving structure.
-fn json_to_yaml(v: &serde_json::Value) -> anyhow::Result<YamlValue> {
+fn yaml_to_json(v: &YamlValue) -> serde_json::Value {
+    match v {
+        YamlValue::Null => serde_json::Value::Null,
+        YamlValue::Bool(b) => serde_json::Value::Bool(*b),
+        YamlValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(i.into())
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        YamlValue::String(s) => serde_json::Value::String(s.clone()),
+        YamlValue::Sequence(seq) => serde_json::Value::Array(seq.iter().map(yaml_to_json).collect()),
+        YamlValue::Mapping(map) => {
+            let mut o = serde_json::Map::new();
+            for (k, v) in map {
+                let key = match k {
+                    YamlValue::String(s) => s.clone(),
+                    other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                };
+                o.insert(key, yaml_to_json(v));
+            }
+            serde_json::Value::Object(o)
+        }
+        YamlValue::Tagged(t) => yaml_to_json(&t.value),
+    }
+}
+
+fn json_to_yaml_string(v: &serde_json::Value) -> anyhow::Result<String> {
     let s = serde_json::to_string(v)?;
-    Ok(serde_yaml::from_str(&s)?)
+    let y: YamlValue = serde_yaml::from_str(&s)?;
+    Ok(serde_yaml::to_string(&y)?)
 }

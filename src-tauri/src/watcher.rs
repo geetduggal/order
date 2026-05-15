@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use notify::RecursiveMode;
+use notify::{RecursiveMode, Watcher};
 use notify_debouncer_full::new_debouncer;
 use tauri::{AppHandle, Emitter};
 

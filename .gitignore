@@ -1,6 +1,10 @@
 node_modules/
-dist/
 .DS_Store
+
+# Vite output (populated by `pnpm build`); keep an empty dist/ so Tauri's
+# `generate_context!` macro validates the configured path.
+dist/*
+!dist/.gitkeep
 *.log
 
 # Rust
