@@ -1,10 +1,11 @@
-// useVault: filesystem-backed list of notes. Writes go through Rust IPC first,
-// then state updates. No global store — App.tsx owns this slice.
+// useVault — filesystem-backed list of notes (metadata only).
+// Full body is loaded lazily via readBody() when a note is opened.
+// Watcher events trigger targeted refresh_note(path) rather than a full rescan.
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import type { Note } from "../lib/types";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Note, NoteWithBody } from "../lib/types";
 
 const VAULT_KEY = "order.vaultPath";
 
@@ -14,11 +15,14 @@ export function useVault() {
   );
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
-  const [dirty, setDirty] = useState(0); // count of unpublished public changes
+  const [dirty, setDirty] = useState(0);
+
+  // Coalesce watcher events: collect paths, flush every 250ms.
+  const pending = useRef<Set<string>>(new Set());
+  const flushTimer = useRef<number | undefined>(undefined);
 
   const setVault = useCallback(async (path: string) => {
     if (!path) {
-      // Empty string = reset to picker.
       localStorage.removeItem(VAULT_KEY);
       setVaultPathState(null);
       setNotes([]);
@@ -26,7 +30,6 @@ export function useVault() {
     }
     localStorage.setItem(VAULT_KEY, path);
     setVaultPathState(path);
-    await invoke("set_vault", { path });
   }, []);
 
   const rescan = useCallback(async () => {
@@ -43,27 +46,63 @@ export function useVault() {
     }
   }, [vaultPath]);
 
-  // Initial scan + watcher.
+  const flushPending = useCallback(async () => {
+    flushTimer.current = undefined;
+    const paths = Array.from(pending.current);
+    pending.current.clear();
+    if (!paths.length) return;
+    const updates = await Promise.all(
+      paths.map(p => invoke<Note | null>("refresh_note", { path: p }).catch(() => null))
+    );
+    setNotes(prev => {
+      const byPath = new Map(prev.map(n => [n.path, n]));
+      paths.forEach((p, i) => {
+        const u = updates[i];
+        if (u === null || u === undefined) byPath.delete(p);
+        else byPath.set(p, u);
+      });
+      return Array.from(byPath.values()).sort((a, b) => b.modified - a.modified);
+    });
+  }, []);
+
+  // Cold start: set vault on Rust side, scan, subscribe to watcher.
   useEffect(() => {
     if (!vaultPath) return;
-    let cleanup: (() => void) | undefined;
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
     (async () => {
       await invoke("set_vault", { path: vaultPath });
+      if (cancelled) return;
       await rescan();
+      if (cancelled) return;
       await invoke("start_watcher", { path: vaultPath }).catch(() => {});
-      const un = await listen<string[]>("vault-changed", () => rescan());
-      cleanup = un;
+      unlisten = await listen<string[]>("vault-changed", (e) => {
+        for (const p of e.payload) pending.current.add(p);
+        if (flushTimer.current === undefined) {
+          flushTimer.current = window.setTimeout(flushPending, 250);
+        }
+      });
     })();
-    return () => { cleanup?.(); };
-  }, [vaultPath, rescan]);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      if (flushTimer.current !== undefined) window.clearTimeout(flushTimer.current);
+    };
+  }, [vaultPath, rescan, flushPending]);
+
+  const readBody = useCallback(async (path: string): Promise<NoteWithBody> => {
+    return invoke<NoteWithBody>("read_note", { path });
+  }, []);
 
   const saveNote = useCallback(async (path: string, body: string, frontmatter: Record<string, any>) => {
     await invoke("save_note", { path, body, frontmatter });
-    // Optimistic local update, then rely on the watcher to reconcile.
-    setNotes(prev => prev.map(n => n.path === path
-      ? { ...n, body, frontmatter, modified: Math.floor(Date.now() / 1000) }
-      : n));
     if (frontmatter?.public) setDirty(d => d + 1);
+  }, []);
+
+  // Patch front matter without loading the body on the JS side. Rust reads,
+  // patches, writes. Used by the calendar drag-to-move flow.
+  const setFrontmatter = useCallback(async (path: string, patch: Record<string, any>) => {
+    await invoke<Note>("set_frontmatter", { path, patch });
   }, []);
 
   const deleteNote = useCallback(async (path: string) => {
@@ -88,8 +127,10 @@ export function useVault() {
       allDay: false,
     };
     await invoke("save_note", { path, body: text, frontmatter });
-    await rescan();
-  }, [vaultPath, rescan]);
+    // Watcher will pick it up; force an immediate flush just in case.
+    pending.current.add(path);
+    flushPending();
+  }, [vaultPath, flushPending]);
 
   const publish = useCallback(async () => {
     if (!vaultPath) return 0;
@@ -98,5 +139,10 @@ export function useVault() {
     return count;
   }, [vaultPath]);
 
-  return { vaultPath, setVault, notes, loading, rescan, saveNote, deleteNote, createLogNote, dirty, publish };
+  return {
+    vaultPath, setVault,
+    notes, loading, rescan,
+    readBody, saveNote, setFrontmatter, deleteNote, createLogNote,
+    dirty, publish,
+  };
 }

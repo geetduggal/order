@@ -203,6 +203,58 @@ a { color: inherit; text-decoration: none; }
 .note.editing { outline: 2px solid var(--royal-soft); outline-offset: 4px; }
 .cm-host { font-family: var(--serif); font-size: 15px; line-height: 1.55; }
 
+.note-loading {
+  font-family: var(--sans); font-size: 11px; color: var(--ink-faint);
+  letter-spacing: 0.2em; padding: 4px 0;
+}
+
+/* Resize handles on every recent-grid card — right edge / bottom edge / corner */
+.note .resize-handle {
+  position: absolute;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.12s ease, background 0.12s ease;
+  z-index: 2;
+}
+.note:hover .resize-handle,
+.note.resizing .resize-handle { opacity: 0.55; pointer-events: auto; }
+.note .resize-handle:hover { opacity: 1; }
+.note .resize-h { top: 6px; bottom: 16px; right: -3px; width: 6px; cursor: ew-resize; }
+.note .resize-v { bottom: -3px; left: 6px; right: 16px; height: 6px; cursor: ns-resize; }
+.note .resize-c { bottom: -3px; right: -3px; width: 14px; height: 14px; cursor: nwse-resize; z-index: 3; }
+.note .resize-h:hover, .note .resize-v:hover { background: var(--royal-soft); }
+.note .resize-c::after {
+  content: "";
+  position: absolute; bottom: 3px; right: 3px;
+  width: 9px; height: 9px;
+  background: linear-gradient(135deg,
+    transparent 0%, transparent 40%,
+    var(--ink-ghost) 40%, var(--ink-ghost) 50%,
+    transparent 50%, transparent 70%,
+    var(--ink-ghost) 70%, var(--ink-ghost) 80%,
+    transparent 80%, transparent 100%);
+}
+.note.resizing { outline: 1px dashed var(--royal); outline-offset: -1px; }
+.note.resizing .resize-c::after {
+  background: linear-gradient(135deg,
+    transparent 0%, transparent 40%,
+    var(--royal) 40%, var(--royal) 50%,
+    transparent 50%, transparent 70%,
+    var(--royal) 70%, var(--royal) 80%,
+    transparent 80%, transparent 100%);
+}
+.note .edit-hint {
+  position: absolute; top: 14px; right: 16px;
+  font-family: var(--sans); font-size: 9.5px;
+  color: var(--ink-ghost); opacity: 0; pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.note:hover .edit-hint { opacity: 1; }
+.note.editing .edit-hint,
+.note.editing .resize-handle { display: none; }
+.note.wide { grid-column: span 3; }
+.note.full { grid-column: 1 / -1; }
+.note.full::before { display: none; }
+
 /* ---------- Notable section ---------- */
 .notable-section {
   margin: 56px 0 0;

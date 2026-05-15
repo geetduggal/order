@@ -29,11 +29,11 @@ export default function App() {
   );
 
   const changeBody = useCallback((n: Note, body: string) => {
-    editor.queueSave({ ...n, body }, body);
+    editor.queueSave(n, body);
   }, [editor]);
 
   const updateNoteFrontmatter = useCallback((n: Note, patch: Record<string, any>) => {
-    vault.saveNote(n.path, n.body, { ...n.frontmatter, ...patch });
+    vault.setFrontmatter(n.path, patch);
   }, [vault]);
 
   if (!vault.vaultPath) return <VaultPicker onPick={vault.setVault} />;
@@ -61,6 +61,7 @@ export default function App() {
                 onClose={editor.close}
                 onChange={changeBody}
                 onQuickCapture={vault.createLogNote}
+                readBody={vault.readBody}
                 loading={vault.loading}
               />
               {notableSections.map(n => (
@@ -71,6 +72,7 @@ export default function App() {
                   onOpen={() => editor.open(n)}
                   onClose={editor.close}
                   onChange={body => changeBody(n, body)}
+                  readBody={vault.readBody}
                 />
               ))}
             </>

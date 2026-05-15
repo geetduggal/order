@@ -18,6 +18,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vault::set_vault,
             vault::scan_vault,
+            vault::refresh_note,
             vault::read_note,
             vault::save_note,
             vault::set_frontmatter,

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { Note } from "../lib/types";
+import { useEffect, useState } from "react";
+import type { Note, NoteWithBody } from "../lib/types";
 import { folderOf, isPublic } from "../lib/types";
 import { CMEditor } from "./CMEditor";
 
@@ -9,17 +9,27 @@ type Props = {
   onOpen: () => void;
   onClose: () => void;
   onChange: (body: string) => void;
+  readBody: (path: string) => Promise<NoteWithBody>;
+  onStartResize: (e: React.MouseEvent, axis: "x" | "y" | "xy") => void;
 };
 
-export function NoteCard({ note, editing, onOpen, onClose, onChange }: Props) {
-  const [localBody, setLocalBody] = useState(note.body);
+export function NoteCard({ note, editing, onOpen, onClose, onChange, readBody, onStartResize }: Props) {
+  const [body, setBody] = useState<string | null>(null);
   const day = note.frontmatter?.date as string | undefined;
   const time = note.frontmatter?.startTime as string | undefined;
   const folder = folderOf(note);
   const pub = isPublic(note);
 
+  // Lazy-load full body when entering edit mode.
+  useEffect(() => {
+    if (!editing || body !== null) return;
+    let cancelled = false;
+    readBody(note.path).then(n => { if (!cancelled) setBody(n.body); }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [editing, note.path, body, readBody]);
+
   function update(doc: string) {
-    setLocalBody(doc);
+    setBody(doc);
     onChange(doc);
   }
 
@@ -28,6 +38,7 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange }: Props) {
       className={"note" + (editing ? " editing" : "")}
       data-folder={folder}
       onDoubleClick={(e) => {
+        if (e.target instanceof HTMLElement && e.target.classList.contains("resize-handle")) return;
         if (!editing) { e.stopPropagation(); onOpen(); }
       }}
     >
@@ -39,29 +50,30 @@ export function NoteCard({ note, editing, onOpen, onClose, onChange }: Props) {
         {pub && <><span className="dot-sep">·</span><span className="pub">● Public</span></>}
       </div>
       {editing ? (
-        <CMEditor
-          doc={localBody}
-          onChange={update}
-          onBlur={onClose}
-          autofocus
-        />
+        body === null
+          ? <div className="note-loading">…</div>
+          : <CMEditor doc={body} onChange={update} onBlur={onClose} autofocus />
       ) : (
         <div className="note-body">
-          {note.title && <h3>{note.title}</h3>}
-          <p>{firstParagraph(note.body, 240)}</p>
+          {hasTitle(note) && <h3>{note.title}</h3>}
+          <p>{note.snippet}</p>
         </div>
       )}
+      <span className="edit-hint">double-click to edit</span>
+      <div className="resize-handle resize-h" onMouseDown={e => onStartResize(e, "x")} />
+      <div className="resize-handle resize-v" onMouseDown={e => onStartResize(e, "y")} />
+      <div className="resize-handle resize-c" onMouseDown={e => onStartResize(e, "xy")} />
     </article>
   );
 }
 
-function firstParagraph(body: string, max: number): string {
-  const cleaned = body
-    .replace(/^#+\s+.*$/gm, "")
-    .replace(/\[\[([^\]]+)\]\]/g, "$1")
-    .replace(/[*_`]/g, "")
-    .trim();
-  return cleaned.length > max ? cleaned.slice(0, max) + "…" : cleaned;
+function hasTitle(n: Note): boolean {
+  // Render a title above the body only if the title isn't already the same as
+  // the snippet's leading sentence — avoids "Cold this morning… / Cold this
+  // morning. Light came in…" duplication for log notes with no headings.
+  const t = n.title.trim();
+  if (!t) return false;
+  return !n.snippet.toLowerCase().startsWith(t.toLowerCase());
 }
 
 function relativeDay(iso: string): string {

@@ -1,11 +1,15 @@
+// Metadata-only view of a note (snippet for preview, body lazy-loaded).
 export type Note = {
   path: string;
   rel_path: string;
   title: string;
-  body: string;
+  snippet: string;
   frontmatter: Record<string, any>;
   modified: number;
 };
+
+// Same shape plus the full markdown body. Returned by read_note(path).
+export type NoteWithBody = Note & { body: string };
 
 export type FolderName = string;
 

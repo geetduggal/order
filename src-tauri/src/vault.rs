@@ -1,8 +1,23 @@
-// Vault module: scan markdown files, read/write notes, patch YAML front matter.
-// Filesystem is the source of truth; writes go through here before React state updates.
+// Vault module — fast scan with disk cache and parallel parse.
+//
+// On disk: ~/Library/Application Support/com.order.app/cache/<vault-hash>.json
+//   stores the parsed metadata (title, frontmatter, snippet, mtime) for every
+//   note. Rescan: WalkDir to find current .md files, then for each, reuse the
+//   cached entry if mtime matches; otherwise re-parse. Deleted files drop out.
+//
+// `body` is NOT cached or returned in `scan_vault`. It's loaded lazily via
+// `read_note(path)` when a note is opened for edit or rendered as a Notable
+// Folder Main Document.
 
+use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
+
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value as YamlValue;
 use walkdir::WalkDir;
@@ -14,15 +29,89 @@ pub struct Note {
     pub path: String,          // absolute path
     pub rel_path: String,      // path relative to vault root
     pub title: String,
-    pub body: String,
+    pub snippet: String,       // first ~280 chars of body, markdown stripped
     pub frontmatter: serde_json::Value,
     pub modified: i64,         // unix seconds
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NoteWithBody {
+    #[serde(flatten)]
+    pub meta: Note,
+    pub body: String,
+}
+
+const CACHE_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct VaultCache {
+    version: u32,
+    vault_path: String,
+    entries: HashMap<String, Note>,
+}
+
+static CACHE: Mutex<Option<VaultCache>> = Mutex::new(None);
+
+fn vault_hash(vault: &str) -> String {
+    let mut h = DefaultHasher::new();
+    vault.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+fn cache_file(vault: &str) -> PathBuf {
+    let mut p = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    p.push("com.order.app");
+    p.push("cache");
+    let _ = fs::create_dir_all(&p);
+    p.push(format!("{}.json", vault_hash(vault)));
+    p
+}
+
+fn load_cache_from_disk(vault: &str) -> VaultCache {
+    let p = cache_file(vault);
+    let raw = match fs::read_to_string(&p) { Ok(s) => s, Err(_) => return default_cache(vault) };
+    match serde_json::from_str::<VaultCache>(&raw) {
+        Ok(c) if c.version == CACHE_VERSION && c.vault_path == vault => c,
+        _ => default_cache(vault),
+    }
+}
+
+fn default_cache(vault: &str) -> VaultCache {
+    VaultCache { version: CACHE_VERSION, vault_path: vault.to_string(), entries: HashMap::new() }
+}
+
+fn save_cache_to_disk(cache: &VaultCache) {
+    let p = cache_file(&cache.vault_path);
+    if let Ok(raw) = serde_json::to_string(cache) {
+        let _ = fs::write(&p, raw);
+    }
+}
+
 #[tauri::command]
 pub fn set_vault(state: tauri::State<AppState>, path: String) -> Result<(), String> {
-    *state.vault_path.lock().unwrap() = Some(path);
+    *state.vault_path.lock().unwrap() = Some(path.clone());
+    // Warm the in-memory cache from disk.
+    *CACHE.lock().unwrap() = Some(load_cache_from_disk(&path));
     Ok(())
+}
+
+// Discover all .md files via WalkDir, paired with their mtimes (one stat each).
+fn list_md_files(root: &Path) -> Vec<(PathBuf, u64)> {
+    WalkDir::new(root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file()
+            && e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+        .filter_map(|e| {
+            let p = e.path().to_path_buf();
+            let mtime = e.metadata().ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            Some((p, mtime))
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -31,23 +120,88 @@ pub fn scan_vault(path: String) -> Result<Vec<Note>, String> {
     if !root.is_dir() {
         return Err(format!("not a directory: {}", path));
     }
-    let mut notes = Vec::new();
-    for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
-        let p = entry.path();
-        if !p.is_file() { continue; }
-        if p.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
-        if let Ok(note) = parse_note(p, &root) {
-            notes.push(note);
+
+    // Pull the in-memory cache (loaded by set_vault). Fall back to disk.
+    let mut cache = {
+        let guard = CACHE.lock().unwrap();
+        match guard.as_ref() {
+            Some(c) if c.vault_path == path => c.clone(),
+            _ => load_cache_from_disk(&path),
         }
+    };
+
+    let files = list_md_files(&root);
+
+    // Parse only what's new or changed. Reuse cache otherwise. Parallelized.
+    let entries: Vec<Note> = files.par_iter()
+        .filter_map(|(p, mtime)| {
+            let key = p.to_string_lossy().to_string();
+            if let Some(cached) = cache.entries.get(&key) {
+                if cached.modified as u64 == *mtime {
+                    return Some(cached.clone());
+                }
+            }
+            parse_note_meta(p, &root, *mtime).ok()
+        })
+        .collect();
+
+    // Rebuild the cache map fresh — drops files deleted from disk.
+    cache.entries = entries.iter().map(|n| (n.path.clone(), n.clone())).collect();
+    save_cache_to_disk(&cache);
+    *CACHE.lock().unwrap() = Some(cache);
+
+    Ok(entries)
+}
+
+// Targeted refresh of a single path (called from the watcher, faster than rescan).
+#[tauri::command]
+pub fn refresh_note(path: String) -> Result<Option<Note>, String> {
+    let abs = PathBuf::from(&path);
+    if !abs.is_file() {
+        // File was deleted. Remove from cache.
+        let mut guard = CACHE.lock().unwrap();
+        if let Some(cache) = guard.as_mut() {
+            cache.entries.remove(&path);
+            save_cache_to_disk(cache);
+        }
+        return Ok(None);
     }
-    Ok(notes)
+    let root = guard_vault_root();
+    let mtime = fs::metadata(&abs).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let note = parse_note_meta(&abs, &root, mtime).map_err(|e| e.to_string())?;
+    let mut guard = CACHE.lock().unwrap();
+    if let Some(cache) = guard.as_mut() {
+        cache.entries.insert(note.path.clone(), note.clone());
+        save_cache_to_disk(cache);
+    }
+    Ok(Some(note))
+}
+
+fn guard_vault_root() -> PathBuf {
+    CACHE.lock().unwrap()
+        .as_ref()
+        .map(|c| PathBuf::from(&c.vault_path))
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-pub fn read_note(path: String) -> Result<Note, String> {
+pub fn read_note(path: String) -> Result<NoteWithBody, String> {
     let abs = PathBuf::from(&path);
-    let root = abs.parent().map(Path::to_path_buf).unwrap_or_default();
-    parse_note(&abs, &root).map_err(|e| e.to_string())
+    let root = guard_vault_root();
+    let root = if root.as_os_str().is_empty() {
+        abs.parent().map(Path::to_path_buf).unwrap_or_default()
+    } else { root };
+    let mtime = fs::metadata(&abs).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (meta, body) = parse_note_full(&abs, &root, mtime).map_err(|e| e.to_string())?;
+    Ok(NoteWithBody { meta, body })
 }
 
 #[tauri::command]
@@ -65,83 +219,102 @@ pub fn save_note(path: String, body: String, frontmatter: serde_json::Value) -> 
 #[tauri::command]
 pub fn set_frontmatter(path: String, patch: serde_json::Value) -> Result<Note, String> {
     let abs = PathBuf::from(&path);
-    let root = abs.parent().map(Path::to_path_buf).unwrap_or_default();
-    let mut note = parse_note(&abs, &root).map_err(|e| e.to_string())?;
-    if let (Some(obj), Some(patch_obj)) = (note.frontmatter.as_object_mut(), patch.as_object()) {
-        for (k, v) in patch_obj {
-            obj.insert(k.clone(), v.clone());
-        }
+    let root = guard_vault_root();
+    let mtime = fs::metadata(&abs).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (mut meta, body) = parse_note_full(&abs, &root, mtime).map_err(|e| e.to_string())?;
+    if let (Some(obj), Some(patch_obj)) = (meta.frontmatter.as_object_mut(), patch.as_object()) {
+        for (k, v) in patch_obj { obj.insert(k.clone(), v.clone()); }
     }
-    save_note(path, note.body.clone(), note.frontmatter.clone())?;
-    Ok(note)
+    save_note(path, body, meta.frontmatter.clone())?;
+    Ok(meta)
 }
 
 #[tauri::command]
 pub fn delete_note(path: String) -> Result<(), String> {
-    fs::remove_file(&path).map_err(|e| e.to_string())
+    fs::remove_file(&path).map_err(|e| e.to_string())?;
+    let mut guard = CACHE.lock().unwrap();
+    if let Some(cache) = guard.as_mut() {
+        cache.entries.remove(&path);
+        save_cache_to_disk(cache);
+    }
+    Ok(())
 }
 
-fn parse_note(path: &Path, root: &Path) -> anyhow::Result<Note> {
+// ---------- parse helpers ----------
+
+fn parse_note_meta(path: &Path, root: &Path, mtime: u64) -> anyhow::Result<Note> {
     let raw = fs::read_to_string(path)?;
     let (fm_str, body) = split_frontmatter(&raw);
-    let frontmatter = if fm_str.trim().is_empty() {
-        serde_json::Value::Object(Default::default())
-    } else {
-        let yaml: YamlValue = serde_yaml::from_str(fm_str)
-            .unwrap_or(YamlValue::Mapping(Default::default()));
-        yaml_to_json(&yaml)
-    };
+    let frontmatter = parse_yaml(fm_str);
+    let title = derive_title(path, &frontmatter, &body);
+    let snippet = make_snippet(&body, 280);
+    let rel_path = path.strip_prefix(root).unwrap_or(path).to_string_lossy().to_string();
+    Ok(Note {
+        path: path.to_string_lossy().to_string(),
+        rel_path,
+        title,
+        snippet,
+        frontmatter,
+        modified: mtime as i64,
+    })
+}
 
-    let title = frontmatter.get("title")
+fn parse_note_full(path: &Path, root: &Path, mtime: u64) -> anyhow::Result<(Note, String)> {
+    let raw = fs::read_to_string(path)?;
+    let (fm_str, body) = split_frontmatter(&raw);
+    let frontmatter = parse_yaml(fm_str);
+    let title = derive_title(path, &frontmatter, &body);
+    let snippet = make_snippet(&body, 280);
+    let rel_path = path.strip_prefix(root).unwrap_or(path).to_string_lossy().to_string();
+    let meta = Note {
+        path: path.to_string_lossy().to_string(),
+        rel_path,
+        title,
+        snippet,
+        frontmatter,
+        modified: mtime as i64,
+    };
+    Ok((meta, body))
+}
+
+fn parse_yaml(fm_str: &str) -> serde_json::Value {
+    if fm_str.trim().is_empty() {
+        return serde_json::Value::Object(Default::default());
+    }
+    let yaml: YamlValue = serde_yaml::from_str(fm_str).unwrap_or(YamlValue::Mapping(Default::default()));
+    yaml_to_json(&yaml)
+}
+
+fn derive_title(path: &Path, fm: &serde_json::Value, body: &str) -> String {
+    fm.get("title")
         .and_then(|v| v.as_str())
         .map(String::from)
-        .or_else(|| extract_h1(&body))
+        .or_else(|| extract_h1(body))
         .unwrap_or_else(|| {
             path.file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("Untitled")
                 .to_string()
-        });
-
-    let modified = fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-
-    let rel_path = path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .to_string();
-
-    Ok(Note {
-        path: path.to_string_lossy().to_string(),
-        rel_path,
-        title,
-        body,
-        frontmatter,
-        modified,
-    })
+        })
 }
 
-// Split a markdown file into (front-matter YAML text, body).
-// Accepts files with or without front matter.
 pub fn split_frontmatter(raw: &str) -> (&str, String) {
-    let trimmed = raw.strip_prefix('\u{FEFF}').unwrap_or(raw); // strip BOM if any
+    let trimmed = raw.strip_prefix('\u{FEFF}').unwrap_or(raw);
     if !(trimmed.starts_with("---\n") || trimmed.starts_with("---\r\n")) {
         return ("", trimmed.to_string());
     }
     let lead_len = if trimmed.starts_with("---\r\n") { 5 } else { 4 };
     let rest = &trimmed[lead_len..];
-    // Find closing --- on its own line.
     let end = rest.find("\n---\n")
         .or_else(|| rest.find("\n---\r\n"))
         .or_else(|| if rest.ends_with("\n---") { Some(rest.len() - 4) } else { None });
     match end {
         Some(at) => {
             let fm = &rest[..at];
-            // skip past "\n---\n" or similar to the body
             let after = &rest[at..];
             let body_offset = after.find('\n').map(|i| i + 1).unwrap_or(0);
             let after2 = &after[body_offset..];
@@ -149,8 +322,7 @@ pub fn split_frontmatter(raw: &str) -> (&str, String) {
                 else if after2.starts_with("---\r\n") { 5 }
                 else if after2 == "---" { 3 }
                 else { 0 };
-            let body = &after2[body_offset2..];
-            (fm, body.to_string())
+            (fm, after2[body_offset2..].to_string())
         }
         None => ("", raw.to_string()),
     }
@@ -163,18 +335,67 @@ fn extract_h1(body: &str) -> Option<String> {
         .map(|l| l.trim_start_matches('#').trim().to_string())
 }
 
+// First ~max chars of body with headings, code fences, and inline markdown stripped.
+fn make_snippet(body: &str, max: usize) -> String {
+    let mut out = String::with_capacity(max);
+    let mut in_code = false;
+    for line in body.lines() {
+        let line = line.trim();
+        if line.starts_with("```") { in_code = !in_code; continue; }
+        if in_code { continue; }
+        if line.is_empty() { continue; }
+        if line.starts_with('#') { continue; }
+        let cleaned = strip_inline_markdown(line);
+        if !out.is_empty() { out.push(' '); }
+        out.push_str(&cleaned);
+        if out.chars().count() >= max { break; }
+    }
+    let trimmed = out.trim();
+    if trimmed.chars().count() > max {
+        let mut s: String = trimmed.chars().take(max).collect();
+        s.push('…');
+        s
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn strip_inline_markdown(s: &str) -> String {
+    // [[wikilink]] → wikilink ; **bold** / __bold__ / _em_ / *em* / `code` → text
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if c == '[' && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+            i += 2;
+            while i < bytes.len() {
+                if bytes[i] == b']' && i + 1 < bytes.len() && bytes[i + 1] == b']' {
+                    i += 2;
+                    break;
+                }
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+        } else if c == '*' || c == '_' || c == '`' {
+            i += 1;
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn yaml_to_json(v: &YamlValue) -> serde_json::Value {
     match v {
         YamlValue::Null => serde_json::Value::Null,
         YamlValue::Bool(b) => serde_json::Value::Bool(*b),
         YamlValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                serde_json::Value::Number(i.into())
-            } else if let Some(f) = n.as_f64() {
+            if let Some(i) = n.as_i64() { serde_json::Value::Number(i.into()) }
+            else if let Some(f) = n.as_f64() {
                 serde_json::Number::from_f64(f).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
-            } else {
-                serde_json::Value::Null
-            }
+            } else { serde_json::Value::Null }
         }
         YamlValue::String(s) => serde_json::Value::String(s.clone()),
         YamlValue::Sequence(seq) => serde_json::Value::Array(seq.iter().map(yaml_to_json).collect()),
