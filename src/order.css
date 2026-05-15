@@ -1,0 +1,321 @@
+/* Order — shared visual language
+   Lifted from ~/Documents/Dropbox/order/mockups/styles.css and trimmed
+   to the surfaces in use. Royal blue + coral accents, white background,
+   NYT-style hairline rules. */
+
+:root {
+  --order-bg:        #ffffff;
+  --order-bg-elev:   #f7f7f5;
+  --order-ink:       #1a1a1a;
+  --order-ink-soft:  #4f4f4d;
+  --order-ink-faint: #8a8a87;
+  --order-ink-ghost: #c4c2bd;
+  --order-rule:      #ececea;
+  --order-rule-soft: #f3f2ef;
+  --order-selection: #ffe4d8;
+
+  --order-royal:      #4169E1;
+  --order-royal-dark: #27408B;
+  --order-royal-soft: #e7edfb;
+  --order-coral:      #FF7F50;
+  --order-coral-dark: #e5673a;
+  --order-coral-soft: #ffe9de;
+
+  --order-serif: "Iowan Old Style", "Palatino", "Charter", "Georgia", "Times New Roman", serif;
+  --order-sans:  "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --order-mono:  "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --order-col-content: 720px;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--order-bg);
+  color: var(--order-ink);
+  font-family: var(--order-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: var(--order-selection); }
+
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+
+/* ---------- App shell ---------- */
+.app {
+  display: grid;
+  grid-template-columns: 1fr 6px 320px;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.divider {
+  background: transparent;
+  position: relative;
+}
+.divider::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  width: 1px;
+  background: var(--order-rule);
+}
+
+/* ---------- Left pane: Stream ---------- */
+.pane-left {
+  overflow-y: auto;
+  background: var(--order-bg);
+}
+
+.pane-left-inner {
+  max-width: var(--order-col-content);
+  margin: 0 auto;
+  padding: 40px 56px 160px;
+}
+
+.view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--order-rule);
+  padding-bottom: 18px;
+  margin-bottom: 28px;
+}
+
+.view-title {
+  margin: 0;
+  font-family: var(--order-serif);
+  font-weight: 500;
+  font-size: 32px;
+  letter-spacing: -0.01em;
+  color: var(--order-ink);
+}
+
+.view-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--order-ink-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.view-error {
+  border: 1px solid var(--order-coral);
+  background: var(--order-coral-soft);
+  color: var(--order-coral-dark);
+  padding: 12px 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+.view-empty {
+  color: var(--order-ink-faint);
+  font-size: 13px;
+  margin: 60px 0;
+  text-align: center;
+}
+
+/* ---------- Stream grid ---------- */
+.stream-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--order-rule);
+}
+
+.stream-card {
+  padding: 18px 18px 22px;
+  border-right: 1px solid var(--order-rule);
+  border-bottom: 1px solid var(--order-rule);
+  background: var(--order-bg);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.stream-card:hover {
+  background: var(--order-rule-soft);
+}
+
+.stream-card-title {
+  margin: 0 0 8px;
+  font-family: var(--order-serif);
+  font-weight: 500;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--order-ink);
+}
+
+.stream-card-snippet {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--order-ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.stream-card-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stream-card-type {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--order-royal);
+}
+
+/* ---------- Right pane: Sidebar ---------- */
+.pane-right {
+  overflow-y: auto;
+  background: var(--order-bg);
+  border-left: 1px solid var(--order-rule);
+  padding: 28px 22px 60px;
+  font-family: var(--order-sans);
+}
+
+.vault-switcher {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  border: 1px solid var(--order-rule);
+  border-radius: 5px;
+  padding: 10px 12px;
+  margin-bottom: 28px;
+  text-align: left;
+}
+.vault-switcher:hover {
+  border-color: var(--order-ink-ghost);
+}
+
+.vault-switcher-label {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--order-ink);
+}
+
+.vault-switcher-action {
+  font-size: 11px;
+  color: var(--order-ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-section {
+  margin-bottom: 28px;
+}
+
+.sidebar-heading {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--order-ink-faint);
+}
+
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--order-ink-soft);
+  cursor: pointer;
+}
+.sidebar-item:hover {
+  background: var(--order-rule-soft);
+}
+.sidebar-item.active {
+  color: var(--order-ink);
+  background: var(--order-rule-soft);
+  font-weight: 500;
+}
+
+.sidebar-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-coral { background: var(--order-coral); }
+.dot-royal { background: var(--order-royal); }
+
+.sidebar-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--order-ink-faint);
+  line-height: 1.5;
+}
+
+/* ---------- Vault picker (first-launch) ---------- */
+.vault-picker {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  width: 100vw;
+  background: var(--order-bg);
+}
+
+.vault-picker-inner {
+  text-align: center;
+  max-width: 420px;
+  padding: 0 24px;
+}
+
+.vault-picker-title {
+  margin: 0 0 14px;
+  font-family: var(--order-serif);
+  font-weight: 500;
+  font-size: 52px;
+  letter-spacing: -0.02em;
+}
+
+.vault-picker-subtitle {
+  margin: 0 0 32px;
+  font-size: 15px;
+  color: var(--order-ink-soft);
+  line-height: 1.5;
+}
+
+.vault-picker-button {
+  padding: 12px 22px;
+  border: 1px solid var(--order-ink);
+  border-radius: 5px;
+  background: var(--order-ink);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.vault-picker-button:hover {
+  background: var(--order-coral);
+  border-color: var(--order-coral);
+}
