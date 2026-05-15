@@ -23,6 +23,8 @@ pub fn run() {
             vault::save_note,
             vault::set_frontmatter,
             vault::delete_note,
+            vault::read_text,
+            vault::write_text,
             watcher::start_watcher,
             publish::publish_public,
         ])

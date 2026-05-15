@@ -416,3 +416,24 @@ fn json_to_yaml_string(v: &serde_json::Value) -> anyhow::Result<String> {
     let y: YamlValue = serde_yaml::from_str(&s)?;
     Ok(serde_yaml::to_string(&y)?)
 }
+
+// ---------------------------------------------------------------------------
+// Single-card MVP helpers.
+//
+// read_text/write_text are intentionally dumb: absolute path in, raw UTF-8 out
+// (and back). No frontmatter parsing, no caching, no watcher coupling. The
+// card component owns its own file end-to-end.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn read_text(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn write_text(path: String, content: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
