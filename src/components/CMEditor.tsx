@@ -1,12 +1,13 @@
-// Thin React wrapper around CodeMirror 6. Caller provides initial doc + onChange.
-// Closing the editor is the parent's responsibility — the user signals "done"
-// via Esc or Cmd/Ctrl+Enter, never via accidental focus loss.
+// Live-markdown editor backed by Milkdown Crepe. Crepe is a Prosemirror-
+// based what-you-mean-is-what-you-get preset built for live markdown —
+// this replaces the hand-rolled CodeMirror cursor-block reveal that was
+// fighting CSS for the same effect. The component name is kept (CMEditor)
+// so the rest of the app doesn't churn over a wire change.
 
 import { useEffect, useRef } from "react";
-import { EditorView } from "@codemirror/view";
-import { Prec } from "@codemirror/state";
-import { keymap } from "@codemirror/view";
-import { buildEditorState } from "../lib/markdown";
+import { Crepe } from "@milkdown/crepe";
+import "@milkdown/crepe/theme/common/style.css";
+import "@milkdown/crepe/theme/frame.css";
 
 type Props = {
   doc: string;
@@ -17,45 +18,64 @@ type Props = {
 
 export function CMEditor({ doc, onChange, onDone, autofocus }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  // Always call the latest onDone, even if the component captured an old prop
-  // at mount time (the CodeMirror state is only built once per session).
+  // Always call the latest props from inside the imperative Crepe API,
+  // even though Crepe is constructed once per mount.
+  const onChangeRef = useRef(onChange);
   const onDoneRef = useRef(onDone);
-  useEffect(() => {
-    onDoneRef.current = onDone;
-  }, [onDone]);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
   useEffect(() => {
     if (!host.current) return;
-    const doneKeymap = Prec.highest(
-      keymap.of([
-        {
-          key: "Escape",
-          run: () => {
-            onDoneRef.current?.();
-            return true;
-          },
-        },
-        {
-          key: "Mod-Enter",
-          run: () => {
-            onDoneRef.current?.();
-            return true;
-          },
-        },
-      ]),
-    );
-    const v = new EditorView({
-      state: buildEditorState(doc, onChange, doneKeymap),
-      parent: host.current,
+    let crepe: Crepe | null = null;
+    let cancelled = false;
+
+    crepe = new Crepe({
+      root: host.current,
+      defaultValue: doc,
     });
-    view.current = v;
-    if (autofocus) v.focus();
-    return () => { v.destroy(); view.current = null; };
-    // We intentionally only mount once per parent change. Doc updates from
-    // outside aren't expected during an active edit session.
+
+    crepe
+      .create()
+      .then(() => {
+        if (cancelled || !crepe) return;
+        crepe.on((listener) => {
+          listener.markdownUpdated((_ctx, markdown) => {
+            onChangeRef.current(markdown);
+          });
+        });
+        if (autofocus) {
+          // Crepe focuses on creation when defaultValue is empty, but we want
+          // to be sure: find the contenteditable surface and focus it.
+          const editable = host.current?.querySelector<HTMLElement>("[contenteditable=true]");
+          editable?.focus();
+        }
+      })
+      .catch((err: unknown) => {
+        console.error("Crepe init failed:", err);
+      });
+
+    return () => {
+      cancelled = true;
+      crepe?.destroy();
+      crepe = null;
+    };
+    // We intentionally mount Crepe once per parent change. Doc updates
+    // from outside aren't expected during an active edit session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div className="cm-host" ref={host} />;
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onDoneRef.current?.();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      onDoneRef.current?.();
+    }
+  }
+
+  return <div className="cm-host milkdown-host" ref={host} onKeyDown={onKeyDown} />;
 }
