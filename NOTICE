@@ -1,0 +1,19 @@
+Order
+Copyright (c) 2026 Geet Duggal
+
+This work is a derivative of Tolaria.
+
+  Tolaria
+  Copyright (c) Luca Rossi and Tolaria contributors
+  Source: https://github.com/refactoringhq/tolaria
+  License: AGPL-3.0-or-later
+
+Order is licensed under the GNU Affero General Public License version 3 or any
+later version, as required by the license of the upstream Tolaria project. See
+the LICENSE file for the full text.
+
+The name "Tolaria" and its associated marks are trademarks of the Tolaria
+project. Per the upstream trademark policy (preserved in this repository as
+TOLARIA-TRADEMARKS.md), forks must not use the "Tolaria" name or marks to
+identify themselves. This project is named "Order" and is not endorsed by or
+affiliated with the upstream Tolaria project.

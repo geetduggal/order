@@ -1,0 +1,143 @@
+import { useEffect, useMemo } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import { isTauri, mockInvoke } from '../mock-tauri'
+import type { Settings, VaultEntry } from '../types'
+import type { VaultOption } from '../components/status-bar/types'
+import {
+  filterEntriesToVisibleWorkspaces,
+  graphWorkspaceVaultsForLoading,
+  visibleWorkspacePaths,
+  workspacesMountedInGraph,
+  workspaceIdentityFromVault,
+  writableWorkspacePaths,
+} from '../utils/workspaces'
+
+interface WorkspaceGraphConfig {
+  allVaults: VaultOption[]
+  defaultWorkspacePath?: string | null
+  resolvedPath: string
+  settings: Settings
+  vaultSwitcherLoaded: boolean
+  windowMode: boolean
+}
+
+interface WorkspaceGraphState {
+  folderVaults?: VaultOption[]
+  graphDefaultWorkspacePath: string
+  graphVaults?: VaultOption[]
+  inspectorWorkspaces: ReturnType<typeof workspaceIdentityFromVault>[]
+  multiWorkspaceEnabled: boolean
+  visibleWorkspacePathList?: string[]
+  writableVaultPaths: string[]
+}
+
+function invokeAppCommand<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  return isTauri() ? invoke<T>(command, args) : mockInvoke<T>(command, args)
+}
+
+export function hideWorkspaceMetadata(entries: VaultEntry[]): VaultEntry[] {
+  let changed = false
+  const nextEntries = entries.map((entry) => {
+    if (!entry.workspace) return entry
+    changed = true
+    return { ...entry, workspace: undefined }
+  })
+  return changed ? nextEntries : entries
+}
+
+export function useWorkspaceGraphState({
+  allVaults,
+  defaultWorkspacePath,
+  resolvedPath,
+  settings,
+  vaultSwitcherLoaded,
+  windowMode,
+}: WorkspaceGraphConfig): WorkspaceGraphState {
+  const multiWorkspaceEnabled = settings.multi_workspace_enabled === true
+  const workspaceGraphLoadingEnabled = !windowMode
+  const graphDefaultWorkspacePath = !windowMode && multiWorkspaceEnabled
+    ? (defaultWorkspacePath ?? resolvedPath)
+    : resolvedPath
+  const graphVaults = useMemo(() => {
+    if (windowMode) return undefined
+    return graphWorkspaceVaultsForLoading({
+      defaultVaultPath: graphDefaultWorkspacePath,
+      enabled: workspaceGraphLoadingEnabled,
+      vaults: allVaults,
+    })
+  }, [allVaults, graphDefaultWorkspacePath, windowMode, workspaceGraphLoadingEnabled])
+  const visibleWorkspacePathList = useMemo(
+    () => {
+      if (windowMode) return undefined
+      if (!multiWorkspaceEnabled) {
+        return graphDefaultWorkspacePath.trim() ? [graphDefaultWorkspacePath] : undefined
+      }
+      return visibleWorkspacePaths({
+        defaultVaultPath: graphDefaultWorkspacePath,
+        enabled: true,
+        vaults: allVaults,
+      })
+    },
+    [allVaults, graphDefaultWorkspacePath, multiWorkspaceEnabled, windowMode],
+  )
+  const writableVaultPaths = useMemo(
+    () => visibleWorkspacePathList ?? writableWorkspacePaths({
+      defaultVaultPath: graphDefaultWorkspacePath,
+      graphVaults: undefined,
+    }),
+    [graphDefaultWorkspacePath, visibleWorkspacePathList],
+  )
+  const inspectorWorkspaces = useMemo(() => {
+    if (!multiWorkspaceEnabled || windowMode) return []
+    const writablePathSet = new Set(writableVaultPaths)
+    return (graphVaults ?? [])
+      .filter((vault) => writablePathSet.has(vault.path))
+      .map((vault) => workspaceIdentityFromVault(vault, { defaultWorkspacePath }))
+  }, [defaultWorkspacePath, graphVaults, multiWorkspaceEnabled, windowMode, writableVaultPaths])
+  const folderVaults = useMemo(
+    () => windowMode || !multiWorkspaceEnabled
+      ? undefined
+      : workspacesMountedInGraph({
+        defaultVaultPath: graphDefaultWorkspacePath,
+        vaults: allVaults,
+      }),
+    [allVaults, graphDefaultWorkspacePath, multiWorkspaceEnabled, windowMode],
+  )
+
+  useEffect(() => {
+    if (windowMode || !vaultSwitcherLoaded) return
+
+    const bridgeVaultPath = writableVaultPaths[0] ?? null
+    void invokeAppCommand<string>('sync_mcp_bridge_vault', {
+      vaultPath: bridgeVaultPath,
+      vaultPaths: writableVaultPaths,
+    }).catch((err) => {
+      console.warn('Failed to sync MCP bridge vault scope:', err)
+    })
+  }, [vaultSwitcherLoaded, windowMode, writableVaultPaths])
+
+  return {
+    folderVaults,
+    graphDefaultWorkspacePath,
+    graphVaults,
+    inspectorWorkspaces,
+    multiWorkspaceEnabled,
+    visibleWorkspacePathList,
+    writableVaultPaths,
+  }
+}
+
+export function useVisibleWorkspaceEntries({
+  entries,
+  multiWorkspaceEnabled,
+  visibleWorkspacePathList,
+}: {
+  entries: VaultEntry[]
+  multiWorkspaceEnabled: boolean
+  visibleWorkspacePathList?: string[]
+}): VaultEntry[] {
+  return useMemo(() => {
+    const visibleEntries = filterEntriesToVisibleWorkspaces(entries, visibleWorkspacePathList)
+    return multiWorkspaceEnabled ? visibleEntries : hideWorkspaceMetadata(visibleEntries)
+  }, [entries, multiWorkspaceEnabled, visibleWorkspacePathList])
+}
