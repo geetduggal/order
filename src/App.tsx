@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { useCreateBlockNote } from '@blocknote/react'
+import { BlockNoteView } from '@blocknote/mantine'
+import '@blocknote/mantine/style.css'
 import './order.css'
 
 const VAULT_PATH_KEY = 'order:vault-path'
+const SAVE_DEBOUNCE_MS = 500
 
 interface VaultEntry {
   path: string
@@ -18,6 +22,10 @@ interface VaultEntry {
   icon: string | null
   color: string | null
 }
+
+type View =
+  | { kind: 'log' }
+  | { kind: 'note'; entry: VaultEntry }
 
 function readStoredVaultPath(): string | null {
   try {
@@ -55,12 +63,30 @@ function useEntries(vaultPath: string | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (!vaultPath) {
       setEntries([])
       return
     }
+    setLoading(true)
+    setError(null)
+    invoke<VaultEntry[]>('list_vault', { path: vaultPath })
+      .then((loaded) => {
+        setEntries(loaded.filter((e) => !e.archived))
+      })
+      .catch((err) => {
+        setError(typeof err === 'string' ? err : 'Failed to load vault')
+        setEntries([])
+      })
+      .finally(() => setLoading(false))
+  }, [vaultPath])
+
+  useEffect(() => {
     let cancelled = false
+    if (!vaultPath) {
+      setEntries([])
+      return
+    }
     setLoading(true)
     setError(null)
     invoke<VaultEntry[]>('list_vault', { path: vaultPath })
@@ -81,7 +107,7 @@ function useEntries(vaultPath: string | null) {
     }
   }, [vaultPath])
 
-  return { entries, loading, error }
+  return { entries, loading, error, reload }
 }
 
 function VaultPicker({ onPick }: { onPick: () => void }) {
@@ -98,10 +124,10 @@ function VaultPicker({ onPick }: { onPick: () => void }) {
   )
 }
 
-function StreamCard({ entry }: { entry: VaultEntry }) {
+function StreamCard({ entry, onOpen }: { entry: VaultEntry; onOpen: (entry: VaultEntry) => void }) {
   const title = entry.title || entry.filename.replace(/\.md$/, '')
   return (
-    <article className="stream-card">
+    <article className="stream-card" onClick={() => onOpen(entry)}>
       <h3 className="stream-card-title">{title}</h3>
       {entry.snippet && <p className="stream-card-snippet">{entry.snippet}</p>}
       <div className="stream-card-meta">
@@ -111,7 +137,17 @@ function StreamCard({ entry }: { entry: VaultEntry }) {
   )
 }
 
-function Stream({ entries, loading, error }: { entries: VaultEntry[]; loading: boolean; error: string | null }) {
+function Stream({
+  entries,
+  loading,
+  error,
+  onOpenEntry,
+}: {
+  entries: VaultEntry[]
+  loading: boolean
+  error: string | null
+  onOpenEntry: (entry: VaultEntry) => void
+}) {
   const sorted = [...entries].sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0))
   return (
     <main className="pane-left">
@@ -123,7 +159,7 @@ function Stream({ entries, loading, error }: { entries: VaultEntry[]; loading: b
         {error && <div className="view-error">{error}</div>}
         <section className="stream-grid">
           {sorted.slice(0, 60).map((entry) => (
-            <StreamCard key={entry.path} entry={entry} />
+            <StreamCard key={entry.path} entry={entry} onOpen={onOpenEntry} />
           ))}
         </section>
         {!loading && entries.length === 0 && !error && (
@@ -134,7 +170,107 @@ function Stream({ entries, loading, error }: { entries: VaultEntry[]; loading: b
   )
 }
 
-function Sidebar({ vaultPath, onChangeVault }: { vaultPath: string; onChangeVault: () => void }) {
+function splitFrontmatter(content: string): { frontmatter: string; body: string } {
+  if (!content.startsWith('---\n')) return { frontmatter: '', body: content }
+  const end = content.indexOf('\n---\n', 4)
+  if (end < 0) return { frontmatter: '', body: content }
+  return {
+    frontmatter: content.slice(0, end + 5),
+    body: content.slice(end + 5),
+  }
+}
+
+function NoteEditor({
+  entry,
+  onBack,
+  onSaved,
+}: {
+  entry: VaultEntry
+  onBack: () => void
+  onSaved: () => void
+}) {
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const frontmatterRef = useRef<string>('')
+  const editor = useCreateBlockNote()
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadError(null)
+    invoke<string>('get_note_content', { path: entry.path })
+      .then(async (content) => {
+        if (cancelled) return
+        const { frontmatter, body } = splitFrontmatter(content)
+        frontmatterRef.current = frontmatter
+        const blocks = await editor.tryParseMarkdownToBlocks(body)
+        if (cancelled) return
+        if (blocks.length > 0) {
+          editor.replaceBlocks(editor.document, blocks)
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadError(typeof err === 'string' ? err : 'Failed to load note')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entry.path, editor])
+
+  const triggerSave = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        setSaving(true)
+        const body = await editor.blocksToMarkdownLossy(editor.document)
+        const content = frontmatterRef.current + body
+        await invoke('save_note_content', { path: entry.path, content })
+        onSaved()
+      } catch (err) {
+        console.warn('save_note_content failed:', err)
+      } finally {
+        setSaving(false)
+      }
+    }, SAVE_DEBOUNCE_MS)
+  }, [editor, entry.path, onSaved])
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [])
+
+  const title = entry.title || entry.filename.replace(/\.md$/, '')
+
+  return (
+    <main className="pane-left">
+      <div className="pane-left-inner">
+        <header className="note-header">
+          <button type="button" className="note-back" onClick={onBack}>← Log</button>
+          <span className="note-status">{saving ? 'Saving…' : 'Saved'}</span>
+        </header>
+        <h1 className="note-title">{title}</h1>
+        {loadError && <div className="view-error">{loadError}</div>}
+        <div className="note-editor">
+          <BlockNoteView editor={editor} onChange={triggerSave} theme="light" />
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function Sidebar({
+  vaultPath,
+  onChangeVault,
+  view,
+  onSelectLog,
+}: {
+  vaultPath: string
+  onChangeVault: () => void
+  view: View
+  onSelectLog: () => void
+}) {
   const vaultName = vaultPath.split('/').filter(Boolean).pop() ?? vaultPath
   return (
     <aside className="pane-right">
@@ -145,7 +281,10 @@ function Sidebar({ vaultPath, onChangeVault }: { vaultPath: string; onChangeVaul
       <nav className="sidebar-section">
         <h2 className="sidebar-heading">Pinned</h2>
         <ul className="sidebar-list">
-          <li className="sidebar-item active">
+          <li
+            className={`sidebar-item ${view.kind === 'log' ? 'active' : ''}`}
+            onClick={onSelectLog}
+          >
             <span className="sidebar-dot dot-coral" /> Log
           </li>
           <li className="sidebar-item">
@@ -163,7 +302,17 @@ function Sidebar({ vaultPath, onChangeVault }: { vaultPath: string; onChangeVaul
 
 export default function App() {
   const { vaultPath, pickVault } = useVaultPath()
-  const { entries, loading, error } = useEntries(vaultPath)
+  const { entries, loading, error, reload } = useEntries(vaultPath)
+  const [view, setView] = useState<View>({ kind: 'log' })
+
+  const openEntry = useCallback((entry: VaultEntry) => {
+    setView({ kind: 'note', entry })
+  }, [])
+
+  const backToLog = useCallback(() => {
+    setView({ kind: 'log' })
+    reload()
+  }, [reload])
 
   if (!vaultPath) {
     return <VaultPicker onPick={pickVault} />
@@ -171,9 +320,18 @@ export default function App() {
 
   return (
     <div className="app">
-      <Stream entries={entries} loading={loading} error={error} />
+      {view.kind === 'log' ? (
+        <Stream entries={entries} loading={loading} error={error} onOpenEntry={openEntry} />
+      ) : (
+        <NoteEditor entry={view.entry} onBack={backToLog} onSaved={() => { /* no-op until we surface a toast */ }} />
+      )}
       <div className="divider" />
-      <Sidebar vaultPath={vaultPath} onChangeVault={pickVault} />
+      <Sidebar
+        vaultPath={vaultPath}
+        onChangeVault={pickVault}
+        view={view}
+        onSelectLog={backToLog}
+      />
     </div>
   )
 }

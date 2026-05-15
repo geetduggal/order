@@ -319,3 +319,59 @@ button {
   background: var(--order-coral);
   border-color: var(--order-coral);
 }
+
+/* ---------- Note editor view ---------- */
+.note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+
+.note-back {
+  font-size: 13px;
+  color: var(--order-ink-faint);
+  letter-spacing: 0.02em;
+  padding: 4px 0;
+}
+.note-back:hover {
+  color: var(--order-coral);
+}
+
+.note-status {
+  font-size: 11px;
+  color: var(--order-ink-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.note-title {
+  margin: 0 0 24px;
+  font-family: var(--order-serif);
+  font-weight: 500;
+  font-size: 36px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--order-ink);
+}
+
+.note-editor {
+  font-family: var(--order-serif);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--order-ink);
+}
+
+/* BlockNote overrides — match Order's white surface and serif body */
+.note-editor .bn-container,
+.note-editor .bn-editor {
+  background: var(--order-bg);
+  color: var(--order-ink);
+}
+.note-editor [data-content-type="paragraph"],
+.note-editor [data-content-type="heading"] {
+  font-family: var(--order-serif);
+}
+.note-editor [data-content-type="heading"] {
+  font-weight: 500;
+}
