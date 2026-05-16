@@ -135,7 +135,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   /* Tighter top padding — heading at start of file should hug the
      card top, not float in a sea of whitespace. */
-  padding: 0 clamp(18px, 3.5vw, 40px) 12px;
+  padding: 10px clamp(18px, 3.5vw, 40px) 12px;
 }
 .order-card.is-loading {
   min-height: 100px;
@@ -434,10 +434,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink);
   min-height: 1.5em;
 }
-/* Pull the first child up by the line-height leading so the h1 cap
-   visually hugs the top of the card. Without this the leading above
-   the glyphs adds ~5px of dead space that no padding tweak can remove. */
-.milkdown-host .ProseMirror > :first-child { margin-top: -0.18em; }
+.milkdown-host .ProseMirror > :first-child { margin-top: 0; }
+/* Only pull the h1 up — other first elements (paragraphs, lists)
+   keep the card's normal top padding so they don't crowd the edge. */
+.milkdown-host .ProseMirror > h1:first-child { margin-top: -8px; }
 
 /* Crepe block handles (the + / drag-grip that appears in the gutter
    on block hover): smaller, more subtle, hugged closer to the text.
