@@ -692,21 +692,15 @@ export function CardGrid() {
 
 function useGridLayout(grid: HTMLDivElement | null) {
   useEffect(() => {
-    console.log("[masonry] useGridLayout effect running, grid=", grid);
     if (!grid) return;
 
-    function relayoutCell(cell: HTMLElement, reason?: string) {
+    function relayoutCell(cell: HTMLElement) {
       const styles = getComputedStyle(grid as HTMLElement);
       const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
       const child = cell.firstElementChild as HTMLElement | null;
       if (!child) return;
       const rows = Math.max(1, Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
-      const prev = cell.style.gridRowEnd;
       cell.style.gridRowEnd = `span ${rows}`;
-      cell.dataset.rows = String(rows);
-      if (reason) {
-        console.log(`[masonry] ${reason}: h=${child.offsetHeight} rows=${rows} (was ${prev})`);
-      }
     }
     function relayoutAll() {
       const cells = grid?.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
@@ -719,7 +713,7 @@ function useGridLayout(grid: HTMLDivElement | null) {
       for (const e of entries) {
         const target = e.target as HTMLElement;
         const cell = target.closest(".card-grid-cell");
-        if (cell instanceof HTMLElement) relayoutCell(cell, "RO");
+        if (cell instanceof HTMLElement) relayoutCell(cell);
       }
     });
 
@@ -734,7 +728,7 @@ function useGridLayout(grid: HTMLDivElement | null) {
       if (!(card instanceof HTMLElement)) return;
       ro.observe(card);
       if (cardMOs.has(card)) return;
-      const cmo = new MutationObserver(() => relayoutCell(cell, "MO"));
+      const cmo = new MutationObserver(() => relayoutCell(cell));
       cmo.observe(card, {
         childList: true, subtree: true, characterData: true, attributes: true,
       });
@@ -745,7 +739,6 @@ function useGridLayout(grid: HTMLDivElement | null) {
       if (!grid) return;
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      console.log("[masonry] reattaching to", cells.length, "cells");
       cells.forEach(attachCardObservers);
       relayoutAll();
     }
@@ -764,7 +757,7 @@ function useGridLayout(grid: HTMLDivElement | null) {
       if (!(t instanceof Element)) return;
       const cell = t.closest(".card-grid-cell");
       if (cell instanceof HTMLElement) {
-        requestAnimationFrame(() => relayoutCell(cell, `input(${e.type})`));
+        requestAnimationFrame(() => relayoutCell(cell));
       }
     }
     grid.addEventListener("input", onInput, true);
