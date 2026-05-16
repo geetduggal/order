@@ -42,12 +42,10 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   const [adding, setAdding] = useState(false);
 
   function move(from: number, to: number) {
+    console.log("[list-drag] move", { from, to });
     if (from === to || from < 0 || to < 0) return;
     const next = items.slice();
     const [picked] = next.splice(from, 1);
-    // Inserting after splice shifts the target index by 1 when
-    // moving forward; account for it so "drop on card N" lands the
-    // card at visual slot N.
     const insertAt = from < to ? to - 1 : to;
     next.splice(insertAt, 0, picked);
     onChange(next);
@@ -171,14 +169,18 @@ function BaseCard({
       }
       draggable
       onDragStart={(e) => {
+        console.log("[list-drag] dragstart", item.ref);
         e.dataTransfer.effectAllowed = "move";
-        // Firefox refuses to start a drag without setData.
         e.dataTransfer.setData("text/plain", item.ref);
         onDragStart();
       }}
-      onDragEnd={onDragEnd}
+      onDragEnd={() => { console.log("[list-drag] dragend", item.ref); onDragEnd(); }}
       onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
-      onDrop={(e) => { e.preventDefault(); onDrop(); }}
+      onDrop={(e) => {
+        console.log("[list-drag] drop on", item.ref);
+        e.preventDefault();
+        onDrop();
+      }}
     >
       {image ? (
         <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
