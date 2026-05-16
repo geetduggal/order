@@ -176,7 +176,7 @@ function deriveTitle(body: string, fallback: string): string {
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   const dir = await documentDir();
-  const subdir = await join(dir, "order-cards");
+  const subdir = await join(dir, "Dropbox", "order", "cards");
   const out: LoadedNote[] = [];
   for (const { filename, seed } of SEEDS) {
     const path = await join(subdir, filename);
@@ -262,7 +262,7 @@ export function CardGrid() {
 
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
     const dir = await documentDir();
-    const subdir = await join(dir, "order-cards");
+    const subdir = await join(dir, "Dropbox", "order", "cards");
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
