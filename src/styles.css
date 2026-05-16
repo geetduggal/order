@@ -167,3 +167,148 @@ html, body, #root {
 .milkdown-host .ProseMirror h4 { font-size: 1.02em; }
 .milkdown-host .ProseMirror h5 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; }
 .milkdown-host .ProseMirror h6 { font-size: 0.9em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ---------- Top bar + view switch ---------- */
+.shell { width: 100%; min-height: 100vh; }
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px clamp(16px, 4vw, 40px);
+  background: linear-gradient(var(--bg) 88%, transparent);
+  font-size: 11px;
+}
+.view-switch {
+  display: inline-flex; gap: 2px; padding: 2px;
+  border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--bg-elev);
+}
+.view-switch button {
+  padding: 3px 12px; border-radius: 999px;
+  color: var(--ink-faint);
+  font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.view-switch button.on { background: var(--royal); color: #fff; }
+
+/* ---------- Week view ---------- */
+.week {
+  padding: 8px clamp(16px, 4vw, 40px) 80px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.week-head {
+  display: flex; align-items: center; gap: 16px;
+  margin: 4px 0 16px;
+}
+.week-nav { display: inline-flex; gap: 4px; align-items: center; }
+.week-nav-btn {
+  font-size: 14px; line-height: 1;
+  padding: 4px 10px; border-radius: 4px;
+  color: var(--ink-soft); background: var(--bg-elev);
+}
+.week-nav-btn:hover { background: var(--rule); color: var(--ink); }
+.week-nav-btn.ghost {
+  font-size: 10px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  background: transparent;
+}
+.week-label {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.week-time-axis {
+  border-right: 1px solid var(--rule);
+  background: var(--bg);
+}
+.week-corner { height: 38px; border-bottom: 1px solid var(--rule); }
+.week-hour-label {
+  height: 50px;
+  display: flex; align-items: flex-start; justify-content: flex-end;
+  padding: 2px 8px 0 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-ghost);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.week-day {
+  border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+.week-day-head {
+  height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 10.5px;
+}
+.week-day-head .week-dow {
+  color: var(--ink-faint);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  font-weight: 500;
+}
+.week-day-head .week-day-num {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.week-day-head.is-today .week-dow { color: var(--coral); }
+.week-day-head.is-today .week-day-num { color: var(--coral); }
+
+.week-day-body {
+  position: relative;
+  flex: 1;
+}
+.week-hour-row {
+  position: absolute;
+  left: 0; right: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  pointer-events: none;
+}
+
+.week-event {
+  position: absolute;
+  left: 3px; right: 3px;
+  background: var(--royal-soft);
+  border-left: 3px solid var(--royal);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--ink);
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+  z-index: 2;
+}
+.week-event:active { cursor: grabbing; }
+.week-event-dragging { opacity: 0.35; }
+.week-event-time {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+.week-event-title {
+  margin-top: 1px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

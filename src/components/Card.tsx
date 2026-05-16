@@ -1,17 +1,13 @@
-// One Card. Reads its file (seeding on first launch), strips frontmatter,
-// renders/edits the body through Milkdown Crepe, recombines on save.
-// If the loaded note has no h1 and no `date` in YAML, calendar-ready
-// metadata (Obsidian Full Calendar format) is injected and written back.
+// One Card. Reads its file, strips frontmatter, hands the body to Milkdown
+// Crepe, recombines on save. Frontmatter normalization (seed, auto-inject
+// calendar metadata) happens once in CardGrid before the Card ever
+// mounts. On save we re-read the file's frontmatter so any out-of-band
+// changes (e.g. a drag in the Week view) don't get clobbered.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MilkdownSurface } from "./MilkdownSurface";
-import {
-  joinFrontmatter,
-  splitFrontmatter,
-  suggestCalendarPatch,
-  type Frontmatter,
-} from "../lib/frontmatter";
+import { joinFrontmatter, splitFrontmatter } from "../lib/frontmatter";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -22,56 +18,21 @@ type LoadState =
 
 interface Props {
   path: string;
-  seed: string;
 }
 
-/** Result of loading + normalizing a note: the body to hand to the editor,
- *  the frontmatter to preserve for save round-trip. If the file was
- *  missing it gets seeded; if it was a non-h1 note without a `date`, the
- *  calendar metadata is injected and persisted before this resolves. */
-async function loadAndNormalize(
-  path: string,
-  seed: string,
-): Promise<{ body: string; frontmatter: Frontmatter }> {
-  let raw: string;
-  try {
-    raw = await invoke<string>("read_text", { path });
-  } catch {
-    await invoke("write_text", { path, content: seed });
-    raw = seed;
-  }
-
-  const split = splitFrontmatter(raw);
-  let frontmatter = split.frontmatter;
-  const body = split.body;
-
-  const patch = suggestCalendarPatch(frontmatter, body);
-  if (patch) {
-    frontmatter = { ...frontmatter, ...patch };
-    const next = joinFrontmatter(frontmatter, body);
-    try {
-      await invoke("write_text", { path, content: next });
-    } catch (err) {
-      console.warn("Failed to inject calendar metadata into", path, err);
-    }
-  }
-  return { body, frontmatter };
-}
-
-export function Card({ path, seed }: Props) {
+export function Card({ path }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
-  const frontmatterRef = useRef<Frontmatter>({});
   const pendingBody = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
-    loadAndNormalize(path, seed)
-      .then(({ body, frontmatter }) => {
+    invoke<string>("read_text", { path })
+      .then((raw) => {
         if (cancelled) return;
-        frontmatterRef.current = frontmatter;
+        const { body } = splitFrontmatter(raw);
         setState({ kind: "ready", body });
       })
       .catch((err: unknown) => {
@@ -82,7 +43,7 @@ export function Card({ path, seed }: Props) {
         });
       });
     return () => { cancelled = true; };
-  }, [path, seed]);
+  }, [path]);
 
   const flushNow = useCallback(async (): Promise<void> => {
     if (saveTimer.current) {
@@ -95,7 +56,11 @@ export function Card({ path, seed }: Props) {
     inflight.current += 1;
     setSaving(true);
     try {
-      const content = joinFrontmatter(frontmatterRef.current, body);
+      // Re-read latest frontmatter so out-of-band edits (Week view drag)
+      // are preserved when we write our body.
+      const current = await invoke<string>("read_text", { path });
+      const { frontmatter } = splitFrontmatter(current);
+      const content = joinFrontmatter(frontmatter, body);
       await invoke("write_text", { path, content });
     } catch (err) {
       console.error("write_text failed:", err);

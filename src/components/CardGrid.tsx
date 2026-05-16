@@ -1,15 +1,21 @@
-// Masonry-ish layout: CSS Grid with measured row-spans so each card's height
-// follows its content but cards stay in source order (left-to-right,
-// top-to-bottom). A ResizeObserver per card re-measures when Milkdown
-// content grows or shrinks; a window resize listener handles viewport
-// changes (column count + per-column width).
+// Top-level shell. Loads all seed notes once (creating files / injecting
+// calendar metadata as needed), then switches between the Stream masonry
+// and the Week calendar. Notes' metadata is the single source of truth
+// the Week view reads; individual Cards re-read their files for body
+// edits so the two views can mutate safely in parallel.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
+import { WeekView, type NoteMeta } from "./WeekView";
+import {
+  joinFrontmatter,
+  splitFrontmatter,
+  suggestCalendarPatch,
+  type Frontmatter,
+} from "../lib/frontmatter";
 
-// Hardcoded seed set — varied lengths and content types so the masonry
-// algorithm gets stressed. Files land in ~/Documents/order-cards/.
 const SEEDS: { filename: string; seed: string }[] = [
   {
     filename: "01-quick-log.md",
@@ -109,53 +115,138 @@ That's the whole product.`,
 
 const GRID_ROW_PX = 8;
 
-interface ResolvedSeed { filename: string; path: string; seed: string }
+type View = "stream" | "week";
 
-async function resolveSeedPaths(): Promise<ResolvedSeed[]> {
+interface LoadedNote {
+  path: string;
+  filename: string;
+  frontmatter: Frontmatter;
+  /** Best-guess title for the calendar event chip: first h1 stripped of `#`,
+   *  else first non-empty line truncated. */
+  title: string;
+}
+
+function deriveTitle(body: string, fallback: string): string {
+  const lines = body.split(/\r?\n/);
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("#")) return t.replace(/^#+\s*/, "");
+    return t.length > 60 ? t.slice(0, 57) + "…" : t;
+  }
+  return fallback;
+}
+
+async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   const dir = await documentDir();
   const subdir = await join(dir, "order-cards");
-  return Promise.all(SEEDS.map(async ({ filename, seed }) => ({
-    filename,
-    seed,
-    path: await join(subdir, filename),
-  })));
+  const out: LoadedNote[] = [];
+  for (const { filename, seed } of SEEDS) {
+    const path = await join(subdir, filename);
+    let raw: string;
+    try {
+      raw = await invoke<string>("read_text", { path });
+    } catch {
+      await invoke("write_text", { path, content: seed });
+      raw = seed;
+    }
+    let { frontmatter, body } = splitFrontmatter(raw);
+    const patch = suggestCalendarPatch(frontmatter, body);
+    if (patch) {
+      frontmatter = { ...frontmatter, ...patch };
+      const next = joinFrontmatter(frontmatter, body);
+      try {
+        await invoke("write_text", { path, content: next });
+      } catch (err) {
+        console.warn("Failed to inject calendar metadata for", path, err);
+      }
+    }
+    out.push({
+      path,
+      filename,
+      frontmatter,
+      title: deriveTitle(body, filename.replace(/\.md$/, "")),
+    });
+  }
+  return out;
 }
 
 export function CardGrid() {
+  const [notes, setNotes] = useState<LoadedNote[] | null>(null);
+  const [view, setView] = useState<View>("stream");
   const gridRef = useRef<HTMLDivElement>(null);
-  const [resolved, setResolved] = useState<ResolvedSeed[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    resolveSeedPaths()
-      .then((seeds) => { if (!cancelled) setResolved(seeds); })
+    loadAndNormalizeAll()
+      .then((loaded) => { if (!cancelled) setNotes(loaded); })
       .catch((err: unknown) => {
-        console.error("Could not resolve card paths:", err);
+        console.error("Could not load cards:", err);
       });
     return () => { cancelled = true; };
   }, []);
 
-  useGridLayout(gridRef, resolved.length);
+  useGridLayout(gridRef, view === "stream" ? notes?.length ?? 0 : 0);
 
-  if (resolved.length === 0) {
+  const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
+    const raw = await invoke<string>("read_text", { path });
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const next = { ...frontmatter, ...patch };
+    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
+  }, []);
+
+  const onMoveEvent = useCallback(
+    (path: string, patch: { date: string; startTime: string }) =>
+      updateNoteFrontmatter(path, patch),
+    [updateNoteFrontmatter],
+  );
+
+  if (notes === null) {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
 
+  const weekNotes: NoteMeta[] = notes.map((n) => ({
+    path: n.path,
+    filename: n.filename,
+    title: n.title,
+    frontmatter: n.frontmatter,
+  }));
+
   return (
-    <div className="card-grid" ref={gridRef}>
-      {resolved.map((c) => (
-        <div className="card-grid-cell" key={c.path}>
-          <Card path={c.path} seed={c.seed} />
+    <div className="shell">
+      <header className="topbar">
+        <div className="view-switch" role="tablist">
+          <button
+            className={view === "stream" ? "on" : ""}
+            onClick={() => setView("stream")}
+          >
+            Stream
+          </button>
+          <button
+            className={view === "week" ? "on" : ""}
+            onClick={() => setView("week")}
+          >
+            Week
+          </button>
         </div>
-      ))}
+      </header>
+
+      {view === "stream" ? (
+        <div className="card-grid" ref={gridRef}>
+          {notes.map((n) => (
+            <div className="card-grid-cell" key={n.path}>
+              <Card path={n.path} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <WeekView notes={weekNotes} onMoveEvent={onMoveEvent} />
+      )}
     </div>
   );
 }
 
-// Layout effect: measure each .card-grid-cell, set grid-row span based on
-// its rendered height. Re-runs on window resize and on per-cell content
-// changes via ResizeObserver. Source order is preserved by sticking with
-// `grid-auto-flow: row dense` and not reordering the React children.
 function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>, count: number) {
   useEffect(() => {
     const grid = gridRef.current;
