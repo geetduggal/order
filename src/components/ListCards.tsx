@@ -1,7 +1,8 @@
 // Interactive card grid for `type: list` Notable Folders.
-// Drag-and-drop reorder between cards, hover-× to delete, inline
-// editable meta, "+ New" tile at the end. All edits flow up through
-// onChange so the Card owner can debounce a save.
+// Pointer-based reorder (HTML5 drag-drop is intercepted by Tauri's
+// native drag layer and never fires drop), hover-× to delete,
+// inline editable meta, "+ New" tile at the end. All edits flow up
+// through onChange so the Card owner can debounce a save.
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
@@ -36,34 +37,27 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
+const DRAG_THRESHOLD_PX = 5;
+
 export function ListCards({ items, vaultNotes, onChange }: Props) {
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let count = 0;
-    function onWinOver(e: DragEvent) {
-      if (count++ > 3) return;
-      const t = e.target as HTMLElement | null;
-      console.log("[list-drag] WINDOW dragover", t?.tagName, t?.className);
-    }
-    function onWinDrop(e: DragEvent) {
-      const t = e.target as HTMLElement | null;
-      console.log("[list-drag] WINDOW drop", t?.tagName, t?.className);
-    }
-    window.addEventListener("dragover", onWinOver, true);
-    window.addEventListener("drop", onWinDrop, true);
-    return () => {
-      window.removeEventListener("dragover", onWinOver, true);
-      window.removeEventListener("drop", onWinDrop, true);
-    };
-  }, []);
+  // Window-level pointer tracking. Refs hold the live state so the
+  // listeners (registered once) always see the current drag.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const dragRef = useRef<{
+    index: number; startX: number; startY: number; started: boolean;
+  } | null>(null);
+  const dropAtRef = useRef<number | null>(null);
+  dropAtRef.current = dropAt;
 
   function move(from: number, to: number) {
-    console.log("[list-drag] move", { from, to });
     if (from === to || from < 0 || to < 0) return;
-    const next = items.slice();
+    const next = itemsRef.current.slice();
     const [picked] = next.splice(from, 1);
     const insertAt = from < to ? to - 1 : to;
     next.splice(insertAt, 0, picked);
@@ -89,6 +83,73 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
     onChange(next);
   }
 
+  function onPointerDown(e: React.PointerEvent, index: number) {
+    // Don't start a drag if the user is clicking an editable / actionable
+    // element inside the card (delete button, meta input/button, etc.).
+    const t = e.target as HTMLElement;
+    if (t.closest("input, button, .basecard-meta")) return;
+    if (e.button !== 0) return;
+    dragRef.current = {
+      index, startX: e.clientX, startY: e.clientY, started: false,
+    };
+  }
+
+  useEffect(() => {
+    function findCardIndex(x: number, y: number): number | null {
+      // elementFromPoint returns the topmost element at the viewport
+      // coords; walk up to find a basecard with our index dataset.
+      const el = document.elementFromPoint(x, y);
+      const card = (el as HTMLElement | null)?.closest("[data-list-card-index]");
+      if (!card) return null;
+      const raw = (card as HTMLElement).dataset.listCardIndex;
+      const idx = raw ? parseInt(raw, 10) : NaN;
+      return Number.isFinite(idx) ? idx : null;
+    }
+
+    function onMove(e: PointerEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      if (!d.started) {
+        const moved = Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY);
+        if (moved < DRAG_THRESHOLD_PX) return;
+        d.started = true;
+        setDragFrom(d.index);
+      }
+      const idx = findCardIndex(e.clientX, e.clientY);
+      setDropAt(idx);
+    }
+
+    function onUp() {
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (d?.started) {
+        const to = dropAtRef.current;
+        if (to !== null && to !== d.index) move(d.index, to);
+      }
+      setDragFrom(null);
+      setDropAt(null);
+    }
+
+    function onCancel() {
+      dragRef.current = null;
+      setDragFrom(null);
+      setDropAt(null);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // onChange identity may change per render but move closes over
+    // refs, so the listeners can stay attached for the component's
+    // lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (items.length === 0 && !adding) {
     return (
       <div className="basecard-grid">
@@ -98,7 +159,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   }
 
   return (
-    <div className="basecard-grid" onDragLeave={() => setDropAt(null)}>
+    <div ref={gridRef} className="basecard-grid">
       {items.map((item, i) => {
         const note = resolve(item.ref, vaultNotes);
         const image = note && typeof note.frontmatter.image === "string"
@@ -111,6 +172,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
         return (
           <BaseCard
             key={`${item.ref}-${i}`}
+            index={i}
             item={item}
             Icon={Icon}
             image={image}
@@ -118,14 +180,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             dropTarget={dropTarget}
-            onDragStart={() => setDragFrom(i)}
-            onDragEnd={() => { setDragFrom(null); setDropAt(null); }}
-            onDragOver={() => setDropAt(i)}
-            onDrop={() => {
-              if (dragFrom !== null) move(dragFrom, i);
-              setDragFrom(null);
-              setDropAt(null);
-            }}
+            onPointerDown={onPointerDown}
             onDelete={() => remove(i)}
             onMetaChange={(m) => updateMeta(i, m)}
           />
@@ -142,6 +197,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
 }
 
 interface BaseCardProps {
+  index: number;
   item: ListItem;
   Icon: ReturnType<typeof folderIcon>;
   image?: string;
@@ -149,19 +205,15 @@ interface BaseCardProps {
   metaSuggestion: string;
   dragging: boolean;
   dropTarget: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDragOver: () => void;
-  onDrop: () => void;
+  onPointerDown: (e: React.PointerEvent, index: number) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
 }
 
 function BaseCard({
-  item, Icon, image, tintCls, metaSuggestion,
+  index, item, Icon, image, tintCls, metaSuggestion,
   dragging, dropTarget,
-  onDragStart, onDragEnd, onDragOver, onDrop,
-  onDelete, onMetaChange,
+  onPointerDown, onDelete, onMetaChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [draft, setDraft] = useState("");
@@ -186,31 +238,8 @@ function BaseCard({
         + (dragging ? " is-dragging" : "")
         + (dropTarget ? " is-drop-target" : "")
       }
-      draggable
-      onDragStart={(e) => {
-        console.log("[list-drag] dragstart", item.ref);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", item.ref);
-        onDragStart();
-      }}
-      onDragEnd={() => { console.log("[list-drag] dragend", item.ref); onDragEnd(); }}
-      onDragEnter={(e) => {
-        console.log("[list-drag] dragenter", item.ref, "target:", (e.target as HTMLElement).className);
-      }}
-      onDragOver={(e) => {
-        if (!(window as unknown as { __doLogged?: boolean }).__doLogged) {
-          console.log("[list-drag] dragover", item.ref, "target:", (e.target as HTMLElement).className);
-          (window as unknown as { __doLogged?: boolean }).__doLogged = true;
-          setTimeout(() => { (window as unknown as { __doLogged?: boolean }).__doLogged = false; }, 200);
-        }
-        e.preventDefault();
-        onDragOver();
-      }}
-      onDrop={(e) => {
-        console.log("[list-drag] drop on", item.ref);
-        e.preventDefault();
-        onDrop();
-      }}
+      data-list-card-index={index}
+      onPointerDown={(e) => onPointerDown(e, index)}
     >
       {image ? (
         <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
@@ -223,6 +252,7 @@ function BaseCard({
         type="button"
         className="basecard-delete"
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        onPointerDown={(e) => e.stopPropagation()}
         title="Remove from list"
         aria-label="Remove from list"
       >
@@ -242,13 +272,13 @@ function BaseCard({
               if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
               if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
             }}
-            onDragStart={(e) => e.preventDefault()}
           />
         ) : (
           <button
             type="button"
             className={"basecard-meta" + (metaSuggestion ? "" : " is-empty")}
             onClick={() => setEditingMeta(true)}
+            onPointerDown={(e) => e.stopPropagation()}
             title="Click to edit"
           >
             {metaSuggestion || "Add meta…"}
