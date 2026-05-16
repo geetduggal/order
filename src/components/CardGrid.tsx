@@ -300,6 +300,27 @@ export function CardGrid() {
 
   useGridLayout(gridRef);
 
+  // Safety-net relayout for async content (Milkdown init, font load,
+  // late image fetch). ResizeObserver SHOULD catch these, but in
+  // practice it misses cells that grow during the first paint frames.
+  // Fire a few relayouts after notes change.
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || !notes) return;
+    const timeouts = [50, 200, 600, 1500].map((ms) =>
+      setTimeout(() => {
+        const styles = getComputedStyle(grid);
+        const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
+        grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell").forEach((cell) => {
+          cell.style.gridRowEnd = "";
+          const rows = Math.max(1, Math.ceil((cell.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
+          cell.style.gridRowEnd = `span ${rows}`;
+        });
+      }, ms),
+    );
+    return () => timeouts.forEach(clearTimeout);
+  }, [notes, folderFilter, view]);
+
   const handleEventClick = useCallback((path: string) => {
     setView("stream");
     setScrollTargetPath(path);
