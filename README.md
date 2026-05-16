@@ -6,6 +6,8 @@ A specialized note app. One screen for thinking, browsing, and (eventually) publ
 Local markdown files, YAML frontmatter as the source of truth, Obsidian-compatible vault.
 Built with Tauri v2 — same codebase ships desktop today and iOS next.
 
+![Stream view at wide width — three columns of cards, hairline dividers, no chrome](img/stream-wide.png)
+
 ---
 
 ## Principles
@@ -109,6 +111,8 @@ loaded `notes[]`, the current view, the folder filter set, and the right-sidebar
 open state. Cards manage their own load + debounced save lifecycle and call
 parents back via props when their path / title / frontmatter changes.
 
+![Stream + right sidebar — list folder card grid on the left, stream cards in the middle, drilled Areas grid on the right](img/stream-with-sidebar.png)
+
 ```
 CardGrid                 # top: loads notes, owns view + filter state
 ├── Sidebar              # drill: Areas → Categories → Notable Folders
@@ -126,7 +130,11 @@ A Notable Folder Main Document with `type: list` in its YAML is rendered as a
 basecard grid below the prose editor. The bullet list of wikilinks
 (`- [[Book Name]] · author · ★★★★`) is the source of truth on disk; on load
 we split it out into structured `ListItem[]` state so the editor only sees the
-prose, and on save we serialize it back. The grid supports:
+prose, and on save we serialize it back.
+
+![List folder — Books rendered as a basecard grid below the editor](img/list-folder-grid.png)
+
+The grid supports:
 
 - **Drag to reorder**, with FLIP-animated reflow. Pointer events end-to-end —
   HTML5 drag-drop is intercepted by Tauri's webview layer so the standard `drop`
