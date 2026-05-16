@@ -90,7 +90,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   min-width: 0;
   transition: box-shadow 500ms var(--ease-out);
   animation: order-card-mount 320ms var(--ease-out) both;
-  will-change: opacity, transform;
+  /* Deliberately NO `will-change` here — it creates a containing
+     block for fixed-position descendants, which would trap
+     .order-card.is-fullscreen inside the cell instead of the viewport. */
 }
 @keyframes order-card-mount {
   from { opacity: 0; transform: translateY(16px) scale(0.94); }
@@ -99,7 +101,6 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card.is-exiting {
   animation: order-card-exit 240ms var(--ease-out) forwards !important;
   pointer-events: none;
-  will-change: opacity, transform;
 }
 @keyframes order-card-exit {
   from { opacity: 1; transform: none; }
