@@ -283,6 +283,20 @@ export function CardGrid() {
 
   const taxonomy = useTaxonomy();
 
+  // Popover state for the new-note picker (shows when multiple
+  // folders are selected and the user clicks the + FAB).
+  const [creatorOpen, setCreatorOpen] = useState(false);
+  useEffect(() => {
+    if (!creatorOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".new-note-fab, .new-note-picker")) setCreatorOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [creatorOpen]);
+
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
       const next = !prev;
@@ -532,16 +546,52 @@ export function CardGrid() {
       <button
         type="button"
         className="new-note-fab"
-        onClick={() => { void createNote({
-          date: isoDate(),
-          startTime: isoTime(),
-          allDay: false,
-        }); }}
+        onClick={() => {
+          const sel = [...folderFilter];
+          // No filter active → plain new note. Exactly one folder
+          // selected → auto-assign it. 2+ selected → open the
+          // lightweight picker.
+          if (sel.length === 1) {
+            void createNote({
+              date: isoDate(), startTime: isoTime(), allDay: false,
+              folder: `[[${sel[0]}]]`,
+            });
+          } else if (sel.length === 0) {
+            void createNote({ date: isoDate(), startTime: isoTime(), allDay: false });
+          } else {
+            setCreatorOpen((prev) => !prev);
+          }
+        }}
         title="New note"
         aria-label="New note"
       >
         +
       </button>
+
+      {creatorOpen && (
+        <div className="new-note-picker" role="menu">
+          {[...folderFilter].map((name) => {
+            const color = folderColor(name);
+            return (
+              <button
+                type="button"
+                key={name}
+                className="new-note-picker-item"
+                onClick={() => {
+                  setCreatorOpen(false);
+                  void createNote({
+                    date: isoDate(), startTime: isoTime(), allDay: false,
+                    folder: `[[${name}]]`,
+                  });
+                }}
+              >
+                <span className="new-note-picker-swatch" style={{ background: color }} />
+                <span>{name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <button
         type="button"

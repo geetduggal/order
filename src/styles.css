@@ -1329,3 +1329,42 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--coral);
 }
 .new-note-fab:active { transform: scale(0.92); }
+
+/* New-note picker — appears below the FAB when more than one folder
+   is selected; user picks which selected folder the new note lands in. */
+.new-note-picker {
+  position: fixed;
+  top: 40px;
+  left: 10px;
+  z-index: 60;
+  min-width: 180px;
+  max-width: 260px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: order-card-mount 140ms var(--ease-out) both;
+}
+.new-note-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-family: var(--sans);
+  font-size: 12px;
+  text-align: left;
+  color: var(--ink);
+  transition: background-color 0.12s var(--ease-out);
+}
+.new-note-picker-item:hover { background: var(--bg-elev); }
+.new-note-picker-swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
