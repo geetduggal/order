@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:webview:allow-set-webview-zoom",
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
