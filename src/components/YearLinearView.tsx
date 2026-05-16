@@ -186,12 +186,32 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   }
-  async function onCellDrop(e: React.DragEvent<HTMLDivElement>, dateStr: string) {
+  async function onCellDrop(e: React.DragEvent<HTMLDivElement>, dropDateStr: string) {
     e.preventDefault();
     e.stopPropagation();
     const path = e.dataTransfer.getData("text/plain");
     if (!path) return;
-    await onMoveEvent(path, { date: dateStr });
+    const note = notes.find((n) => n.path === path);
+    if (!note) return;
+
+    const original = typeof note.frontmatter.date === "string"
+      ? parseIsoDate(note.frontmatter.date) : null;
+    const drop = parseIsoDate(dropDateStr);
+    if (!original || !drop) return;
+
+    // Delta in whole days — multi-day events shift BOTH date and
+    // endDate by the same amount so the span preserves duration.
+    const deltaMs = drop.getTime() - original.getTime();
+    const patch: Frontmatter = { date: dropDateStr };
+
+    const endStr = note.frontmatter.endDate;
+    if (typeof endStr === "string") {
+      const origEnd = parseIsoDate(endStr);
+      if (origEnd) {
+        patch.endDate = isoDate(new Date(origEnd.getTime() + deltaMs));
+      }
+    }
+    await onMoveEvent(path, patch);
   }
 
   function onCellMouseDown(e: React.MouseEvent<HTMLDivElement>, date: Date) {
