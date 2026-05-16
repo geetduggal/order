@@ -85,7 +85,6 @@ html, body, #root {
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   padding: clamp(16px, 3vw, 32px) clamp(18px, 3.5vw, 40px) 14px;
 }
 .order-card.is-loading {
@@ -253,6 +252,11 @@ html, body, #root {
   color: var(--ink);
   min-height: 1.5em;
 }
+/* Kill the default heading/paragraph top margin on the FIRST element
+   in the editor — otherwise the card has card-padding PLUS the
+   element's own margin-top stacking on top of each other, leaving an
+   awkward gap above the first heading. */
+.milkdown-host .ProseMirror > :first-child { margin-top: 0; }
 
 /* h1 stays serif (title voice) with a hairline divider beneath. */
 .milkdown-host .ProseMirror h1 {
@@ -286,15 +290,15 @@ html, body, #root {
   width: 100%;
   min-height: 100vh;
 }
-.shell.sidebar-open { grid-template-columns: 1fr 220px; }
+.shell.sidebar-open { grid-template-columns: 1fr 280px; }
 
 .pane-main { min-width: 0; overflow-x: hidden; }
 
 .pane-right {
-  overflow: hidden;
-  background: var(--bg-elev);
+  overflow: hidden auto;
+  background: var(--bg);
   border-left: 1px solid var(--rule);
-  padding: 48px 18px 24px;
+  padding: 48px 18px 40px;
   font-family: var(--sans);
 }
 
@@ -318,28 +322,194 @@ html, body, #root {
   background: var(--bg-elev);
 }
 
-/* ---------- Sidebar internals ---------- */
-.sb-section { margin-bottom: 18px; }
+/* ---------- Sidebar internals (per mockup) ---------- */
+.sb-section { margin-bottom: 20px; }
 .sb-title {
   margin: 0 0 8px;
   font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--royal);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--royal-soft);
+}
+.sb-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+  border-bottom: 1px solid var(--royal-soft);
+  padding-bottom: 6px;
+}
+.sb-title-row .sb-title {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.sb-title-right {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-ghost);
+}
+.sb-add {
+  font-size: 13px; line-height: 1;
+  color: var(--ink-ghost);
+  padding: 0 4px; border-radius: 3px;
+}
+.sb-add:hover { color: var(--coral); background: var(--coral-soft); }
+.sb-count { letter-spacing: 0; }
+.sb-empty {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+.sb-empty code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--bg-elev);
+  padding: 1px 5px; border-radius: 3px;
+}
+
+/* View pill: matches mockup view-switch, but laid out compactly in
+   the sidebar — 4 small pill buttons in a single row. */
+.pane-right .view-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--bg-elev);
+}
+.pane-right .view-switch button {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint);
-}
-.sb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.sb-item {
-  width: 100%;
-  text-align: left;
-  padding: 5px 8px;
-  border-radius: 3px;
-  font-size: 12px;
-  color: var(--ink-soft);
+  background: transparent;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
-.sb-item:hover { background: var(--bg); color: var(--ink); }
-.sb-item.active { background: var(--royal-soft); color: var(--royal); font-weight: 500; }
+.pane-right .view-switch button:hover { color: var(--ink); }
+.pane-right .view-switch button.on { background: var(--royal); color: #fff; }
+
+/* 10-box Johnny Decimal grid */
+.box-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.box {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--bg-elev);
+  display: flex;
+  align-items: flex-end;
+  transition: border-color 0.12s ease;
+}
+.box.no-image {
+  background: linear-gradient(155deg, var(--royal-soft) 0%, #fafbff 70%, #ffffff 100%);
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+.box.no-image:hover { border-color: var(--royal); }
+.box.no-image.coral {
+  background: linear-gradient(155deg, var(--coral-soft) 0%, #fffaf7 70%, #ffffff 100%);
+}
+.box.no-image.coral:hover { border-color: var(--coral); }
+.box.no-image .box-label {
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: center;
+  padding: 0 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+.box.checked { border-color: var(--royal); }
+.box.coral.checked { border-color: var(--coral); }
+
+.box .box-check {
+  position: absolute;
+  top: 5px; left: 5px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  border: 1px solid var(--ink-ghost);
+  background: rgba(255,255,255,0.85);
+  color: transparent;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+.box:hover .box-check,
+.box.checked .box-check { opacity: 1; }
+.box.checked .box-check {
+  background: var(--royal); border-color: var(--royal); color: #fff;
+}
+.box.coral.checked .box-check {
+  background: var(--coral); border-color: var(--coral);
+}
+.box .box-remove {
+  position: absolute;
+  top: 4px; right: 4px;
+  font-size: 12px; line-height: 1;
+  color: var(--ink-ghost);
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 3px;
+  width: 15px; height: 15px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  z-index: 2;
+}
+.box:hover .box-remove { opacity: 1; }
+.box .box-remove:hover { color: var(--coral); background: var(--coral-soft); }
+
+.box.empty {
+  background: transparent;
+  border: 1px dashed #d6d4cf;
+  color: var(--ink-ghost);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 200;
+}
+.box.empty:hover { border-color: var(--ink-soft); color: var(--ink-soft); }
+
+.box.draft {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px;
+  background: var(--bg-elev);
+}
+.box-draft-input {
+  width: 100%;
+  font-size: 11px;
+  font-family: var(--sans);
+  text-align: center;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+}
 
 /* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
 .fc-shell {
@@ -658,11 +828,16 @@ html, body, #root {
   font-size: 15px;
   color: var(--ink-ghost);
   background: transparent;
+  border: none;
+  border-bottom: none;
+  outline: none;
+  box-shadow: none;
   text-align: left;
   cursor: text;
   transition: color 0.15s ease;
 }
 .new-note-hint:hover { color: var(--ink-faint); }
+.new-note-hint:focus { outline: none; }
 .new-note-cursor {
   display: inline-block;
   font-family: var(--serif);
