@@ -19,6 +19,42 @@ import {
   type Frontmatter,
 } from "../lib/frontmatter";
 
+/** Filename for a new event, in the Obsidian Full Calendar convention:
+ *  `YYYY-MM-DD Title.md` (date prefix + title). Unsafe filesystem
+ *  characters in the title get replaced with `-`. */
+function basenameForEvent(date: string | undefined, title: string): string {
+  const datePart = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoDate();
+  const safeTitle = (title || "Untitled").replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
+  return `${datePart} ${safeTitle}.md`;
+}
+
+/** Try writing the seed at `<dir>/<basename>`; if a file already exists
+ *  at that name, append ` 2`, ` 3`, … to the stem until we find an
+ *  unused slot. Returns the resolved path. */
+async function uniqueWrite(dir: string, basename: string, content: string): Promise<string> {
+  const dot = basename.lastIndexOf(".");
+  const stem = dot > 0 ? basename.slice(0, dot) : basename;
+  const ext = dot > 0 ? basename.slice(dot) : "";
+  let candidate = basename;
+  let n = 2;
+  // Cap the retry loop so a runaway directory full of "Untitled"
+  // siblings can't spin forever — 999 collisions is already absurd.
+  for (let i = 0; i < 999; i++) {
+    const path = await join(dir, candidate);
+    try {
+      await invoke<string>("read_text", { path });
+      // File exists — bump and retry.
+      candidate = `${stem} ${n}${ext}`;
+      n++;
+    } catch {
+      // Read failed → assume the file doesn't exist; safe to write.
+      await invoke("write_text", { path, content });
+      return path;
+    }
+  }
+  throw new Error(`Couldn't find a unique name for ${basename}`);
+}
+
 const SEEDS: { filename: string; seed: string }[] = [
   {
     filename: "01-quick-log.md",
@@ -221,27 +257,22 @@ export function CardGrid() {
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
     const dir = await documentDir();
     const subdir = await join(dir, "order-cards");
-    // Use ms-resolution timestamp for the filename so simultaneous
-    // creates from different views don't collide on the same path.
-    const stamp = Date.now();
-    const filename = `untitled-${stamp}.md`;
-    const path = await join(subdir, filename);
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
     const content = joinFrontmatter(frontmatter, "");
-    await invoke("write_text", { path, content });
+    const title = typeof patch.title === "string" ? patch.title : "Untitled";
+    const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
+    const basename = basenameForEvent(date, title);
+    const path = await uniqueWrite(subdir, basename, content);
+    const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      {
-        path,
-        filename,
-        frontmatter,
-        title: filename.replace(/\.md$/, ""),
-      },
+      { path, filename, frontmatter, title: filename.replace(/\.md$/, "") },
     ]);
-    setView("stream");
-    setScrollTargetPath(path);
+    // Stay in whichever view triggered the create — calendar views
+    // re-render with the new event at its date/time; Stream sorts it
+    // into place by date+startTime.
   }, []);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
@@ -262,6 +293,16 @@ export function CardGrid() {
   if (notes === null) {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
+
+  // Stream view sorts chronologically (newest first). The combined
+  // sort key (date + startTime) is a string by design — both fields
+  // are ISO-formatted so lexical compare matches calendar order.
+  const sortKey = (n: LoadedNote): string => {
+    const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+    const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
+    return `${d} ${t}`;
+  };
+  const sortedNotes = [...notes].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
 
   const calendarNotes: NoteMeta[] = notes.map((n) => ({
     path: n.path,
@@ -316,7 +357,7 @@ export function CardGrid() {
             </button>
           </div>
           <div className="card-grid" ref={gridRef}>
-            {notes.map((n) => (
+            {sortedNotes.map((n) => (
               <div className="card-grid-cell" data-path={n.path} key={n.path}>
                 <Card path={n.path} />
               </div>
