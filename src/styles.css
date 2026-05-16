@@ -31,7 +31,7 @@ html, body, #root {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -112,7 +112,7 @@ html, body, #root {
   margin-top: 14px;
   padding-top: 8px;
   border-top: 1px solid var(--rule);
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--ink-faint);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -145,7 +145,7 @@ html, body, #root {
   outline: none;
   padding: 0;
   font-family: var(--serif);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--ink);
   min-height: 1.5em;
