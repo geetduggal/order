@@ -156,9 +156,18 @@ input, textarea, select { outline: none; box-shadow: none; }
   padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
   overflow: auto;
   max-width: none;
-  /* No entrance animation — earlier attempts at fade/scale broke
-     fullscreen in subtle ways. Plain instant toggle until we can
-     verify the basic transition is solid. */
+  /* "Settle into place" entrance: starts slightly oversized and
+     low-opacity, eases down to its natural size. Different feel
+     from a scale-UP — reads like the card is zooming IN at you.
+     Safe to put transform on the card itself; the prior breakage
+     was caused by a transform on the .card-grid-cell ANCESTOR,
+     which had captured this fixed card inside its containing block. */
+  animation: order-fullscreen-settle 240ms var(--ease-out);
+  transform-origin: center top;
+}
+@keyframes order-fullscreen-settle {
+  from { opacity: 0; transform: scale(1.025); }
+  to   { opacity: 1; transform: scale(1); }
 }
 /* Respect the user's OS-level "reduce motion" preference but only
    reduce duration, not eliminate the animation entirely — they're
