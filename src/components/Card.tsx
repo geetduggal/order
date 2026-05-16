@@ -63,11 +63,18 @@ interface Props {
   path: string;
   onRenamed?: (newPath: string) => void;
   onTitleChanged?: (newTitle: string) => void;
+  /** Called when the user confirms deletion of this card. Card flushes
+   *  pending saves first so we don't recreate the file after delete. */
+  onDelete?: (path: string) => Promise<void>;
 }
 
-export function Card({ path: initialPath, onRenamed, onTitleChanged }: Props) {
+const DELETE_CONFIRM_TIMEOUT_MS = 4000;
+
+export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
   const pathRef = useRef(initialPath);
@@ -174,6 +181,33 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged }: Props) {
 
   useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);
 
+  const startDeleteConfirm = useCallback(() => {
+    setConfirmingDelete(true);
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setConfirmingDelete(false), DELETE_CONFIRM_TIMEOUT_MS);
+  }, []);
+  const cancelDeleteConfirm = useCallback(() => {
+    setConfirmingDelete(false);
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = null;
+  }, []);
+  const performDelete = useCallback(async () => {
+    if (confirmTimer.current) { clearTimeout(confirmTimer.current); confirmTimer.current = null; }
+    // Cancel any pending save so we don't write a file we're about to
+    // delete (which would otherwise just recreate it on disk).
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    pendingBody.current = null;
+    try {
+      await onDelete?.(pathRef.current);
+    } catch (err) {
+      console.error("delete failed:", err);
+      setConfirmingDelete(false);
+    }
+  }, [onDelete]);
+  useEffect(() => () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+  }, []);
+
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
   if (state.kind === "loading") {
@@ -198,6 +232,36 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged }: Props) {
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
         <span className="order-card-path" title={pathRef.current}>{filename}</span>
+        {confirmingDelete ? (
+          <span className="order-card-delete-confirm">
+            <button
+              type="button"
+              className="confirm-btn"
+              onClick={() => { void performDelete(); }}
+            >
+              delete?
+            </button>
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={cancelDeleteConfirm}
+              title="Cancel"
+              aria-label="Cancel delete"
+            >
+              ×
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="order-card-delete"
+            onClick={startDeleteConfirm}
+            title="Delete this note"
+            aria-label="Delete note"
+          >
+            ×
+          </button>
+        )}
       </div>
     </article>
   );

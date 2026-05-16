@@ -291,6 +291,16 @@ export function CardGrid() {
     );
   }, []);
 
+  const handleCardDelete = useCallback(async (id: string, path: string) => {
+    try {
+      await invoke("delete_file", { path });
+    } catch (err) {
+      console.error("delete_file failed:", err);
+      throw err;
+    }
+    setNotes((prev) => prev?.filter((n) => n.id !== id) ?? null);
+  }, []);
+
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
     const { frontmatter, body } = splitFrontmatter(raw);
@@ -379,6 +389,7 @@ export function CardGrid() {
                   path={n.path}
                   onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                   onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+                  onDelete={(path) => handleCardDelete(n.id, path)}
                 />
               </div>
             ))}

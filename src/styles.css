@@ -129,7 +129,57 @@ html, body, #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 60%;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Delete affordance: subtle `×` that hides until you hover the card,
+   then expands into an in-place "delete?" confirm bar. */
+.order-card-delete {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-ghost);
+  padding: 0 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.12s ease, background-color 0.12s ease;
+  flex-shrink: 0;
+}
+.order-card:hover .order-card-delete { opacity: 0.55; }
+.order-card-delete:hover {
+  opacity: 1 !important;
+  color: var(--coral);
+  background: var(--coral-soft);
+}
+
+.order-card-delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.order-card-delete-confirm .confirm-btn {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--coral);
+  padding: 3px 8px;
+  border-radius: 3px;
+  transition: background-color 0.12s ease;
+}
+.order-card-delete-confirm .confirm-btn:hover { background: var(--coral-dark, #e5673a); }
+.order-card-delete-confirm .cancel-btn {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-faint);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.order-card-delete-confirm .cancel-btn:hover {
+  color: var(--ink);
+  background: var(--bg-elev);
 }
 
 /* ---------- Milkdown surface inside each card ---------- */

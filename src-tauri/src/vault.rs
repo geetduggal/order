@@ -447,6 +447,11 @@ pub fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn rename_file(from: String, to: String) -> Result<(), String> {
     if from == to { return Ok(()); }
     let to_path = std::path::Path::new(&to);
