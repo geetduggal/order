@@ -20,6 +20,10 @@
   --serif: "Iowan Old Style", "Palatino", "Charter", Georgia, serif;
   --sans:  "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
   --mono:  "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  /* Snappy fast-out curve used for every transition + animation in
+     the app. Tweak here to retune the whole feel. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
 }
 
 * { box-sizing: border-box; }
@@ -84,8 +88,8 @@ input, textarea, select { outline: none; box-shadow: none; }
      height regardless of the row-span the layout effect assigns. */
   align-self: start;
   min-width: 0;
-  transition: box-shadow 500ms ease;
-  animation: order-card-mount 160ms cubic-bezier(0.2, 0, 0, 1);
+  transition: box-shadow 500ms var(--ease-out);
+  animation: order-card-mount 160ms var(--ease-out);
 }
 @keyframes order-card-mount {
   from { opacity: 0; transform: translateY(4px); }
@@ -135,7 +139,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
   overflow: auto;
   max-width: none;
-  animation: order-fullscreen-in 140ms cubic-bezier(0.2, 0, 0, 1);
+  animation: order-fullscreen-in 140ms var(--ease-out);
 }
 @keyframes order-fullscreen-in {
   from { opacity: 0; transform: scale(0.985); }
@@ -194,7 +198,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s var(--ease-out);
 }
 .order-card:hover .order-card-controls { opacity: 0.7; }
 .order-card-controls:hover,
@@ -208,7 +212,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: transparent;
   padding: 4px 7px;
   border-radius: 3px;
-  transition: color 0.12s ease, background-color 0.12s ease;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .order-card-fullscreen:hover {
   color: var(--royal);
@@ -235,7 +239,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--coral);
   padding: 3px 8px;
   border-radius: 3px;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s var(--ease-out);
 }
 .order-card-delete-confirm .confirm-btn:hover { background: var(--coral-dark, #e5673a); }
 .order-card-delete-confirm .cancel-btn {
@@ -307,7 +311,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   height: 16px !important;
   font-size: 12px !important;
   opacity: 0.35;
-  transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .milkdown-host milkdown-block-handle button:hover,
 .milkdown-host .milkdown-block-handle button:hover,
@@ -351,7 +355,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: grid;
   grid-template-columns: 1fr 0;
   /* Snappier curve: fast start, gentle landing. */
-  transition: grid-template-columns 180ms cubic-bezier(0.2, 0, 0, 1);
+  transition: grid-template-columns 180ms var(--ease-out);
   width: 100%;
   min-height: 100vh;
 }
@@ -372,14 +376,16 @@ input, textarea, select { outline: none; box-shadow: none; }
   top: 10px;
   right: 10px;
   z-index: 50;
-  width: 32px; height: 32px;
+  /* Same dimensions as .new-note-fab so the two corner glyphs share
+     a vertical centerline. */
+  width: 22px; height: 22px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; line-height: 1;
+  font-size: 16px; line-height: 1;
   color: var(--ink-ghost);
   background: transparent;
   border-radius: 4px;
-  opacity: 0.45;
-  transition: opacity 0.15s ease, color 0.12s ease, background-color 0.12s ease;
+  opacity: 0.5;
+  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .sidebar-toggle:hover {
   opacity: 1;
@@ -463,7 +469,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink-faint);
   background: transparent;
   box-shadow: none;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
 }
 .pane-right .view-switch button:hover { color: var(--ink); }
 .pane-right .view-switch button.active {
@@ -488,7 +494,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--bg-elev);
   display: flex;
   align-items: flex-end;
-  transition: border-color 0.12s ease;
+  transition: border-color 0.12s var(--ease-out);
 }
 .box.no-image {
   background: linear-gradient(155deg, var(--royal-soft) 0%, #fafbff 70%, #ffffff 100%);
@@ -530,7 +536,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex; align-items: center; justify-content: center;
   font-size: 9px;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity 0.12s var(--ease-out);
   z-index: 2;
 }
 .box:hover .box-check,
@@ -743,7 +749,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   font-size: 14px; line-height: 1;
   padding: 4px 10px; border-radius: 4px;
   color: var(--ink-faint); background: transparent;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
 }
 .year-nav-btn:hover { background: var(--bg-elev); color: var(--ink); }
 .year-nav-btn.ghost {
@@ -870,7 +876,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s var(--ease-out);
 }
 .year-event.timed {
   background: var(--coral-soft);
@@ -902,7 +908,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--coral-soft);
   border-radius: 4px;
   opacity: 0.75;
-  transition: opacity 0.15s ease, background-color 0.12s ease, color 0.12s ease;
+  transition: opacity 0.15s var(--ease-out), background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
 }
 .new-note-fab:hover {
   opacity: 1;
