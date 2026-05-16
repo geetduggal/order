@@ -1406,10 +1406,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   box-shadow: 0 4px 12px rgba(40, 38, 32, 0.08);
 }
 .basecard:active { cursor: grabbing; }
-.basecard.is-dragging { opacity: 0.35; transform: scale(0.96); }
-.basecard.is-drop-target {
-  box-shadow: 0 0 0 2px var(--coral, #ff7f50), 0 6px 18px rgba(255, 127, 80, 0.18);
-  transform: translateY(-3px);
+.basecard.is-dragging {
+  opacity: 0.5;
+  /* While dragging we leave transform alone — the FLIP animation
+     owns it. Adding a scale here would fight the slide-into-slot
+     animation between renders. */
 }
 .basecard-delete {
   position: absolute;
