@@ -17,7 +17,12 @@ import {
   splitFrontmatter,
   type Frontmatter,
 } from "../lib/frontmatter";
-import { isListFolder, parseListItems } from "../lib/list-folder";
+import {
+  isListFolder,
+  serializeListItems,
+  splitBodyAndBullets,
+  type ListItem,
+} from "../lib/list-folder";
 import { ListCards } from "./ListCards";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
@@ -127,10 +132,22 @@ export function Card(props: Props) {
   /** Folder picker (autocomplete) state for regular notes. */
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [folderPickerQuery, setFolderPickerQuery] = useState("");
-  /** Mirrors the editor body so the list-card grid below it can reflect
-   *  bullet changes live as the user types. Milkdown itself stays
-   *  uncontrolled — this is downstream-only. */
+  /** Mirrors the editor body so saves can fold the current prose
+   *  with the structured list items below. Milkdown stays uncontrolled
+   *  — this state is downstream-only. */
   const [editorBody, setEditorBody] = useState<string>("");
+  /** Structured list items for `type: list` folders. We strip bullets
+   *  from the body on load so they don't show in the editor, hold them
+   *  as a typed array here for drag-reorder / edit / delete / add, and
+   *  serialize them back into the body on save. */
+  const [listItems, setListItems] = useState<ListItem[]>([]);
+  const listItemsRef = useRef<ListItem[]>([]);
+  useEffect(() => { listItemsRef.current = listItems; }, [listItems]);
+  const editorBodyRef = useRef<string>("");
+  useEffect(() => { editorBodyRef.current = editorBody; }, [editorBody]);
+  /** Set on any user edit (text or list item). flushNow no-ops without
+   *  it, so an idle card doesn't periodically rewrite its file. */
+  const dirty = useRef(false);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
   const pathRef = useRef(initialPath);
@@ -156,9 +173,19 @@ export function Card(props: Props) {
         const vault = await dirname(await dirname(initialPath));
         const prefix = attachmentAssetPrefix(vault);
         const displayBody = inflateAttachmentUrls(body, prefix);
-        lastTitleRef.current = firstLineTitle(displayBody);
-        setState({ kind: "ready", body: displayBody, frontmatter });
-        setEditorBody(displayBody);
+        let proseBody = displayBody;
+        let initialItems: ListItem[] = [];
+        if (isListFolder(frontmatter)) {
+          const split = splitBodyAndBullets(displayBody);
+          proseBody = split.prose;
+          initialItems = split.items;
+        }
+        lastTitleRef.current = firstLineTitle(proseBody);
+        setState({ kind: "ready", body: proseBody, frontmatter });
+        setEditorBody(proseBody);
+        setListItems(initialItems);
+        listItemsRef.current = initialItems;
+        editorBodyRef.current = proseBody;
       } catch (err) {
         if (cancelled) return;
         setState({
@@ -175,9 +202,10 @@ export function Card(props: Props) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    const body = pendingBody.current;
-    if (body === null) return;
+    if (!dirty.current) return;
+    dirty.current = false;
     pendingBody.current = null;
+    const body = editorBodyRef.current;
     inflight.current += 1;
     setSaving(true);
     try {
@@ -186,10 +214,20 @@ export function Card(props: Props) {
       // are preserved when we write our body.
       const current = await invoke<string>("read_text", { path });
       const { frontmatter } = splitFrontmatter(current);
+      // For list folders, fold the structured items back into the body
+      // as wikilink bullets at the end. The editor only ever holds
+      // prose; the items array is the source of truth for ordering.
+      let foldedBody = body;
+      if (isListFolder(frontmatter)) {
+        const bullets = serializeListItems(listItemsRef.current);
+        if (bullets) {
+          foldedBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
+        }
+      }
       // Collapse runtime asset:// URLs back to vault-relative paths so
       // the file on disk is portable / Obsidian-friendly.
       const vault = await dirname(await dirname(path));
-      const persistedBody = deflateAttachmentUrls(body, attachmentAssetPrefix(vault));
+      const persistedBody = deflateAttachmentUrls(foldedBody, attachmentAssetPrefix(vault));
       const content = joinFrontmatter(frontmatter, persistedBody);
       await invoke("write_text", { path, content });
 
@@ -234,13 +272,25 @@ export function Card(props: Props) {
     }
   }, []);
 
-  const handleChange = useCallback((markdown: string) => {
-    pendingBody.current = markdown;
-    setEditorBody(markdown);
+  const scheduleSave = useCallback(() => {
+    dirty.current = true;
     setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
   }, [flushNow]);
+
+  const handleChange = useCallback((markdown: string) => {
+    pendingBody.current = markdown;
+    editorBodyRef.current = markdown;
+    setEditorBody(markdown);
+    scheduleSave();
+  }, [scheduleSave]);
+
+  const handleListChange = useCallback((next: ListItem[]) => {
+    listItemsRef.current = next;
+    setListItems(next);
+    scheduleSave();
+  }, [scheduleSave]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
     // Save under <vault>/Attachments/. Vault root is the parent of the
@@ -384,8 +434,9 @@ export function Card(props: Props) {
       />
       {isListFolder(state.frontmatter) && (
         <ListCards
-          items={parseListItems(editorBody)}
+          items={listItems}
           vaultNotes={vaultNotes ?? []}
+          onChange={handleListChange}
         />
       )}
       <div className="order-card-status">

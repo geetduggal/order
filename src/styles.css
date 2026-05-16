@@ -1380,16 +1380,110 @@ input, textarea, select { outline: none; box-shadow: none; }
   margin: 16px 0 4px;
 }
 .basecard {
+  position: relative;
   background: var(--bg-elev, var(--bg));
   border: 1px solid var(--rule);
   border-radius: 6px;
   overflow: hidden;
-  transition: transform 0.12s var(--ease-out), box-shadow 0.18s var(--ease-out);
+  cursor: grab;
+  transition:
+    transform 0.12s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    opacity 0.12s var(--ease-out);
 }
 .basecard:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(40, 38, 32, 0.08);
 }
+.basecard:active { cursor: grabbing; }
+.basecard.is-dragging { opacity: 0.35; transform: scale(0.96); }
+.basecard.is-drop-target {
+  box-shadow: 0 0 0 2px var(--coral, #ff7f50), 0 6px 18px rgba(255, 127, 80, 0.18);
+  transform: translateY(-3px);
+}
+.basecard-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 18px; height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out), background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.basecard:hover .basecard-delete { opacity: 1; }
+.basecard-delete:hover {
+  background: var(--coral, #ff7f50);
+  color: white;
+}
+.basecard-meta-input {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink);
+  outline: none;
+}
+.basecard-meta {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: text;
+}
+.basecard-meta.is-empty { color: var(--ink-ghost); font-style: italic; }
+.basecard-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  aspect-ratio: 2 / 3;
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.basecard-add:hover {
+  color: var(--coral, #ff7f50);
+  border-color: var(--coral, #ff7f50);
+  background: var(--coral-soft, rgba(255, 127, 80, 0.06));
+}
+.basecard-add-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.basecard.is-input {
+  cursor: default;
+  padding: 10px;
+  align-items: stretch;
+}
+.basecard-add-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+}
+.basecard-add-input:focus { border-color: var(--coral, #ff7f50); }
 .basecard-cover {
   width: 100%;
   aspect-ratio: 2 / 3;
