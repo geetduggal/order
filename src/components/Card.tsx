@@ -10,7 +10,7 @@ import { dirname, join } from "@tauri-apps/api/path";
 import { MilkdownSurface } from "./MilkdownSurface";
 import {
   basenameForEvent,
-  explicitH1Title,
+  firstLineTitle,
   isoDate,
   isoTime,
   joinFrontmatter,
@@ -89,7 +89,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const pendingBody = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef(0);
-  const lastH1Ref = useRef<string | null>(null);
+  const lastTitleRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +97,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
       .then((raw) => {
         if (cancelled) return;
         const { body } = splitFrontmatter(raw);
-        lastH1Ref.current = explicitH1Title(body);
+        lastTitleRef.current = firstLineTitle(body);
         setState({ kind: "ready", body });
       })
       .catch((err: unknown) => {
@@ -129,13 +129,15 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
       const content = joinFrontmatter(frontmatter, body);
       await invoke("write_text", { path, content });
 
-      // Auto-rename when the explicit h1 changes. Only triggers when an
-      // h1 actually exists — typing a paragraph without a heading
-      // leaves the filename alone.
-      const h1 = explicitH1Title(body);
-      if (h1 && h1 !== lastH1Ref.current) {
+      // Auto-rename whenever the body's first line of text changes —
+      // heading or not. firstLineTitle strips leading markdown markers
+      // (#, -, *, >) so the filename always tracks the visible first
+      // line. Empty body skips rename (file keeps "Untitled" or the
+      // last name the user typed).
+      const title = firstLineTitle(body);
+      if (title && title !== lastTitleRef.current) {
         const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
-        const desired = basenameForEvent(date, h1);
+        const desired = basenameForEvent(date, title);
         const currentFilename = path.split("/").pop() ?? path;
         if (desired !== currentFilename) {
           try {
@@ -149,12 +151,12 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
             console.warn("rename failed:", err);
           }
         }
-        lastH1Ref.current = h1;
-        onTitleChangedRef.current?.(h1);
-      } else if (!h1 && lastH1Ref.current !== null) {
-        // User removed their h1 — update remembered state but don't
-        // rename back; user-driven destruction stays user-driven.
-        lastH1Ref.current = null;
+        lastTitleRef.current = title;
+        onTitleChangedRef.current?.(title);
+      } else if (!title && lastTitleRef.current !== null) {
+        // Body went empty — leave the filename alone but stop tracking
+        // the old title so the next non-empty save triggers a rename.
+        lastTitleRef.current = null;
       }
     } catch (err) {
       console.error("write_text failed:", err);

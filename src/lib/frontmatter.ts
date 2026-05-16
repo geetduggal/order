@@ -104,16 +104,17 @@ export function suggestCalendarPatch(
   };
 }
 
-/** Extract the body's explicit ATX h1 title — returns null when the
- *  first non-empty line isn't a `# Heading`. Used for auto-rename so
- *  files aren't renamed when the user just types a paragraph without
- *  a heading. */
-export function explicitH1Title(body: string): string | null {
+/** Title derived from the body's first non-empty line, with common
+ *  leading markdown markers stripped (heading hashes, list bullets,
+ *  blockquote `>`). Returns null for an empty body. Used by auto-rename
+ *  so the filename always tracks the visible first line of the note,
+ *  regardless of whether it's formatted as a heading. */
+export function firstLineTitle(body: string): string | null {
   for (const line of body.split(/\r?\n/)) {
-    const t = line.trim();
-    if (t === "") continue;
-    const m = /^#\s+(.+)$/.exec(t);
-    return m ? m[1].trim() : null;
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    const stripped = trimmed.replace(/^(?:#+|>|[-*+]|\d+\.)\s+/, "").trim();
+    return stripped === "" ? null : stripped;
   }
   return null;
 }
