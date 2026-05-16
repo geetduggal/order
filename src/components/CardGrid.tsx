@@ -10,7 +10,8 @@ import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type NotableFolder } from "./Sidebar";
+import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
@@ -152,6 +153,49 @@ It is deliberately *not* an all-in-one: Readwise still handles your highlights, 
 
 That's the whole product.`,
   },
+  // Notable Folder Main Documents — these get the special role because
+  // their frontmatter carries a `category` field. They drive the right
+  // sidebar's hierarchy. Type: list / cards / prose.
+  {
+    filename: "Books.md",
+    seed:
+`---
+category: Reading
+area: Personal
+type: list
+---
+
+# Books
+
+A running list of what I'm reading, what I want to read, and what landed.`,
+  },
+  {
+    filename: "Walks.md",
+    seed:
+`---
+category: Health
+area: Personal
+type: prose
+---
+
+# Walks
+
+Notes from walks — light, weather, trail conditions, what was in my head.`,
+  },
+  {
+    filename: "Tech Habits.md",
+    seed:
+`---
+category: Habits
+area: Projects
+type: prose
+icon: code
+---
+
+# Tech Habits
+
+Small, durable engineering practices worth keeping. Defaults that pay back over years.`,
+  },
 ];
 
 const GRID_ROW_PX = 8;
@@ -224,7 +268,17 @@ export function CardGrid() {
   const [view, setView] = useState<View>("stream");
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
+  const [folderFilter, setFolderFilter] = useState<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement>(null);
+
+  const toggleFolderFilter = useCallback((name: string) => {
+    setFolderFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }, []);
+  const clearFolderFilter = useCallback(() => setFolderFilter(new Set()), []);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -346,22 +400,64 @@ export function CardGrid() {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
 
-  // Stream view sorts chronologically (newest first). The combined
-  // sort key (date + startTime) is a string by design — both fields
-  // are ISO-formatted so lexical compare matches calendar order.
+  // Notable Folder Main Documents — notes whose YAML carries `category`.
+  // Their title comes from the filename minus the .md (which is also
+  // the slug other notes use to point at them via `folder: [[Name]]`).
+  const notableFolders: NotableFolder[] = notes
+    .filter((n) => isNotableFolder(n.frontmatter))
+    .map((n) => ({
+      name: n.filename.replace(/\.md$/, ""),
+      area: parseRef(n.frontmatter.area) ?? "",
+      category: parseRef(n.frontmatter.category) ?? "",
+      frontmatter: n.frontmatter,
+      path: n.path,
+    }));
+
+  // Filter: if any folders are selected, only notes that belong to one
+  // of them survive. Notable Folder Main Documents themselves count as
+  // "belonging to" their own folder so they're always pinned at top.
+  const filteringActive = folderFilter.size > 0;
+  const filterMatches = (n: LoadedNote): boolean => {
+    if (!filteringActive) return true;
+    const main = isNotableFolder(n.frontmatter)
+      ? n.filename.replace(/\.md$/, "")
+      : null;
+    if (main && folderFilter.has(main)) return true;
+    const f = noteFolder(n.frontmatter);
+    return f !== null && folderFilter.has(f);
+  };
+
+  const filteredNotes = filteringActive ? notes.filter(filterMatches) : notes;
+
+  // Stream view sorts chronologically (newest first). With filters
+  // active we hoist the matched Main Documents to the top of the list,
+  // then the rest below by date desc.
   const sortKey = (n: LoadedNote): string => {
     const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
     const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
     return `${d} ${t}`;
   };
-  const sortedNotes = [...notes].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+  const sortedNotes = filteringActive
+    ? [
+        ...filteredNotes.filter((n) => isNotableFolder(n.frontmatter)),
+        ...filteredNotes
+          .filter((n) => !isNotableFolder(n.frontmatter))
+          .sort((a, b) => sortKey(b).localeCompare(sortKey(a))),
+      ]
+    : [...filteredNotes].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
 
-  const calendarNotes: NoteMeta[] = notes.map((n) => ({
-    path: n.path,
-    filename: n.filename,
-    title: n.title,
-    frontmatter: n.frontmatter,
-  }));
+  // Calendar events carry their folder's color so Week/Month/Year
+  // events read at a glance.
+  const calendarNotes: NoteMeta[] = filteredNotes.map((n) => {
+    const f = noteFolder(n.frontmatter);
+    return {
+      path: n.path,
+      filename: n.filename,
+      title: n.title,
+      frontmatter: n.frontmatter,
+      color: f ? folderColor(f) : undefined,
+    };
+  });
 
   return (
     <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
@@ -392,16 +488,25 @@ export function CardGrid() {
       <main className="pane-main">
         {view === "stream" && (
           <div className="card-grid" ref={gridRef}>
-            {sortedNotes.map((n) => (
-              <div className="card-grid-cell" data-path={n.path} key={n.id}>
-                <Card
-                  path={n.path}
-                  onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
-                  onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
-                  onDelete={(path) => handleCardDelete(n.id, path)}
-                />
-              </div>
-            ))}
+            {sortedNotes.map((n) => {
+              // Notable Folder Main Documents carry their own color.
+              // Regular notes inherit their parent folder's color.
+              const folderName = isNotableFolder(n.frontmatter)
+                ? n.filename.replace(/\.md$/, "")
+                : noteFolder(n.frontmatter);
+              const c = folderName ? folderColor(folderName) : undefined;
+              return (
+                <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                  <Card
+                    path={n.path}
+                    color={c}
+                    onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+                    onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+                    onDelete={(path) => handleCardDelete(n.id, path)}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
         {view === "week" && (
@@ -435,7 +540,16 @@ export function CardGrid() {
         )}
       </main>
 
-      {sidebarOpen && <Sidebar view={view} onSelectView={setView} />}
+      {sidebarOpen && (
+        <Sidebar
+          view={view}
+          onSelectView={setView}
+          folders={notableFolders}
+          selected={folderFilter}
+          onToggle={toggleFolderFilter}
+          onClear={clearFolderFilter}
+        />
+      )}
     </div>
   );
 }

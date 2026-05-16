@@ -16,6 +16,7 @@ import {
   joinFrontmatter,
   splitFrontmatter,
 } from "../lib/frontmatter";
+import { folderColor, isNotableFolder, noteFolder } from "../lib/folders";
 
 const SAVE_DEBOUNCE_MS = 600;
 const ATTACHMENTS_DIR = "attachments";
@@ -66,11 +67,14 @@ interface Props {
   /** Called when the user confirms deletion of this card. Card flushes
    *  pending saves first so we don't recreate the file after delete. */
   onDelete?: (path: string) => Promise<void>;
+  /** Optional Notable Folder color. Renders as a left-border accent
+   *  so cards visually group by folder in the Stream. */
+  color?: string;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
 
-export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }: Props) {
+export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete, color }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -137,8 +141,12 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
       // (#, -, *, >) so the filename always tracks the visible first
       // line. Empty body skips rename (file keeps "Untitled" or the
       // last name the user typed).
+      // Notable Folder Main Documents skip rename because their filename
+      // IS the folder's identity (other notes reference it via
+      // `folder: [[Books]]` and that link would break on rename).
       const title = firstLineTitle(body);
-      if (title && title !== lastTitleRef.current) {
+      const isMain = isNotableFolder(frontmatter);
+      if (!isMain && title && title !== lastTitleRef.current) {
         const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
         const desired = basenameForEvent(date, title);
         const currentFilename = path.split("/").pop() ?? path;
@@ -260,8 +268,12 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "");
 
+  const cardStyle: React.CSSProperties | undefined = color
+    ? { borderLeft: `3px solid ${color}` }
+    : undefined;
+
   return (
-    <article className={cardClass}>
+    <article className={cardClass} style={cardStyle}>
       <div className="order-card-controls" aria-hidden={false}>
         <button
           type="button"

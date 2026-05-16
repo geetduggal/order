@@ -1,0 +1,141 @@
+// Notable Folder utilities — parsing taxonomy from YAML metadata,
+// deterministic per-folder color, and name-based icon auto-selection.
+//
+// Hierarchy (per design doc):
+//   Areas → Categories → Notable Folders → notes
+//
+// A note becomes a Notable Folder's Main Document when its frontmatter
+// has a `category` field. Other notes can belong to that folder via
+// `folder: [[FolderName]]`.
+
+import type { LucideIcon } from "lucide-react";
+import {
+  BookOpen, Briefcase, Brush, Camera, Code, Coffee, Compass,
+  Feather, Flame, Folder, Footprints, Heart, Home, Hourglass,
+  Layers, Leaf, Mountain, Music, PenLine, Sparkles, Sun, Users,
+  Wallet, Wrench,
+} from "lucide-react";
+
+import type { Frontmatter } from "./frontmatter";
+
+/** A `[[Wiki Link]]` value or plain string both resolve to the bare name. */
+export function parseRef(val: unknown): string | null {
+  if (typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(/^\[\[(.+)\]\]$/);
+  return (m ? m[1] : trimmed).trim() || null;
+}
+
+export function isNotableFolder(fm: Frontmatter): boolean {
+  return parseRef(fm.category) !== null;
+}
+
+/** A note's parent Notable Folder, if any. */
+export function noteFolder(fm: Frontmatter): string | null {
+  return parseRef(fm.folder);
+}
+
+// ---------- Curated palette (12 muted tones, readable on white) ----------
+
+const PALETTE = [
+  "#A06B7D", // dusty rose
+  "#7B91B0", // periwinkle
+  "#84A07C", // sage
+  "#C19A8B", // dusty tan
+  "#9F8DA8", // mauve
+  "#3F8A8D", // teal
+  "#8E9E5F", // olive
+  "#B58A5A", // ochre
+  "#6B8AA5", // slate blue
+  "#A07A6B", // clay
+  "#7AA59E", // muted aqua
+  "#9B7B62", // brown
+];
+
+/** Stable, deterministic name → palette color. */
+export function folderColor(name: string, override?: unknown): string {
+  if (typeof override === "string" && override.trim()) return override.trim();
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  }
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+
+/** Soft tint of the folder color, for backgrounds. */
+export function folderTint(name: string, override?: unknown): string {
+  const base = folderColor(name, override);
+  // Add 16% alpha — readable on white without overpowering the text.
+  return `${base}29`;
+}
+
+// ---------- Icon auto-mapping ----------
+
+interface IconRule { rx: RegExp; icon: LucideIcon }
+
+// Order matters: first match wins. Keyword regexes are word-bounded.
+const ICON_RULES: IconRule[] = [
+  { rx: /\b(book|read|library|literature)/i, icon: BookOpen },
+  { rx: /\b(walk|hik|trail|run|jog)/i, icon: Footprints },
+  { rx: /\b(people|family|friend|relations?hip)/i, icon: Users },
+  { rx: /\b(project|work|task|todo)/i, icon: Briefcase },
+  { rx: /\b(health|fit|exercise|body|run)/i, icon: Heart },
+  { rx: /\b(home|house|space|room|place)/i, icon: Home },
+  { rx: /\b(money|finance|budget|cash|wallet)/i, icon: Wallet },
+  { rx: /\b(craft|art|paint|draw|sketch)/i, icon: Brush },
+  { rx: /\b(code|tech|programming|dev|software)/i, icon: Code },
+  { rx: /\b(write|journal|note|essay|diary|log)/i, icon: PenLine },
+  { rx: /\b(photo|camera|picture|image)/i, icon: Camera },
+  { rx: /\b(music|song|sound|audio)/i, icon: Music },
+  { rx: /\b(food|coffee|cook|meal|drink)/i, icon: Coffee },
+  { rx: /\b(plant|garden|nature)/i, icon: Leaf },
+  { rx: /\b(travel|map|explor|adventure|trip)/i, icon: Compass },
+  { rx: /\b(mountain|outdoor|wild)/i, icon: Mountain },
+  { rx: /\b(idea|spark|insight|flash)/i, icon: Sparkles },
+  { rx: /\b(habit|routine|daily|practice)/i, icon: Hourglass },
+  { rx: /\b(fire|passion|energy|spark)/i, icon: Flame },
+  { rx: /\b(weather|sun|morning)/i, icon: Sun },
+  { rx: /\b(tool|build|fix|repair)/i, icon: Wrench },
+  { rx: /\b(stack|layer|category|group)/i, icon: Layers },
+  { rx: /\b(feather|light)/i, icon: Feather },
+];
+
+const NAME_TO_LUCIDE: Record<string, LucideIcon> = {
+  book: BookOpen, "book-open": BookOpen,
+  briefcase: Briefcase,
+  brush: Brush, paintbrush: Brush,
+  camera: Camera,
+  code: Code,
+  coffee: Coffee,
+  compass: Compass,
+  feather: Feather,
+  flame: Flame,
+  folder: Folder,
+  footprints: Footprints,
+  heart: Heart,
+  home: Home, house: Home,
+  hourglass: Hourglass,
+  layers: Layers,
+  leaf: Leaf,
+  mountain: Mountain,
+  music: Music,
+  pen: PenLine, "pen-line": PenLine, write: PenLine,
+  sparkles: Sparkles,
+  sun: Sun,
+  users: Users, people: Users,
+  wallet: Wallet, money: Wallet,
+  wrench: Wrench,
+};
+
+export function folderIcon(name: string, override?: unknown): LucideIcon {
+  if (typeof override === "string" && override.trim()) {
+    const key = override.trim().toLowerCase();
+    const explicit = NAME_TO_LUCIDE[key];
+    if (explicit) return explicit;
+  }
+  for (const rule of ICON_RULES) {
+    if (rule.rx.test(name)) return rule.icon;
+  }
+  return Folder;
+}

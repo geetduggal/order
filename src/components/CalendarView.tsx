@@ -32,6 +32,8 @@ export interface NoteMeta {
   filename: string;
   title: string;
   frontmatter: Frontmatter;
+  /** Notable Folder color applied as the event background tint + border. */
+  color?: string;
 }
 
 interface Props {
@@ -57,6 +59,9 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       : null;
 
     const title = note.title || note.filename;
+    const colorProps = note.color
+      ? { backgroundColor: note.color + "29", borderColor: note.color, textColor: "#1a1a1a" }
+      : {};
 
     if (allDay || !startTime) {
       events.push({
@@ -64,6 +69,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
         title,
         start: date,
         allDay: true,
+        ...colorProps,
       });
       continue;
     }
@@ -74,6 +80,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       start: `${date}T${startTime}`,
       end: endTime ? `${date}T${endTime}` : undefined,
       allDay: false,
+      ...colorProps,
     });
   }
   return events;
