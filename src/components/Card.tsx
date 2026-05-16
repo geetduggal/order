@@ -1,20 +1,26 @@
 // One Card. Reads its file, strips frontmatter, hands the body to Milkdown
-// Crepe, recombines on save. Frontmatter normalization (seed, auto-inject
-// calendar metadata) happens once in CardGrid before the Card ever
-// mounts. On save we re-read the file's frontmatter so any out-of-band
-// changes (e.g. a drag in the Week view) don't get clobbered.
+// Crepe, recombines on save. After each save, if the body's explicit h1
+// has changed, the file gets renamed to `<date> <title>.md` (Obsidian
+// Full Calendar convention) and the parent is notified so calendar
+// views stay in sync.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { dirname, join } from "@tauri-apps/api/path";
 import { MilkdownSurface } from "./MilkdownSurface";
-import { isoDate, isoTime, joinFrontmatter, splitFrontmatter } from "../lib/frontmatter";
+import {
+  basenameForEvent,
+  explicitH1Title,
+  isoDate,
+  isoTime,
+  joinFrontmatter,
+  splitFrontmatter,
+} from "../lib/frontmatter";
 
+const SAVE_DEBOUNCE_MS = 600;
 const ATTACHMENTS_DIR = "attachments";
 
 function attachmentName(file: File): string {
-  // Strip path components, normalize extension. If the file has no name
-  // (paste from screenshot tool usually does), use the mime type to guess.
   const baseName = (file.name || "image").split(/[/\\]/).pop() ?? "image";
   const dot = baseName.lastIndexOf(".");
   const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
@@ -25,7 +31,28 @@ function attachmentName(file: File): string {
   return `${stem}-${stamp}.${ext}`;
 }
 
-const SAVE_DEBOUNCE_MS = 600;
+/** Rename a file to `<dir>/<basename>`, appending ` 2`, ` 3`, … to the
+ *  stem if the desired name is already taken. Returns the resolved path.
+ *  If the file is already correctly named, returns unchanged. */
+async function uniqueRename(dir: string, oldPath: string, basename: string): Promise<string> {
+  const dot = basename.lastIndexOf(".");
+  const stem = dot > 0 ? basename.slice(0, dot) : basename;
+  const ext = dot > 0 ? basename.slice(dot) : "";
+  let candidate = basename;
+  let n = 2;
+  for (let i = 0; i < 999; i++) {
+    const newPath = await join(dir, candidate);
+    if (newPath === oldPath) return oldPath;
+    try {
+      await invoke("rename_file", { from: oldPath, to: newPath });
+      return newPath;
+    } catch {
+      candidate = `${stem} ${n}${ext}`;
+      n++;
+    }
+  }
+  throw new Error(`No unique name found for ${basename}`);
+}
 
 type LoadState =
   | { kind: "loading" }
@@ -34,21 +61,35 @@ type LoadState =
 
 interface Props {
   path: string;
+  onRenamed?: (newPath: string) => void;
+  onTitleChanged?: (newTitle: string) => void;
 }
 
-export function Card({ path }: Props) {
+export function Card({ path: initialPath, onRenamed, onTitleChanged }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
+  // Path tracked through a ref so Card doesn't remount when the parent
+  // re-renders with the new path after a rename — the editor keeps focus.
+  const pathRef = useRef(initialPath);
+  useEffect(() => { pathRef.current = initialPath; }, [initialPath]);
+
+  const onRenamedRef = useRef(onRenamed);
+  const onTitleChangedRef = useRef(onTitleChanged);
+  useEffect(() => { onRenamedRef.current = onRenamed; }, [onRenamed]);
+  useEffect(() => { onTitleChangedRef.current = onTitleChanged; }, [onTitleChanged]);
+
   const pendingBody = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef(0);
+  const lastH1Ref = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    invoke<string>("read_text", { path })
+    invoke<string>("read_text", { path: initialPath })
       .then((raw) => {
         if (cancelled) return;
         const { body } = splitFrontmatter(raw);
+        lastH1Ref.current = explicitH1Title(body);
         setState({ kind: "ready", body });
       })
       .catch((err: unknown) => {
@@ -59,7 +100,7 @@ export function Card({ path }: Props) {
         });
       });
     return () => { cancelled = true; };
-  }, [path]);
+  }, [initialPath]);
 
   const flushNow = useCallback(async (): Promise<void> => {
     if (saveTimer.current) {
@@ -72,19 +113,48 @@ export function Card({ path }: Props) {
     inflight.current += 1;
     setSaving(true);
     try {
+      const path = pathRef.current;
       // Re-read latest frontmatter so out-of-band edits (Week view drag)
       // are preserved when we write our body.
       const current = await invoke<string>("read_text", { path });
       const { frontmatter } = splitFrontmatter(current);
       const content = joinFrontmatter(frontmatter, body);
       await invoke("write_text", { path, content });
+
+      // Auto-rename when the explicit h1 changes. Only triggers when an
+      // h1 actually exists — typing a paragraph without a heading
+      // leaves the filename alone.
+      const h1 = explicitH1Title(body);
+      if (h1 && h1 !== lastH1Ref.current) {
+        const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
+        const desired = basenameForEvent(date, h1);
+        const currentFilename = path.split("/").pop() ?? path;
+        if (desired !== currentFilename) {
+          try {
+            const dir = await dirname(path);
+            const newPath = await uniqueRename(dir, path, desired);
+            if (newPath !== path) {
+              pathRef.current = newPath;
+              onRenamedRef.current?.(newPath);
+            }
+          } catch (err) {
+            console.warn("rename failed:", err);
+          }
+        }
+        lastH1Ref.current = h1;
+        onTitleChangedRef.current?.(h1);
+      } else if (!h1 && lastH1Ref.current !== null) {
+        // User removed their h1 — update remembered state but don't
+        // rename back; user-driven destruction stays user-driven.
+        lastH1Ref.current = null;
+      }
     } catch (err) {
       console.error("write_text failed:", err);
     } finally {
       inflight.current -= 1;
       if (inflight.current === 0) setSaving(false);
     }
-  }, [path]);
+  }, []);
 
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
@@ -94,17 +164,17 @@ export function Card({ path }: Props) {
   }, [flushNow]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
-    const dir = await dirname(path);
+    const dir = await dirname(pathRef.current);
     const filename = attachmentName(file);
     const absolute = await join(dir, ATTACHMENTS_DIR, filename);
     const bytes = new Uint8Array(await file.arrayBuffer());
     await invoke("write_binary", { path: absolute, data: Array.from(bytes) });
     return convertFileSrc(absolute);
-  }, [path]);
+  }, []);
 
   useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);
 
-  const filename = path.split("/").pop() ?? path;
+  const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
   if (state.kind === "loading") {
     return <article className="order-card is-loading"><div className="card-loading">Loading…</div></article>;
@@ -127,7 +197,7 @@ export function Card({ path }: Props) {
       />
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
-        <span className="order-card-path" title={path}>{filename}</span>
+        <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
     </article>
   );

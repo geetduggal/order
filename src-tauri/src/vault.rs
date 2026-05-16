@@ -445,3 +445,16 @@ pub fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
     }
     std::fs::write(&path, data).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn rename_file(from: String, to: String) -> Result<(), String> {
+    if from == to { return Ok(()); }
+    let to_path = std::path::Path::new(&to);
+    if to_path.exists() {
+        return Err(format!("target exists: {to}"));
+    }
+    if let Some(parent) = to_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::rename(&from, &to).map_err(|e| e.to_string())
+}

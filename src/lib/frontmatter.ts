@@ -103,3 +103,26 @@ export function suggestCalendarPatch(
     allDay: false,
   };
 }
+
+/** Extract the body's explicit ATX h1 title — returns null when the
+ *  first non-empty line isn't a `# Heading`. Used for auto-rename so
+ *  files aren't renamed when the user just types a paragraph without
+ *  a heading. */
+export function explicitH1Title(body: string): string | null {
+  for (const line of body.split(/\r?\n/)) {
+    const t = line.trim();
+    if (t === "") continue;
+    const m = /^#\s+(.+)$/.exec(t);
+    return m ? m[1].trim() : null;
+  }
+  return null;
+}
+
+/** Filename for an event in the Obsidian Full Calendar convention:
+ *  `YYYY-MM-DD Title.md` (date prefix + title). Unsafe filesystem
+ *  characters in the title get replaced with `-`. */
+export function basenameForEvent(date: string | undefined, title: string): string {
+  const datePart = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoDate();
+  const safe = (title || "Untitled").replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
+  return `${datePart} ${safe}.md`;
+}

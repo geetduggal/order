@@ -11,6 +11,7 @@ import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import {
+  basenameForEvent,
   isoDate,
   isoTime,
   joinFrontmatter,
@@ -18,15 +19,6 @@ import {
   suggestCalendarPatch,
   type Frontmatter,
 } from "../lib/frontmatter";
-
-/** Filename for a new event, in the Obsidian Full Calendar convention:
- *  `YYYY-MM-DD Title.md` (date prefix + title). Unsafe filesystem
- *  characters in the title get replaced with `-`. */
-function basenameForEvent(date: string | undefined, title: string): string {
-  const datePart = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoDate();
-  const safeTitle = (title || "Untitled").replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
-  return `${datePart} ${safeTitle}.md`;
-}
 
 /** Try writing the seed at `<dir>/<basename>`; if a file already exists
  *  at that name, append ` 2`, ` 3`, … to the stem until we find an
@@ -157,6 +149,9 @@ const GRID_ROW_PX = 8;
 type View = "stream" | "week" | "month" | "year";
 
 interface LoadedNote {
+  /** Stable id across renames — used as React key so the Card never
+   *  remounts when its filename changes. */
+  id: string;
   path: string;
   filename: string;
   frontmatter: Frontmatter;
@@ -164,6 +159,9 @@ interface LoadedNote {
    *  else first non-empty line truncated. */
   title: string;
 }
+
+let nextNoteId = 0;
+function newNoteId(): string { return `n${nextNoteId++}`; }
 
 function deriveTitle(body: string, fallback: string): string {
   const lines = body.split(/\r?\n/);
@@ -201,6 +199,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
       }
     }
     out.push({
+      id: newNoteId(),
       path,
       filename,
       frontmatter,
@@ -268,11 +267,28 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { path, filename, frontmatter, title: filename.replace(/\.md$/, "") },
+      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, "") },
     ]);
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Stream sorts it
     // into place by date+startTime.
+  }, []);
+
+  const handleCardRenamed = useCallback((id: string, newPath: string) => {
+    const newFilename = newPath.split("/").pop() ?? newPath;
+    setNotes((prev) =>
+      prev?.map((n) =>
+        n.id === id
+          ? { ...n, path: newPath, filename: newFilename, title: newFilename.replace(/\.md$/, "") }
+          : n,
+      ) ?? null,
+    );
+  }, []);
+
+  const handleCardTitleChanged = useCallback((id: string, newTitle: string) => {
+    setNotes((prev) =>
+      prev?.map((n) => (n.id === id ? { ...n, title: newTitle } : n)) ?? null,
+    );
   }, []);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
@@ -358,8 +374,12 @@ export function CardGrid() {
           </div>
           <div className="card-grid" ref={gridRef}>
             {sortedNotes.map((n) => (
-              <div className="card-grid-cell" data-path={n.path} key={n.path}>
-                <Card path={n.path} />
+              <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                <Card
+                  path={n.path}
+                  onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+                  onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+                />
               </div>
             ))}
           </div>

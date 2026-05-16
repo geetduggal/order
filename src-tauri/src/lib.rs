@@ -26,6 +26,7 @@ pub fn run() {
             vault::read_text,
             vault::write_text,
             vault::write_binary,
+            vault::rename_file,
             watcher::start_watcher,
             publish::publish_public,
         ])
