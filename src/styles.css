@@ -373,62 +373,66 @@ html, body, #root {
   color: var(--ink);
 }
 
-.year-grid {
+/* Header row + each month row share the same grid template so day-of-
+   week columns line up vertically across all 12 months. */
+.year-strip-header,
+.year-month {
   display: grid;
-  grid-template-columns: 48px repeat(37, minmax(0, 1fr));
-  border-top: 1px solid var(--rule);
-  border-left: 1px solid var(--rule);
+  grid-template-columns: 56px repeat(37, minmax(0, 1fr));
   background: var(--bg);
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
 }
+.year-strip-header { border-top: 1px solid var(--rule); }
+.year-month {
+  position: relative;
+  border-top: 1px solid var(--rule);
+}
+.year-month:last-child { border-bottom: 1px solid var(--rule); }
 
 .year-corner {
   border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
   background: var(--bg);
 }
 .year-dow {
   text-align: center;
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 9px;
   color: var(--ink-ghost);
   padding: 4px 0 3px;
   border-right: 1px solid var(--rule-soft);
-  border-bottom: 1px solid var(--rule);
   background: var(--bg);
 }
 .year-dow.weekend { background: var(--rule-soft); }
 
-/* `display: contents` flattens the row wrapper so the month label and
-   the 37 cells become direct children of .year-grid, lining up under
-   the same columns as the header row above. */
-.year-month-row { display: contents; }
-
 .year-month-label {
   font-family: var(--serif);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--ink);
-  padding: 4px 8px;
+  padding: 4px 10px;
   border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule-soft);
-  display: flex; align-items: center;
+  display: flex; align-items: flex-start;
 }
 .year-month-label.is-today { color: var(--coral); }
 
 .year-cell {
   position: relative;
-  min-height: 26px;
   border-right: 1px solid var(--rule-soft);
-  border-bottom: 1px solid var(--rule-soft);
-  padding: 2px 3px 8px;
+  padding: 3px 4px 4px;
   background: var(--bg);
+  cursor: pointer;
+}
+.year-cell:hover:not(.empty) {
+  background: rgba(232, 240, 254, 0.4);
 }
 .year-cell.empty {
   background: var(--rule-soft);
   opacity: 0.4;
+  cursor: default;
 }
 .year-cell.weekend:not(.empty) {
-  background: rgba(244, 243, 241, 0.6);
+  background: rgba(244, 243, 241, 0.55);
 }
 .year-cell.today {
   background: var(--coral-soft);
@@ -440,25 +444,70 @@ html, body, #root {
 
 .year-cell-day {
   font-family: var(--sans);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--ink-faint);
   line-height: 1;
 }
 
+/* Event overlay sits on top of the cell strip; pointer-events: none
+   here so cell-level dragover/drop/click still fire. Individual event
+   bars re-enable pointer events on themselves. */
+.year-month-overlay {
+  position: absolute;
+  left: 56px;
+  right: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .year-event {
   position: absolute;
-  left: 2px; right: 2px;
-  height: 3px;
+  pointer-events: auto;
   background: var(--royal-soft);
   border-left: 2px solid var(--royal);
-  border-radius: 1px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: var(--sans);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--ink);
   cursor: grab;
-  transition: background-color 0.12s ease, height 0.12s ease;
-  z-index: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: background-color 0.12s ease;
+}
+.year-event.timed {
+  background: var(--coral-soft);
+  border-left-color: var(--coral);
 }
 .year-event:hover {
   background: var(--royal);
-  height: 5px;
+  color: #fff;
 }
+.year-event.timed:hover { background: var(--coral); }
 .year-event:active { cursor: grabbing; }
 .year-event-dragging { opacity: 0.35; }
+.year-event.continues-left { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+.year-event.continues-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.year-event-title { display: block; }
+
+/* ---------- New note button ---------- */
+.new-note-bar {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 40px) 12px;
+}
+.new-note-btn {
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--royal);
+  background: var(--royal-soft);
+  border: 1px solid var(--royal-soft);
+  border-radius: 4px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.new-note-btn:hover { background: var(--royal); color: #fff; }

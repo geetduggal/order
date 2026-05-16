@@ -16,6 +16,7 @@ import multiMonthPlugin from "@fullcalendar/multimonth";
 import interactionPlugin from "@fullcalendar/interaction";
 import type {
   CalendarApi,
+  DateSelectArg,
   EventClickArg,
   EventDropArg,
   EventInput,
@@ -38,6 +39,7 @@ interface Props {
   initialView: CalendarRange;
   onMoveEvent: (path: string, patch: Frontmatter) => Promise<void>;
   onEventClick?: (path: string) => void;
+  onCreate?: (patch: Frontmatter) => Promise<void>;
 }
 
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
@@ -146,6 +148,31 @@ export function CalendarView(props: Props) {
     if (arg.event.id) props.onEventClick?.(arg.event.id);
   }
 
+  async function handleSelect(arg: DateSelectArg) {
+    if (!props.onCreate) return;
+    // FullCalendar gives an exclusive end; we want the start moment to
+    // be the new event's date/time. For all-day, drop the time fields.
+    if (arg.allDay) {
+      await props.onCreate({ date: isoDate(arg.start), allDay: true });
+    } else {
+      const start = roundToHalfHour(arg.start);
+      const end = roundToHalfHour(arg.end);
+      const sameInstant = start.getTime() === end.getTime();
+      await props.onCreate({
+        date: isoDate(start),
+        allDay: false,
+        startTime: isoTime(start),
+        // Drag-range selects get an endTime; a plain click that
+        // resolves to the same instant after rounding is treated as
+        // "no duration" — let it stay open-ended in YAML.
+        endTime: sameInstant ? undefined : isoTime(end),
+      });
+    }
+    // Clear the visual selection so it doesn't linger after the new
+    // event renders.
+    arg.view.calendar.unselect();
+  }
+
   // The view prop on FullCalendar is set once via initialView; consumers
   // change views by calling api.changeView() through the ref. CardGrid
   // remounts this component when initialView changes so we don't need
@@ -168,7 +195,8 @@ export function CalendarView(props: Props) {
         events={events}
         editable
         droppable
-        selectable={false}
+        selectable
+        selectMirror
         nowIndicator
         firstDay={0}
         height="auto"
@@ -192,6 +220,7 @@ export function CalendarView(props: Props) {
         eventDrop={handleEventDrop}
         eventResize={handleEventResize}
         eventClick={handleEventClick}
+        select={handleSelect}
       />
     </div>
   );

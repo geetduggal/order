@@ -11,6 +11,8 @@ import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import {
+  isoDate,
+  isoTime,
   joinFrontmatter,
   splitFrontmatter,
   suggestCalendarPatch,
@@ -216,6 +218,32 @@ export function CardGrid() {
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
+  const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
+    const dir = await documentDir();
+    const subdir = await join(dir, "order-cards");
+    // Use ms-resolution timestamp for the filename so simultaneous
+    // creates from different views don't collide on the same path.
+    const stamp = Date.now();
+    const filename = `untitled-${stamp}.md`;
+    const path = await join(subdir, filename);
+    // Defaults match the auto-inject path: notes get allDay=false unless
+    // the caller explicitly says otherwise (Year + Month all-day clicks).
+    const frontmatter: Frontmatter = { allDay: false, ...patch };
+    const content = joinFrontmatter(frontmatter, "");
+    await invoke("write_text", { path, content });
+    setNotes((prev) => [
+      ...(prev ?? []),
+      {
+        path,
+        filename,
+        frontmatter,
+        title: filename.replace(/\.md$/, ""),
+      },
+    ]);
+    setView("stream");
+    setScrollTargetPath(path);
+  }, []);
+
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
     const { frontmatter, body } = splitFrontmatter(raw);
@@ -274,13 +302,27 @@ export function CardGrid() {
       </header>
 
       {view === "stream" && (
-        <div className="card-grid" ref={gridRef}>
-          {notes.map((n) => (
-            <div className="card-grid-cell" data-path={n.path} key={n.path}>
-              <Card path={n.path} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="new-note-bar">
+            <button
+              className="new-note-btn"
+              onClick={() => { void createNote({
+                date: isoDate(),
+                startTime: isoTime(),
+                allDay: false,
+              }); }}
+            >
+              + New note
+            </button>
+          </div>
+          <div className="card-grid" ref={gridRef}>
+            {notes.map((n) => (
+              <div className="card-grid-cell" data-path={n.path} key={n.path}>
+                <Card path={n.path} />
+              </div>
+            ))}
+          </div>
+        </>
       )}
       {view === "week" && (
         <CalendarView
@@ -289,6 +331,7 @@ export function CardGrid() {
           initialView="timeGridWeek"
           onMoveEvent={updateNoteFrontmatter}
           onEventClick={handleEventClick}
+          onCreate={createNote}
         />
       )}
       {view === "month" && (
@@ -298,6 +341,7 @@ export function CardGrid() {
           initialView="dayGridMonth"
           onMoveEvent={updateNoteFrontmatter}
           onEventClick={handleEventClick}
+          onCreate={createNote}
         />
       )}
       {view === "year" && (
@@ -306,6 +350,7 @@ export function CardGrid() {
           notes={calendarNotes}
           onMoveEvent={updateNoteFrontmatter}
           onEventClick={handleEventClick}
+          onCreate={createNote}
         />
       )}
     </div>
