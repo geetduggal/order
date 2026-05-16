@@ -51,6 +51,10 @@ interface Props {
   selected: Set<string>;
   onToggle: (folderName: string) => void;
   onClear: () => void;
+  /** Create a new Notable Folder Main Document under the drilled
+   *  (area, category). The sidebar surfaces this as a "+ New folder"
+   *  row at the bottom of the folders drill view. */
+  onCreateFolder?: (name: string, area: string, category: string) => Promise<void>;
 }
 
 interface Taxonomy {
@@ -89,7 +93,7 @@ function buildTaxonomy(folders: NotableFolder[]): Taxonomy {
   };
 }
 
-export function Sidebar({ view, onSelectView, folders, selected, onToggle, onClear }: Props) {
+export function Sidebar({ view, onSelectView, folders, selected, onToggle, onClear, onCreateFolder }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
   const [query, setQuery] = useState("");
 
@@ -182,6 +186,7 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
             taxonomy={taxonomy}
             selected={selected}
             onToggle={onToggle}
+            onCreateFolder={onCreateFolder}
           />
         )}
       </section>
@@ -189,12 +194,13 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
   );
 }
 
-function DrillView({ drill, setDrill, taxonomy, selected, onToggle }: {
+function DrillView({ drill, setDrill, taxonomy, selected, onToggle, onCreateFolder }: {
   drill: DrillState;
   setDrill: (s: DrillState) => void;
   taxonomy: Taxonomy;
   selected: Set<string>;
   onToggle: (name: string) => void;
+  onCreateFolder?: (name: string, area: string, category: string) => Promise<void>;
 }) {
   if (drill.kind === "areas") {
     return (
@@ -259,7 +265,49 @@ function DrillView({ drill, setDrill, taxonomy, selected, onToggle }: {
           />
         ))}
       </ul>
+      {onCreateFolder && (
+        <CreateFolderRow
+          onCreate={(name) => onCreateFolder(name, drill.areaName, drill.categoryName)}
+        />
+      )}
     </>
+  );
+}
+
+function CreateFolderRow({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  if (!editing) {
+    return (
+      <button type="button" className="sb-create-folder" onClick={() => { setEditing(true); setName(""); }}>
+        + New folder
+      </button>
+    );
+  }
+  return (
+    <div className="sb-create-folder-row">
+      <input
+        autoFocus
+        className="sb-create-folder-input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const trimmed = name.trim();
+            if (trimmed) void onCreate(trimmed);
+            setEditing(false); setName("");
+          }
+          if (e.key === "Escape") { e.preventDefault(); setEditing(false); setName(""); }
+        }}
+        onBlur={() => {
+          const trimmed = name.trim();
+          if (trimmed) void onCreate(trimmed);
+          setEditing(false); setName("");
+        }}
+        placeholder="Folder name…"
+      />
+    </div>
   );
 }
 

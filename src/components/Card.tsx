@@ -16,7 +16,8 @@ import {
   joinFrontmatter,
   splitFrontmatter,
 } from "../lib/frontmatter";
-import { folderColor, isNotableFolder, noteFolder } from "../lib/folders";
+import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { ChevronRight, Folder as FolderIcon, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
 const ATTACHMENTS_DIR = "attachments";
@@ -70,11 +71,37 @@ interface Props {
   /** Optional Notable Folder color. Renders as a left-border accent
    *  so cards visually group by folder in the Stream. */
   color?: string;
+  /** When this card IS a Notable Folder Main Document, these populate
+   *  the "Area › Category" breadcrumb in the footer. */
+  area?: string;
+  category?: string;
+  /** When this card is a regular note, this is its currently assigned
+   *  Notable Folder (or null). The autocomplete in the footer reads /
+   *  writes it through `onAssignFolder`. */
+  currentFolder?: string | null;
+  /** All Notable Folders in the vault — used to populate the folder
+   *  autocomplete. Each carries the same color we render the chip in. */
+  availableFolders?: { name: string; color: string }[];
+  /** Called when the user picks (or clears) a folder for this note.
+   *  Pass null to clear. CardGrid persists to YAML + updates state. */
+  onAssignFolder?: (name: string | null) => Promise<void>;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
 
-export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete, color }: Props) {
+export function Card(props: Props) {
+  const {
+    path: initialPath,
+    onRenamed,
+    onTitleChanged,
+    onDelete,
+    color,
+    area,
+    category,
+    currentFolder,
+    availableFolders,
+    onAssignFolder,
+  } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -83,6 +110,9 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete, c
   /** Lifecycle state that drives the delete exit animation. */
   const [exiting, setExiting] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Folder picker (autocomplete) state for regular notes. */
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [folderPickerQuery, setFolderPickerQuery] = useState("");
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
   const pathRef = useRef(initialPath);
@@ -323,6 +353,31 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete, c
       />
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
+        {/* Middle slot: breadcrumb for Notable Folders, folder picker for
+            regular notes. Drops the slot entirely when neither applies. */}
+        {(area || category) && (
+          <span className="order-card-breadcrumb" style={color ? { color } : undefined}>
+            {area && <span>{area}</span>}
+            {area && category && <ChevronRight size={11} strokeWidth={2} className="order-card-breadcrumb-sep" />}
+            {category && <span>{category}</span>}
+          </span>
+        )}
+        {!area && !category && (
+          <FolderPicker
+            current={currentFolder ?? null}
+            available={availableFolders ?? []}
+            open={folderPickerOpen}
+            query={folderPickerQuery}
+            onOpen={() => setFolderPickerOpen(true)}
+            onClose={() => { setFolderPickerOpen(false); setFolderPickerQuery(""); }}
+            onQueryChange={setFolderPickerQuery}
+            onAssign={async (name) => {
+              await onAssignFolder?.(name);
+              setFolderPickerOpen(false);
+              setFolderPickerQuery("");
+            }}
+          />
+        )}
         <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (
@@ -332,5 +387,82 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete, c
         </div>
       )}
     </article>
+  );
+}
+
+interface FolderPickerProps {
+  current: string | null;
+  available: { name: string; color: string }[];
+  open: boolean;
+  query: string;
+  onOpen: () => void;
+  onClose: () => void;
+  onQueryChange: (q: string) => void;
+  onAssign: (name: string | null) => Promise<void>;
+}
+
+function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign }: FolderPickerProps) {
+  const matches = query.trim()
+    ? available.filter((f) => f.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
+    : available.slice(0, 6);
+
+  if (current && !open) {
+    const f = available.find((x) => x.name === current);
+    const color = f?.color;
+    return (
+      <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined}>
+        <FolderIcon size={10} strokeWidth={2} />
+        <span className="order-card-folder-name">{current}</span>
+        <button
+          type="button"
+          className="order-card-folder-clear"
+          onClick={() => { void onAssign(null); }}
+          title="Remove folder"
+          aria-label="Remove folder"
+        >
+          <XIcon size={10} strokeWidth={2.5} />
+        </button>
+      </span>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="order-card-folder-add" onClick={onOpen}>
+        + folder
+      </button>
+    );
+  }
+
+  return (
+    <span className="order-card-folder-picker">
+      <input
+        autoFocus
+        className="order-card-folder-input"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { e.preventDefault(); onClose(); }
+          if (e.key === "Enter" && matches[0]) { e.preventDefault(); void onAssign(matches[0].name); }
+        }}
+        placeholder="Assign folder…"
+      />
+      {matches.length > 0 && (
+        <ul className="order-card-folder-options">
+          {matches.map((f) => (
+            <li key={f.name}>
+              <button
+                type="button"
+                className="order-card-folder-option"
+                onMouseDown={(e) => { e.preventDefault(); void onAssign(f.name); }}
+              >
+                <span className="order-card-folder-swatch" style={{ background: f.color }} />
+                {f.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </span>
   );
 }

@@ -381,6 +381,43 @@ export function CardGrid() {
     setNotes((prev) => prev?.filter((n) => n.id !== id) ?? null);
   }, []);
 
+  /** Assign (or clear) a regular note's Notable Folder. Writes the
+   *  `folder: [[Name]]` field into the file's YAML, then mirrors the
+   *  change into local state so the chip + filtering reflect it. */
+  const handleAssignFolder = useCallback(async (path: string, folderName: string | null) => {
+    const raw = await invoke<string>("read_text", { path });
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const next: Frontmatter = { ...frontmatter };
+    if (folderName) next.folder = `[[${folderName}]]`;
+    else delete next.folder;
+    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
+  }, []);
+
+  /** Create a new Notable Folder Main Document for the given area +
+   *  category. Writes <Name>.md with seed YAML (+ optional numeric
+   *  suffix if the name already exists), then adds it to state. */
+  const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
+    const dir = await documentDir();
+    const subdir = await join(dir, "Dropbox", "order", "cards");
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const frontmatter: Frontmatter = {
+      category: categoryName,
+      area: areaName,
+      type: "prose",
+    };
+    const body = `# ${trimmed}\n`;
+    const content = joinFrontmatter(frontmatter, body);
+    const basename = `${trimmed.replace(/[\\/:*?"<>|]/g, "-")}.md`;
+    const path = await uniqueWrite(subdir, basename, content);
+    const filename = path.split("/").pop() ?? basename;
+    setNotes((prev) => [
+      ...(prev ?? []),
+      { id: newNoteId(), path, filename, frontmatter, title: trimmed },
+    ]);
+  }, []);
+
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
     const { frontmatter, body } = splitFrontmatter(raw);
@@ -412,6 +449,13 @@ export function CardGrid() {
       frontmatter: n.frontmatter,
       path: n.path,
     }));
+
+  // Flat list of folder names + their deterministic colors, fed to the
+  // folder picker in each non-Notable card's footer.
+  const availableFolderRefs = notableFolders.map((f) => ({
+    name: f.name,
+    color: folderColor(f.name, f.frontmatter.color),
+  }));
 
   // Filter: if any folders are selected, only notes that belong to one
   // of them survive. Notable Folder Main Documents themselves count as
@@ -489,9 +533,8 @@ export function CardGrid() {
         {view === "stream" && (
           <div className="card-grid" ref={gridRef}>
             {sortedNotes.map((n) => {
-              // Notable Folder Main Documents carry their own color.
-              // Regular notes inherit their parent folder's color.
-              const folderName = isNotableFolder(n.frontmatter)
+              const isMain = isNotableFolder(n.frontmatter);
+              const folderName = isMain
                 ? n.filename.replace(/\.md$/, "")
                 : noteFolder(n.frontmatter);
               const c = folderName ? folderColor(folderName) : undefined;
@@ -500,6 +543,11 @@ export function CardGrid() {
                   <Card
                     path={n.path}
                     color={c}
+                    area={isMain ? parseRef(n.frontmatter.area) ?? undefined : undefined}
+                    category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
+                    currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
+                    availableFolders={isMain ? undefined : availableFolderRefs}
+                    onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
                     onDelete={(path) => handleCardDelete(n.id, path)}
@@ -548,6 +596,7 @@ export function CardGrid() {
           selected={folderFilter}
           onToggle={toggleFolderFilter}
           onClear={clearFolderFilter}
+          onCreateFolder={handleCreateFolder}
         />
       )}
     </div>
@@ -581,6 +630,7 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
     // the grid. Runs on mount, on every mutation that changes the cell
     // list, and on window resize.
     function reattachAndRelayout() {
+      if (!grid) return;
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
       cells.forEach((c) => ro.observe(c));
