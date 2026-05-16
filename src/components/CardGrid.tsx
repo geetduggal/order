@@ -690,21 +690,22 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
     const grid = gridRef.current;
     if (!grid) return;
 
-    function relayoutCell(cell: HTMLElement) {
+    function relayoutCell(cell: HTMLElement, reason?: string) {
       const styles = getComputedStyle(grid as HTMLElement);
       const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
-      // Measure the child .order-card — its block height reflects the
-      // intrinsic content size regardless of what gridRowEnd is. Avoid
-      // the clear-then-measure trick: cells with no row span collapse
-      // to a single 8px track and bake that 8px in as the new span.
       const child = cell.firstElementChild as HTMLElement | null;
       if (!child) return;
       const rows = Math.max(1, Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
+      const prev = cell.style.gridRowEnd;
       cell.style.gridRowEnd = `span ${rows}`;
+      cell.dataset.rows = String(rows);
+      if (reason) {
+        console.log(`[masonry] ${reason}: h=${child.offsetHeight} rows=${rows} (was ${prev})`);
+      }
     }
     function relayoutAll() {
       const cells = grid?.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells?.forEach(relayoutCell);
+      cells?.forEach((c) => relayoutCell(c));
     }
 
     // Observe each .order-card. RO catches size changes from images
@@ -713,7 +714,7 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       for (const e of entries) {
         const target = e.target as HTMLElement;
         const cell = target.closest(".card-grid-cell");
-        if (cell instanceof HTMLElement) relayoutCell(cell);
+        if (cell instanceof HTMLElement) relayoutCell(cell, "RO");
       }
     });
 
@@ -728,7 +729,7 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       if (!(card instanceof HTMLElement)) return;
       ro.observe(card);
       if (cardMOs.has(card)) return;
-      const cmo = new MutationObserver(() => relayoutCell(cell));
+      const cmo = new MutationObserver(() => relayoutCell(cell, "MO"));
       cmo.observe(card, {
         childList: true, subtree: true, characterData: true, attributes: true,
       });
@@ -757,8 +758,7 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       if (!(t instanceof Element)) return;
       const cell = t.closest(".card-grid-cell");
       if (cell instanceof HTMLElement) {
-        // rAF lets the editor finish its DOM mutation before we measure.
-        requestAnimationFrame(() => relayoutCell(cell));
+        requestAnimationFrame(() => relayoutCell(cell, `input(${e.type})`));
       }
     }
     grid.addEventListener("input", onInput, true);
