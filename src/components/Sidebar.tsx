@@ -55,32 +55,60 @@ interface Props {
    *  (area, category). The sidebar surfaces this as a "+ New folder"
    *  row at the bottom of the folders drill view. */
   onCreateFolder?: (name: string, area: string, category: string) => Promise<void>;
+  /** Stored Areas and Categories the user has explicitly added (vs
+   *  derived from a Notable Folder's YAML). Used to decide whether
+   *  the × remove button shows on a tile. */
+  storedAreas: string[];
+  storedCategories: { area: string; name: string }[];
+  onAddArea: (name: string) => void;
+  onRemoveArea: (name: string) => void;
+  onAddCategory: (name: string, area: string) => void;
+  onRemoveCategory: (name: string, area: string) => void;
 }
 
 interface Taxonomy {
   areaNames: string[];
   categoriesByArea: Map<string, string[]>;
   foldersByCategory: Map<string, NotableFolder[]>;
+  isAreaStored: (name: string) => boolean;
+  isCategoryStored: (area: string, name: string) => boolean;
 }
 
-function buildTaxonomy(folders: NotableFolder[]): Taxonomy {
-  const areaNames = new Set<string>();
+function eqi(a: string, b: string): boolean { return a.toLowerCase() === b.toLowerCase(); }
+
+function buildTaxonomy(
+  folders: NotableFolder[],
+  storedAreas: string[],
+  storedCategories: { area: string; name: string }[],
+): Taxonomy {
+  const areaSet = new Set<string>([...storedAreas]);
+  for (const f of folders) if (f.area) areaSet.add(f.area);
+
   const categoriesByArea = new Map<string, Set<string>>();
+  for (const c of storedCategories) {
+    const set = categoriesByArea.get(c.area) ?? new Set();
+    set.add(c.name);
+    categoriesByArea.set(c.area, set);
+  }
+  for (const f of folders) {
+    if (!f.area || !f.category) continue;
+    const set = categoriesByArea.get(f.area) ?? new Set();
+    set.add(f.category);
+    categoriesByArea.set(f.area, set);
+  }
+
   const foldersByCategory = new Map<string, NotableFolder[]>();
   for (const f of folders) {
     const a = f.area || NO_AREA;
     const c = f.category || NO_CATEGORY;
-    areaNames.add(a);
-    const cats = categoriesByArea.get(a) ?? new Set();
-    cats.add(c);
-    categoriesByArea.set(a, cats);
     const key = `${a}::${c}`;
     const list = foldersByCategory.get(key) ?? [];
     list.push(f);
     foldersByCategory.set(key, list);
   }
+
   return {
-    areaNames: [...areaNames].sort(),
+    areaNames: [...areaSet].sort(),
     categoriesByArea: new Map(
       [...categoriesByArea].map(([a, set]) => [a, [...set].sort()]),
     ),
@@ -90,14 +118,34 @@ function buildTaxonomy(folders: NotableFolder[]): Taxonomy {
         list.sort((x, y) => x.name.localeCompare(y.name)),
       ]),
     ),
+    isAreaStored: (name) => storedAreas.some((a) => eqi(a, name)),
+    isCategoryStored: (area, name) =>
+      storedCategories.some((c) => eqi(c.area, area) && eqi(c.name, name)),
   };
 }
 
-export function Sidebar({ view, onSelectView, folders, selected, onToggle, onClear, onCreateFolder }: Props) {
+export function Sidebar({
+  view,
+  onSelectView,
+  folders,
+  selected,
+  onToggle,
+  onClear,
+  onCreateFolder,
+  storedAreas,
+  storedCategories,
+  onAddArea,
+  onRemoveArea,
+  onAddCategory,
+  onRemoveCategory,
+}: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
   const [query, setQuery] = useState("");
 
-  const taxonomy = useMemo(() => buildTaxonomy(folders), [folders]);
+  const taxonomy = useMemo(
+    () => buildTaxonomy(folders, storedAreas, storedCategories),
+    [folders, storedAreas, storedCategories],
+  );
 
   // Sanity: if a drilled-into entity disappears (rare), pop back.
   if (drill.kind === "categories" && !taxonomy.areaNames.includes(drill.areaName)) {
@@ -173,13 +221,7 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
           </ul>
         )}
 
-        {!query && folders.length === 0 && (
-          <p className="sb-empty">
-            Add <code>category: [[Name]]</code> and <code>area: [[Name]]</code> to a note's YAML to mark it as a Notable Folder.
-          </p>
-        )}
-
-        {!query && folders.length > 0 && (
+        {!query && (
           <DrillView
             drill={drill}
             setDrill={setDrill}
@@ -187,6 +229,10 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
             selected={selected}
             onToggle={onToggle}
             onCreateFolder={onCreateFolder}
+            onAddArea={onAddArea}
+            onRemoveArea={onRemoveArea}
+            onAddCategory={onAddCategory}
+            onRemoveCategory={onRemoveCategory}
           />
         )}
       </section>
@@ -194,15 +240,37 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
   );
 }
 
-function DrillView({ drill, setDrill, taxonomy, selected, onToggle, onCreateFolder }: {
+function DrillView({
+  drill, setDrill, taxonomy, selected, onToggle, onCreateFolder,
+  onAddArea, onRemoveArea, onAddCategory, onRemoveCategory,
+}: {
   drill: DrillState;
   setDrill: (s: DrillState) => void;
   taxonomy: Taxonomy;
   selected: Set<string>;
   onToggle: (name: string) => void;
   onCreateFolder?: (name: string, area: string, category: string) => Promise<void>;
+  onAddArea: (name: string) => void;
+  onRemoveArea: (name: string) => void;
+  onAddCategory: (name: string, area: string) => void;
+  onRemoveCategory: (name: string, area: string) => void;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const draftActive = draft !== null;
+
+  function startDraft() { setDraft(""); }
+  function cancelDraft() { setDraft(null); }
+  function commitDraft(area: string | null) {
+    const trimmed = (draft ?? "").trim();
+    if (trimmed) {
+      if (area === null) onAddArea(trimmed);
+      else onAddCategory(trimmed, area);
+    }
+    setDraft(null);
+  }
+
   if (drill.kind === "areas") {
+    const empties = Math.max(0, MAX_SLOTS - taxonomy.areaNames.length - (draftActive ? 1 : 0));
     return (
       <>
         <SectionTitle label="Areas" count={taxonomy.areaNames.length} max={MAX_SLOTS} />
@@ -213,10 +281,24 @@ function DrillView({ drill, setDrill, taxonomy, selected, onToggle, onCreateFold
               label={a}
               coral={i % 2 === 1}
               onClick={() => setDrill({ kind: "categories", areaName: a })}
+              onRemove={
+                taxonomy.isAreaStored(a) && !hasNotableFolderInArea(taxonomy, a)
+                  ? () => onRemoveArea(a)
+                  : undefined
+              }
             />
           ))}
-          {Array.from({ length: Math.max(0, MAX_SLOTS - taxonomy.areaNames.length) }).map((_, i) => (
-            <EmptySlot key={`e-${i}`} />
+          {draftActive && (
+            <DraftTile
+              value={draft ?? ""}
+              onChange={setDraft}
+              onCommit={() => commitDraft(null)}
+              onCancel={cancelDraft}
+              placeholder="Area name"
+            />
+          )}
+          {Array.from({ length: empties }).map((_, i) => (
+            <EmptySlot key={`e-${i}`} onClick={!draftActive ? startDraft : undefined} />
           ))}
         </BoxGrid>
       </>
@@ -225,6 +307,7 @@ function DrillView({ drill, setDrill, taxonomy, selected, onToggle, onCreateFold
 
   if (drill.kind === "categories") {
     const cats = taxonomy.categoriesByArea.get(drill.areaName) ?? [];
+    const empties = Math.max(0, MAX_SLOTS - cats.length - (draftActive ? 1 : 0));
     return (
       <>
         <BackBar label={drill.areaName} onBack={() => setDrill({ kind: "areas" })} />
@@ -236,10 +319,24 @@ function DrillView({ drill, setDrill, taxonomy, selected, onToggle, onCreateFold
               label={c}
               coral={i % 2 === 1}
               onClick={() => setDrill({ kind: "folders", areaName: drill.areaName, categoryName: c })}
+              onRemove={
+                taxonomy.isCategoryStored(drill.areaName, c) && !hasFolderInCategory(taxonomy, drill.areaName, c)
+                  ? () => onRemoveCategory(c, drill.areaName)
+                  : undefined
+              }
             />
           ))}
-          {Array.from({ length: Math.max(0, MAX_SLOTS - cats.length) }).map((_, i) => (
-            <EmptySlot key={`e-${i}`} />
+          {draftActive && (
+            <DraftTile
+              value={draft ?? ""}
+              onChange={setDraft}
+              onCommit={() => commitDraft(drill.areaName)}
+              onCancel={cancelDraft}
+              placeholder="Category name"
+            />
+          )}
+          {Array.from({ length: empties }).map((_, i) => (
+            <EmptySlot key={`e-${i}`} onClick={!draftActive ? startDraft : undefined} />
           ))}
         </BoxGrid>
       </>
@@ -333,10 +430,11 @@ function BoxGrid({ children }: { children: React.ReactNode }) {
   return <div className="box-grid">{children}</div>;
 }
 
-function AreaTile({ label, coral, onClick }: {
+function AreaTile({ label, coral, onClick, onRemove }: {
   label: string;
   coral: boolean;
   onClick: () => void;
+  onRemove?: () => void;
 }) {
   const Icon: LucideIcon = folderIcon(label);
   const color = folderColor(label);
@@ -347,6 +445,17 @@ function AreaTile({ label, coral, onClick }: {
       onClick={onClick}
       title={`Open ${label}`}
     >
+      {onRemove && (
+        <button
+          type="button"
+          className="box-remove"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="Remove"
+          aria-label="Remove"
+        >
+          <X size={10} strokeWidth={2.5} />
+        </button>
+      )}
       <span className="box-icon-wrap" style={{ color }}>
         <Icon size={20} strokeWidth={1.8} />
       </span>
@@ -355,8 +464,59 @@ function AreaTile({ label, coral, onClick }: {
   );
 }
 
-function EmptySlot() {
-  return <div className="box empty" aria-hidden="true">+</div>;
+function EmptySlot({ onClick }: { onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      className="box empty"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-label={onClick ? "Add" : undefined}
+    >
+      +
+    </button>
+  );
+}
+
+function DraftTile({ value, onChange, onCommit, onCancel, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="box draft">
+      <input
+        autoFocus
+        className="box-draft-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); onCommit(); }
+          if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        }}
+        onBlur={() => {
+          if (!value.trim()) onCancel(); else onCommit();
+        }}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+// Helpers: derived areas/categories (those backed only by a Notable
+// Folder's YAML, never explicitly added) shouldn't get an × button —
+// removing the storage entry wouldn't actually drop the tile because
+// the Notable Folder still references it. We hide × in those cases.
+function hasNotableFolderInArea(taxonomy: Taxonomy, area: string): boolean {
+  for (const [key] of taxonomy.foldersByCategory) {
+    if (key.startsWith(`${area}::`)) return true;
+  }
+  return false;
+}
+function hasFolderInCategory(taxonomy: Taxonomy, area: string, category: string): boolean {
+  return (taxonomy.foldersByCategory.get(`${area}::${category}`)?.length ?? 0) > 0;
 }
 
 function FolderRow({ folder, checked, onToggle }: {

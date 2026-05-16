@@ -12,6 +12,7 @@ import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { useTaxonomy } from "../hooks/useTaxonomy";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
@@ -279,6 +280,8 @@ export function CardGrid() {
     });
   }, []);
   const clearFolderFilter = useCallback(() => setFolderFilter(new Set()), []);
+
+  const taxonomy = useTaxonomy();
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -618,6 +621,12 @@ export function CardGrid() {
           onToggle={toggleFolderFilter}
           onClear={clearFolderFilter}
           onCreateFolder={handleCreateFolder}
+          storedAreas={taxonomy.areas}
+          storedCategories={taxonomy.categories}
+          onAddArea={taxonomy.addArea}
+          onRemoveArea={taxonomy.removeArea}
+          onAddCategory={taxonomy.addCategory}
+          onRemoveCategory={taxonomy.removeCategory}
         />
       )}
     </div>
