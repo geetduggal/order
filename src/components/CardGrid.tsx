@@ -367,6 +367,20 @@ export function CardGrid() {
     <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
       <button
         type="button"
+        className="new-note-fab"
+        onClick={() => { void createNote({
+          date: isoDate(),
+          startTime: isoTime(),
+          allDay: false,
+        }); }}
+        title="New note"
+        aria-label="New note"
+      >
+        +
+      </button>
+
+      <button
+        type="button"
         className="sidebar-toggle"
         onClick={toggleSidebar}
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
@@ -377,33 +391,18 @@ export function CardGrid() {
 
       <main className="pane-main">
         {view === "stream" && (
-          <>
-            <button
-              type="button"
-              className="new-note-hint"
-              onClick={() => { void createNote({
-                date: isoDate(),
-                startTime: isoTime(),
-                allDay: false,
-              }); }}
-              aria-label="New note"
-            >
-              <span className="new-note-cursor" aria-hidden="true">|</span>
-              <span className="new-note-hint-text">click to write</span>
-            </button>
-            <div className="card-grid" ref={gridRef}>
-              {sortedNotes.map((n) => (
-                <div className="card-grid-cell" data-path={n.path} key={n.id}>
-                  <Card
-                    path={n.path}
-                    onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
-                    onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
-                    onDelete={(path) => handleCardDelete(n.id, path)}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
+          <div className="card-grid" ref={gridRef}>
+            {sortedNotes.map((n) => (
+              <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                <Card
+                  path={n.path}
+                  onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+                  onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+                  onDelete={(path) => handleCardDelete(n.id, path)}
+                />
+              </div>
+            ))}
+          </div>
         )}
         {view === "week" && (
           <CalendarView

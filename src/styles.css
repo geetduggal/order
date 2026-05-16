@@ -107,7 +107,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 6px;
-  padding: clamp(16px, 3vw, 32px) clamp(18px, 3.5vw, 40px) 14px;
+  /* Tighter top padding — heading at start of file should hug the
+     card top, not float in a sea of whitespace. */
+  padding: 10px clamp(18px, 3.5vw, 40px) 12px;
 }
 .order-card.is-loading {
   min-height: 100px;
@@ -190,11 +192,11 @@ input, textarea, select { outline: none; box-shadow: none; }
 
 .order-card-fullscreen,
 .order-card-delete {
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1;
   color: var(--ink-faint);
   background: transparent;
-  padding: 4px 6px;
+  padding: 4px 7px;
   border-radius: 3px;
   transition: color 0.12s ease, background-color 0.12s ease;
 }
@@ -329,13 +331,13 @@ input, textarea, select { outline: none; box-shadow: none; }
   top: 10px;
   right: 10px;
   z-index: 50;
-  width: 28px; height: 28px;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; line-height: 1;
+  font-size: 22px; line-height: 1;
   color: var(--ink-ghost);
   background: transparent;
   border-radius: 4px;
-  opacity: 0.35;
+  opacity: 0.45;
   transition: opacity 0.15s ease, color 0.12s ease, background-color 0.12s ease;
 }
 .sidebar-toggle:hover {
@@ -843,40 +845,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 .year-event.continues-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .year-event-title { display: block; }
 
-/* ---------- New note hint (subtle click target above the grid) ---------- */
-.new-note-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 14px clamp(20px, 4vw, 40px) 12px;
-  font-family: var(--serif);
-  font-size: 15px;
-  color: var(--ink-ghost);
-  background: transparent;
-  border: none;
-  border-bottom: none;
-  outline: none;
-  box-shadow: none;
-  text-align: left;
-  cursor: text;
-  transition: color 0.15s ease;
-}
-.new-note-hint:hover { color: var(--ink-faint); }
-.new-note-hint:focus { outline: none; }
-.new-note-cursor {
-  display: inline-block;
-  font-family: var(--serif);
-  font-weight: 200;
+/* ---------- New-note + FAB (mirror of sidebar toggle, coral) ---------- */
+.new-note-fab {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 50;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
   color: var(--coral);
-  animation: order-caret-blink 1.1s steps(2) infinite;
+  background: var(--coral-soft);
+  border-radius: 4px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, background-color 0.12s ease, color 0.12s ease;
 }
-.new-note-hint-text {
-  font-style: italic;
-  font-size: 13px;
-}
-@keyframes order-caret-blink {
-  to { opacity: 0; }
+.new-note-fab:hover {
+  opacity: 1;
+  color: #fff;
+  background: var(--coral);
 }
