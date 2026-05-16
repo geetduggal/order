@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
+import { YearLinearView } from "./YearLinearView";
 import {
   joinFrontmatter,
   splitFrontmatter,
@@ -300,10 +301,9 @@ export function CardGrid() {
         />
       )}
       {view === "year" && (
-        <CalendarView
+        <YearLinearView
           key="year"
           notes={calendarNotes}
-          initialView="multiMonthYear"
           onMoveEvent={updateNoteFrontmatter}
           onEventClick={handleEventClick}
         />
