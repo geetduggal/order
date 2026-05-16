@@ -4,7 +4,7 @@
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
@@ -270,7 +270,12 @@ export function CardGrid() {
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
   const [folderFilter, setFolderFilter] = useState<Set<string>>(new Set());
-  const gridRef = useRef<HTMLDivElement>(null);
+  // Callback ref backed by state so layout effects re-run when the
+  // .card-grid div actually mounts. A plain useRef has a stable
+  // identity, so an effect with [gridRef] deps never re-fires — and
+  // on initial render the grid isn't in the DOM yet (notes === null
+  // short-circuits below), so .current would stay null forever.
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
 
   const toggleFolderFilter = useCallback((name: string) => {
     setFolderFilter((prev) => {
@@ -315,7 +320,7 @@ export function CardGrid() {
     return () => { cancelled = true; };
   }, []);
 
-  useGridLayout(gridRef);
+  useGridLayout(gridEl);
 
   // Safety-net relayout for async content (Milkdown init, font load,
   // late image fetch). Fires a few times after any notes / filter /
@@ -323,7 +328,7 @@ export function CardGrid() {
   // rather than the cell — clearing-then-remeasuring the cell would
   // collapse it to 1 row (8px) and bake in that wrong reading.
   useEffect(() => {
-    const grid = gridRef.current;
+    const grid = gridEl;
     if (!grid || !notes) return;
     const timeouts = [50, 200, 600, 1500].map((ms) =>
       setTimeout(() => {
@@ -338,7 +343,7 @@ export function CardGrid() {
       }, ms),
     );
     return () => timeouts.forEach(clearTimeout);
-  }, [notes, folderFilter, view]);
+  }, [gridEl, notes, folderFilter, view]);
 
   const handleEventClick = useCallback((path: string) => {
     setView("stream");
@@ -355,7 +360,7 @@ export function CardGrid() {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
     const timer = setTimeout(() => {
-      const grid = gridRef.current;
+      const grid = gridEl;
       if (grid) {
         const cell = grid.querySelector<HTMLElement>(
           `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
@@ -607,7 +612,7 @@ export function CardGrid() {
 
       <main className="pane-main">
         {view === "stream" && (
-          <div className="card-grid" ref={gridRef}>
+          <div className="card-grid" ref={setGridEl}>
             {sortedNotes.map((n) => {
               const isMain = isNotableFolder(n.frontmatter);
               const folderName = isMain
@@ -685,9 +690,9 @@ export function CardGrid() {
   );
 }
 
-function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
+function useGridLayout(grid: HTMLDivElement | null) {
   useEffect(() => {
-    const grid = gridRef.current;
+    console.log("[masonry] useGridLayout effect running, grid=", grid);
     if (!grid) return;
 
     function relayoutCell(cell: HTMLElement, reason?: string) {
@@ -740,6 +745,7 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       if (!grid) return;
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
+      console.log("[masonry] reattaching to", cells.length, "cells");
       cells.forEach(attachCardObservers);
       relayoutAll();
     }
@@ -772,5 +778,5 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       grid.removeEventListener("keyup", onInput, true);
       window.removeEventListener("resize", relayoutAll);
     };
-  }, [gridRef]);
+  }, [grid]);
 }
