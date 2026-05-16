@@ -89,10 +89,16 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-self: start;
   min-width: 0;
   transition: box-shadow 500ms var(--ease-out);
+  /* IMPORTANT: no transform/animation/will-change on this element.
+     Any of those create a containing block, which captures the
+     fixed-position fullscreen .order-card inside this cell instead
+     of letting it escape to the viewport. The mount animation lives
+     on the .order-card child instead — when that goes position:
+     fixed, fixed-positioning ignores its OWN transforms for
+     containing block purposes, only ancestors' transforms matter. */
+}
+.order-card {
   animation: order-card-mount 320ms var(--ease-out) both;
-  /* Deliberately NO `will-change` here — it creates a containing
-     block for fixed-position descendants, which would trap
-     .order-card.is-fullscreen inside the cell instead of the viewport. */
 }
 @keyframes order-card-mount {
   from { opacity: 0; transform: translateY(16px) scale(0.94); }
