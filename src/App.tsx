@@ -4,7 +4,12 @@ import { CardGrid } from "./components/CardGrid";
 const ZOOM_KEY = "order.zoom";
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.6;
-const ZOOM_MAX = 2.0;
+const ZOOM_MAX = 2.4;
+const ZOOM_VAR = "--editor-zoom";
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
 
 function readZoom(): number {
   try {
@@ -17,52 +22,40 @@ function readZoom(): number {
   }
 }
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
-}
-
-async function applyZoom(z: number): Promise<void> {
-  // Tauri's native webview zoom — what Cmd+/Cmd- does in a real browser.
-  // CSS `zoom` was the prior approach; it caused caret misalignment in
-  // contenteditable surfaces (Milkdown / ProseMirror) because WebKit
-  // doesn't keep caret geometry in sync with `zoom`-scaled layout.
-  // Clear any leftover CSS zoom from earlier sessions.
+function applyZoom(z: number): void {
+  // We scale editor body text via a CSS variable instead of CSS `zoom`
+  // or webview-native zoom — both of those misalign the caret in
+  // Milkdown / ProseMirror contenteditables under WebKit. Editor
+  // headings use `em` so they scale proportionally; card chrome,
+  // sidebar, calendar, etc. stay at their natural size.
+  document.documentElement.style.setProperty(ZOOM_VAR, String(z));
+  // Belt-and-suspenders: clear any leftover CSS zoom from the prior
+  // approach so the cursor isn't dragged off by a stale value.
   if (document.documentElement.style.zoom) {
     document.documentElement.style.zoom = "";
-  }
-  try {
-    const mod = await import("@tauri-apps/api/webviewWindow");
-    await mod.getCurrentWebviewWindow().setZoom(z);
-  } catch (err) {
-    // Non-Tauri environment (e.g. plain browser test) — fall back to
-    // CSS zoom so the keymap still works, accepting the cursor quirk.
-    console.warn("webview setZoom unavailable, falling back:", err);
-    document.documentElement.style.zoom = String(z);
   }
   try { localStorage.setItem(ZOOM_KEY, String(z)); } catch { /* non-fatal */ }
 }
 
 function useFontZoom(): void {
   useEffect(() => {
-    void applyZoom(readZoom());
+    applyZoom(readZoom());
 
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
-      // Cmd+= / Cmd++ → zoom in. Browsers and OS surfaces both treat the
-      // `=` key (unshifted) as the zoom-in trigger; `+` is the shifted form.
       if (e.key === "=" || e.key === "+") {
         e.preventDefault();
-        void applyZoom(clamp(readZoom() + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
+        applyZoom(clamp(readZoom() + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
         return;
       }
       if (e.key === "-" || e.key === "_") {
         e.preventDefault();
-        void applyZoom(clamp(readZoom() - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
+        applyZoom(clamp(readZoom() - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
         return;
       }
       if (e.key === "0") {
         e.preventDefault();
-        void applyZoom(1);
+        applyZoom(1);
       }
     }
 
