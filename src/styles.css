@@ -135,7 +135,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   /* Tighter top padding — heading at start of file should hug the
      card top, not float in a sea of whitespace. */
-  padding: 10px clamp(18px, 3.5vw, 40px) 12px;
+  padding: 4px clamp(18px, 3.5vw, 40px) 12px;
 }
 .order-card.is-loading {
   min-height: 100px;
