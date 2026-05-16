@@ -175,7 +175,18 @@ function BaseCard({
         onDragStart();
       }}
       onDragEnd={() => { console.log("[list-drag] dragend", item.ref); onDragEnd(); }}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
+      onDragEnter={(e) => {
+        console.log("[list-drag] dragenter", item.ref, "target:", (e.target as HTMLElement).className);
+      }}
+      onDragOver={(e) => {
+        if (!(window as unknown as { __doLogged?: boolean }).__doLogged) {
+          console.log("[list-drag] dragover", item.ref, "target:", (e.target as HTMLElement).className);
+          (window as unknown as { __doLogged?: boolean }).__doLogged = true;
+          setTimeout(() => { (window as unknown as { __doLogged?: boolean }).__doLogged = false; }, 200);
+        }
+        e.preventDefault();
+        onDragOver();
+      }}
       onDrop={(e) => {
         console.log("[list-drag] drop on", item.ref);
         e.preventDefault();
