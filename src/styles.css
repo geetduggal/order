@@ -851,9 +851,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   top: 10px;
   left: 10px;
   z-index: 50;
-  width: 32px; height: 32px;
+  width: 22px; height: 22px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px;
+  font-size: 15px;
   font-weight: 300;
   line-height: 1;
   color: var(--coral);
