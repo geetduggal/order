@@ -1386,10 +1386,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   overflow: hidden;
   cursor: grab;
+  /* WebKit will start a text-selection drag whenever the user mouses
+     down on text, which preempts the article's HTML5 drag. Disable
+     selection on the card itself so any pointer-down kicks off the
+     card drag instead. Inputs re-enable it below. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: element;
   transition:
     transform 0.12s var(--ease-out),
     box-shadow 0.18s var(--ease-out),
     opacity 0.12s var(--ease-out);
+}
+.basecard input {
+  user-select: text;
+  -webkit-user-select: text;
 }
 .basecard:hover {
   transform: translateY(-2px);
@@ -1490,6 +1501,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   background-size: cover;
   background-position: center;
   background-color: var(--bg-sunken, var(--bg-elev));
+  /* Let the cover act as a passthrough surface for drag — the SVG
+     icon inside otherwise sometimes captures the mousedown and
+     blocks the article's HTML5 drag from starting. */
+  pointer-events: none;
 }
 .basecard-cover.is-fallback {
   display: flex;
