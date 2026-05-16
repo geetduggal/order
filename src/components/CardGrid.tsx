@@ -233,23 +233,30 @@ export function CardGrid() {
   }, []);
 
   // After switching to Stream with a target set, scroll the matching
-  // card into view and pulse a highlight on it. We wait one tick so the
-  // grid + cell DOM are present and the row-span layout has settled.
+  // card into view and pulse a highlight on it. We wait long enough
+  // for the masonry layout effect to compute row spans (otherwise the
+  // cell's final Y is wrong) and then for the smooth scroll to start.
+  // Clearing scrollTargetPath happens INSIDE the timeout so the effect's
+  // cleanup doesn't cancel the timer mid-flight.
   useEffect(() => {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
     const timer = setTimeout(() => {
       const grid = gridRef.current;
-      if (!grid) return;
-      const cell = grid.querySelector<HTMLElement>(
-        `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
-      );
-      if (!cell) return;
-      cell.scrollIntoView({ behavior: "smooth", block: "center" });
-      cell.classList.add("is-target");
-      setTimeout(() => cell.classList.remove("is-target"), 1400);
-    }, 60);
-    setScrollTargetPath(null);
+      if (grid) {
+        const cell = grid.querySelector<HTMLElement>(
+          `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
+        );
+        if (cell) {
+          cell.scrollIntoView({ behavior: "smooth", block: "center" });
+          cell.classList.add("is-target");
+          setTimeout(() => cell.classList.remove("is-target"), 1400);
+        } else {
+          console.warn("scroll target cell not found:", target);
+        }
+      }
+      setScrollTargetPath(null);
+    }, 120);
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
