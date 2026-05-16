@@ -200,125 +200,108 @@ html, body, #root {
 .topbar .view-switch button:hover { color: var(--ink); }
 .topbar .view-switch button.on { background: var(--royal); color: #fff; }
 
-/* ---------- Week view ---------- */
-.week {
+/* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
+.fc-shell {
   padding: 8px clamp(16px, 4vw, 40px) 80px;
   max-width: 1400px;
   margin: 0 auto;
+  font-family: var(--sans);
+  /* FullCalendar v6 theming via CSS variables. */
+  --fc-border-color: var(--rule);
+  --fc-page-bg-color: var(--bg);
+  --fc-neutral-bg-color: var(--bg-elev);
+  --fc-list-event-hover-bg-color: var(--bg-elev);
+  --fc-today-bg-color: var(--coral-soft);
+  --fc-now-indicator-color: var(--coral);
+  --fc-event-bg-color: var(--royal-soft);
+  --fc-event-border-color: var(--royal);
+  --fc-event-text-color: var(--ink);
+  --fc-button-bg-color: var(--bg-elev);
+  --fc-button-border-color: var(--rule);
+  --fc-button-text-color: var(--ink-soft);
+  --fc-button-hover-bg-color: var(--rule);
+  --fc-button-hover-border-color: var(--rule);
+  --fc-button-active-bg-color: var(--royal);
+  --fc-button-active-border-color: var(--royal);
 }
-.week-head {
-  display: flex; align-items: center; gap: 16px;
-  margin: 4px 0 16px;
+
+.fc-shell .fc {
+  font-family: var(--sans);
+  font-size: 12px;
 }
-.week-nav { display: inline-flex; gap: 4px; align-items: center; }
-.week-nav-btn {
-  font-size: 14px; line-height: 1;
-  padding: 4px 10px; border-radius: 4px;
-  color: var(--ink-soft); background: var(--bg-elev);
+
+/* Toolbar: smaller, calmer */
+.fc-shell .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 14px;
 }
-.week-nav-btn:hover { background: var(--rule); color: var(--ink); }
-.week-nav-btn.ghost {
-  font-size: 10px; font-weight: 500;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  background: transparent;
-}
-.week-label {
-  margin: 0;
+.fc-shell .fc-toolbar-title {
   font-family: var(--serif);
   font-weight: 500;
   font-size: 18px;
   color: var(--ink);
 }
+.fc-shell .fc-button {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  box-shadow: none !important;
+}
+.fc-shell .fc-button:focus { box-shadow: 0 0 0 2px var(--royal-soft) !important; }
+.fc-shell .fc-button-primary:not(:disabled).fc-button-active,
+.fc-shell .fc-button-primary:not(:disabled):active { color: #fff; }
 
-.week-grid {
-  display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
-  border-top: 1px solid var(--rule);
-  border-left: 1px solid var(--rule);
+/* Day / column headers */
+.fc-shell .fc-col-header-cell-cushion {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 6px 4px;
 }
-.week-time-axis {
-  border-right: 1px solid var(--rule);
-  background: var(--bg);
-}
-.week-corner { height: 38px; border-bottom: 1px solid var(--rule); }
-.week-hour-label {
-  height: 50px;
-  display: flex; align-items: flex-start; justify-content: flex-end;
-  padding: 2px 8px 0 0;
+.fc-shell .fc-day-today .fc-col-header-cell-cushion { color: var(--coral); }
+
+/* Time axis labels */
+.fc-shell .fc-timegrid-axis-cushion,
+.fc-shell .fc-timegrid-slot-label-cushion {
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--ink-ghost);
-  border-bottom: 1px solid var(--rule-soft);
 }
 
-.week-day {
-  border-right: 1px solid var(--rule);
-  display: flex; flex-direction: column;
-  background: var(--bg);
-}
-.week-day-head {
-  height: 38px;
-  display: flex; align-items: center; justify-content: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--rule);
-  font-size: 10.5px;
-}
-.week-day-head .week-dow {
-  color: var(--ink-faint);
-  letter-spacing: 0.08em; text-transform: uppercase;
-  font-weight: 500;
-}
-.week-day-head .week-day-num {
-  font-family: var(--serif);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.week-day-head.is-today .week-dow { color: var(--coral); }
-.week-day-head.is-today .week-day-num { color: var(--coral); }
-
-.week-day-body {
-  position: relative;
-  flex: 1;
-}
-.week-hour-row {
-  position: absolute;
-  left: 0; right: 0;
-  border-bottom: 1px solid var(--rule-soft);
-  pointer-events: none;
-}
-
-.week-event {
-  position: absolute;
-  left: 3px; right: 3px;
-  background: var(--royal-soft);
-  border-left: 3px solid var(--royal);
+/* Events */
+.fc-shell .fc-event {
+  border-left-width: 3px;
   border-radius: 3px;
-  padding: 3px 6px;
-  font-family: var(--sans);
   font-size: 10.5px;
   line-height: 1.3;
-  color: var(--ink);
+  padding: 1px 3px;
   cursor: grab;
-  user-select: none;
-  overflow: hidden;
-  z-index: 2;
 }
-.week-event:active { cursor: grabbing; }
-.week-event-dragging { opacity: 0.35; }
-.week-event-time {
+.fc-shell .fc-event:active { cursor: grabbing; }
+.fc-shell .fc-event-title {
+  font-weight: 500;
+}
+.fc-shell .fc-event-time {
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--ink-faint);
-  letter-spacing: 0.02em;
+  font-weight: 400;
 }
-.week-event-title {
-  margin-top: 1px;
-  font-weight: 500;
+
+/* Day grid (month) cells */
+.fc-shell .fc-daygrid-day-number {
+  font-family: var(--serif);
+  font-size: 13px;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  padding: 4px 6px;
+}
+.fc-shell .fc-day-today .fc-daygrid-day-number { color: var(--coral); }
+.fc-shell .fc-daygrid-more-link {
+  font-size: 10px;
+  color: var(--royal);
+  letter-spacing: 0.04em;
 }

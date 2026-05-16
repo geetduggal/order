@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
-import { WeekView, type NoteMeta } from "./WeekView";
+import { CalendarView, type NoteMeta } from "./CalendarView";
 import {
   joinFrontmatter,
   splitFrontmatter,
@@ -115,7 +115,7 @@ That's the whole product.`,
 
 const GRID_ROW_PX = 8;
 
-type View = "stream" | "week";
+type View = "stream" | "week" | "month";
 
 interface LoadedNote {
   path: string;
@@ -191,22 +191,23 @@ export function CardGrid() {
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
     const { frontmatter, body } = splitFrontmatter(raw);
-    const next = { ...frontmatter, ...patch };
+    const next: Frontmatter = { ...frontmatter };
+    // Patch protocol: `undefined` removes a key, anything else assigns.
+    // Lets CalendarView drop startTime/endTime when an event is dragged
+    // into the all-day strip.
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) delete next[k];
+      else next[k] = v;
+    }
     await invoke("write_text", { path, content: joinFrontmatter(next, body) });
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
-
-  const onMoveEvent = useCallback(
-    (path: string, patch: { date: string; startTime: string }) =>
-      updateNoteFrontmatter(path, patch),
-    [updateNoteFrontmatter],
-  );
 
   if (notes === null) {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
 
-  const weekNotes: NoteMeta[] = notes.map((n) => ({
+  const calendarNotes: NoteMeta[] = notes.map((n) => ({
     path: n.path,
     filename: n.filename,
     title: n.title,
@@ -229,10 +230,16 @@ export function CardGrid() {
           >
             Week
           </button>
+          <button
+            className={view === "month" ? "on" : ""}
+            onClick={() => setView("month")}
+          >
+            Month
+          </button>
         </div>
       </header>
 
-      {view === "stream" ? (
+      {view === "stream" && (
         <div className="card-grid" ref={gridRef}>
           {notes.map((n) => (
             <div className="card-grid-cell" key={n.path}>
@@ -240,8 +247,22 @@ export function CardGrid() {
             </div>
           ))}
         </div>
-      ) : (
-        <WeekView notes={weekNotes} onMoveEvent={onMoveEvent} />
+      )}
+      {view === "week" && (
+        <CalendarView
+          key="week"
+          notes={calendarNotes}
+          initialView="timeGridWeek"
+          onMoveEvent={updateNoteFrontmatter}
+        />
+      )}
+      {view === "month" && (
+        <CalendarView
+          key="month"
+          notes={calendarNotes}
+          initialView="dayGridMonth"
+          onMoveEvent={updateNoteFrontmatter}
+        />
       )}
     </div>
   );
