@@ -1,16 +1,22 @@
 // Interactive card grid for `type: list` Notable Folders.
 //
-// Drag model: pointer-down on a card seeds a candidate drag. Past a
-// movement threshold we enter drag mode, computing an "insertion
-// index" (between two cards, not on one) from the cursor's position
-// relative to the nearest card's mid-x. We render a PREVIEW array
-// with the dragged item moved to that insertion point, so the layout
-// itself shows the target slot. A FLIP useLayoutEffect captures
-// before/after positions and animates the displaced cards smoothly.
+// Drag model:
+// - pointerdown seeds a candidate drag.
+// - At the 5px threshold we snapshot every card's screen rect. This
+//   snapshot is the source of truth for cursor → slot mapping for
+//   the rest of the drag. Reading live DOM positions instead would
+//   feed the FLIP animation back into the slot calculation and the
+//   layout would oscillate.
+// - The "insertion point" is { beforeRef: string | null } — insert
+//   the dragged item before this specific ref, or at the end. Stable
+//   under reorder, no index arithmetic.
+// - A preview items array (dragged item moved to the insertion slot)
+//   drives rendering. A FLIP useLayoutEffect captures before/after
+//   positions every render and slides displaced cards smoothly.
+// - On pointerup, preview becomes the real items via onChange.
 //
-// On pointer-up the preview becomes the real items via onChange.
-// Tauri's webview intercepts HTML5 drag-drop at the OS level, hence
-// pointer events end-to-end.
+// HTML5 drag-drop is unusable here — Tauri's webview intercepts it
+// at the OS level, so drop events never reach in-page handlers.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
@@ -27,6 +33,11 @@ interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
+}
+
+interface InsertPoint {
+  /** null = insert at end of list */
+  beforeRef: string | null;
 }
 
 function resolve(ref: string, vaultNotes: ListNoteRef[]): ListNoteRef | undefined {
@@ -51,36 +62,41 @@ const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
 export function ListCards({ items, vaultNotes, onChange }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
-  const [insertIdx, setInsertIdx] = useState<number | null>(null);
+  const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
+  const draggedRefRef = useRef<string | null>(null);
+  draggedRefRef.current = draggedRef;
+  const insertPointRef = useRef<InsertPoint | null>(null);
+  insertPointRef.current = insertPoint;
+
   const dragRef = useRef<{
     ref: string; startX: number; startY: number; started: boolean;
   } | null>(null);
-  const insertIdxRef = useRef<number | null>(null);
-  insertIdxRef.current = insertIdx;
-  const draggedRefRef = useRef<string | null>(null);
-  draggedRefRef.current = draggedRef;
+  // Snapshot of card rects at drag start. Used for cursor → slot
+  // mapping for the duration of the drag, so FLIP animations don't
+  // change what "nearest card" means under the cursor.
+  const snapshotRef = useRef<Map<string, DOMRect> | null>(null);
 
   const previewItems = useMemo(() => {
-    if (!draggedRef || insertIdx === null) return items;
-    const fromIdx = items.findIndex((i) => i.ref === draggedRef);
-    if (fromIdx < 0) return items;
-    const arr = items.slice();
-    const [picked] = arr.splice(fromIdx, 1);
-    const insertAt = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
-    arr.splice(insertAt, 0, picked);
+    if (!draggedRef || !insertPoint) return items;
+    const dragged = items.find((i) => i.ref === draggedRef);
+    if (!dragged) return items;
+    const arr = items.filter((i) => i.ref !== draggedRef);
+    if (insertPoint.beforeRef === null) return [...arr, dragged];
+    const at = arr.findIndex((i) => i.ref === insertPoint.beforeRef);
+    if (at < 0) return [...arr, dragged];
+    arr.splice(at, 0, dragged);
     return arr;
-  }, [items, draggedRef, insertIdx]);
+  }, [items, draggedRef, insertPoint]);
 
-  // FLIP: capture each card's screen position after every render.
-  // If a card's position differs from the previous render, animate
-  // the displacement from the previous spot back to zero. The
-  // result is a smooth slide as the layout reshuffles during drag.
+  // FLIP: capture screen positions after every render. If a card's
+  // current rect differs from the previous one, animate the inverse
+  // displacement back to zero so the user sees a smooth slide.
   const prevRects = useRef<Map<string, DOMRect>>(new Map());
   useLayoutEffect(() => {
     const grid = gridRef.current;
@@ -90,13 +106,16 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
     cards.forEach((card) => {
       const key = card.dataset.flipKey!;
       seen.add(key);
+      // Cancel anything in-flight first so getBoundingClientRect
+      // returns the natural (untransformed) position, not the
+      // current visual position.
+      card.getAnimations().forEach((a) => a.cancel());
       const curr = card.getBoundingClientRect();
       const prev = prevRects.current.get(key);
       if (prev) {
         const dx = prev.left - curr.left;
         const dy = prev.top - curr.top;
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-          card.getAnimations().forEach((a) => a.cancel());
           card.animate(
             [
               { transform: `translate(${dx}px, ${dy}px)` },
@@ -108,22 +127,27 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
       }
       prevRects.current.set(key, curr);
     });
-    // Drop stale entries so removed cards don't leak positions.
     for (const key of Array.from(prevRects.current.keys())) {
       if (!seen.has(key)) prevRects.current.delete(key);
     }
   });
 
-  function move(fromRef: string, toIdx: number) {
+  function commitReorder(fromRef: string, ip: InsertPoint) {
     const current = itemsRef.current;
     const fromIdx = current.findIndex((i) => i.ref === fromRef);
     if (fromIdx < 0) return;
-    if (fromIdx === toIdx || (fromIdx === toIdx - 1)) return; // no-op
-    const next = current.slice();
-    const [picked] = next.splice(fromIdx, 1);
-    const insertAt = toIdx > fromIdx ? toIdx - 1 : toIdx;
-    next.splice(insertAt, 0, picked);
-    onChange(next);
+    const arr = current.filter((i) => i.ref !== fromRef);
+    const picked = current[fromIdx];
+    if (ip.beforeRef === null) {
+      onChange([...arr, picked]);
+      return;
+    }
+    const at = arr.findIndex((i) => i.ref === ip.beforeRef);
+    if (at < 0) return;
+    arr.splice(at, 0, picked);
+    // No-op detection: if the resulting array equals current, skip.
+    if (arr.every((it, i) => it.ref === current[i].ref)) return;
+    onChange(arr);
   }
 
   function remove(index: number) {
@@ -155,31 +179,50 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   }
 
   useEffect(() => {
-    function findInsertionIndex(x: number, y: number): number | null {
+    function captureSnapshot() {
       const grid = gridRef.current;
-      if (!grid) return null;
-      const cards = grid.querySelectorAll<HTMLElement>("[data-list-card-index]");
-      if (cards.length === 0) return 0;
-      // Find the nearest card by squared distance to its center,
-      // then split on its mid-x to decide before/after.
-      let bestIdx = 0;
-      let bestDist = Infinity;
+      if (!grid) return;
+      const m = new Map<string, DOMRect>();
+      grid.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((c) => {
+        m.set(c.dataset.flipKey!, c.getBoundingClientRect());
+      });
+      snapshotRef.current = m;
+    }
+
+    function findInsertPoint(x: number, y: number): InsertPoint | null {
+      const snap = snapshotRef.current;
+      const draggedR = draggedRefRef.current;
+      if (!snap || !draggedR) return null;
+      // Nearest non-dragged card by squared distance to center.
+      let bestRef: string | null = null;
       let bestRect: DOMRect | null = null;
-      cards.forEach((card) => {
-        const rect = card.getBoundingClientRect();
+      let bestDist = Infinity;
+      snap.forEach((rect, ref) => {
+        if (ref === draggedR) return;
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
         const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = parseInt(card.dataset.listCardIndex!, 10);
-          bestRect = rect;
-        }
+        if (d < bestDist) { bestDist = d; bestRef = ref; bestRect = rect; }
       });
-      if (!bestRect) return null;
+      if (bestRef === null || !bestRect) return null;
       const r = bestRect as DOMRect;
       const midX = r.left + r.width / 2;
-      return x < midX ? bestIdx : bestIdx + 1;
+      if (x < midX) return { beforeRef: bestRef };
+      // Insert AFTER bestRef → before the next item in items order
+      // that isn't the dragged item.
+      const list = itemsRef.current;
+      const bi = list.findIndex((it) => it.ref === bestRef);
+      if (bi < 0) return { beforeRef: null };
+      for (let i = bi + 1; i < list.length; i++) {
+        if (list[i].ref !== draggedR) return { beforeRef: list[i].ref };
+      }
+      return { beforeRef: null };
+    }
+
+    function samePoint(a: InsertPoint | null, b: InsertPoint | null): boolean {
+      if (a === b) return true;
+      if (!a || !b) return false;
+      return a.beforeRef === b.beforeRef;
     }
 
     function onMove(e: PointerEvent) {
@@ -189,21 +232,23 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
         const moved = Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY);
         if (moved < DRAG_THRESHOLD_PX) return;
         d.started = true;
+        captureSnapshot();
         setDraggedRef(d.ref);
       }
-      const idx = findInsertionIndex(e.clientX, e.clientY);
-      if (idx !== insertIdxRef.current) setInsertIdx(idx);
+      const next = findInsertPoint(e.clientX, e.clientY);
+      if (!samePoint(next, insertPointRef.current)) setInsertPoint(next);
     }
 
     function commit() {
       const d = dragRef.current;
       dragRef.current = null;
       if (d?.started) {
-        const to = insertIdxRef.current;
-        if (to !== null) move(d.ref, to);
+        const ip = insertPointRef.current;
+        if (ip) commitReorder(d.ref, ip);
       }
+      snapshotRef.current = null;
       setDraggedRef(null);
-      setInsertIdx(null);
+      setInsertPoint(null);
     }
 
     window.addEventListener("pointermove", onMove);
@@ -227,21 +272,18 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
 
   return (
     <div ref={gridRef} className="basecard-grid">
-      {previewItems.map((item, displayIdx) => {
+      {previewItems.map((item) => {
         const note = resolve(item.ref, vaultNotes);
         const image = note && typeof note.frontmatter.image === "string"
           ? note.frontmatter.image as string
           : undefined;
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
-        // Tint alternation follows the ORIGINAL items index so colors
-        // stay stable per item across reorders (less visual noise).
         const originalIdx = items.findIndex((i) => i.ref === item.ref);
         const tintCls = originalIdx % 2 === 0 ? "is-royal" : "is-coral";
         const dragging = item.ref === draggedRef;
         return (
           <BaseCard
             key={item.ref}
-            index={displayIdx}
             item={item}
             Icon={Icon}
             image={image}
@@ -265,7 +307,6 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
 }
 
 interface BaseCardProps {
-  index: number;
   item: ListItem;
   Icon: ReturnType<typeof folderIcon>;
   image?: string;
@@ -278,7 +319,7 @@ interface BaseCardProps {
 }
 
 function BaseCard({
-  index, item, Icon, image, tintCls, metaSuggestion,
+  item, Icon, image, tintCls, metaSuggestion,
   dragging,
   onPointerDown, onDelete, onMetaChange,
 }: BaseCardProps) {
@@ -301,7 +342,6 @@ function BaseCard({
   return (
     <article
       className={"basecard" + (dragging ? " is-dragging" : "")}
-      data-list-card-index={index}
       data-flip-key={item.ref}
       onPointerDown={(e) => onPointerDown(e, item.ref)}
     >
