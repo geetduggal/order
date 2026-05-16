@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
+import { readDir } from "@tauri-apps/plugin-fs";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
@@ -229,38 +230,68 @@ function deriveTitle(body: string, fallback: string): string {
   return fallback;
 }
 
+async function loadOne(path: string, filename: string, seed?: string): Promise<LoadedNote> {
+  let raw: string;
+  try {
+    raw = await invoke<string>("read_text", { path });
+  } catch {
+    if (seed === undefined) throw new Error(`read failed and no seed for ${path}`);
+    await invoke("write_text", { path, content: seed });
+    raw = seed;
+  }
+  let { frontmatter, body } = splitFrontmatter(raw);
+  const patch = suggestCalendarPatch(frontmatter, body);
+  if (patch) {
+    frontmatter = { ...frontmatter, ...patch };
+    const next = joinFrontmatter(frontmatter, body);
+    try {
+      await invoke("write_text", { path, content: next });
+    } catch (err) {
+      console.warn("Failed to inject calendar metadata for", path, err);
+    }
+  }
+  return {
+    id: newNoteId(),
+    path,
+    filename,
+    frontmatter,
+    title: deriveTitle(body, filename.replace(/\.md$/, "")),
+  };
+}
+
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   const dir = await documentDir();
   const subdir = await join(dir, "Dropbox", "order", "cards");
   const out: LoadedNote[] = [];
+  const seen = new Set<string>();
+
+  // First pass: ensure each seed file exists on disk and load it.
   for (const { filename, seed } of SEEDS) {
     const path = await join(subdir, filename);
-    let raw: string;
-    try {
-      raw = await invoke<string>("read_text", { path });
-    } catch {
-      await invoke("write_text", { path, content: seed });
-      raw = seed;
-    }
-    let { frontmatter, body } = splitFrontmatter(raw);
-    const patch = suggestCalendarPatch(frontmatter, body);
-    if (patch) {
-      frontmatter = { ...frontmatter, ...patch };
-      const next = joinFrontmatter(frontmatter, body);
-      try {
-        await invoke("write_text", { path, content: next });
-      } catch (err) {
-        console.warn("Failed to inject calendar metadata for", path, err);
-      }
-    }
-    out.push({
-      id: newNoteId(),
-      path,
-      filename,
-      frontmatter,
-      title: deriveTitle(body, filename.replace(/\.md$/, "")),
-    });
+    out.push(await loadOne(path, filename, seed));
+    seen.add(filename);
   }
+
+  // Second pass: load any other .md files the user has created since.
+  // Without this, every user-created note disappears after restart
+  // because only SEEDS were ever read back.
+  let entries: { name: string; isFile?: boolean }[] = [];
+  try {
+    entries = await readDir(subdir);
+  } catch (err) {
+    console.warn("Could not scan cards directory:", err);
+  }
+  for (const entry of entries) {
+    if (!entry.name?.endsWith(".md")) continue;
+    if (seen.has(entry.name)) continue;
+    const path = await join(subdir, entry.name);
+    try {
+      out.push(await loadOne(path, entry.name));
+    } catch (err) {
+      console.warn("Failed to load card", path, err);
+    }
+  }
+
   return out;
 }
 
