@@ -1392,7 +1392,6 @@ input, textarea, select { outline: none; box-shadow: none; }
      card drag instead. Inputs re-enable it below. */
   user-select: none;
   -webkit-user-select: none;
-  -webkit-user-drag: element;
   transition:
     transform 0.12s var(--ease-out),
     box-shadow 0.18s var(--ease-out),
@@ -1501,11 +1500,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   background-size: cover;
   background-position: center;
   background-color: var(--bg-sunken, var(--bg-elev));
-  /* Let the cover act as a passthrough surface for drag — the SVG
-     icon inside otherwise sometimes captures the mousedown and
-     blocks the article's HTML5 drag from starting. */
-  pointer-events: none;
 }
+/* Inner img/svg shouldn't intercept drag — but the cover itself
+   still receives events so dragenter/dragover register normally. */
+.basecard-cover img,
+.basecard-cover svg { pointer-events: none; }
 .basecard-cover.is-fallback {
   display: flex;
   align-items: center;
