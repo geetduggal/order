@@ -313,3 +313,31 @@ html, body, #root {
   color: var(--royal);
   letter-spacing: 0.04em;
 }
+
+/* Multi-month (Year) view: 3 cols x 4 rows of mini-months, with serif
+   month-name headings to match the rest of the chrome. */
+.fc-shell .fc-multimonth { background: var(--bg); }
+.fc-shell .fc-multimonth-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink);
+  padding: 8px 0 6px;
+}
+.fc-shell .fc-multimonth-header .fc-col-header-cell-cushion {
+  font-size: 9px;
+  padding: 4px 2px;
+}
+.fc-shell .fc-multimonth-daygrid .fc-daygrid-day-number {
+  font-size: 10.5px;
+  padding: 2px 4px;
+  font-family: var(--sans);
+}
+.fc-shell .fc-multimonth-daygrid .fc-day-today .fc-daygrid-day-number {
+  color: var(--coral);
+  font-weight: 600;
+}
+.fc-shell .fc-multimonth .fc-event {
+  font-size: 9.5px;
+  padding: 0 3px;
+}

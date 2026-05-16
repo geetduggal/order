@@ -115,7 +115,7 @@ That's the whole product.`,
 
 const GRID_ROW_PX = 8;
 
-type View = "stream" | "week" | "month";
+type View = "stream" | "week" | "month" | "year";
 
 interface LoadedNote {
   path: string;
@@ -263,6 +263,12 @@ export function CardGrid() {
           >
             Month
           </button>
+          <button
+            className={view === "year" ? "on" : ""}
+            onClick={() => setView("year")}
+          >
+            Year
+          </button>
         </div>
       </header>
 
@@ -289,6 +295,15 @@ export function CardGrid() {
           key="month"
           notes={calendarNotes}
           initialView="dayGridMonth"
+          onMoveEvent={updateNoteFrontmatter}
+          onEventClick={handleEventClick}
+        />
+      )}
+      {view === "year" && (
+        <CalendarView
+          key="year"
+          notes={calendarNotes}
+          initialView="multiMonthYear"
           onMoveEvent={updateNoteFrontmatter}
           onEventClick={handleEventClick}
         />

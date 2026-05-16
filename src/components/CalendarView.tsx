@@ -12,6 +12,7 @@ import { useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import multiMonthPlugin from "@fullcalendar/multimonth";
 import interactionPlugin from "@fullcalendar/interaction";
 import type {
   CalendarApi,
@@ -23,7 +24,7 @@ import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime } from "../lib/frontmatter";
 
-export type CalendarRange = "timeGridWeek" | "dayGridMonth";
+export type CalendarRange = "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
 export interface NoteMeta {
   path: string;
@@ -162,7 +163,7 @@ export function CalendarView(props: Props) {
           apiRef.current = instance;
           rememberApi(instance?.getApi() ?? null);
         }}
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+        plugins={[dayGridPlugin, timeGridPlugin, multiMonthPlugin, interactionPlugin]}
         initialView={initialView}
         events={events}
         editable
