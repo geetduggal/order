@@ -170,7 +170,56 @@ type: list
 
 # Books
 
-A running list of what I'm reading, what I want to read, and what landed.`,
+A running list of what I'm reading, what I want to read, and what landed.
+
+- [[On Photography]] · Susan Sontag · ★★★★½
+- [[Slowness]] · Milan Kundera · ★★★★
+- [[The Artist's Way]] · Julia Cameron · ★★★★
+- [[A Field Guide to Getting Lost]] · Rebecca Solnit · ★★★★★
+- [[Ways of Seeing]] · John Berger · ★★★★★
+- [[Tao Te Ching]] · Le Guin (trans.) · ★★★★★`,
+  },
+  {
+    filename: "On Photography.md",
+    seed:
+`---
+folder: "[[Books]]"
+author: Susan Sontag
+rating: 4.5
+description: A meditation on the camera's relationship to the world.
+---
+
+# On Photography
+
+A meditation on the relationship between photography, ethics, and the world.`,
+  },
+  {
+    filename: "Slowness.md",
+    seed:
+`---
+folder: "[[Books]]"
+author: Milan Kundera
+rating: 4
+description: A novel on speed, memory, and forgetting.
+---
+
+# Slowness
+
+A short novel that braids two stories — one from the 18th century, one from the present — around the relationship between speed and memory.`,
+  },
+  {
+    filename: "The Artist's Way.md",
+    seed:
+`---
+folder: "[[Books]]"
+author: Julia Cameron
+rating: 4
+description: A twelve-week course on recovering creative agency.
+---
+
+# The Artist's Way
+
+A twelve-week program centered on morning pages and artist dates.`,
   },
   {
     filename: "Walks.md",
@@ -560,6 +609,14 @@ export function CardGrid() {
     color: folderColor(f.name, f.frontmatter.color),
   }));
 
+  // Minimal vault index for resolving `- [[Name]]` bullets inside
+  // `type: list` Notable Folder Main Documents. Only the bits the list
+  // grid needs — filename for matching, frontmatter for cover/meta.
+  const vaultNotesIndex = notes.map((n) => ({
+    filename: n.filename,
+    frontmatter: n.frontmatter,
+  }));
+
   // Filter: if any folders are selected, only notes that belong to one
   // of them survive. Notable Folder Main Documents themselves count as
   // "belonging to" their own folder so they're always pinned at top.
@@ -687,6 +744,7 @@ export function CardGrid() {
                     currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
                     availableFolders={isMain ? undefined : availableFolderRefs}
                     onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
+                    vaultNotes={isMain ? vaultNotesIndex : undefined}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
                     onDelete={(path) => handleCardDelete(n.id, path)}

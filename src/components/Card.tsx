@@ -15,7 +15,10 @@ import {
   isoTime,
   joinFrontmatter,
   splitFrontmatter,
+  type Frontmatter,
 } from "../lib/frontmatter";
+import { isListFolder, parseListItems } from "../lib/list-folder";
+import { ListCards } from "./ListCards";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
   ATTACHMENTS_DIRNAME,
@@ -63,7 +66,7 @@ async function uniqueRename(dir: string, oldPath: string, basename: string): Pro
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; body: string }
+  | { kind: "ready"; body: string; frontmatter: Frontmatter }
   | { kind: "error"; message: string };
 
 interface Props {
@@ -90,6 +93,11 @@ interface Props {
   /** Called when the user picks (or clears) a folder for this note.
    *  Pass null to clear. CardGrid persists to YAML + updates state. */
   onAssignFolder?: (name: string | null) => Promise<void>;
+  /** Minimal vault index for resolving `- [[Name]]` bullets when this
+   *  card is a `type: list` Notable Folder Main Document. Each entry
+   *  exposes just enough YAML for the list card grid to find covers,
+   *  authors, descriptions. */
+  vaultNotes?: { filename: string; frontmatter: Frontmatter }[];
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -106,6 +114,7 @@ export function Card(props: Props) {
     currentFolder,
     availableFolders,
     onAssignFolder,
+    vaultNotes,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -118,6 +127,10 @@ export function Card(props: Props) {
   /** Folder picker (autocomplete) state for regular notes. */
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [folderPickerQuery, setFolderPickerQuery] = useState("");
+  /** Mirrors the editor body so the list-card grid below it can reflect
+   *  bullet changes live as the user types. Milkdown itself stays
+   *  uncontrolled — this is downstream-only. */
+  const [editorBody, setEditorBody] = useState<string>("");
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
   const pathRef = useRef(initialPath);
@@ -139,12 +152,13 @@ export function Card(props: Props) {
       try {
         const raw = await invoke<string>("read_text", { path: initialPath });
         if (cancelled) return;
-        const { body } = splitFrontmatter(raw);
+        const { frontmatter, body } = splitFrontmatter(raw);
         const vault = await dirname(await dirname(initialPath));
         const prefix = attachmentAssetPrefix(vault);
         const displayBody = inflateAttachmentUrls(body, prefix);
         lastTitleRef.current = firstLineTitle(displayBody);
-        setState({ kind: "ready", body: displayBody });
+        setState({ kind: "ready", body: displayBody, frontmatter });
+        setEditorBody(displayBody);
       } catch (err) {
         if (cancelled) return;
         setState({
@@ -222,6 +236,7 @@ export function Card(props: Props) {
 
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
+    setEditorBody(markdown);
     setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
@@ -367,6 +382,12 @@ export function Card(props: Props) {
         onDone={() => { void flushNow(); }}
         onImageUpload={handleImageUpload}
       />
+      {isListFolder(state.frontmatter) && (
+        <ListCards
+          items={parseListItems(editorBody)}
+          vaultNotes={vaultNotes ?? []}
+        />
+      )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
         {/* Middle slot: breadcrumb for Notable Folders, folder picker for

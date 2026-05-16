@@ -1372,6 +1372,68 @@ input, textarea, select { outline: none; box-shadow: none; }
   flex-shrink: 0;
 }
 
+/* ---------- List Notable Folder: basecard grid ---------- */
+.basecard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0 4px;
+}
+.basecard {
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: transform 0.12s var(--ease-out), box-shadow 0.18s var(--ease-out);
+}
+.basecard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(40, 38, 32, 0.08);
+}
+.basecard-cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--bg-sunken, var(--bg-elev));
+}
+.basecard-cover.is-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--rule);
+  color: var(--royal, var(--ink-soft));
+}
+.basecard-cover.is-fallback.is-royal {
+  background:
+    linear-gradient(155deg,
+      var(--royal-soft, rgba(65, 105, 225, 0.12)) 0%,
+      var(--bg) 75%);
+  color: var(--royal, #4169e1);
+}
+.basecard-cover.is-fallback.is-coral {
+  background:
+    linear-gradient(155deg,
+      var(--coral-soft, rgba(255, 127, 80, 0.14)) 0%,
+      var(--bg) 75%);
+  color: var(--coral, #ff7f50);
+}
+.basecard-body { padding: 8px 10px 10px; }
+.basecard-title {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.basecard-meta {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 3px;
+}
+
 /* ---------- Command palette (Cmd+K) ---------- */
 .cmdk-backdrop {
   position: fixed;
