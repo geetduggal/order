@@ -76,6 +76,16 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
   return events;
 }
 
+/** Round a Date to the nearest absolute half-hour mark (XX:00 or XX:30).
+ *  setMinutes accepts values ≥ 60 and overflows into the next hour, so
+ *  we don't need a wrap branch. Mutates a fresh copy, not the input. */
+function roundToHalfHour(d: Date): Date {
+  const out = new Date(d);
+  out.setSeconds(0, 0);
+  out.setMinutes(Math.round(out.getMinutes() / 30) * 30);
+  return out;
+}
+
 function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | null {
   const start = arg.event.start;
   if (!start) return null;
@@ -90,12 +100,14 @@ function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | n
       endTime: undefined,
     };
   }
+  const startSnap = roundToHalfHour(start);
   const end = arg.event.end;
+  const endSnap = end ? roundToHalfHour(end) : null;
   return {
-    date: isoDate(start),
+    date: isoDate(startSnap),
     allDay: false,
-    startTime: isoTime(start),
-    endTime: end ? isoTime(end) : undefined,
+    startTime: isoTime(startSnap),
+    endTime: endSnap ? isoTime(endSnap) : undefined,
   };
 }
 
