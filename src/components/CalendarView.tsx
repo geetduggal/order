@@ -150,10 +150,20 @@ export function CalendarView(props: Props) {
 
   async function handleSelect(arg: DateSelectArg) {
     if (!props.onCreate) return;
-    // FullCalendar gives an exclusive end; we want the start moment to
-    // be the new event's date/time. For all-day, drop the time fields.
+    // FullCalendar gives an exclusive end. For all-day we convert to
+    // the inclusive last-selected day for the YAML `endDate` field
+    // (Obsidian Full Calendar convention — endDate is inclusive).
     if (arg.allDay) {
-      await props.onCreate({ date: isoDate(arg.start), allDay: true });
+      const start = arg.start;
+      const endInclusive = new Date(arg.end.getTime() - 86_400_000);
+      const patch: Frontmatter = { date: isoDate(start), allDay: true };
+      // Single-day selection ⇒ start === endInclusive; only emit
+      // endDate for genuine multi-day ranges so single events stay
+      // clean in YAML.
+      if (isoDate(start) !== isoDate(endInclusive)) {
+        patch.endDate = isoDate(endInclusive);
+      }
+      await props.onCreate(patch);
     } else {
       const start = roundToHalfHour(arg.start);
       const end = roundToHalfHour(arg.end);
@@ -162,14 +172,9 @@ export function CalendarView(props: Props) {
         date: isoDate(start),
         allDay: false,
         startTime: isoTime(start),
-        // Drag-range selects get an endTime; a plain click that
-        // resolves to the same instant after rounding is treated as
-        // "no duration" — let it stay open-ended in YAML.
         endTime: sameInstant ? undefined : isoTime(end),
       });
     }
-    // Clear the visual selection so it doesn't linger after the new
-    // event renders.
     arg.view.calendar.unselect();
   }
 

@@ -511,6 +511,16 @@ html, body, #root {
   font-weight: 600;
 }
 
+/* Drag-to-create preview band. Overrides weekend / today shading
+   while the drag is active so the selection range reads clearly. */
+.year-cell.in-drag-range {
+  background: rgba(65, 105, 225, 0.18) !important;
+}
+.year-cell.in-drag-range .year-cell-day {
+  color: var(--royal);
+  font-weight: 600;
+}
+
 .year-cell-day {
   font-family: var(--sans);
   font-size: 10px;

@@ -12,7 +12,7 @@
 // Drag an event bar → rewrite its `date` (single-day events only for
 // now; multi-day drag preserves the duration, just shifts the start).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isoDate, type Frontmatter } from "../lib/frontmatter";
 import { isSameDay, parseIsoDate } from "../lib/calendar";
 
@@ -129,10 +129,50 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
 
+  // Mouse-drag selection state. anchor = mousedown date, hover = the
+  // most recent cell the mouse entered. While both are set we render a
+  // coral preview band across the inferred range, and a global mouseup
+  // listener commits the range as a new event.
+  const [anchor, setAnchor] = useState<Date | null>(null);
+  const [hover, setHover] = useState<Date | null>(null);
+
   const monthLayouts = useMemo(
     () => Array.from({ length: 12 }, (_, m) => packIntoMonth(year, m, notes)),
     [year, notes],
   );
+
+  // Range as inclusive [lo, hi] dates regardless of drag direction.
+  const dragRange = useMemo(() => {
+    if (!anchor || !hover) return null;
+    const lo = anchor <= hover ? anchor : hover;
+    const hi = anchor <= hover ? hover : anchor;
+    return { lo, hi };
+  }, [anchor, hover]);
+
+  function isInDragRange(date: Date): boolean {
+    if (!dragRange) return false;
+    const t = date.getTime();
+    return t >= dragRange.lo.getTime() && t <= dragRange.hi.getTime();
+  }
+
+  // Commit the drag on mouseup — anywhere on the document, so releasing
+  // off the grid still finishes the selection cleanly.
+  useEffect(() => {
+    if (!anchor || !hover) return;
+    function commit() {
+      if (!anchor || !hover || !onCreate) {
+        setAnchor(null); setHover(null); return;
+      }
+      const lo = anchor <= hover ? anchor : hover;
+      const hi = anchor <= hover ? hover : anchor;
+      const patch: Frontmatter = { date: isoDate(lo), allDay: true };
+      if (!isSameDay(lo, hi)) patch.endDate = isoDate(hi);
+      void onCreate(patch);
+      setAnchor(null); setHover(null);
+    }
+    window.addEventListener("mouseup", commit);
+    return () => window.removeEventListener("mouseup", commit);
+  }, [anchor, hover, onCreate]);
 
   function onEventDragStart(e: React.DragEvent<HTMLDivElement>, path: string) {
     e.dataTransfer.setData("text/plain", path);
@@ -154,9 +194,15 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
     await onMoveEvent(path, { date: dateStr });
   }
 
-  async function onEmptyCellClick(dateStr: string) {
-    if (!onCreate) return;
-    await onCreate({ date: dateStr, allDay: true });
+  function onCellMouseDown(e: React.MouseEvent<HTMLDivElement>, date: Date) {
+    // Only start a drag for primary button on empty cell area; clicks
+    // on an event bar set their own draggable handler.
+    if (e.button !== 0) return;
+    setAnchor(date);
+    setHover(date);
+  }
+  function onCellMouseEnter(date: Date) {
+    if (anchor) setHover(date);
   }
 
   function goPrev() { setYear(year - 1); }
@@ -207,6 +253,7 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
               const dateStr = date ? isoDate(date) : undefined;
               const isToday = date ? isSameDay(date, today) : false;
               const isWeekend = i % 7 === 0 || i % 7 === 6;
+              const inRange = isValid && date ? isInDragRange(date) : false;
               return (
                 <div
                   key={i}
@@ -214,12 +261,14 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
                     "year-cell" +
                     (isValid ? "" : " empty") +
                     (isToday ? " today" : "") +
-                    (isWeekend && isValid ? " weekend" : "")
+                    (isWeekend && isValid ? " weekend" : "") +
+                    (inRange ? " in-drag-range" : "")
                   }
                   data-date={dateStr}
                   onDragOver={isValid ? onCellDragOver : undefined}
                   onDrop={isValid && dateStr ? (e) => { void onCellDrop(e, dateStr); } : undefined}
-                  onClick={isValid && dateStr ? () => { void onEmptyCellClick(dateStr); } : undefined}
+                  onMouseDown={isValid && date ? (e) => onCellMouseDown(e, date) : undefined}
+                  onMouseEnter={isValid && date ? () => onCellMouseEnter(date) : undefined}
                 >
                   {isValid && <span className="year-cell-day">{dayNum}</span>}
                 </div>
@@ -252,6 +301,9 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
                     draggable
                     onDragStart={(e) => onEventDragStart(e, note.path)}
                     onDragEnd={onEventDragEnd}
+                    // Stop mousedown bubbling so clicking an event bar
+                    // doesn't start a cell drag-to-create selection.
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onEventClick?.(note.path); }}
                     title={note.title}
                   >
