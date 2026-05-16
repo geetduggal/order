@@ -146,9 +146,15 @@ html, body, #root {
   min-height: 1.5em;
 }
 
-/* h1 stays serif (title voice). h2 and below go to a heavier sans —
-   Medium / publication convention: serif body + serif title, sans-serif
-   section headings for visual rhythm. */
+/* h1 stays serif (title voice) with a hairline divider beneath. */
+.milkdown-host .ProseMirror h1 {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.35em;
+  margin-bottom: 0.6em;
+}
+
+/* h2 and below: heavier sans, smaller than browser defaults so they
+   stay subordinate to h1 without losing structural presence. */
 .milkdown-host .ProseMirror :is(h2, h3, h4, h5, h6) {
   font-family: var(--sans);
   font-weight: 700;
@@ -156,3 +162,8 @@ html, body, #root {
   line-height: 1.25;
   color: var(--ink);
 }
+.milkdown-host .ProseMirror h2 { font-size: 1.15em; }
+.milkdown-host .ProseMirror h3 { font-size: 1.02em; }
+.milkdown-host .ProseMirror h4 { font-size: 0.95em; }
+.milkdown-host .ProseMirror h5 { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.04em; }
+.milkdown-host .ProseMirror h6 { font-size: 0.85em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
