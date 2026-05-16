@@ -298,7 +298,7 @@ export function CardGrid() {
     return () => { cancelled = true; };
   }, []);
 
-  useGridLayout(gridRef, view === "stream" ? notes?.length ?? 0 : 0);
+  useGridLayout(gridRef);
 
   const handleEventClick = useCallback((path: string) => {
     setView("stream");
@@ -554,7 +554,7 @@ export function CardGrid() {
   );
 }
 
-function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>, count: number) {
+function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid) return;
@@ -566,7 +566,6 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>, count: n
       const rows = Math.max(1, Math.ceil((cell.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
       cell.style.gridRowEnd = `span ${rows}`;
     }
-
     function relayoutAll() {
       const cells = grid?.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
       cells?.forEach(relayoutCell);
@@ -577,14 +576,29 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>, count: n
         if (e.target instanceof HTMLElement) relayoutCell(e.target);
       }
     });
-    const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-    cells.forEach((c) => ro.observe(c));
 
-    relayoutAll();
+    // Re-attach the ResizeObserver to whichever cells currently live in
+    // the grid. Runs on mount, on every mutation that changes the cell
+    // list, and on window resize.
+    function reattachAndRelayout() {
+      ro.disconnect();
+      const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
+      cells.forEach((c) => ro.observe(c));
+      relayoutAll();
+    }
+    reattachAndRelayout();
+
+    // MutationObserver catches every cell add/remove (filter toggles,
+    // create-note, delete) — the previous count-based useEffect dep
+    // missed filter changes since the total notes count was unchanged.
+    const mo = new MutationObserver(reattachAndRelayout);
+    mo.observe(grid, { childList: true });
+
     window.addEventListener("resize", relayoutAll);
     return () => {
       ro.disconnect();
+      mo.disconnect();
       window.removeEventListener("resize", relayoutAll);
     };
-  }, [count, gridRef]);
+  }, [gridRef]);
 }
