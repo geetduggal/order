@@ -39,6 +39,28 @@ html, body, #root {
 
 ::selection { background: var(--coral-soft); }
 
+/* Strip every default browser button shadow / focus ring / inner
+   border. Each surface (cards, calendar, sidebar) provides its own
+   affordances; we don't want WebKit'\''s ambient pill chrome leaking
+   through. */
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+button:focus, button:focus-visible { outline: none; box-shadow: none; }
+button::-moz-focus-inner { border: 0; padding: 0; }
+input, textarea, select { outline: none; box-shadow: none; }
+
 /* ---------- Grid ----------
    auto-fill + minmax lets the grid pick its own column count based on
    available width and a card minimum. Cards always fill the row; widen
@@ -374,8 +396,8 @@ html, body, #root {
   padding: 1px 5px; border-radius: 3px;
 }
 
-/* View pill: matches mockup view-switch, but laid out compactly in
-   the sidebar — 4 small pill buttons in a single row. */
+/* View pill — exact copy of the mockup spec
+   (mockups/styles.css lines 143–164). */
 .pane-right .view-switch {
   display: flex;
   gap: 2px;
@@ -383,22 +405,28 @@ html, body, #root {
   border: 1px solid var(--rule);
   border-radius: 999px;
   background: var(--bg-elev);
+  box-shadow: none;
 }
 .pane-right .view-switch button {
   flex: 1;
-  padding: 4px 6px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-family: var(--sans);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint);
   background: transparent;
+  box-shadow: none;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .pane-right .view-switch button:hover { color: var(--ink); }
-.pane-right .view-switch button.on { background: var(--royal); color: #fff; }
+.pane-right .view-switch button.active {
+  background: var(--royal);
+  color: #fff;
+  box-shadow: none;
+}
 
 /* 10-box Johnny Decimal grid */
 .box-grid {
