@@ -74,6 +74,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
@@ -197,10 +198,13 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     // delete (which would otherwise just recreate it on disk).
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     pendingBody.current = null;
+    setDeleteError(null);
     try {
       await onDelete?.(pathRef.current);
     } catch (err) {
       console.error("delete failed:", err);
+      const message = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
+      setDeleteError(message);
       setConfirmingDelete(false);
     }
   }, [onDelete]);
@@ -263,6 +267,12 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
           </button>
         )}
       </div>
+      {deleteError && (
+        <div className="order-card-error" role="alert">
+          delete failed: {deleteError}
+          <button type="button" className="dismiss-btn" onClick={() => setDeleteError(null)}>×</button>
+        </div>
+      )}
     </article>
   );
 }
