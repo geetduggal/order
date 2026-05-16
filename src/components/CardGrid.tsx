@@ -707,41 +707,69 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       cells?.forEach(relayoutCell);
     }
 
-    // Observe the inner .order-card child, not the wrapper cell. The
-    // cell's box is sized by gridRowEnd (a number we set), so its
-    // dimensions don't change when content grows — ResizeObserver
-    // wouldn't fire. The child's box reflects actual content height
-    // and triggers when the user types.
+    // Observe each .order-card. RO catches size changes from images
+    // loading, font swaps, fullscreen toggles, breadcrumb appearing.
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const target = e.target as HTMLElement;
-        const cell = target.parentElement?.closest(".card-grid-cell");
+        const cell = target.closest(".card-grid-cell");
         if (cell instanceof HTMLElement) relayoutCell(cell);
       }
     });
+
+    // Per-card MutationObservers catch ProseMirror's internal DOM
+    // changes when the user types — RO alone is unreliable here
+    // because ProseMirror's incremental DOM updates don't always
+    // produce a measurable layout change in the same frame.
+    const cardMOs = new WeakMap<Element, MutationObserver>();
+
+    function attachCardObservers(cell: HTMLElement) {
+      const card = cell.firstElementChild;
+      if (!(card instanceof HTMLElement)) return;
+      ro.observe(card);
+      if (cardMOs.has(card)) return;
+      const cmo = new MutationObserver(() => relayoutCell(cell));
+      cmo.observe(card, {
+        childList: true, subtree: true, characterData: true, attributes: true,
+      });
+      cardMOs.set(card, cmo);
+    }
 
     function reattachAndRelayout() {
       if (!grid) return;
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells.forEach((c) => {
-        const child = c.firstElementChild;
-        if (child instanceof HTMLElement) ro.observe(child);
-      });
+      cells.forEach(attachCardObservers);
       relayoutAll();
     }
     reattachAndRelayout();
 
-    // MutationObserver catches every cell add/remove (filter toggles,
-    // create-note, delete) — the previous count-based useEffect dep
-    // missed filter changes since the total notes count was unchanged.
+    // MutationObserver on the grid catches cell add/remove (filter
+    // toggles, create-note, delete) — those don't trigger RO either.
     const mo = new MutationObserver(reattachAndRelayout);
     mo.observe(grid, { childList: true });
+
+    // Belt-and-suspenders: any keystroke in an editor inside a cell
+    // triggers an immediate relayout of that cell. Capturing phase so
+    // we see it before the editor processes it.
+    function onInput(e: Event) {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      const cell = t.closest(".card-grid-cell");
+      if (cell instanceof HTMLElement) {
+        // rAF lets the editor finish its DOM mutation before we measure.
+        requestAnimationFrame(() => relayoutCell(cell));
+      }
+    }
+    grid.addEventListener("input", onInput, true);
+    grid.addEventListener("keyup", onInput, true);
 
     window.addEventListener("resize", relayoutAll);
     return () => {
       ro.disconnect();
       mo.disconnect();
+      grid.removeEventListener("input", onInput, true);
+      grid.removeEventListener("keyup", onInput, true);
       window.removeEventListener("resize", relayoutAll);
     };
   }, [gridRef]);
