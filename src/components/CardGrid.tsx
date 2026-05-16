@@ -14,7 +14,8 @@ import { Sidebar } from "./Sidebar";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
-  try { return localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0"; } catch { return true; }
+  // Closed by default — only opens after the user explicitly toggles it.
+  try { return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1"; } catch { return false; }
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
