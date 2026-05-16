@@ -12,6 +12,7 @@ import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
+import { CommandPalette } from "./CommandPalette";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import { useTaxonomy } from "../hooks/useTaxonomy";
 
@@ -340,6 +341,32 @@ export function CardGrid() {
       return next;
     });
   }, []);
+
+  // Sidebar search focus (Cmd+O) and centered command palette (Cmd+K).
+  // The signal is a bumped counter so the Sidebar effect re-fires even
+  // when the sidebar was already open.
+  const [searchFocusSignal, setSearchFocusSignal] = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "o" || e.key === "O") {
+        e.preventDefault();
+        if (!sidebarOpen) {
+          setSidebarOpen(true);
+          writeSidebarOpen(true);
+        }
+        setSearchFocusSignal((n) => n + 1);
+        return;
+      }
+      if (e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -715,6 +742,16 @@ export function CardGrid() {
           onRemoveArea={taxonomy.removeArea}
           onAddCategory={taxonomy.addCategory}
           onRemoveCategory={taxonomy.removeCategory}
+          focusSearchSignal={searchFocusSignal}
+        />
+      )}
+
+      {paletteOpen && (
+        <CommandPalette
+          folders={notableFolders}
+          selected={folderFilter}
+          onToggle={toggleFolderFilter}
+          onClose={() => setPaletteOpen(false)}
         />
       )}
     </div>

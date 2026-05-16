@@ -12,7 +12,7 @@
 // appears in the grids. No separate storage — the YAML is the source
 // of truth.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Check, ChevronLeft, Search, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
@@ -64,6 +64,10 @@ interface Props {
   onRemoveArea: (name: string) => void;
   onAddCategory: (name: string, area: string) => void;
   onRemoveCategory: (name: string, area: string) => void;
+  /** Monotonically increasing counter: each change focuses + selects
+   *  the search input. Lets Cmd+O drop focus into the sidebar without
+   *  the parent needing a ref into our internals. */
+  focusSearchSignal?: number;
 }
 
 interface Taxonomy {
@@ -138,9 +142,19 @@ export function Sidebar({
   onRemoveArea,
   onAddCategory,
   onRemoveCategory,
+  focusSearchSignal,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusSearchSignal === undefined) return;
+    const el = searchInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [focusSearchSignal]);
 
   const taxonomy = useMemo(
     () => buildTaxonomy(folders, storedAreas, storedCategories),
@@ -186,6 +200,7 @@ export function Sidebar({
         <div className="sb-search">
           <Search size={12} strokeWidth={2} className="sb-search-icon" />
           <input
+            ref={searchInputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

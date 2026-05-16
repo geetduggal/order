@@ -1371,3 +1371,88 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 50%;
   flex-shrink: 0;
 }
+
+/* ---------- Command palette (Cmd+K) ---------- */
+.cmdk-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(20, 20, 20, 0.32);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  animation: cmdk-fade 120ms var(--ease-out);
+}
+@keyframes cmdk-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.cmdk-panel {
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  animation: cmdk-rise 160ms var(--ease-out);
+}
+@keyframes cmdk-rise {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.cmdk-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+.cmdk-input::placeholder { color: var(--ink-ghost); }
+
+.cmdk-empty {
+  margin: 0;
+  padding: 16px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.cmdk-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  flex: 1;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.cmdk-item.is-active { background: var(--bg-elev); }
+.cmdk-item-name { flex: 0 1 auto; }
+.cmdk-item-crumb {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  flex: 1 1 auto;
+}
+.cmdk-item-check {
+  font-size: 12px;
+  color: var(--coral);
+  margin-left: 8px;
+}
