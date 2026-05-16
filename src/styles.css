@@ -155,22 +155,13 @@ input, textarea, select { outline: none; box-shadow: none; }
   from { opacity: 0; transform: scale(0.92); }
   to   { opacity: 1; transform: none; }
 }
-.order-card.is-fullscreen.is-closing-fullscreen {
-  animation: order-fullscreen-out 200ms var(--ease-out) forwards;
-}
-@keyframes order-fullscreen-out {
-  from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: scale(0.92); }
-}
-
 /* Respect the user's OS-level "reduce motion" preference but only
    reduce duration, not eliminate the animation entirely — they're
    the visual signal we rely on. */
 @media (prefers-reduced-motion: reduce) {
   .card-grid-cell,
   .order-card.is-exiting,
-  .order-card.is-fullscreen,
-  .order-card.is-fullscreen.is-closing-fullscreen {
+  .order-card.is-fullscreen {
     animation-duration: 120ms !important;
   }
 }

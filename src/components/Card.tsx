@@ -76,9 +76,8 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
-  /** Lifecycle states that drive exit animations. */
+  /** Lifecycle state that drives the delete exit animation. */
   const [exiting, setExiting] = useState(false);
-  const [closingFullscreen, setClosingFullscreen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
@@ -224,19 +223,8 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   }, [onDelete]);
 
   const toggleFullscreen = useCallback(() => {
-    if (!fullscreen) {
-      setFullscreen(true);
-      return;
-    }
-    if (closingFullscreen) return;
-    // Play the exit keyframe, then drop out of fullscreen so the card
-    // pops back into its grid cell crisply.
-    setClosingFullscreen(true);
-    setTimeout(() => {
-      setFullscreen(false);
-      setClosingFullscreen(false);
-    }, 200);
-  }, [fullscreen, closingFullscreen]);
+    setFullscreen((prev) => !prev);
+  }, []);
   useEffect(() => () => {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
   }, []);
@@ -270,7 +258,6 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const cardClass =
     "order-card" +
     (fullscreen ? " is-fullscreen" : "") +
-    (closingFullscreen ? " is-closing-fullscreen" : "") +
     (exiting ? " is-exiting" : "");
 
   return (
