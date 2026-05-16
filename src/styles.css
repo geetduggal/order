@@ -162,8 +162,8 @@ html, body, #root {
   line-height: 1.25;
   color: var(--ink);
 }
-.milkdown-host .ProseMirror h2 { font-size: 1.15em; }
-.milkdown-host .ProseMirror h3 { font-size: 1.02em; }
-.milkdown-host .ProseMirror h4 { font-size: 0.95em; }
-.milkdown-host .ProseMirror h5 { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.04em; }
-.milkdown-host .ProseMirror h6 { font-size: 0.85em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.milkdown-host .ProseMirror h2 { font-size: 1.3em; }
+.milkdown-host .ProseMirror h3 { font-size: 1.15em; }
+.milkdown-host .ProseMirror h4 { font-size: 1.02em; }
+.milkdown-host .ProseMirror h5 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; }
+.milkdown-host .ProseMirror h6 { font-size: 0.9em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
