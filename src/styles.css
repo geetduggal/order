@@ -1380,37 +1380,48 @@ input, textarea, select { outline: none; box-shadow: none; }
   margin: 16px 0 4px;
 }
 .basecard {
+  /* The article element is now a transform/positioning wrapper.
+     FLIP animates its transform; visual styling lives on
+     .basecard-frame so a "lift" scale during drag doesn't
+     compete with the FLIP translate. */
   position: relative;
-  background: var(--bg-elev, var(--bg));
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  overflow: hidden;
   cursor: grab;
-  /* WebKit will start a text-selection drag whenever the user mouses
-     down on text, which preempts the article's HTML5 drag. Disable
-     selection on the card itself so any pointer-down kicks off the
-     card drag instead. Inputs re-enable it below. */
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    transform 0.12s var(--ease-out),
-    box-shadow 0.18s var(--ease-out),
-    opacity 0.12s var(--ease-out);
 }
 .basecard input {
   user-select: text;
   -webkit-user-select: text;
 }
-.basecard:hover {
-  transform: translateY(-2px);
+.basecard:active { cursor: grabbing; }
+
+.basecard-frame {
+  position: relative;
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  transform-origin: center;
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    opacity 180ms var(--ease-out);
+}
+.basecard:hover .basecard-frame {
   box-shadow: 0 4px 12px rgba(40, 38, 32, 0.08);
 }
-.basecard:active { cursor: grabbing; }
 .basecard.is-dragging {
-  opacity: 0.5;
-  /* While dragging we leave transform alone — the FLIP animation
-     owns it. Adding a scale here would fight the slide-into-slot
-     animation between renders. */
+  /* Sit above the rest while the user is moving it around. */
+  z-index: 10;
+}
+.basecard.is-dragging .basecard-frame {
+  /* Picked-up feel: subtle scale, soft drop shadow, full opacity so
+     it reads as a solid object hovering over the grid. */
+  transform: scale(1.035);
+  box-shadow:
+    0 14px 28px rgba(20, 20, 20, 0.18),
+    0 4px 10px rgba(20, 20, 20, 0.10);
+  opacity: 0.96;
 }
 .basecard-delete {
   position: absolute;
@@ -1462,10 +1473,15 @@ input, textarea, select { outline: none; box-shadow: none; }
   justify-content: center;
   gap: 6px;
   aspect-ratio: 2 / 3;
-  border-style: dashed;
+  border: 1px dashed var(--rule);
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-faint);
   cursor: pointer;
+  transition:
+    background-color 0.12s var(--ease-out),
+    border-color 0.12s var(--ease-out),
+    color 0.12s var(--ease-out);
 }
 .basecard-add:hover {
   color: var(--coral, #ff7f50);

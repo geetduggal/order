@@ -57,7 +57,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
 }
 
 const DRAG_THRESHOLD_PX = 5;
-const FLIP_DURATION_MS = 220;
+const FLIP_DURATION_MS = 280;
 const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
 export function ListCards({ items, vaultNotes, onChange }: Props) {
@@ -345,49 +345,54 @@ function BaseCard({
       data-flip-key={item.ref}
       onPointerDown={(e) => onPointerDown(e, item.ref)}
     >
-      {image ? (
-        <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
-      ) : (
-        <div className={`basecard-cover is-fallback ${tintCls}`}>
-          <Icon size={44} strokeWidth={1.3} />
-        </div>
-      )}
-      <button
-        type="button"
-        className="basecard-delete"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        onPointerDown={(e) => e.stopPropagation()}
-        title="Remove from list"
-        aria-label="Remove from list"
-      >
-        <XIcon size={11} strokeWidth={2} />
-      </button>
-      <div className="basecard-body">
-        <div className="basecard-title">{item.ref}</div>
-        {editingMeta ? (
-          <input
-            ref={inputRef}
-            className="basecard-meta-input"
-            value={draft}
-            placeholder={metaSuggestion || "Meta…"}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitMeta}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
-              if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
-            }}
-          />
+      {/* basecard-frame holds all visuals so a "lift" scale during drag
+          can live here, leaving the article free for FLIP's translate
+          transform without the two fighting each other. */}
+      <div className="basecard-frame">
+        {image ? (
+          <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
         ) : (
-          <button
-            type="button"
-            className={"basecard-meta" + (metaSuggestion ? "" : " is-empty")}
-            onClick={() => setEditingMeta(true)}
-            onPointerDown={(e) => e.stopPropagation()}
-            title="Click to edit"
-          >
-            {metaSuggestion || "Add meta…"}
-          </button>
+          <div className={`basecard-cover is-fallback ${tintCls}`}>
+            <Icon size={44} strokeWidth={1.3} />
+          </div>
         )}
+        <button
+          type="button"
+          className="basecard-delete"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="Remove from list"
+          aria-label="Remove from list"
+        >
+          <XIcon size={11} strokeWidth={2} />
+        </button>
+        <div className="basecard-body">
+          <div className="basecard-title">{item.ref}</div>
+          {editingMeta ? (
+            <input
+              ref={inputRef}
+              className="basecard-meta-input"
+              value={draft}
+              placeholder={metaSuggestion || "Meta…"}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitMeta}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
+                if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className={"basecard-meta" + (metaSuggestion ? "" : " is-empty")}
+              onClick={() => setEditingMeta(true)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Click to edit"
+            >
+              {metaSuggestion || "Add meta…"}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
