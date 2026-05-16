@@ -41,6 +41,25 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
 
+  useEffect(() => {
+    let count = 0;
+    function onWinOver(e: DragEvent) {
+      if (count++ > 3) return;
+      const t = e.target as HTMLElement | null;
+      console.log("[list-drag] WINDOW dragover", t?.tagName, t?.className);
+    }
+    function onWinDrop(e: DragEvent) {
+      const t = e.target as HTMLElement | null;
+      console.log("[list-drag] WINDOW drop", t?.tagName, t?.className);
+    }
+    window.addEventListener("dragover", onWinOver, true);
+    window.addEventListener("drop", onWinDrop, true);
+    return () => {
+      window.removeEventListener("dragover", onWinOver, true);
+      window.removeEventListener("drop", onWinDrop, true);
+    };
+  }, []);
+
   function move(from: number, to: number) {
     console.log("[list-drag] move", { from, to });
     if (from === to || from < 0 || to < 0) return;
