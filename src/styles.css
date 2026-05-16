@@ -47,7 +47,7 @@ html, body, #root {
    logical viewport width. */
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   /* Small row unit lets row-span give per-card height granularity. */
   grid-auto-rows: 8px;
   grid-auto-flow: row dense;
