@@ -1,16 +1,23 @@
-// One Card. Reads its file (seeding on first launch), renders/edits it
-// through Milkdown Crepe on the same surface, persists on debounced change
-// + Cmd/Ctrl+S + unmount. The CardGrid owns layout / responsiveness.
+// One Card. Reads its file (seeding on first launch), strips frontmatter,
+// renders/edits the body through Milkdown Crepe, recombines on save.
+// If the loaded note has no h1 and no `date` in YAML, calendar-ready
+// metadata (Obsidian Full Calendar format) is injected and written back.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MilkdownSurface } from "./MilkdownSurface";
+import {
+  joinFrontmatter,
+  splitFrontmatter,
+  suggestCalendarPatch,
+  type Frontmatter,
+} from "../lib/frontmatter";
 
 const SAVE_DEBOUNCE_MS = 600;
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; initial: string }
+  | { kind: "ready"; body: string }
   | { kind: "error"; message: string };
 
 interface Props {
@@ -18,28 +25,54 @@ interface Props {
   seed: string;
 }
 
-async function loadOrSeed(path: string, seed: string): Promise<string> {
+/** Result of loading + normalizing a note: the body to hand to the editor,
+ *  the frontmatter to preserve for save round-trip. If the file was
+ *  missing it gets seeded; if it was a non-h1 note without a `date`, the
+ *  calendar metadata is injected and persisted before this resolves. */
+async function loadAndNormalize(
+  path: string,
+  seed: string,
+): Promise<{ body: string; frontmatter: Frontmatter }> {
+  let raw: string;
   try {
-    return await invoke<string>("read_text", { path });
+    raw = await invoke<string>("read_text", { path });
   } catch {
     await invoke("write_text", { path, content: seed });
-    return seed;
+    raw = seed;
   }
+
+  const split = splitFrontmatter(raw);
+  let frontmatter = split.frontmatter;
+  const body = split.body;
+
+  const patch = suggestCalendarPatch(frontmatter, body);
+  if (patch) {
+    frontmatter = { ...frontmatter, ...patch };
+    const next = joinFrontmatter(frontmatter, body);
+    try {
+      await invoke("write_text", { path, content: next });
+    } catch (err) {
+      console.warn("Failed to inject calendar metadata into", path, err);
+    }
+  }
+  return { body, frontmatter };
 }
 
 export function Card({ path, seed }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
-  const pendingContent = useRef<string | null>(null);
+  const frontmatterRef = useRef<Frontmatter>({});
+  const pendingBody = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
-    loadOrSeed(path, seed)
-      .then((initial) => {
+    loadAndNormalize(path, seed)
+      .then(({ body, frontmatter }) => {
         if (cancelled) return;
-        setState({ kind: "ready", initial });
+        frontmatterRef.current = frontmatter;
+        setState({ kind: "ready", body });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -56,12 +89,13 @@ export function Card({ path, seed }: Props) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    const content = pendingContent.current;
-    if (content === null) return;
-    pendingContent.current = null;
+    const body = pendingBody.current;
+    if (body === null) return;
+    pendingBody.current = null;
     inflight.current += 1;
     setSaving(true);
     try {
+      const content = joinFrontmatter(frontmatterRef.current, body);
       await invoke("write_text", { path, content });
     } catch (err) {
       console.error("write_text failed:", err);
@@ -72,17 +106,13 @@ export function Card({ path, seed }: Props) {
   }, [path]);
 
   const handleChange = useCallback((markdown: string) => {
-    pendingContent.current = markdown;
+    pendingBody.current = markdown;
     setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
   }, [flushNow]);
 
-  // On unmount, flush any pending save synchronously enough to avoid losing
-  // the last keystroke. Tauri's IPC will deliver before the process exits.
-  useEffect(() => {
-    return () => { void flushNow(); };
-  }, [flushNow]);
+  useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);
 
   const filename = path.split("/").pop() ?? path;
 
@@ -100,7 +130,7 @@ export function Card({ path, seed }: Props) {
   return (
     <article className="order-card">
       <MilkdownSurface
-        initial={state.initial}
+        initial={state.body}
         onChange={handleChange}
         onDone={() => { void flushNow(); }}
       />
