@@ -316,12 +316,11 @@ input, textarea, select { outline: none; box-shadow: none; }
 
 /* Crepe block handles (the + / drag-grip that appears in the gutter
    on block hover): smaller, more subtle, hugged closer to the text.
-   We target every selector form Crepe might emit so this survives
-   small Crepe version bumps. */
+   The default position sits far out in the gutter; pull it ~24px
+   right so it nearly touches the left margin of the prose. */
 .milkdown-host milkdown-block-handle,
 .milkdown-host .milkdown-block-handle {
-  --crepe-block-handle-gap: 4px;
-  transform: translateX(6px);
+  transform: translateX(24px) !important;
 }
 .milkdown-host milkdown-block-handle button,
 .milkdown-host .milkdown-block-handle button,
