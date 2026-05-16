@@ -17,10 +17,15 @@ import {
   splitFrontmatter,
 } from "../lib/frontmatter";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import {
+  ATTACHMENTS_DIRNAME,
+  attachmentAssetPrefix,
+  deflateAttachmentUrls,
+  inflateAttachmentUrls,
+} from "../lib/attachments";
 import { ChevronRight, Folder as FolderIcon, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
-const ATTACHMENTS_DIR = "attachments";
 
 function attachmentName(file: File): string {
   const baseName = (file.name || "image").split(/[/\\]/).pop() ?? "image";
@@ -130,20 +135,24 @@ export function Card(props: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<string>("read_text", { path: initialPath })
-      .then((raw) => {
+    (async () => {
+      try {
+        const raw = await invoke<string>("read_text", { path: initialPath });
         if (cancelled) return;
         const { body } = splitFrontmatter(raw);
-        lastTitleRef.current = firstLineTitle(body);
-        setState({ kind: "ready", body });
-      })
-      .catch((err: unknown) => {
+        const vault = await dirname(await dirname(initialPath));
+        const prefix = attachmentAssetPrefix(vault);
+        const displayBody = inflateAttachmentUrls(body, prefix);
+        lastTitleRef.current = firstLineTitle(displayBody);
+        setState({ kind: "ready", body: displayBody });
+      } catch (err) {
         if (cancelled) return;
         setState({
           kind: "error",
           message: typeof err === "string" ? err : "Failed to load card",
         });
-      });
+      }
+    })();
     return () => { cancelled = true; };
   }, [initialPath]);
 
@@ -163,7 +172,11 @@ export function Card(props: Props) {
       // are preserved when we write our body.
       const current = await invoke<string>("read_text", { path });
       const { frontmatter } = splitFrontmatter(current);
-      const content = joinFrontmatter(frontmatter, body);
+      // Collapse runtime asset:// URLs back to vault-relative paths so
+      // the file on disk is portable / Obsidian-friendly.
+      const vault = await dirname(await dirname(path));
+      const persistedBody = deflateAttachmentUrls(body, attachmentAssetPrefix(vault));
+      const content = joinFrontmatter(frontmatter, persistedBody);
       await invoke("write_text", { path, content });
 
       // Auto-rename whenever the body's first line of text changes —
@@ -215,9 +228,12 @@ export function Card(props: Props) {
   }, [flushNow]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
-    const dir = await dirname(pathRef.current);
+    // Save under <vault>/Attachments/. Vault root is the parent of the
+    // cards dir, hence dirname(dirname(cardPath)).
+    const cardDir = await dirname(pathRef.current);
+    const vault = await dirname(cardDir);
     const filename = attachmentName(file);
-    const absolute = await join(dir, ATTACHMENTS_DIR, filename);
+    const absolute = await join(vault, ATTACHMENTS_DIRNAME, filename);
     const bytes = new Uint8Array(await file.arrayBuffer());
     await invoke("write_binary", { path: absolute, data: Array.from(bytes) });
     return convertFileSrc(absolute);
