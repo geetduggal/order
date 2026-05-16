@@ -77,8 +77,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   /* Small row unit lets row-span give per-card height granularity. */
   grid-auto-rows: 8px;
   grid-auto-flow: row dense;
-  column-gap: 20px;
-  row-gap: 20px;
+  column-gap: 12px;
+  row-gap: 12px;
   width: 100%;
   padding: clamp(16px, 4vh, 40px) clamp(16px, 4vw, 40px) 80px;
 }

@@ -707,20 +707,27 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
       cells?.forEach(relayoutCell);
     }
 
+    // Observe the inner .order-card child, not the wrapper cell. The
+    // cell's box is sized by gridRowEnd (a number we set), so its
+    // dimensions don't change when content grows — ResizeObserver
+    // wouldn't fire. The child's box reflects actual content height
+    // and triggers when the user types.
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
-        if (e.target instanceof HTMLElement) relayoutCell(e.target);
+        const target = e.target as HTMLElement;
+        const cell = target.parentElement?.closest(".card-grid-cell");
+        if (cell instanceof HTMLElement) relayoutCell(cell);
       }
     });
 
-    // Re-attach the ResizeObserver to whichever cells currently live in
-    // the grid. Runs on mount, on every mutation that changes the cell
-    // list, and on window resize.
     function reattachAndRelayout() {
       if (!grid) return;
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells.forEach((c) => ro.observe(c));
+      cells.forEach((c) => {
+        const child = c.firstElementChild;
+        if (child instanceof HTMLElement) ro.observe(child);
+      });
       relayoutAll();
     }
     reattachAndRelayout();
