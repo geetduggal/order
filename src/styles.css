@@ -89,11 +89,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-self: start;
   min-width: 0;
   transition: box-shadow 500ms var(--ease-out);
-  animation: order-card-mount 160ms var(--ease-out);
+  animation: order-card-mount 220ms var(--ease-out);
 }
 @keyframes order-card-mount {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+/* Exit animation when a card is being deleted. forwards keeps the
+   final state visible until the parent actually unmounts us. */
+.order-card.is-exiting {
+  animation: order-card-exit 180ms var(--ease-out) forwards !important;
+  pointer-events: none;
+}
+@keyframes order-card-exit {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: scale(0.94) translateY(-2px); }
 }
 /* Brief coral pulse when a card is targeted by a Week/Month event click. */
 .card-grid-cell.is-target {
@@ -139,11 +149,18 @@ input, textarea, select { outline: none; box-shadow: none; }
   padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
   overflow: auto;
   max-width: none;
-  animation: order-fullscreen-in 140ms var(--ease-out);
+  animation: order-fullscreen-in 160ms var(--ease-out);
 }
 @keyframes order-fullscreen-in {
-  from { opacity: 0; transform: scale(0.985); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.order-card.is-fullscreen.is-closing-fullscreen {
+  animation: order-fullscreen-out 140ms var(--ease-out) forwards;
+}
+@keyframes order-fullscreen-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: scale(0.97); }
 }
 
 .card-loading {

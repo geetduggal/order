@@ -76,6 +76,9 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  /** Lifecycle states that drive exit animations. */
+  const [exiting, setExiting] = useState(false);
+  const [closingFullscreen, setClosingFullscreen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
@@ -202,32 +205,56 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     pendingBody.current = null;
     setDeleteError(null);
-    try {
-      await onDelete?.(pathRef.current);
-    } catch (err) {
-      console.error("delete failed:", err);
-      const message = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
-      setDeleteError(message);
-      setConfirmingDelete(false);
-    }
+    // Kick off the exit animation. The actual file delete fires after
+    // the animation finishes so the user sees the card glide out.
+    setExiting(true);
+    setTimeout(() => {
+      void (async () => {
+        try {
+          await onDelete?.(pathRef.current);
+          // Parent will unmount us; if it doesn't, drop the exit class
+          // so the card recovers (rare error path).
+        } catch (err) {
+          console.error("delete failed:", err);
+          const message = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
+          setExiting(false);
+          setDeleteError(message);
+          setConfirmingDelete(false);
+        }
+      })();
+    }, 180);
   }, [onDelete]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!fullscreen) {
+      setFullscreen(true);
+      return;
+    }
+    if (closingFullscreen) return;
+    // Play the exit keyframe, then drop out of fullscreen so the card
+    // pops back into its grid cell crisply.
+    setClosingFullscreen(true);
+    setTimeout(() => {
+      setFullscreen(false);
+      setClosingFullscreen(false);
+    }, 140);
+  }, [fullscreen, closingFullscreen]);
   useEffect(() => () => {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
   }, []);
 
-  // Esc exits fullscreen for this card. Listener only attached while
-  // fullscreen so it doesn't fight Milkdown's Esc handling otherwise.
+  // Esc exits fullscreen via the same animated path as the button.
   useEffect(() => {
     if (!fullscreen) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        setFullscreen(false);
+        toggleFullscreen();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fullscreen]);
+  }, [fullscreen, toggleFullscreen]);
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
@@ -242,13 +269,19 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     );
   }
 
+  const cardClass =
+    "order-card" +
+    (fullscreen ? " is-fullscreen" : "") +
+    (closingFullscreen ? " is-closing-fullscreen" : "") +
+    (exiting ? " is-exiting" : "");
+
   return (
-    <article className={"order-card" + (fullscreen ? " is-fullscreen" : "")}>
+    <article className={cardClass}>
       <div className="order-card-controls" aria-hidden={false}>
         <button
           type="button"
           className="order-card-fullscreen"
-          onClick={() => setFullscreen(!fullscreen)}
+          onClick={toggleFullscreen}
           title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
           aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
         >
