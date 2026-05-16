@@ -527,19 +527,103 @@ input, textarea, select { outline: none; box-shadow: none; }
   padding: 0;
   border: none;
 }
-.sb-clear {
+.sb-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-ghost);
+  letter-spacing: 0;
+}
+.sb-clear-inline {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  padding: 2px 4px;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ink-ghost);
+  padding: 2px;
   border-radius: 3px;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.sb-clear:hover { color: var(--coral); background: var(--coral-soft); }
+.sb-clear-inline:hover { color: var(--coral); background: var(--coral-soft); }
+
+/* Back chevron between drill levels. Stays subtle but tappable. */
+.sb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 4px 6px 4px 4px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.sb-back:hover { color: var(--ink); background: var(--bg-elev); }
+
+/* 10-box grid (Johnny Decimal) for Areas + Categories. */
+.box-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.box {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--bg-elev);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  transition: border-color 0.12s var(--ease-out), transform 0.12s var(--ease-out);
+}
+.box:not(.empty):hover { transform: translateY(-1px); }
+.box.no-image {
+  background: linear-gradient(155deg, var(--royal-soft) 0%, #fafbff 70%, #ffffff 100%);
+  border-color: var(--rule);
+}
+.box.no-image:hover { border-color: var(--royal); }
+.box.no-image.coral {
+  background: linear-gradient(155deg, var(--coral-soft) 0%, #fffaf7 70%, #ffffff 100%);
+}
+.box.no-image.coral:hover { border-color: var(--coral); }
+
+.box .box-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  opacity: 0.75;
+}
+.box .box-label {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  text-align: center;
+  letter-spacing: 0.01em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.box.empty {
+  background: transparent;
+  border: 1px dashed #d6d4cf;
+  color: var(--ink-ghost);
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 200;
+  cursor: default;
+}
 
 .sb-search {
   position: relative;

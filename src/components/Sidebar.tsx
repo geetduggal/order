@@ -1,16 +1,21 @@
-// Right sidebar — View pill at top, Notable Folder filter hierarchy
-// below (Areas → Categories → Notable Folders). Search bar adds
-// folders to the filter set directly; clear button drops all filters.
+// Right sidebar — View pill at top, Notable Folder drill-down below.
+//
+// Per mockup: only one of three views is visible at a time:
+//   1. Areas grid  →  2. Categories grid (for that Area)
+//                   →  3. Notable Folders list (for that Category)
+//
+// Back chevron pops back up the chain. Search bar at top adds folders
+// to the filter directly (works at any level).
+//
+// Areas and Categories are derived from the Notable Folders themselves:
+// a Notable Folder's `area` and `category` YAML fields drive what
+// appears in the grids. No separate storage — the YAML is the source
+// of truth.
 
 import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Check, Search, X } from "lucide-react";
-import {
-  folderColor,
-  folderIcon,
-  noteFolder,
-  parseRef,
-} from "../lib/folders";
+import { Check, ChevronLeft, Search, X } from "lucide-react";
+import { folderColor, folderIcon } from "../lib/folders";
 import type { Frontmatter } from "../lib/frontmatter";
 
 export type View = "stream" | "week" | "month" | "year";
@@ -22,17 +27,22 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "year", label: "Year" },
 ];
 
-const UNCATEGORIZED = "(uncategorized)";
+const MAX_SLOTS = 10;
 const NO_AREA = "(unassigned)";
+const NO_CATEGORY = "(uncategorized)";
 
 export interface NotableFolder {
   name: string;
   area: string;
   category: string;
   frontmatter: Frontmatter;
-  /** Path to the Main Document so callers can pin / open it. */
   path: string;
 }
+
+type DrillState =
+  | { kind: "areas" }
+  | { kind: "categories"; areaName: string }
+  | { kind: "folders"; areaName: string; categoryName: string };
 
 interface Props {
   view: View;
@@ -43,54 +53,64 @@ interface Props {
   onClear: () => void;
 }
 
-interface CategoryGroup { name: string; folders: NotableFolder[] }
-interface AreaGroup { name: string; categories: CategoryGroup[] }
+interface Taxonomy {
+  areaNames: string[];
+  categoriesByArea: Map<string, string[]>;
+  foldersByCategory: Map<string, NotableFolder[]>;
+}
 
-function buildTaxonomy(folders: NotableFolder[]): AreaGroup[] {
-  const areaMap = new Map<string, Map<string, NotableFolder[]>>();
+function buildTaxonomy(folders: NotableFolder[]): Taxonomy {
+  const areaNames = new Set<string>();
+  const categoriesByArea = new Map<string, Set<string>>();
+  const foldersByCategory = new Map<string, NotableFolder[]>();
   for (const f of folders) {
     const a = f.area || NO_AREA;
-    const c = f.category || UNCATEGORIZED;
-    const byCat = areaMap.get(a) ?? new Map<string, NotableFolder[]>();
-    const list = byCat.get(c) ?? [];
+    const c = f.category || NO_CATEGORY;
+    areaNames.add(a);
+    const cats = categoriesByArea.get(a) ?? new Set();
+    cats.add(c);
+    categoriesByArea.set(a, cats);
+    const key = `${a}::${c}`;
+    const list = foldersByCategory.get(key) ?? [];
     list.push(f);
-    byCat.set(c, list);
-    areaMap.set(a, byCat);
+    foldersByCategory.set(key, list);
   }
-  const result: AreaGroup[] = [];
-  for (const [areaName, byCat] of areaMap) {
-    const cats: CategoryGroup[] = [];
-    for (const [catName, list] of byCat) {
-      cats.push({ name: catName, folders: list.sort((x, y) => x.name.localeCompare(y.name)) });
-    }
-    cats.sort((x, y) => x.name.localeCompare(y.name));
-    result.push({ name: areaName, categories: cats });
-  }
-  result.sort((x, y) => x.name.localeCompare(y.name));
-  return result;
+  return {
+    areaNames: [...areaNames].sort(),
+    categoriesByArea: new Map(
+      [...categoriesByArea].map(([a, set]) => [a, [...set].sort()]),
+    ),
+    foldersByCategory: new Map(
+      [...foldersByCategory].map(([k, list]) => [
+        k,
+        list.sort((x, y) => x.name.localeCompare(y.name)),
+      ]),
+    ),
+  };
 }
 
 export function Sidebar({ view, onSelectView, folders, selected, onToggle, onClear }: Props) {
+  const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const taxonomy = useMemo(() => buildTaxonomy(folders), [folders]);
+
+  // Sanity: if a drilled-into entity disappears (rare), pop back.
+  if (drill.kind === "categories" && !taxonomy.areaNames.includes(drill.areaName)) {
+    queueMicrotask(() => setDrill({ kind: "areas" }));
+  }
+  if (drill.kind === "folders") {
+    const cats = taxonomy.categoriesByArea.get(drill.areaName) ?? [];
+    if (!cats.includes(drill.categoryName)) {
+      queueMicrotask(() => setDrill({ kind: "categories", areaName: drill.areaName }));
+    }
+  }
 
   const searchMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return folders
-      .filter((f) => f.name.toLowerCase().includes(q))
-      .slice(0, 8);
+    return folders.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 8);
   }, [folders, query]);
-
-  function toggleArea(name: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
-    });
-  }
 
   return (
     <aside className="pane-right">
@@ -111,16 +131,6 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
       </section>
 
       <section className="sb-section sb-filters">
-        <div className="sb-title-row">
-          <h2 className="sb-title">Folders</h2>
-          {selected.size > 0 && (
-            <button type="button" className="sb-clear" onClick={onClear} title="Clear filters">
-              <X size={11} strokeWidth={2} />
-              <span>clear</span>
-            </button>
-          )}
-        </div>
-
         <div className="sb-search">
           <Search size={12} strokeWidth={2} className="sb-search-icon" />
           <input
@@ -130,16 +140,26 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
             placeholder="Search folders…"
             className="sb-search-input"
           />
+          {selected.size > 0 && (
+            <button
+              type="button"
+              className="sb-clear-inline"
+              onClick={onClear}
+              title="Clear filters"
+              aria-label="Clear filters"
+            >
+              <X size={11} strokeWidth={2} />
+            </button>
+          )}
         </div>
 
         {query && searchMatches.length === 0 && (
           <p className="sb-empty-small">No folders match.</p>
         )}
-
         {query && searchMatches.length > 0 && (
           <ul className="sb-folder-list sb-search-results">
             {searchMatches.map((f) => (
-              <SidebarFolderItem
+              <FolderRow
                 key={f.path}
                 folder={f}
                 checked={selected.has(f.name)}
@@ -151,48 +171,147 @@ export function Sidebar({ view, onSelectView, folders, selected, onToggle, onCle
 
         {!query && folders.length === 0 && (
           <p className="sb-empty">
-            Add <code>category: [[Name]]</code> to a note's YAML to mark it as a Notable Folder.
+            Add <code>category: [[Name]]</code> and <code>area: [[Name]]</code> to a note's YAML to mark it as a Notable Folder.
           </p>
         )}
 
-        {!query && taxonomy.map((area) => (
-          <div key={area.name} className="sb-area">
-            <button
-              type="button"
-              className="sb-area-header"
-              onClick={() => toggleArea(area.name)}
-              aria-expanded={!collapsed.has(area.name)}
-            >
-              <span className={"sb-disclosure" + (collapsed.has(area.name) ? "" : " open")}>›</span>
-              <span className="sb-area-name">{area.name}</span>
-            </button>
-            {!collapsed.has(area.name) && (
-              <div className="sb-area-body">
-                {area.categories.map((cat) => (
-                  <div key={cat.name} className="sb-cat">
-                    <div className="sb-cat-name">{cat.name}</div>
-                    <ul className="sb-folder-list">
-                      {cat.folders.map((f) => (
-                        <SidebarFolderItem
-                          key={f.path}
-                          folder={f}
-                          checked={selected.has(f.name)}
-                          onToggle={() => onToggle(f.name)}
-                        />
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+        {!query && folders.length > 0 && (
+          <DrillView
+            drill={drill}
+            setDrill={setDrill}
+            taxonomy={taxonomy}
+            selected={selected}
+            onToggle={onToggle}
+          />
+        )}
       </section>
     </aside>
   );
 }
 
-function SidebarFolderItem({ folder, checked, onToggle }: {
+function DrillView({ drill, setDrill, taxonomy, selected, onToggle }: {
+  drill: DrillState;
+  setDrill: (s: DrillState) => void;
+  taxonomy: Taxonomy;
+  selected: Set<string>;
+  onToggle: (name: string) => void;
+}) {
+  if (drill.kind === "areas") {
+    return (
+      <>
+        <SectionTitle label="Areas" count={taxonomy.areaNames.length} max={MAX_SLOTS} />
+        <BoxGrid>
+          {taxonomy.areaNames.map((a, i) => (
+            <AreaTile
+              key={a}
+              label={a}
+              coral={i % 2 === 1}
+              onClick={() => setDrill({ kind: "categories", areaName: a })}
+            />
+          ))}
+          {Array.from({ length: Math.max(0, MAX_SLOTS - taxonomy.areaNames.length) }).map((_, i) => (
+            <EmptySlot key={`e-${i}`} />
+          ))}
+        </BoxGrid>
+      </>
+    );
+  }
+
+  if (drill.kind === "categories") {
+    const cats = taxonomy.categoriesByArea.get(drill.areaName) ?? [];
+    return (
+      <>
+        <BackBar label={drill.areaName} onBack={() => setDrill({ kind: "areas" })} />
+        <SectionTitle label="Categories" count={cats.length} max={MAX_SLOTS} />
+        <BoxGrid>
+          {cats.map((c, i) => (
+            <AreaTile
+              key={c}
+              label={c}
+              coral={i % 2 === 1}
+              onClick={() => setDrill({ kind: "folders", areaName: drill.areaName, categoryName: c })}
+            />
+          ))}
+          {Array.from({ length: Math.max(0, MAX_SLOTS - cats.length) }).map((_, i) => (
+            <EmptySlot key={`e-${i}`} />
+          ))}
+        </BoxGrid>
+      </>
+    );
+  }
+
+  // drill.kind === "folders"
+  const folders = taxonomy.foldersByCategory.get(`${drill.areaName}::${drill.categoryName}`) ?? [];
+  return (
+    <>
+      <BackBar
+        label={drill.categoryName}
+        onBack={() => setDrill({ kind: "categories", areaName: drill.areaName })}
+      />
+      <SectionTitle label="Notable Folders" count={folders.length} />
+      <ul className="sb-folder-list">
+        {folders.map((f) => (
+          <FolderRow
+            key={f.path}
+            folder={f}
+            checked={selected.has(f.name)}
+            onToggle={() => onToggle(f.name)}
+          />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function SectionTitle({ label, count, max }: { label: string; count: number; max?: number }) {
+  return (
+    <div className="sb-title-row">
+      <h2 className="sb-title">{label}</h2>
+      <span className="sb-count">{count}{max != null ? ` / ${max}` : ""}</span>
+    </div>
+  );
+}
+
+function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button type="button" className="sb-back" onClick={onBack}>
+      <ChevronLeft size={12} strokeWidth={2} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function BoxGrid({ children }: { children: React.ReactNode }) {
+  return <div className="box-grid">{children}</div>;
+}
+
+function AreaTile({ label, coral, onClick }: {
+  label: string;
+  coral: boolean;
+  onClick: () => void;
+}) {
+  const Icon: LucideIcon = folderIcon(label);
+  const color = folderColor(label);
+  return (
+    <button
+      type="button"
+      className={"box no-image" + (coral ? " coral" : "")}
+      onClick={onClick}
+      title={`Open ${label}`}
+    >
+      <span className="box-icon-wrap" style={{ color }}>
+        <Icon size={20} strokeWidth={1.8} />
+      </span>
+      <span className="box-label">{label}</span>
+    </button>
+  );
+}
+
+function EmptySlot() {
+  return <div className="box empty" aria-hidden="true">+</div>;
+}
+
+function FolderRow({ folder, checked, onToggle }: {
   folder: NotableFolder;
   checked: boolean;
   onToggle: () => void;
@@ -222,7 +341,3 @@ function SidebarFolderItem({ folder, checked, onToggle }: {
     </li>
   );
 }
-
-// Re-export the parseRef helper from folders.ts so CardGrid can build
-// NotableFolder records without importing from two places.
-export { parseRef, noteFolder };
