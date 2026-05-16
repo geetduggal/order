@@ -145,3 +145,14 @@ html, body, #root {
   color: var(--ink);
   min-height: 1.5em;
 }
+
+/* h1 stays serif (title voice). h2 and below go to a heavier sans —
+   Medium / publication convention: serif body + serif title, sans-serif
+   section headings for visual rhythm. */
+.milkdown-host .ProseMirror :is(h2, h3, h4, h5, h6) {
+  font-family: var(--sans);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+}
