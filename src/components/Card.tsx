@@ -212,8 +212,6 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
       void (async () => {
         try {
           await onDelete?.(pathRef.current);
-          // Parent will unmount us; if it doesn't, drop the exit class
-          // so the card recovers (rare error path).
         } catch (err) {
           console.error("delete failed:", err);
           const message = typeof err === "string" ? err : (err instanceof Error ? err.message : String(err));
@@ -222,7 +220,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
           setConfirmingDelete(false);
         }
       })();
-    }, 180);
+    }, 240);
   }, [onDelete]);
 
   const toggleFullscreen = useCallback(() => {
@@ -237,7 +235,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     setTimeout(() => {
       setFullscreen(false);
       setClosingFullscreen(false);
-    }, 140);
+    }, 200);
   }, [fullscreen, closingFullscreen]);
   useEffect(() => () => {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
