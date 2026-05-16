@@ -162,7 +162,7 @@ input, textarea, select { outline: none; box-shadow: none; }
      Safe to put transform on the card itself; the prior breakage
      was caused by a transform on the .card-grid-cell ANCESTOR,
      which had captured this fixed card inside its containing block. */
-  animation: order-fullscreen-settle 240ms var(--ease-out);
+  animation: order-fullscreen-settle 320ms var(--ease-out);
   transform-origin: center top;
 }
 @keyframes order-fullscreen-settle {
