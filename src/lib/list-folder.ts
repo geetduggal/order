@@ -16,9 +16,17 @@ export function isListFolder(frontmatter: Frontmatter): boolean {
 const WIKI_BULLET_RE =
   /^\s*[-*+]\s+\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]\s*(.*)$/;
 
+// Milkdown normalises on save and backslash-escapes the wikilink
+// brackets (they aren't standard markdown). Strip those escapes
+// before regex matching so `\[\[Name]]` and `[[Name]]` both parse.
+function unescapeBrackets(s: string): string {
+  return s.replace(/\\([\[\]])/g, "$1");
+}
+
 export function parseListItems(body: string): ListItem[] {
   const out: ListItem[] = [];
-  for (const line of body.split(/\r?\n/)) {
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = unescapeBrackets(rawLine);
     const m = line.match(WIKI_BULLET_RE);
     if (!m) continue;
     const ref = (m[2] ?? m[1]).trim();
