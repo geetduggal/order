@@ -10,6 +10,15 @@ import { documentDir, join } from "@tauri-apps/api/path";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
+import { Sidebar } from "./Sidebar";
+
+const SIDEBAR_OPEN_KEY = "order.sidebar.open";
+function readSidebarOpen(): boolean {
+  try { return localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0"; } catch { return true; }
+}
+function writeSidebarOpen(open: boolean): void {
+  try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
+}
 import {
   basenameForEvent,
   isoDate,
@@ -213,7 +222,16 @@ export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>("stream");
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      writeSidebarOpen(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -345,93 +363,79 @@ export function CardGrid() {
   }));
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="view-switch" role="tablist">
-          <button
-            className={view === "stream" ? "on" : ""}
-            onClick={() => setView("stream")}
-          >
-            Stream
-          </button>
-          <button
-            className={view === "week" ? "on" : ""}
-            onClick={() => setView("week")}
-          >
-            Week
-          </button>
-          <button
-            className={view === "month" ? "on" : ""}
-            onClick={() => setView("month")}
-          >
-            Month
-          </button>
-          <button
-            className={view === "year" ? "on" : ""}
-            onClick={() => setView("year")}
-          >
-            Year
-          </button>
-        </div>
-      </header>
+    <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={toggleSidebar}
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+      >
+        {sidebarOpen ? "›" : "‹"}
+      </button>
 
-      {view === "stream" && (
-        <>
-          <div className="new-note-bar">
+      <main className="pane-main">
+        {view === "stream" && (
+          <>
             <button
-              className="new-note-btn"
+              type="button"
+              className="new-note-hint"
               onClick={() => { void createNote({
                 date: isoDate(),
                 startTime: isoTime(),
                 allDay: false,
               }); }}
+              aria-label="New note"
             >
-              + New note
+              <span className="new-note-cursor" aria-hidden="true">|</span>
+              <span className="new-note-hint-text">click to write</span>
             </button>
-          </div>
-          <div className="card-grid" ref={gridRef}>
-            {sortedNotes.map((n) => (
-              <div className="card-grid-cell" data-path={n.path} key={n.id}>
-                <Card
-                  path={n.path}
-                  onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
-                  onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
-                  onDelete={(path) => handleCardDelete(n.id, path)}
-                />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {view === "week" && (
-        <CalendarView
-          key="week"
-          notes={calendarNotes}
-          initialView="timeGridWeek"
-          onMoveEvent={updateNoteFrontmatter}
-          onEventClick={handleEventClick}
-          onCreate={createNote}
-        />
-      )}
-      {view === "month" && (
-        <CalendarView
-          key="month"
-          notes={calendarNotes}
-          initialView="dayGridMonth"
-          onMoveEvent={updateNoteFrontmatter}
-          onEventClick={handleEventClick}
-          onCreate={createNote}
-        />
-      )}
-      {view === "year" && (
-        <YearLinearView
-          key="year"
-          notes={calendarNotes}
-          onMoveEvent={updateNoteFrontmatter}
-          onEventClick={handleEventClick}
-          onCreate={createNote}
-        />
-      )}
+            <div className="card-grid" ref={gridRef}>
+              {sortedNotes.map((n) => (
+                <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                  <Card
+                    path={n.path}
+                    onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+                    onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+                    onDelete={(path) => handleCardDelete(n.id, path)}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {view === "week" && (
+          <CalendarView
+            key="week"
+            notes={calendarNotes}
+            initialView="timeGridWeek"
+            onMoveEvent={updateNoteFrontmatter}
+            onEventClick={handleEventClick}
+            onCreate={createNote}
+          />
+        )}
+        {view === "month" && (
+          <CalendarView
+            key="month"
+            notes={calendarNotes}
+            initialView="dayGridMonth"
+            onMoveEvent={updateNoteFrontmatter}
+            onEventClick={handleEventClick}
+            onCreate={createNote}
+          />
+        )}
+        {view === "year" && (
+          <YearLinearView
+            key="year"
+            notes={calendarNotes}
+            onMoveEvent={updateNoteFrontmatter}
+            onEventClick={handleEventClick}
+            onCreate={createNote}
+          />
+        )}
+      </main>
+
+      {sidebarOpen && <Sidebar view={view} onSelectView={setView} />}
     </div>
   );
 }

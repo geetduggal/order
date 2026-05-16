@@ -75,6 +75,7 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Path tracked through a ref so Card doesn't remount when the parent
   // re-renders with the new path after a rename — the editor keeps focus.
@@ -214,6 +215,20 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
   }, []);
 
+  // Esc exits fullscreen for this card. Listener only attached while
+  // fullscreen so it doesn't fight Milkdown's Esc handling otherwise.
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setFullscreen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
   if (state.kind === "loading") {
@@ -228,16 +243,17 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
   }
 
   return (
-    <article className="order-card">
-      <MilkdownSurface
-        initial={state.body}
-        onChange={handleChange}
-        onDone={() => { void flushNow(); }}
-        onImageUpload={handleImageUpload}
-      />
-      <div className="order-card-status">
-        <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
-        <span className="order-card-path" title={pathRef.current}>{filename}</span>
+    <article className={"order-card" + (fullscreen ? " is-fullscreen" : "")}>
+      <div className="order-card-controls" aria-hidden={false}>
+        <button
+          type="button"
+          className="order-card-fullscreen"
+          onClick={() => setFullscreen(!fullscreen)}
+          title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+          aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {fullscreen ? "⤡" : "⤢"}
+        </button>
         {confirmingDelete ? (
           <span className="order-card-delete-confirm">
             <button
@@ -268,6 +284,16 @@ export function Card({ path: initialPath, onRenamed, onTitleChanged, onDelete }:
             ×
           </button>
         )}
+      </div>
+      <MilkdownSurface
+        initial={state.body}
+        onChange={handleChange}
+        onDone={() => { void flushNow(); }}
+        onImageUpload={handleImageUpload}
+      />
+      <div className="order-card-status">
+        <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
+        <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (
         <div className="order-card-error" role="alert">

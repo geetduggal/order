@@ -93,6 +93,22 @@ html, body, #root {
   display: flex; align-items: center; justify-content: center;
 }
 
+/* Fullscreen mode: card takes over the viewport, sits above everything
+   else, regains generous padding so the text reads like a clean page.
+   Escape exits (wired in Card.tsx). */
+.order-card.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg);
+  padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
+  overflow: auto;
+  max-width: none;
+}
+
 .card-loading {
   font-size: 12px;
   color: var(--ink-faint);
@@ -133,21 +149,39 @@ html, body, #root {
   min-width: 0;
 }
 
-/* Delete affordance: subtle `×` that hides until you hover the card,
-   then expands into an in-place "delete?" confirm bar. */
-.order-card-delete {
-  font-size: 14px;
-  line-height: 1;
-  color: var(--ink-ghost);
-  padding: 0 4px;
-  border-radius: 3px;
+/* Top-right card controls: fullscreen toggle + delete. Hidden until
+   hover; click to reveal. Sits absolutely so it doesn't fight the
+   card's content layout. */
+.order-card-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s ease, color 0.12s ease, background-color 0.12s ease;
-  flex-shrink: 0;
+  transition: opacity 0.15s ease;
 }
-.order-card:hover .order-card-delete { opacity: 0.55; }
+.order-card:hover .order-card-controls { opacity: 0.7; }
+.order-card-controls:hover,
+.order-card-controls:focus-within { opacity: 1; }
+
+.order-card-fullscreen,
+.order-card-delete {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-faint);
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: 3px;
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+.order-card-fullscreen:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
 .order-card-delete:hover {
-  opacity: 1 !important;
   color: var(--coral);
   background: var(--coral-soft);
 }
@@ -156,7 +190,6 @@ html, body, #root {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
 }
 .order-card-delete-confirm .confirm-btn {
   font-size: 9.5px;
@@ -245,37 +278,68 @@ html, body, #root {
 .milkdown-host .ProseMirror h5 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; }
 .milkdown-host .ProseMirror h6 { font-size: 0.9em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
 
-/* ---------- Top bar + view switch (matches mockup) ---------- */
-.shell { width: 100%; min-height: 100vh; }
-.topbar {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px clamp(16px, 4vw, 40px);
-  background: linear-gradient(var(--bg) 70%, transparent);
-  font-family: var(--sans);
-  font-size: 11px;
-  color: var(--ink-faint);
-  letter-spacing: 0.02em;
+/* ---------- Shell layout: content + collapsible right sidebar ---------- */
+.shell {
+  display: grid;
+  grid-template-columns: 1fr 0;
+  transition: grid-template-columns 220ms ease;
+  width: 100%;
+  min-height: 100vh;
 }
-.topbar .view-switch {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
+.shell.sidebar-open { grid-template-columns: 1fr 220px; }
+
+.pane-main { min-width: 0; overflow-x: hidden; }
+
+.pane-right {
+  overflow: hidden;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--rule);
+  padding: 48px 18px 24px;
+  font-family: var(--sans);
+}
+
+.sidebar-toggle {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 50;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; line-height: 1;
+  color: var(--ink-ghost);
+  background: transparent;
+  border-radius: 4px;
+  opacity: 0.35;
+  transition: opacity 0.15s ease, color 0.12s ease, background-color 0.12s ease;
+}
+.sidebar-toggle:hover {
+  opacity: 1;
+  color: var(--ink);
   background: var(--bg-elev);
 }
-.topbar .view-switch button {
-  padding: 3px 10px;
-  border-radius: 999px;
-  color: var(--ink-faint);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
+
+/* ---------- Sidebar internals ---------- */
+.sb-section { margin-bottom: 18px; }
+.sb-title {
+  margin: 0 0 8px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--ink-faint);
 }
-.topbar .view-switch button:hover { color: var(--ink); }
-.topbar .view-switch button.on { background: var(--royal); color: #fff; }
+.sb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.sb-item {
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.sb-item:hover { background: var(--bg); color: var(--ink); }
+.sb-item.active { background: var(--royal-soft); color: var(--royal); font-weight: 500; }
 
 /* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
 .fc-shell {
@@ -324,11 +388,21 @@ html, body, #root {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border-radius: 4px;
+  border: none !important;
+  background: transparent !important;
+  color: var(--ink-faint) !important;
   box-shadow: none !important;
 }
-.fc-shell .fc-button:focus { box-shadow: 0 0 0 2px var(--royal-soft) !important; }
+.fc-shell .fc-button:hover {
+  background: var(--bg-elev) !important;
+  color: var(--ink) !important;
+}
+.fc-shell .fc-button:focus { box-shadow: none !important; outline: none !important; }
 .fc-shell .fc-button-primary:not(:disabled).fc-button-active,
-.fc-shell .fc-button-primary:not(:disabled):active { color: #fff; }
+.fc-shell .fc-button-primary:not(:disabled):active {
+  background: var(--royal-soft) !important;
+  color: var(--royal) !important;
+}
 
 /* Day / column headers */
 .fc-shell .fc-col-header-cell-cushion {
@@ -422,17 +496,17 @@ html, body, #root {
   display: flex; align-items: center; gap: 16px;
   margin: 4px 0 16px;
 }
-.year-nav { display: inline-flex; gap: 4px; align-items: center; }
+.year-nav { display: inline-flex; gap: 2px; align-items: center; }
 .year-nav-btn {
   font-size: 14px; line-height: 1;
   padding: 4px 10px; border-radius: 4px;
-  color: var(--ink-soft); background: var(--bg-elev);
+  color: var(--ink-faint); background: transparent;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
-.year-nav-btn:hover { background: var(--rule); color: var(--ink); }
+.year-nav-btn:hover { background: var(--bg-elev); color: var(--ink); }
 .year-nav-btn.ghost {
   font-size: 10px; font-weight: 500;
   letter-spacing: 0.06em; text-transform: uppercase;
-  background: transparent;
 }
 .year-label {
   margin: 0;
@@ -571,22 +645,35 @@ html, body, #root {
 .year-event.continues-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .year-event-title { display: block; }
 
-/* ---------- New note button ---------- */
-.new-note-bar {
+/* ---------- New note hint (subtle click target above the grid) ---------- */
+.new-note-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 4vw, 40px) 12px;
+  padding: 14px clamp(20px, 4vw, 40px) 12px;
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--ink-ghost);
+  background: transparent;
+  text-align: left;
+  cursor: text;
+  transition: color 0.15s ease;
 }
-.new-note-btn {
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--royal);
-  background: var(--royal-soft);
-  border: 1px solid var(--royal-soft);
-  border-radius: 4px;
-  transition: background-color 0.12s ease, color 0.12s ease;
+.new-note-hint:hover { color: var(--ink-faint); }
+.new-note-cursor {
+  display: inline-block;
+  font-family: var(--serif);
+  font-weight: 200;
+  color: var(--coral);
+  animation: order-caret-blink 1.1s steps(2) infinite;
 }
-.new-note-btn:hover { background: var(--royal); color: #fff; }
+.new-note-hint-text {
+  font-style: italic;
+  font-size: 13px;
+}
+@keyframes order-caret-blink {
+  to { opacity: 0; }
+}
