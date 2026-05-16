@@ -411,11 +411,16 @@ export function CardGrid() {
       if (e.key === "k" || e.key === "K") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (e.key === ";") {
+        e.preventDefault();
+        toggleSidebar();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen]);
+  }, [sidebarOpen, toggleSidebar]);
 
   useEffect(() => {
     let cancelled = false;
