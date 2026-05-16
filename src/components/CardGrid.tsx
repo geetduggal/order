@@ -318,9 +318,10 @@ export function CardGrid() {
   useGridLayout(gridRef);
 
   // Safety-net relayout for async content (Milkdown init, font load,
-  // late image fetch). ResizeObserver SHOULD catch these, but in
-  // practice it misses cells that grow during the first paint frames.
-  // Fire a few relayouts after notes change.
+  // late image fetch). Fires a few times after any notes / filter /
+  // view change. Measures the .order-card child's natural height
+  // rather than the cell — clearing-then-remeasuring the cell would
+  // collapse it to 1 row (8px) and bake in that wrong reading.
   useEffect(() => {
     const grid = gridRef.current;
     if (!grid || !notes) return;
@@ -329,8 +330,9 @@ export function CardGrid() {
         const styles = getComputedStyle(grid);
         const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
         grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell").forEach((cell) => {
-          cell.style.gridRowEnd = "";
-          const rows = Math.max(1, Math.ceil((cell.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
+          const child = cell.firstElementChild as HTMLElement | null;
+          if (!child) return;
+          const rows = Math.max(1, Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
           cell.style.gridRowEnd = `span ${rows}`;
         });
       }, ms),
@@ -691,8 +693,13 @@ function useGridLayout(gridRef: React.RefObject<HTMLDivElement | null>) {
     function relayoutCell(cell: HTMLElement) {
       const styles = getComputedStyle(grid as HTMLElement);
       const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
-      cell.style.gridRowEnd = "";
-      const rows = Math.max(1, Math.ceil((cell.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
+      // Measure the child .order-card — its block height reflects the
+      // intrinsic content size regardless of what gridRowEnd is. Avoid
+      // the clear-then-measure trick: cells with no row span collapse
+      // to a single 8px track and bake that 8px in as the new span.
+      const child = cell.firstElementChild as HTMLElement | null;
+      if (!child) return;
+      const rows = Math.max(1, Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
       cell.style.gridRowEnd = `span ${rows}`;
     }
     function relayoutAll() {
