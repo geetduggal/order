@@ -174,6 +174,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>("stream");
+  const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -187,6 +188,32 @@ export function CardGrid() {
   }, []);
 
   useGridLayout(gridRef, view === "stream" ? notes?.length ?? 0 : 0);
+
+  const handleEventClick = useCallback((path: string) => {
+    setView("stream");
+    setScrollTargetPath(path);
+  }, []);
+
+  // After switching to Stream with a target set, scroll the matching
+  // card into view and pulse a highlight on it. We wait one tick so the
+  // grid + cell DOM are present and the row-span layout has settled.
+  useEffect(() => {
+    if (view !== "stream" || !scrollTargetPath) return;
+    const target = scrollTargetPath;
+    const timer = setTimeout(() => {
+      const grid = gridRef.current;
+      if (!grid) return;
+      const cell = grid.querySelector<HTMLElement>(
+        `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
+      );
+      if (!cell) return;
+      cell.scrollIntoView({ behavior: "smooth", block: "center" });
+      cell.classList.add("is-target");
+      setTimeout(() => cell.classList.remove("is-target"), 1400);
+    }, 60);
+    setScrollTargetPath(null);
+    return () => clearTimeout(timer);
+  }, [view, scrollTargetPath]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
@@ -242,7 +269,7 @@ export function CardGrid() {
       {view === "stream" && (
         <div className="card-grid" ref={gridRef}>
           {notes.map((n) => (
-            <div className="card-grid-cell" key={n.path}>
+            <div className="card-grid-cell" data-path={n.path} key={n.path}>
               <Card path={n.path} />
             </div>
           ))}
@@ -254,6 +281,7 @@ export function CardGrid() {
           notes={calendarNotes}
           initialView="timeGridWeek"
           onMoveEvent={updateNoteFrontmatter}
+          onEventClick={handleEventClick}
         />
       )}
       {view === "month" && (
@@ -262,6 +290,7 @@ export function CardGrid() {
           notes={calendarNotes}
           initialView="dayGridMonth"
           onMoveEvent={updateNoteFrontmatter}
+          onEventClick={handleEventClick}
         />
       )}
     </div>

@@ -62,6 +62,12 @@ html, body, #root {
      height regardless of the row-span the layout effect assigns. */
   align-self: start;
   min-width: 0;
+  transition: box-shadow 500ms ease;
+}
+/* Brief coral pulse when a card is targeted by a Week/Month event click. */
+.card-grid-cell.is-target {
+  box-shadow: 0 0 0 2px var(--coral), 0 6px 20px rgba(255, 127, 80, 0.16);
+  border-radius: 8px;
 }
 
 .card-grid-empty {

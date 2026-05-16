@@ -15,6 +15,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import type {
   CalendarApi,
+  EventClickArg,
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
@@ -35,6 +36,7 @@ interface Props {
   notes: NoteMeta[];
   initialView: CalendarRange;
   onMoveEvent: (path: string, patch: Frontmatter) => Promise<void>;
+  onEventClick?: (path: string) => void;
 }
 
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
@@ -97,7 +99,8 @@ function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | n
   };
 }
 
-export function CalendarView({ notes, initialView, onMoveEvent }: Props) {
+export function CalendarView(props: Props) {
+  const { notes, initialView, onMoveEvent } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const events = useMemo(() => notesToEvents(notes), [notes]);
 
@@ -123,6 +126,11 @@ export function CalendarView({ notes, initialView, onMoveEvent }: Props) {
       console.error("eventResize failed:", err);
       arg.revert();
     }
+  }
+
+  function handleEventClick(arg: EventClickArg) {
+    // Click without drag (FullCalendar fires eventDrop instead for drags).
+    if (arg.event.id) props.onEventClick?.(arg.event.id);
   }
 
   // The view prop on FullCalendar is set once via initialView; consumers
@@ -156,9 +164,10 @@ export function CalendarView({ notes, initialView, onMoveEvent }: Props) {
           center: "title",
           right: "",
         }}
-        // Sensible week-grid defaults: 30-min slots, snap drag to 15-min.
+        // 30-min slots and drags snap to 30-min — events always fall on
+        // a half-hour boundary.
         slotDuration="00:30:00"
-        snapDuration="00:15:00"
+        snapDuration="00:30:00"
         // Show 24h time labels by default — easy to flip via setting later.
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
@@ -169,6 +178,7 @@ export function CalendarView({ notes, initialView, onMoveEvent }: Props) {
         // cells naturally.
         eventDrop={handleEventDrop}
         eventResize={handleEventResize}
+        eventClick={handleEventClick}
       />
     </div>
   );
