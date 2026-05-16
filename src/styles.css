@@ -154,7 +154,7 @@ html, body, #root {
 
 /* h1 stays serif (title voice) with a hairline divider beneath. */
 .milkdown-host .ProseMirror h1 {
-  font-size: 1.75em;
+  font-size: 2.25em;
   line-height: 1.2;
   border-bottom: 1px solid var(--rule);
   padding-bottom: 0.3em;
