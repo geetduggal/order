@@ -85,6 +85,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-self: start;
   min-width: 0;
   transition: box-shadow 500ms ease;
+  animation: order-card-mount 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes order-card-mount {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 /* Brief coral pulse when a card is targeted by a Week/Month event click. */
 .card-grid-cell.is-target {
@@ -130,6 +135,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
   overflow: auto;
   max-width: none;
+  animation: order-fullscreen-in 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes order-fullscreen-in {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
 
 .card-loading {
@@ -208,6 +218,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--coral);
   background: var(--coral-soft);
 }
+.order-card-fullscreen:active,
+.order-card-delete:active { transform: scale(0.9); }
 
 .order-card-delete-confirm {
   display: inline-flex;
@@ -276,11 +288,39 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink);
   min-height: 1.5em;
 }
-/* Kill the default heading/paragraph top margin on the FIRST element
-   in the editor — otherwise the card has card-padding PLUS the
-   element's own margin-top stacking on top of each other, leaving an
-   awkward gap above the first heading. */
 .milkdown-host .ProseMirror > :first-child { margin-top: 0; }
+
+/* Crepe block handles (the + / drag-grip that appears in the gutter
+   on block hover): smaller, more subtle, hugged closer to the text.
+   We target every selector form Crepe might emit so this survives
+   small Crepe version bumps. */
+.milkdown-host milkdown-block-handle,
+.milkdown-host .milkdown-block-handle {
+  --crepe-block-handle-gap: 4px;
+  transform: translateX(6px);
+}
+.milkdown-host milkdown-block-handle button,
+.milkdown-host .milkdown-block-handle button,
+.milkdown-host .crepe-add-block-handle,
+.milkdown-host .crepe-drag-handle {
+  width: 16px !important;
+  height: 16px !important;
+  font-size: 12px !important;
+  opacity: 0.35;
+  transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+.milkdown-host milkdown-block-handle button:hover,
+.milkdown-host .milkdown-block-handle button:hover,
+.milkdown-host .crepe-add-block-handle:hover,
+.milkdown-host .crepe-drag-handle:hover {
+  opacity: 1;
+}
+/* Any SVG inside the handles should scale down to match. */
+.milkdown-host milkdown-block-handle svg,
+.milkdown-host .milkdown-block-handle svg {
+  width: 12px !important;
+  height: 12px !important;
+}
 
 /* h1 stays serif (title voice) with a hairline divider beneath. */
 .milkdown-host .ProseMirror h1 {
@@ -310,7 +350,8 @@ input, textarea, select { outline: none; box-shadow: none; }
 .shell {
   display: grid;
   grid-template-columns: 1fr 0;
-  transition: grid-template-columns 220ms ease;
+  /* Snappier curve: fast start, gentle landing. */
+  transition: grid-template-columns 180ms cubic-bezier(0.2, 0, 0, 1);
   width: 100%;
   min-height: 100vh;
 }
@@ -345,6 +386,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink);
   background: var(--bg-elev);
 }
+.sidebar-toggle:active { transform: scale(0.92); }
 
 /* ---------- Sidebar internals (per mockup) ---------- */
 .sb-section { margin-bottom: 20px; }
@@ -867,3 +909,4 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: #fff;
   background: var(--coral);
 }
+.new-note-fab:active { transform: scale(0.92); }
