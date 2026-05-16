@@ -91,11 +91,21 @@ export function WeekView({ notes, onMoveEvent }: Props) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   }
-  async function onColDrop(e: React.DragEvent<HTMLDivElement>, day: Date) {
+  // Drop handler used by both the day body and the events that sit
+  // inside it. We always resolve drop position against the .week-day-body
+  // rect — when the cursor hovers over an event element, currentTarget
+  // is the event, so we walk up to find the body.
+  async function onDayDrop(e: React.DragEvent<HTMLDivElement>, day: Date) {
     e.preventDefault();
+    e.stopPropagation();
     const path = e.dataTransfer.getData("text/plain");
     if (!path) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const target = e.currentTarget as HTMLElement;
+    const body = target.classList.contains("week-day-body")
+      ? target
+      : target.closest<HTMLDivElement>(".week-day-body");
+    if (!body) return;
+    const rect = body.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const { h, m } = clockFromOffsetPx(y);
     await onMoveEvent(path, { date: isoDate(day), startTime: formatClockTime(h, m) });
@@ -136,7 +146,7 @@ export function WeekView({ notes, onMoveEvent }: Props) {
                 className="week-day-body"
                 style={{ height: hours.length * HOUR_PX }}
                 onDragOver={onColDragOver}
-                onDrop={(e) => { void onColDrop(e, day); }}
+                onDrop={(e) => { void onDayDrop(e, day); }}
               >
                 {hours.map((h) => (
                   <div key={h} className="week-hour-row" style={{ top: (h - DAY_START_HOUR) * HOUR_PX, height: HOUR_PX }} />
@@ -151,6 +161,11 @@ export function WeekView({ notes, onMoveEvent }: Props) {
                       draggable
                       onDragStart={(e) => onDragStart(e, note.path)}
                       onDragEnd={onDragEnd}
+                      // Events block dragover on the body by sitting on top
+                      // of it; mirror the column handlers so dropping over
+                      // another event still lands in the right day/time.
+                      onDragOver={onColDragOver}
+                      onDrop={(e) => { void onDayDrop(e, day); }}
                       title={note.path}
                     >
                       <div className="week-event-time">{time ?? ""}</div>

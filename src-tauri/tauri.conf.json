@@ -20,7 +20,13 @@
         "decorations": true
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/Documents/order-cards/**"]
+      }
+    }
   },
   "bundle": {
     "active": true,

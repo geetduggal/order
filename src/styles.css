@@ -168,27 +168,37 @@ html, body, #root {
 .milkdown-host .ProseMirror h5 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; }
 .milkdown-host .ProseMirror h6 { font-size: 0.9em; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
 
-/* ---------- Top bar + view switch ---------- */
+/* ---------- Top bar + view switch (matches mockup) ---------- */
 .shell { width: 100%; min-height: 100vh; }
 .topbar {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 10px;
   padding: 10px clamp(16px, 4vw, 40px);
-  background: linear-gradient(var(--bg) 88%, transparent);
+  background: linear-gradient(var(--bg) 70%, transparent);
+  font-family: var(--sans);
   font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
 }
-.view-switch {
-  display: inline-flex; gap: 2px; padding: 2px;
-  border: 1px solid var(--rule); border-radius: 999px;
+.topbar .view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
   background: var(--bg-elev);
 }
-.view-switch button {
-  padding: 3px 12px; border-radius: 999px;
+.topbar .view-switch button {
+  padding: 3px 10px;
+  border-radius: 999px;
   color: var(--ink-faint);
-  font-size: 10.5px; font-weight: 500;
-  letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-.view-switch button.on { background: var(--royal); color: #fff; }
+.topbar .view-switch button:hover { color: var(--ink); }
+.topbar .view-switch button.on { background: var(--royal); color: #fff; }
 
 /* ---------- Week view ---------- */
 .week {

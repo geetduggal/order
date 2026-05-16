@@ -437,3 +437,11 @@ pub fn write_text(path: String, content: String) -> Result<(), String> {
     }
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&path, data).map_err(|e| e.to_string())
+}

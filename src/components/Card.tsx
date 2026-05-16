@@ -5,9 +5,25 @@
 // changes (e.g. a drag in the Week view) don't get clobbered.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { dirname, join } from "@tauri-apps/api/path";
 import { MilkdownSurface } from "./MilkdownSurface";
-import { joinFrontmatter, splitFrontmatter } from "../lib/frontmatter";
+import { isoDate, isoTime, joinFrontmatter, splitFrontmatter } from "../lib/frontmatter";
+
+const ATTACHMENTS_DIR = "attachments";
+
+function attachmentName(file: File): string {
+  // Strip path components, normalize extension. If the file has no name
+  // (paste from screenshot tool usually does), use the mime type to guess.
+  const baseName = (file.name || "image").split(/[/\\]/).pop() ?? "image";
+  const dot = baseName.lastIndexOf(".");
+  const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+  const extFromName = dot > 0 ? baseName.slice(dot + 1).toLowerCase() : null;
+  const extFromMime = file.type.startsWith("image/") ? file.type.slice("image/".length) : null;
+  const ext = (extFromName || extFromMime || "png").replace(/[^a-z0-9]/g, "");
+  const stamp = `${isoDate()}-${isoTime().replace(":", "")}`;
+  return `${stem}-${stamp}.${ext}`;
+}
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -77,6 +93,15 @@ export function Card({ path }: Props) {
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
   }, [flushNow]);
 
+  const handleImageUpload = useCallback(async (file: File): Promise<string> => {
+    const dir = await dirname(path);
+    const filename = attachmentName(file);
+    const absolute = await join(dir, ATTACHMENTS_DIR, filename);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await invoke("write_binary", { path: absolute, data: Array.from(bytes) });
+    return convertFileSrc(absolute);
+  }, [path]);
+
   useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);
 
   const filename = path.split("/").pop() ?? path;
@@ -98,6 +123,7 @@ export function Card({ path }: Props) {
         initial={state.body}
         onChange={handleChange}
         onDone={() => { void flushNow(); }}
+        onImageUpload={handleImageUpload}
       />
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
