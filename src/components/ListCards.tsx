@@ -169,6 +169,17 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
     onChange(next);
   }
 
+  function updateRef(index: number, ref: string) {
+    const trimmed = ref.trim();
+    if (!trimmed) return;
+    // Reject a rename that collides with another item's ref (case-insensitive).
+    const lower = trimmed.toLowerCase();
+    if (items.some((it, i) => i !== index && it.ref.toLowerCase() === lower)) return;
+    const next = items.slice();
+    next[index] = { ...next[index], ref: trimmed };
+    onChange(next);
+  }
+
   function onPointerDown(e: React.PointerEvent, ref: string) {
     const t = e.target as HTMLElement;
     if (t.closest("input, button, .basecard-meta")) return;
@@ -293,6 +304,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
+            onRefChange={(r) => updateRef(originalIdx, r)}
           />
         );
       })}
@@ -316,27 +328,49 @@ interface BaseCardProps {
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
+  onRefChange: (ref: string) => void;
 }
 
 function BaseCard({
   item, Icon, image, tintCls, metaSuggestion,
   dragging,
-  onPointerDown, onDelete, onMetaChange,
+  onPointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const metaInputRef = useRef<HTMLInputElement>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingMeta) {
       setDraft(metaSuggestion);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => metaInputRef.current?.focus());
     }
   }, [editingMeta, metaSuggestion]);
+
+  useEffect(() => {
+    if (editingTitle) {
+      setTitleDraft(item.ref);
+      requestAnimationFrame(() => {
+        const el = titleInputRef.current;
+        if (!el) return;
+        el.focus();
+        el.select();
+      });
+    }
+  }, [editingTitle, item.ref]);
 
   function commitMeta() {
     if (draft !== metaSuggestion) onMetaChange(draft);
     setEditingMeta(false);
+  }
+
+  function commitTitle() {
+    const next = titleDraft.trim();
+    if (next && next !== item.ref) onRefChange(next);
+    setEditingTitle(false);
   }
 
   return (
@@ -367,10 +401,32 @@ function BaseCard({
           <XIcon size={11} strokeWidth={2} />
         </button>
         <div className="basecard-body">
-          <div className="basecard-title">{item.ref}</div>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="basecard-title-input"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
+                if (e.key === "Escape") { e.preventDefault(); setEditingTitle(false); }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="basecard-title"
+              onClick={() => setEditingTitle(true)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Click to rename"
+            >
+              {item.ref}
+            </button>
+          )}
           {editingMeta ? (
             <input
-              ref={inputRef}
+              ref={metaInputRef}
               className="basecard-meta-input"
               value={draft}
               placeholder={metaSuggestion || "Meta…"}
