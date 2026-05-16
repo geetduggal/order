@@ -1,77 +1,45 @@
-// One Card. Reads ~/Documents/order-test.md (seeding it on first launch),
-// renders/edits it through Milkdown Crepe, persists on debounced change
-// and on Cmd/Ctrl+S. Width is responsive via CSS; height is intrinsic.
+// One Card. Reads its file (seeding on first launch), renders/edits it
+// through Milkdown Crepe on the same surface, persists on debounced change
+// + Cmd/Ctrl+S + unmount. The CardGrid owns layout / responsiveness.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir, join } from "@tauri-apps/api/path";
 import { MilkdownSurface } from "./MilkdownSurface";
-
-const FILENAME = "order-test.md";
-const SEED = `# A single card
-
-Write here. **Bold**, *italic*, \`inline code\`, [a link](https://example.com).
-
-- A list item
-- Another one
-- And a third
-
-1. Ordered too
-2. If you want
-
-> Block quote with some thought.
-
-\`\`\`python
-def hello():
-    print("world")
-\`\`\`
-
-That's it.
-`;
 
 const SAVE_DEBOUNCE_MS = 600;
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; path: string; initial: string }
+  | { kind: "ready"; initial: string }
   | { kind: "error"; message: string };
 
-async function resolveCardPath(): Promise<string> {
-  const dir = await documentDir();
-  return join(dir, FILENAME);
+interface Props {
+  path: string;
+  seed: string;
 }
 
-async function loadOrSeed(): Promise<{ path: string; initial: string }> {
-  const path = await resolveCardPath();
+async function loadOrSeed(path: string, seed: string): Promise<string> {
   try {
-    const initial = await invoke<string>("read_text", { path });
-    return { path, initial };
+    return await invoke<string>("read_text", { path });
   } catch {
-    // Treat any read error as "file missing" for the MVP — write the seed
-    // and return it as the starting content.
-    await invoke("write_text", { path, content: SEED });
-    return { path, initial: SEED };
+    await invoke("write_text", { path, content: seed });
+    return seed;
   }
 }
 
-export function Card() {
+export function Card({ path, seed }: Props) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const pendingContent = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef(0);
 
-  // Capture the active path in a ref so global handlers (Cmd+S, unmount
-  // flush) don't depend on render-time closure of `state`.
-  const pathRef = useRef<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
-    loadOrSeed()
-      .then(({ path, initial }) => {
+    loadOrSeed(path, seed)
+      .then((initial) => {
         if (cancelled) return;
-        pathRef.current = path;
-        setState({ kind: "ready", path, initial });
+        setState({ kind: "ready", initial });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -81,7 +49,7 @@ export function Card() {
         });
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [path, seed]);
 
   const flushNow = useCallback(async (): Promise<void> => {
     if (saveTimer.current) {
@@ -89,8 +57,7 @@ export function Card() {
       saveTimer.current = null;
     }
     const content = pendingContent.current;
-    const path = pathRef.current;
-    if (content === null || !path) return;
+    if (content === null) return;
     pendingContent.current = null;
     inflight.current += 1;
     setSaving(true);
@@ -102,62 +69,45 @@ export function Card() {
       inflight.current -= 1;
       if (inflight.current === 0) setSaving(false);
     }
-  }, []);
+  }, [path]);
 
   const handleChange = useCallback((markdown: string) => {
     pendingContent.current = markdown;
     setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void flushNow();
-    }, SAVE_DEBOUNCE_MS);
-  }, [flushNow]);
-
-  // Global Cmd/Ctrl+S → flush pending save immediately.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        void flushNow();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
   }, [flushNow]);
 
   // On unmount, flush any pending save synchronously enough to avoid losing
-  // the last keystroke. We can't await in a cleanup, so we kick off the
-  // write and rely on Tauri's IPC to deliver it before the process exits.
+  // the last keystroke. Tauri's IPC will deliver before the process exits.
   useEffect(() => {
     return () => { void flushNow(); };
   }, [flushNow]);
 
+  const filename = path.split("/").pop() ?? path;
+
   if (state.kind === "loading") {
-    return <div className="card-shell"><div className="card-loading">Loading…</div></div>;
+    return <article className="order-card is-loading"><div className="card-loading">Loading…</div></article>;
   }
   if (state.kind === "error") {
     return (
-      <div className="card-shell">
-        <article className="order-card">
-          <p className="card-error">Couldn't load the card: {state.message}</p>
-        </article>
-      </div>
+      <article className="order-card">
+        <p className="card-error">Couldn't load {filename}: {state.message}</p>
+      </article>
     );
   }
 
   return (
-    <div className="card-shell">
-      <article className="order-card">
-        <MilkdownSurface
-          initial={state.initial}
-          onChange={handleChange}
-          onDone={() => { void flushNow(); }}
-        />
-        <div className="order-card-status">
-          <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
-          <span className="order-card-path" title={state.path}>{FILENAME}</span>
-        </div>
-      </article>
-    </div>
+    <article className="order-card">
+      <MilkdownSurface
+        initial={state.initial}
+        onChange={handleChange}
+        onDone={() => { void flushNow(); }}
+      />
+      <div className="order-card-status">
+        <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
+        <span className="order-card-path" title={path}>{filename}</span>
+      </div>
+    </article>
   );
 }

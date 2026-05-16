@@ -1,5 +1,6 @@
-/* Order — single-card MVP.
-   Minimal CSS: a centered, responsive card that hosts Milkdown Crepe. */
+/* Order — multi-card masonry MVP.
+   CSS Grid with measured row-spans gives masonry-like flow while
+   preserving source order (left-to-right, top-to-bottom). */
 
 :root {
   --bg:        #ffffff;
@@ -26,7 +27,7 @@
 html, body, #root {
   margin: 0;
   padding: 0;
-  height: 100%;
+  min-height: 100%;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
@@ -38,40 +39,60 @@ html, body, #root {
 
 ::selection { background: var(--coral-soft); }
 
-/* ---------- Card shell ---------- */
-.card-shell {
-  width: 100vw;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  padding: clamp(16px, 4vh, 56px) 0;
+/* ---------- Grid ---------- */
+.card-grid {
+  display: grid;
+  /* 1 column by default (mobile). Breakpoints below widen it. */
+  grid-template-columns: 1fr;
+  /* Small row unit lets row-span give per-card height granularity. */
+  grid-auto-rows: 8px;
+  grid-auto-flow: row dense;
+  column-gap: 20px;
+  row-gap: 20px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(16px, 4vh, 40px) clamp(16px, 4vw, 40px) 80px;
 }
 
+@media (min-width: 600px) {
+  .card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1100px) {
+  .card-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.card-grid-cell {
+  /* Pin to top of its grid row so offsetHeight reflects intrinsic content
+     height regardless of the row-span the layout effect assigns. */
+  align-self: start;
+  min-width: 0;
+}
+
+.card-grid-empty {
+  text-align: center;
+  margin: 80px auto;
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---------- Card ---------- */
 .order-card {
   position: relative;
-  width: 100%;
-  max-width: min(90vw, 800px);
-  margin: 0 auto;
-  padding: clamp(20px, 4vw, 40px) clamp(20px, 5vw, 56px);
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 6px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  padding: clamp(16px, 3vw, 32px) clamp(18px, 3.5vw, 40px) 14px;
 }
-
-@media (min-width: 600px) {
-  .order-card { max-width: min(80vw, 720px); }
-}
-@media (min-width: 1100px) {
-  .order-card { max-width: 720px; }
-}
-@media (min-width: 1400px) {
-  .order-card { max-width: 800px; }
+.order-card.is-loading {
+  min-height: 100px;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .card-loading {
-  margin: 80px auto;
-  text-align: center;
   font-size: 12px;
   color: var(--ink-faint);
   letter-spacing: 0.12em;
@@ -88,10 +109,10 @@ html, body, #root {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-top: 18px;
-  padding-top: 10px;
+  margin-top: 14px;
+  padding-top: 8px;
   border-top: 1px solid var(--rule);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink-faint);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -102,16 +123,18 @@ html, body, #root {
   font-family: var(--mono);
   text-transform: none;
   letter-spacing: 0;
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--ink-ghost);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
 }
 
-/* ---------- Milkdown surface ---------- */
+/* ---------- Milkdown surface inside each card ---------- */
 .milkdown-host {
   width: 100%;
 }
-/* Crepe wraps its editor in `.milkdown` with its own surface (rounded box,
-   shadow, padding). The card shell already provides those, so flatten. */
 .milkdown-host .milkdown {
   background: transparent;
   box-shadow: none;
@@ -122,8 +145,8 @@ html, body, #root {
   outline: none;
   padding: 0;
   font-family: var(--serif);
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--ink);
   min-height: 1.5em;
 }
