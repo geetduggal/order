@@ -39,27 +39,22 @@ html, body, #root {
 
 ::selection { background: var(--coral-soft); }
 
-/* ---------- Grid ---------- */
+/* ---------- Grid ----------
+   auto-fill + minmax lets the grid pick its own column count based on
+   available width and a card minimum. Cards always fill the row; widen
+   the window and another column appears as soon as one more 300px-min
+   slot fits. Zoom in/out reflows naturally because it changes the
+   logical viewport width. */
 .card-grid {
   display: grid;
-  /* 1 column by default (mobile). Breakpoints below widen it. */
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   /* Small row unit lets row-span give per-card height granularity. */
   grid-auto-rows: 8px;
   grid-auto-flow: row dense;
   column-gap: 20px;
   row-gap: 20px;
   width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
   padding: clamp(16px, 4vh, 40px) clamp(16px, 4vw, 40px) 80px;
-}
-
-@media (min-width: 600px) {
-  .card-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (min-width: 1100px) {
-  .card-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 .card-grid-cell {
