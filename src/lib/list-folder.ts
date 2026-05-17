@@ -1,16 +1,28 @@
-// `type: list` Notable Folders render their Main Document body as a
-// card grid: each `- [[Name]]` bullet becomes a card. Anything after
-// the closing `]]` (typically `· author · ★★★★`) is the meta line.
+// A list folder is a note whose YAML carries a `list:` key. The value
+// names the render style (`cards` or `lines`). The body is a bullet
+// list of wikilinks; each `- [[Name]] · meta` bullet becomes a row in
+// the rendered list. Legacy `type: list` is still accepted on read
+// (treated as `list: cards`) so a half-migrated vault still renders.
 
 import type { Frontmatter } from "./frontmatter";
+
+export type ListRender = "cards" | "lines";
 
 export interface ListItem {
   ref: string;
   meta?: string;
 }
 
+export function listRender(frontmatter: Frontmatter): ListRender | null {
+  const v = frontmatter.list;
+  if (v === "cards" || v === "lines") return v;
+  // Legacy: `type: list` → cards.
+  if (frontmatter.type === "list") return "cards";
+  return null;
+}
+
 export function isListFolder(frontmatter: Frontmatter): boolean {
-  return frontmatter.type === "list";
+  return listRender(frontmatter) !== null;
 }
 
 const WIKI_BULLET_RE =
