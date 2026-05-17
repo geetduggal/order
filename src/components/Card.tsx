@@ -19,11 +19,12 @@ import {
 } from "../lib/frontmatter";
 import {
   isListFolder,
+  listRender,
   serializeListItems,
   splitBodyAndBullets,
   type ListItem,
 } from "../lib/list-folder";
-import { ListCards } from "./ListCards";
+import { ListView } from "./ListView";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
   ATTACHMENTS_DIRNAME,
@@ -433,7 +434,8 @@ export function Card(props: Props) {
         onImageUpload={handleImageUpload}
       />
       {isListFolder(state.frontmatter) && (
-        <ListCards
+        <ListView
+          render={listRender(state.frontmatter) ?? "cards"}
           items={listItems}
           vaultNotes={vaultNotes ?? []}
           onChange={handleListChange}

@@ -1,26 +1,13 @@
-// Interactive card grid for `type: list` Notable Folders.
+// "lines" render for a list folder. Dense one-per-row layout with the
+// same operations the cards render supports: drag-reorder (snapshot
+// + insertion-by-row-midY + FLIP slide), inline title/meta edit,
+// hover-× delete, "+ New" row at the end.
 //
-// Drag model:
-// - pointerdown seeds a candidate drag.
-// - At the 5px threshold we snapshot every card's screen rect. This
-//   snapshot is the source of truth for cursor → slot mapping for
-//   the rest of the drag. Reading live DOM positions instead would
-//   feed the FLIP animation back into the slot calculation and the
-//   layout would oscillate.
-// - The "insertion point" is { beforeRef: string | null } — insert
-//   the dragged item before this specific ref, or at the end. Stable
-//   under reorder, no index arithmetic.
-// - A preview items array (dragged item moved to the insertion slot)
-//   drives rendering. A FLIP useLayoutEffect captures before/after
-//   positions every render and slides displaced cards smoothly.
-// - On pointerup, preview becomes the real items via onChange.
-//
-// HTML5 drag-drop is unusable here — Tauri's webview intercepts it
-// at the OS level, so drop events never reach in-page handlers.
+// Mirrors ListCards.tsx semantics so the dispatcher can swap freely.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Plus, X as XIcon } from "lucide-react";
-import { folderIcon } from "../lib/folders";
+import { GripVertical, Plus, X as XIcon } from "lucide-react";
+import { folderColor, folderIcon } from "../lib/folders";
 import type { ListItem, ListNoteRef } from "../lib/list-folder";
 export type { ListNoteRef };
 
@@ -30,16 +17,15 @@ interface Props {
   onChange: (next: ListItem[]) => void;
 }
 
-interface InsertPoint {
-  /** null = insert at end of list */
-  beforeRef: string | null;
-}
+interface InsertPoint { beforeRef: string | null }
 
-function resolve(ref: string, vaultNotes: ListNoteRef[]): ListNoteRef | undefined {
+const DRAG_THRESHOLD_PX = 5;
+const FLIP_DURATION_MS = 220;
+const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
+
+function resolve(ref: string, vault: ListNoteRef[]): ListNoteRef | undefined {
   const needle = ref.toLowerCase();
-  return vaultNotes.find(
-    (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === needle,
-  );
+  return vault.find((n) => n.filename.replace(/\.md$/i, "").toLowerCase() === needle);
 }
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
@@ -51,30 +37,21 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-const DRAG_THRESHOLD_PX = 5;
-const FLIP_DURATION_MS = 280;
-const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
-
-export function ListCards({ items, vaultNotes, onChange }: Props) {
+export function ListLines({ items, vaultNotes, onChange }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const itemsRef = useRef(items);
   itemsRef.current = items;
-
   const draggedRefRef = useRef<string | null>(null);
   draggedRefRef.current = draggedRef;
   const insertPointRef = useRef<InsertPoint | null>(null);
   insertPointRef.current = insertPoint;
-
   const dragRef = useRef<{
     ref: string; startX: number; startY: number; started: boolean;
   } | null>(null);
-  // Snapshot of card rects at drag start. Used for cursor → slot
-  // mapping for the duration of the drag, so FLIP animations don't
-  // change what "nearest card" means under the cursor.
   const snapshotRef = useRef<Map<string, DOMRect> | null>(null);
 
   const previewItems = useMemo(() => {
@@ -89,33 +66,23 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
     return arr;
   }, [items, draggedRef, insertPoint]);
 
-  // FLIP: capture screen positions after every render. If a card's
-  // current rect differs from the previous one, animate the inverse
-  // displacement back to zero so the user sees a smooth slide.
   const prevRects = useRef<Map<string, DOMRect>>(new Map());
   useLayoutEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const cards = grid.querySelectorAll<HTMLElement>("[data-flip-key]");
+    const list = listRef.current;
+    if (!list) return;
+    const rows = list.querySelectorAll<HTMLElement>("[data-flip-key]");
     const seen = new Set<string>();
-    cards.forEach((card) => {
-      const key = card.dataset.flipKey!;
+    rows.forEach((row) => {
+      const key = row.dataset.flipKey!;
       seen.add(key);
-      // Cancel anything in-flight first so getBoundingClientRect
-      // returns the natural (untransformed) position, not the
-      // current visual position.
-      card.getAnimations().forEach((a) => a.cancel());
-      const curr = card.getBoundingClientRect();
+      row.getAnimations().forEach((a) => a.cancel());
+      const curr = row.getBoundingClientRect();
       const prev = prevRects.current.get(key);
       if (prev) {
-        const dx = prev.left - curr.left;
         const dy = prev.top - curr.top;
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-          card.animate(
-            [
-              { transform: `translate(${dx}px, ${dy}px)` },
-              { transform: "translate(0, 0)" },
-            ],
+        if (Math.abs(dy) > 0.5) {
+          row.animate(
+            [{ transform: `translateY(${dy}px)` }, { transform: "translateY(0)" }],
             { duration: FLIP_DURATION_MS, easing: FLIP_EASING, fill: "none" },
           );
         }
@@ -128,20 +95,16 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   });
 
   function commitReorder(fromRef: string, ip: InsertPoint) {
-    const current = itemsRef.current;
-    const fromIdx = current.findIndex((i) => i.ref === fromRef);
+    const cur = itemsRef.current;
+    const fromIdx = cur.findIndex((i) => i.ref === fromRef);
     if (fromIdx < 0) return;
-    const arr = current.filter((i) => i.ref !== fromRef);
-    const picked = current[fromIdx];
-    if (ip.beforeRef === null) {
-      onChange([...arr, picked]);
-      return;
-    }
+    const arr = cur.filter((i) => i.ref !== fromRef);
+    const picked = cur[fromIdx];
+    if (ip.beforeRef === null) { onChange([...arr, picked]); return; }
     const at = arr.findIndex((i) => i.ref === ip.beforeRef);
     if (at < 0) return;
     arr.splice(at, 0, picked);
-    // No-op detection: if the resulting array equals current, skip.
-    if (arr.every((it, i) => it.ref === current[i].ref)) return;
+    if (arr.every((it, i) => it.ref === cur[i].ref)) return;
     onChange(arr);
   }
 
@@ -150,72 +113,63 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
     next.splice(index, 1);
     onChange(next);
   }
-
   function add(ref: string) {
-    const trimmed = ref.trim();
-    if (!trimmed) return;
-    if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return;
-    onChange([...items, { ref: trimmed }]);
+    const t = ref.trim();
+    if (!t) return;
+    if (items.some((i) => i.ref.toLowerCase() === t.toLowerCase())) return;
+    onChange([...items, { ref: t }]);
   }
-
   function updateMeta(index: number, meta: string) {
     const next = items.slice();
     next[index] = { ...next[index], meta: meta.trim() || undefined };
     onChange(next);
   }
-
   function updateRef(index: number, ref: string) {
-    const trimmed = ref.trim();
-    if (!trimmed) return;
-    // Reject a rename that collides with another item's ref (case-insensitive).
-    const lower = trimmed.toLowerCase();
+    const t = ref.trim();
+    if (!t) return;
+    const lower = t.toLowerCase();
     if (items.some((it, i) => i !== index && it.ref.toLowerCase() === lower)) return;
     const next = items.slice();
-    next[index] = { ...next[index], ref: trimmed };
+    next[index] = { ...next[index], ref: t };
     onChange(next);
   }
 
   function onPointerDown(e: React.PointerEvent, ref: string) {
     const t = e.target as HTMLElement;
-    if (t.closest("input, button, .basecard-meta")) return;
+    // Drag only from the handle. Title/meta clicks edit instead.
+    if (!t.closest(".lr-handle")) return;
     if (e.button !== 0) return;
-    dragRef.current = {
-      ref, startX: e.clientX, startY: e.clientY, started: false,
-    };
+    dragRef.current = { ref, startX: e.clientX, startY: e.clientY, started: false };
   }
 
   useEffect(() => {
     function captureSnapshot() {
-      const grid = gridRef.current;
-      if (!grid) return;
+      const list = listRef.current;
+      if (!list) return;
       const m = new Map<string, DOMRect>();
-      grid.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((c) => {
-        m.set(c.dataset.flipKey!, c.getBoundingClientRect());
+      list.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((row) => {
+        m.set(row.dataset.flipKey!, row.getBoundingClientRect());
       });
       snapshotRef.current = m;
     }
 
-    function findInsertPoint(x: number, y: number): InsertPoint | null {
+    function findInsertPoint(_x: number, y: number): InsertPoint | null {
       const snap = snapshotRef.current;
       const draggedR = draggedRefRef.current;
       if (!snap || !draggedR) return null;
-      // Nearest non-dragged card by squared distance to center.
       let bestRef: string | null = null;
       let bestRect: DOMRect | null = null;
       let bestDist = Infinity;
       snap.forEach((rect, ref) => {
         if (ref === draggedR) return;
-        const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+        const d = Math.abs(y - cy);
         if (d < bestDist) { bestDist = d; bestRef = ref; bestRect = rect; }
       });
       if (bestRef === null || !bestRect) return null;
       const r = bestRect as DOMRect;
-      const midX = r.left + r.width / 2;
-      if (x < midX) return { beforeRef: bestRef };
-      // Insert AFTER bestRef → before the next item in items order
-      // that isn't the dragged item.
+      const midY = r.top + r.height / 2;
+      if (y < midY) return { beforeRef: bestRef };
       const list = itemsRef.current;
       const bi = list.findIndex((it) => it.ref === bestRef);
       if (bi < 0) return { beforeRef: null };
@@ -225,7 +179,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
       return { beforeRef: null };
     }
 
-    function samePoint(a: InsertPoint | null, b: InsertPoint | null): boolean {
+    function samePoint(a: InsertPoint | null, b: InsertPoint | null) {
       if (a === b) return true;
       if (!a || !b) return false;
       return a.beforeRef === b.beforeRef;
@@ -244,7 +198,6 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
       const next = findInsertPoint(e.clientX, e.clientY);
       if (!samePoint(next, insertPointRef.current)) setInsertPoint(next);
     }
-
     function commit() {
       const d = dragRef.current;
       dragRef.current = null;
@@ -256,7 +209,6 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
       setDraggedRef(null);
       setInsertPoint(null);
     }
-
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", commit);
     window.addEventListener("pointercancel", commit);
@@ -270,30 +222,26 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
 
   if (items.length === 0 && !adding) {
     return (
-      <div className="basecard-grid">
-        <AddTile onCancel={() => setAdding(false)} onAdd={add} startOpen />
+      <div className="list-lines">
+        <AddRow startOpen onAdd={add} onCancel={() => setAdding(false)} />
       </div>
     );
   }
 
   return (
-    <div ref={gridRef} className="basecard-grid">
+    <div ref={listRef} className="list-lines">
       {previewItems.map((item) => {
         const note = resolve(item.ref, vaultNotes);
-        const image = note && typeof note.frontmatter.image === "string"
-          ? note.frontmatter.image as string
-          : undefined;
-        const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const originalIdx = items.findIndex((i) => i.ref === item.ref);
-        const tintCls = originalIdx % 2 === 0 ? "is-royal" : "is-coral";
+        const color = folderColor(item.ref, note?.frontmatter.color);
+        const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggedRef;
         return (
-          <BaseCard
+          <LineRow
             key={item.ref}
             item={item}
+            color={color}
             Icon={Icon}
-            image={image}
-            tintCls={tintCls}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             onPointerDown={onPointerDown}
@@ -303,7 +251,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
           />
         );
       })}
-      <AddTile
+      <AddRow
         startOpen={adding}
         onAdd={(name) => { add(name); setAdding(false); }}
         onCancel={() => setAdding(false)}
@@ -313,11 +261,10 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   );
 }
 
-interface BaseCardProps {
+interface LineRowProps {
   item: ListItem;
+  color: string;
   Icon: ReturnType<typeof folderIcon>;
-  image?: string;
-  tintCls: string;
   metaSuggestion: string;
   dragging: boolean;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
@@ -326,42 +273,37 @@ interface BaseCardProps {
   onRefChange: (ref: string) => void;
 }
 
-function BaseCard({
-  item, Icon, image, tintCls, metaSuggestion,
-  dragging,
+function LineRow({
+  item, color, Icon, metaSuggestion, dragging,
   onPointerDown, onDelete, onMetaChange, onRefChange,
-}: BaseCardProps) {
+}: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
-  const [draft, setDraft] = useState("");
-  const metaInputRef = useRef<HTMLInputElement>(null);
+  const [metaDraft, setMetaDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const metaInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingMeta) {
-      setDraft(metaSuggestion);
+      setMetaDraft(metaSuggestion);
       requestAnimationFrame(() => metaInputRef.current?.focus());
     }
   }, [editingMeta, metaSuggestion]);
-
   useEffect(() => {
     if (editingTitle) {
       setTitleDraft(item.ref);
       requestAnimationFrame(() => {
-        const el = titleInputRef.current;
-        if (!el) return;
-        el.focus();
-        el.select();
+        titleInputRef.current?.focus();
+        titleInputRef.current?.select();
       });
     }
   }, [editingTitle, item.ref]);
 
   function commitMeta() {
-    if (draft !== metaSuggestion) onMetaChange(draft);
+    if (metaDraft !== metaSuggestion) onMetaChange(metaDraft);
     setEditingMeta(false);
   }
-
   function commitTitle() {
     const next = titleDraft.trim();
     if (next && next !== item.ref) onRefChange(next);
@@ -369,129 +311,112 @@ function BaseCard({
   }
 
   return (
-    <article
-      className={"basecard" + (dragging ? " is-dragging" : "")}
+    <div
+      className={"list-line" + (dragging ? " is-dragging" : "")}
       data-flip-key={item.ref}
       onPointerDown={(e) => onPointerDown(e, item.ref)}
     >
-      {/* basecard-frame holds all visuals so a "lift" scale during drag
-          can live here, leaving the article free for FLIP's translate
-          transform without the two fighting each other. */}
-      <div className="basecard-frame">
-        {image ? (
-          <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
-        ) : (
-          <div className={`basecard-cover is-fallback ${tintCls}`}>
-            <Icon size={44} strokeWidth={1.3} />
-          </div>
-        )}
+      <span className="lr-handle" title="Drag to reorder">
+        <GripVertical size={14} strokeWidth={1.6} />
+      </span>
+      <Icon size={14} strokeWidth={1.7} style={{ color, flexShrink: 0 }} />
+      {editingTitle ? (
+        <input
+          ref={titleInputRef}
+          className="lr-title-input"
+          value={titleDraft}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onBlur={commitTitle}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
+            if (e.key === "Escape") { e.preventDefault(); setEditingTitle(false); }
+          }}
+        />
+      ) : (
         <button
           type="button"
-          className="basecard-delete"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="lr-title"
+          onClick={() => setEditingTitle(true)}
           onPointerDown={(e) => e.stopPropagation()}
-          title="Remove from list"
-          aria-label="Remove from list"
+          title="Click to rename"
         >
-          <XIcon size={11} strokeWidth={2} />
+          {item.ref}
         </button>
-        <div className="basecard-body">
-          {editingTitle ? (
-            <input
-              ref={titleInputRef}
-              className="basecard-title-input"
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
-                if (e.key === "Escape") { e.preventDefault(); setEditingTitle(false); }
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="basecard-title"
-              onClick={() => setEditingTitle(true)}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Click to rename"
-            >
-              {item.ref}
-            </button>
-          )}
-          {editingMeta ? (
-            <input
-              ref={metaInputRef}
-              className="basecard-meta-input"
-              value={draft}
-              placeholder={metaSuggestion || "Meta…"}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commitMeta}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
-                if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className={"basecard-meta" + (metaSuggestion ? "" : " is-empty")}
-              onClick={() => setEditingMeta(true)}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Click to edit"
-            >
-              {metaSuggestion || "Add meta…"}
-            </button>
-          )}
-        </div>
-      </div>
-    </article>
+      )}
+      {editingMeta ? (
+        <input
+          ref={metaInputRef}
+          className="lr-meta-input"
+          value={metaDraft}
+          placeholder={metaSuggestion || "Meta…"}
+          onChange={(e) => setMetaDraft(e.target.value)}
+          onBlur={commitMeta}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
+            if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className={"lr-meta" + (metaSuggestion ? "" : " is-empty")}
+          onClick={() => setEditingMeta(true)}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="Click to edit"
+        >
+          {metaSuggestion || "Add meta…"}
+        </button>
+      )}
+      <button
+        type="button"
+        className="lr-delete"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        onPointerDown={(e) => e.stopPropagation()}
+        title="Remove"
+        aria-label="Remove"
+      >
+        <XIcon size={11} strokeWidth={2} />
+      </button>
+    </div>
   );
 }
 
-interface AddTileProps {
+interface AddRowProps {
   startOpen?: boolean;
   onAdd: (name: string) => void;
   onCancel: () => void;
   onOpen?: () => void;
 }
 
-function AddTile({ startOpen, onAdd, onCancel, onOpen }: AddTileProps) {
+function AddRow({ startOpen, onAdd, onCancel, onOpen }: AddRowProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => { if (startOpen) setOpen(true); }, [startOpen]);
   useEffect(() => { if (open) requestAnimationFrame(() => inputRef.current?.focus()); }, [open]);
-
   function commit() {
     if (draft.trim()) onAdd(draft.trim());
     setDraft("");
     setOpen(false);
   }
-  function cancel() {
-    setDraft("");
-    setOpen(false);
-    onCancel();
-  }
-
+  function cancel() { setDraft(""); setOpen(false); onCancel(); }
   if (!open) {
     return (
       <button
         type="button"
-        className="basecard basecard-add"
+        className="list-line list-line-add"
         onClick={() => { setOpen(true); onOpen?.(); }}
       >
-        <Plus size={20} strokeWidth={1.6} />
-        <span className="basecard-add-label">New</span>
+        <Plus size={14} strokeWidth={1.6} />
+        <span>New</span>
       </button>
     );
   }
   return (
-    <div className="basecard basecard-add is-input">
+    <div className="list-line list-line-add is-input">
       <input
         ref={inputRef}
-        className="basecard-add-input"
+        className="lr-add-input"
         value={draft}
         placeholder="Note name"
         onChange={(e) => setDraft(e.target.value)}

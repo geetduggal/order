@@ -13,6 +13,13 @@ export interface ListItem {
   meta?: string;
 }
 
+/** Minimal vault index entry the list renderers need to resolve a
+ *  bullet's wikilink to its target note's cover/meta. */
+export interface ListNoteRef {
+  filename: string;
+  frontmatter: Frontmatter;
+}
+
 export function listRender(frontmatter: Frontmatter): ListRender | null {
   const v = frontmatter.list;
   if (v === "cards" || v === "lines") return v;

@@ -1372,6 +1372,102 @@ input, textarea, select { outline: none; box-shadow: none; }
   flex-shrink: 0;
 }
 
+/* ---------- List Notable Folder: lines render ---------- */
+.list-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 16px 0 4px;
+  border-top: 1px solid var(--rule);
+}
+.list-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.12s var(--ease-out);
+}
+.list-line input { user-select: text; -webkit-user-select: text; }
+.list-line:hover { background: var(--bg-elev, var(--bg)); }
+.list-line.is-dragging { opacity: 0.5; }
+.lr-handle {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-ghost);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out);
+}
+.list-line:hover .lr-handle { opacity: 1; }
+.lr-handle:active { cursor: grabbing; }
+.lr-title, .lr-title-input {
+  flex: 0 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: text;
+}
+.lr-title-input { outline: none; }
+.lr-meta, .lr-meta-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-align: left;
+  cursor: text;
+}
+.lr-meta.is-empty { color: var(--ink-ghost); font-style: italic; }
+.lr-meta-input { outline: none; }
+.lr-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  color: var(--ink-faint);
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out), background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.list-line:hover .lr-delete { opacity: 1; }
+.lr-delete:hover {
+  background: var(--coral, #ff7f50);
+  color: white;
+}
+.list-line-add {
+  color: var(--ink-faint);
+  cursor: pointer;
+  justify-content: center;
+}
+.list-line-add:hover { color: var(--coral, #ff7f50); }
+.list-line-add.is-input { padding: 4px; }
+.lr-add-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+}
+.lr-add-input:focus { border-color: var(--coral, #ff7f50); }
+
 /* ---------- List Notable Folder: basecard grid ---------- */
 .basecard-grid {
   display: grid;
