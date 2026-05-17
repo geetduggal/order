@@ -1372,6 +1372,45 @@ input, textarea, select { outline: none; box-shadow: none; }
   flex-shrink: 0;
 }
 
+/* ---------- List Notable Folder: base controls strip ---------- */
+.order-card-list-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 -4px;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.order-card-list-mode { color: var(--royal, #4169e1); }
+.order-card-list-hint { color: var(--coral, #ff7f50); cursor: help; }
+.order-card-list-reset {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: transparent;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.order-card-list-reset:hover { color: var(--coral, #ff7f50); background: var(--coral-soft, rgba(255, 127, 80, 0.06)); }
+.basecard-empty,
+.list-line-empty {
+  padding: 16px;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-ghost);
+  text-align: center;
+  justify-content: center;
+}
+
 /* ---------- List Notable Folder: lines render ---------- */
 .list-lines {
   display: flex;

@@ -13,11 +13,16 @@ export interface ListItem {
   meta?: string;
 }
 
-/** Minimal vault index entry the list renderers need to resolve a
- *  bullet's wikilink to its target note's cover/meta. */
+/** Minimal vault index entry the list renderers + base evaluator
+ *  share. `folder` / `ctime` / `mtime` are optional because some
+ *  call sites (the local Card) don't have them; the base evaluator
+ *  treats missing values as null. */
 export interface ListNoteRef {
   filename: string;
   frontmatter: Frontmatter;
+  folder?: string;
+  ctime?: number;
+  mtime?: number;
 }
 
 export function listRender(frontmatter: Frontmatter): ListRender | null {

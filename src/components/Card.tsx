@@ -4,7 +4,7 @@
 // Full Calendar convention) and the parent is notified so calendar
 // views stay in sync.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { dirname, join } from "@tauri-apps/api/path";
 import { MilkdownSurface } from "./MilkdownSurface";
@@ -23,7 +23,10 @@ import {
   serializeListItems,
   splitBodyAndBullets,
   type ListItem,
+  type ListNoteRef,
 } from "../lib/list-folder";
+import { extractBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
+import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
@@ -99,11 +102,10 @@ interface Props {
   /** Called when the user picks (or clears) a folder for this note.
    *  Pass null to clear. CardGrid persists to YAML + updates state. */
   onAssignFolder?: (name: string | null) => Promise<void>;
-  /** Minimal vault index for resolving `- [[Name]]` bullets when this
-   *  card is a `type: list` Notable Folder Main Document. Each entry
-   *  exposes just enough YAML for the list card grid to find covers,
-   *  authors, descriptions. */
-  vaultNotes?: { filename: string; frontmatter: Frontmatter }[];
+  /** Minimal vault index for resolving `- [[Name]]` bullets (and for
+   *  evaluating `base` blocks) when this card is a list folder. Each
+   *  entry carries just enough info for the renders + base evaluator. */
+  vaultNotes?: ListNoteRef[];
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -137,13 +139,17 @@ export function Card(props: Props) {
    *  with the structured list items below. Milkdown stays uncontrolled
    *  — this state is downstream-only. */
   const [editorBody, setEditorBody] = useState<string>("");
-  /** Structured list items for `type: list` folders. We strip bullets
-   *  from the body on load so they don't show in the editor, hold them
-   *  as a typed array here for drag-reorder / edit / delete / add, and
-   *  serialize them back into the body on save. */
+  /** Structured list items for *manual* list folders (bullets in body).
+   *  Source of truth for what + order. Unused in base-driven mode. */
   const [listItems, setListItems] = useState<ListItem[]>([]);
   const listItemsRef = useRef<ListItem[]>([]);
   useEffect(() => { listItemsRef.current = listItems; }, [listItems]);
+  /** Manual ordering for *base-driven* list folders. Persisted as
+   *  `manual_order:` in frontmatter; smart-merged with the base's
+   *  matched set at render time. */
+  const [manualOrder, setManualOrder] = useState<string[]>([]);
+  const manualOrderRef = useRef<string[]>([]);
+  useEffect(() => { manualOrderRef.current = manualOrder; }, [manualOrder]);
   const editorBodyRef = useRef<string>("");
   useEffect(() => { editorBodyRef.current = editorBody; }, [editorBody]);
   /** Set on any user edit (text or list item). flushNow no-ops without
@@ -174,19 +180,36 @@ export function Card(props: Props) {
         const vault = await dirname(await dirname(initialPath));
         const prefix = attachmentAssetPrefix(vault);
         const displayBody = inflateAttachmentUrls(body, prefix);
-        let proseBody = displayBody;
+        // List folders come in two flavors:
+        //   - manual: bullet list of wikilinks in the body. We strip
+        //     them on load so the editor only sees prose; the items
+        //     array drives the rendered list.
+        //   - base:   a fenced ```base ... ``` block in the body. We
+        //     keep the body intact (the user can edit the block), and
+        //     manual_order in YAML stores any per-user reordering.
+        let editorInitial = displayBody;
         let initialItems: ListItem[] = [];
+        let initialManualOrder: string[] = [];
         if (isListFolder(frontmatter)) {
-          const split = splitBodyAndBullets(displayBody);
-          proseBody = split.prose;
-          initialItems = split.items;
+          if (extractBaseBlock(displayBody)) {
+            const fmOrder = frontmatter.manual_order;
+            initialManualOrder = Array.isArray(fmOrder)
+              ? fmOrder.filter((x): x is string => typeof x === "string")
+              : [];
+          } else {
+            const split = splitBodyAndBullets(displayBody);
+            editorInitial = split.prose;
+            initialItems = split.items;
+          }
         }
-        lastTitleRef.current = firstLineTitle(proseBody);
-        setState({ kind: "ready", body: proseBody, frontmatter });
-        setEditorBody(proseBody);
+        lastTitleRef.current = firstLineTitle(editorInitial);
+        setState({ kind: "ready", body: editorInitial, frontmatter });
+        setEditorBody(editorInitial);
         setListItems(initialItems);
+        setManualOrder(initialManualOrder);
         listItemsRef.current = initialItems;
-        editorBodyRef.current = proseBody;
+        manualOrderRef.current = initialManualOrder;
+        editorBodyRef.current = editorInitial;
       } catch (err) {
         if (cancelled) return;
         setState({
@@ -215,21 +238,35 @@ export function Card(props: Props) {
       // are preserved when we write our body.
       const current = await invoke<string>("read_text", { path });
       const { frontmatter } = splitFrontmatter(current);
-      // For list folders, fold the structured items back into the body
-      // as wikilink bullets at the end. The editor only ever holds
-      // prose; the items array is the source of truth for ordering.
-      let foldedBody = body;
-      if (isListFolder(frontmatter)) {
+
+      // Three save shapes:
+      //   - base-driven list folder: body unchanged (contains base
+      //     block); frontmatter.manual_order updated.
+      //   - manual list folder: body = prose + serialized bullets.
+      //   - any other note: body unchanged.
+      const isBaseDriven = isListFolder(frontmatter) && extractBaseBlock(body) !== null;
+      let outBody = body;
+      let outFrontmatter: Frontmatter = frontmatter;
+
+      if (isBaseDriven) {
+        outFrontmatter = { ...frontmatter, manual_order: manualOrderRef.current };
+        // If manual_order is empty, drop the key so the YAML stays clean.
+        if (manualOrderRef.current.length === 0) {
+          const { manual_order: _, ...rest } = outFrontmatter;
+          outFrontmatter = rest;
+        }
+      } else if (isListFolder(frontmatter)) {
         const bullets = serializeListItems(listItemsRef.current);
         if (bullets) {
-          foldedBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
+          outBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
         }
       }
+
       // Collapse runtime asset:// URLs back to vault-relative paths so
       // the file on disk is portable / Obsidian-friendly.
       const vault = await dirname(await dirname(path));
-      const persistedBody = deflateAttachmentUrls(foldedBody, attachmentAssetPrefix(vault));
-      const content = joinFrontmatter(frontmatter, persistedBody);
+      const persistedBody = deflateAttachmentUrls(outBody, attachmentAssetPrefix(vault));
+      const content = joinFrontmatter(outFrontmatter, persistedBody);
       await invoke("write_text", { path, content });
 
       // Auto-rename whenever the body's first line of text changes —
@@ -288,10 +325,41 @@ export function Card(props: Props) {
   }, [scheduleSave]);
 
   const handleListChange = useCallback((next: ListItem[]) => {
-    listItemsRef.current = next;
-    setListItems(next);
+    // In base mode the body holds the base block, not bullets; the
+    // user's ordering lives in frontmatter.manual_order. In manual
+    // mode the bullets ARE the order. Detect by re-checking the
+    // editor body at change time so the right branch wins even if
+    // the user just typed/removed the base block.
+    if (extractBaseBlock(editorBodyRef.current)) {
+      const order = next.map((i) => i.ref);
+      manualOrderRef.current = order;
+      setManualOrder(order);
+    } else {
+      listItemsRef.current = next;
+      setListItems(next);
+    }
     scheduleSave();
   }, [scheduleSave]);
+
+  const resetManualOrder = useCallback(() => {
+    manualOrderRef.current = [];
+    setManualOrder([]);
+    scheduleSave();
+  }, [scheduleSave]);
+
+  /** Detect base block in the editor body. Re-derived on every body
+   *  change so toggling the block in the editor switches modes live. */
+  const parsedBase: ParsedBase | null = useMemo(() => {
+    const block = extractBaseBlock(editorBody);
+    return block ? parseBase(block) : null;
+  }, [editorBody]);
+
+  /** What the renderer shows: smart-merged base results in base mode,
+   *  manual bullets otherwise. */
+  const itemsForView: ListItem[] = useMemo(() => {
+    if (!parsedBase) return listItems;
+    return smartMerge(parsedBase, vaultNotes ?? [], manualOrder).map((ref) => ({ ref }));
+  }, [parsedBase, listItems, vaultNotes, manualOrder]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
     // Save under <vault>/Attachments/. Vault root is the parent of the
@@ -434,12 +502,40 @@ export function Card(props: Props) {
         onImageUpload={handleImageUpload}
       />
       {isListFolder(state.frontmatter) && (
-        <ListView
-          render={listRender(state.frontmatter) ?? "cards"}
-          items={listItems}
-          vaultNotes={vaultNotes ?? []}
-          onChange={handleListChange}
-        />
+        <>
+          {parsedBase && (
+            <div className="order-card-list-controls">
+              <span className="order-card-list-mode">
+                base · {parsedBase.view.name ?? "view"}
+                {parsedBase.unsupported.length > 0 && (
+                  <span
+                    className="order-card-list-hint"
+                    title={parsedBase.unsupported.join("\n")}
+                  >
+                    {" "}({parsedBase.unsupported.length} unsupported)
+                  </span>
+                )}
+              </span>
+              {manualOrder.length > 0 && (
+                <button
+                  type="button"
+                  className="order-card-list-reset"
+                  onClick={resetManualOrder}
+                  title="Discard manual order and re-sort from the base"
+                >
+                  Reset order
+                </button>
+              )}
+            </div>
+          )}
+          <ListView
+            render={parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards"}
+            items={itemsForView}
+            vaultNotes={vaultNotes ?? []}
+            onChange={handleListChange}
+            readOnlyMembership={!!parsedBase}
+          />
+        </>
       )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>

@@ -4,22 +4,14 @@
 // manual position; new ones append in the base's sort. Pure module.
 
 import type { Filter, ParsedBase } from "./list-base";
-import type { Frontmatter } from "./frontmatter";
+import type { ListNoteRef } from "./list-folder";
 
-export interface NoteRef {
-  /** filename without `.md` — the wikilink ref */
-  ref: string;
-  /** directory name relative to vault root — for `file.folder` */
-  folder: string;
-  /** unix ms */
-  ctime: number;
-  mtime: number;
-  frontmatter: Frontmatter;
-}
+/** Re-export under the local name we use in this module. */
+export type NoteRef = ListNoteRef;
 
 function getProp(note: NoteRef, prop: string): unknown {
   switch (prop) {
-    case "file.name": return note.ref;
+    case "file.name": return note.filename.replace(/\.md$/i, "");
     case "file.folder": return note.folder;
     case "file.ctime": return note.ctime;
     case "file.mtime": return note.mtime;
@@ -61,6 +53,10 @@ export function sortByBase(parsed: ParsedBase, notes: NoteRef[]): NoteRef[] {
   });
 }
 
+function noteRef(n: NoteRef): string {
+  return n.filename.replace(/\.md$/i, "");
+}
+
 /** Smart merge: items still matching keep their saved manual position;
  *  new items append in the base's sort; removed items drop out. */
 export function smartMerge(
@@ -69,9 +65,9 @@ export function smartMerge(
   savedOrder: string[],
 ): string[] {
   const matched = matchNotes(parsed, notes);
-  const matchedRefs = new Set(matched.map((n) => n.ref));
+  const matchedRefs = new Set(matched.map(noteRef));
   const kept = savedOrder.filter((r) => matchedRefs.has(r));
   const keptSet = new Set(kept);
-  const added = sortByBase(parsed, matched.filter((n) => !keptSet.has(n.ref)));
-  return [...kept, ...added.map((n) => n.ref)];
+  const added = sortByBase(parsed, matched.filter((n) => !keptSet.has(noteRef(n))));
+  return [...kept, ...added.map(noteRef)];
 }

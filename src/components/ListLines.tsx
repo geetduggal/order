@@ -15,6 +15,8 @@ interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
+  /** Hide add row + per-item delete/inline-edit. Drag still works. */
+  readOnlyMembership?: boolean;
 }
 
 interface InsertPoint { beforeRef: string | null }
@@ -37,7 +39,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListLines({ items, vaultNotes, onChange }: Props) {
+export function ListLines({ items, vaultNotes, onChange, readOnlyMembership }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -221,6 +223,9 @@ export function ListLines({ items, vaultNotes, onChange }: Props) {
   }, []);
 
   if (items.length === 0 && !adding) {
+    if (readOnlyMembership) {
+      return <div className="list-lines"><div className="list-line list-line-empty">No items match.</div></div>;
+    }
     return (
       <div className="list-lines">
         <AddRow startOpen onAdd={add} onCancel={() => setAdding(false)} />
@@ -244,6 +249,7 @@ export function ListLines({ items, vaultNotes, onChange }: Props) {
             Icon={Icon}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
+            readOnly={!!readOnlyMembership}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -251,12 +257,14 @@ export function ListLines({ items, vaultNotes, onChange }: Props) {
           />
         );
       })}
-      <AddRow
-        startOpen={adding}
-        onAdd={(name) => { add(name); setAdding(false); }}
-        onCancel={() => setAdding(false)}
-        onOpen={() => setAdding(true)}
-      />
+      {!readOnlyMembership && (
+        <AddRow
+          startOpen={adding}
+          onAdd={(name) => { add(name); setAdding(false); }}
+          onCancel={() => setAdding(false)}
+          onOpen={() => setAdding(true)}
+        />
+      )}
     </div>
   );
 }
@@ -267,6 +275,7 @@ interface LineRowProps {
   Icon: ReturnType<typeof folderIcon>;
   metaSuggestion: string;
   dragging: boolean;
+  readOnly: boolean;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -274,7 +283,7 @@ interface LineRowProps {
 }
 
 function LineRow({
-  item, color, Icon, metaSuggestion, dragging,
+  item, color, Icon, metaSuggestion, dragging, readOnly,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -336,9 +345,9 @@ function LineRow({
         <button
           type="button"
           className="lr-title"
-          onClick={() => setEditingTitle(true)}
+          onClick={() => { if (!readOnly) setEditingTitle(true); }}
           onPointerDown={(e) => e.stopPropagation()}
-          title="Click to rename"
+          title={readOnly ? item.ref : "Click to rename"}
         >
           {item.ref}
         </button>
@@ -360,23 +369,25 @@ function LineRow({
         <button
           type="button"
           className={"lr-meta" + (metaSuggestion ? "" : " is-empty")}
-          onClick={() => setEditingMeta(true)}
+          onClick={() => { if (!readOnly) setEditingMeta(true); }}
           onPointerDown={(e) => e.stopPropagation()}
-          title="Click to edit"
+          title={readOnly ? metaSuggestion : "Click to edit"}
         >
-          {metaSuggestion || "Add meta…"}
+          {metaSuggestion || (readOnly ? "" : "Add meta…")}
         </button>
       )}
-      <button
-        type="button"
-        className="lr-delete"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        onPointerDown={(e) => e.stopPropagation()}
-        title="Remove"
-        aria-label="Remove"
-      >
-        <XIcon size={11} strokeWidth={2} />
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          className="lr-delete"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="Remove"
+          aria-label="Remove"
+        >
+          <XIcon size={11} strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }

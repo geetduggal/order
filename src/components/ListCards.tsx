@@ -28,6 +28,8 @@ interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
+  /** Hide add tile + per-item delete/inline-edit. Drag still works. */
+  readOnlyMembership?: boolean;
 }
 
 interface InsertPoint {
@@ -55,7 +57,7 @@ const DRAG_THRESHOLD_PX = 5;
 const FLIP_DURATION_MS = 280;
 const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
-export function ListCards({ items, vaultNotes, onChange }: Props) {
+export function ListCards({ items, vaultNotes, onChange, readOnlyMembership }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -269,6 +271,9 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
   }, []);
 
   if (items.length === 0 && !adding) {
+    if (readOnlyMembership) {
+      return <div className="basecard-grid"><div className="basecard-empty">No items match.</div></div>;
+    }
     return (
       <div className="basecard-grid">
         <AddTile onCancel={() => setAdding(false)} onAdd={add} startOpen />
@@ -296,6 +301,7 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
             tintCls={tintCls}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
+            readOnly={!!readOnlyMembership}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -303,12 +309,14 @@ export function ListCards({ items, vaultNotes, onChange }: Props) {
           />
         );
       })}
-      <AddTile
-        startOpen={adding}
-        onAdd={(name) => { add(name); setAdding(false); }}
-        onCancel={() => setAdding(false)}
-        onOpen={() => setAdding(true)}
-      />
+      {!readOnlyMembership && (
+        <AddTile
+          startOpen={adding}
+          onAdd={(name) => { add(name); setAdding(false); }}
+          onCancel={() => setAdding(false)}
+          onOpen={() => setAdding(true)}
+        />
+      )}
     </div>
   );
 }
@@ -320,6 +328,7 @@ interface BaseCardProps {
   tintCls: string;
   metaSuggestion: string;
   dragging: boolean;
+  readOnly: boolean;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -328,7 +337,7 @@ interface BaseCardProps {
 
 function BaseCard({
   item, Icon, image, tintCls, metaSuggestion,
-  dragging,
+  dragging, readOnly,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -385,16 +394,18 @@ function BaseCard({
             <Icon size={44} strokeWidth={1.3} />
           </div>
         )}
-        <button
-          type="button"
-          className="basecard-delete"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          title="Remove from list"
-          aria-label="Remove from list"
-        >
-          <XIcon size={11} strokeWidth={2} />
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            className="basecard-delete"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            title="Remove from list"
+            aria-label="Remove from list"
+          >
+            <XIcon size={11} strokeWidth={2} />
+          </button>
+        )}
         <div className="basecard-body">
           {editingTitle ? (
             <input
@@ -412,9 +423,9 @@ function BaseCard({
             <button
               type="button"
               className="basecard-title"
-              onClick={() => setEditingTitle(true)}
+              onClick={() => { if (!readOnly) setEditingTitle(true); }}
               onPointerDown={(e) => e.stopPropagation()}
-              title="Click to rename"
+              title={readOnly ? item.ref : "Click to rename"}
             >
               {item.ref}
             </button>
@@ -436,11 +447,11 @@ function BaseCard({
             <button
               type="button"
               className={"basecard-meta" + (metaSuggestion ? "" : " is-empty")}
-              onClick={() => setEditingMeta(true)}
+              onClick={() => { if (!readOnly) setEditingMeta(true); }}
               onPointerDown={(e) => e.stopPropagation()}
-              title="Click to edit"
+              title={readOnly ? metaSuggestion : "Click to edit"}
             >
-              {metaSuggestion || "Add meta…"}
+              {metaSuggestion || (readOnly ? "" : "Add meta…")}
             </button>
           )}
         </div>
