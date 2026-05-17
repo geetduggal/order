@@ -1372,6 +1372,28 @@ input, textarea, select { outline: none; box-shadow: none; }
   flex-shrink: 0;
 }
 
+/* ---------- Cap-reached toast ---------- */
+.cap-warning {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  padding: 8px 14px;
+  background: var(--coral, #ff7f50);
+  color: white;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 24px rgba(20, 20, 20, 0.18);
+  animation: cap-fade 200ms var(--ease-out);
+}
+@keyframes cap-fade {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* ---------- List Notable Folder: base controls strip ---------- */
 .order-card-list-controls {
   display: flex;

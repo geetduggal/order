@@ -4,7 +4,7 @@
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { readDir } from "@tauri-apps/plugin-fs";
@@ -14,7 +14,15 @@ import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
-import { useTaxonomy } from "../hooks/useTaxonomy";
+import {
+  AREAS_FILENAME,
+  buildVaultTaxonomy,
+  mutateBullets,
+  planMigration,
+  readStoredTaxonomy,
+} from "../lib/taxonomy";
+import { extractBaseBlock } from "../lib/list-base";
+import type { ListItem, ListNoteRef } from "../lib/list-folder";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
@@ -264,6 +272,10 @@ interface LoadedNote {
   /** Best-guess title for the calendar event chip: first h1 stripped of `#`,
    *  else first non-empty line truncated. */
   title: string;
+  /** Raw body (without frontmatter). The taxonomy chain walk reads
+   *  bullets from this; the Card editor re-reads its own body
+   *  separately on mount. */
+  body: string;
 }
 
 let nextNoteId = 0;
@@ -306,6 +318,7 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
     filename,
     frontmatter,
     title: deriveTitle(body, filename.replace(/\.md$/, "")),
+    body,
   };
 }
 
@@ -367,7 +380,126 @@ export function CardGrid() {
   }, []);
   const clearFolderFilter = useCallback(() => setFolderFilter(new Set()), []);
 
-  const taxonomy = useTaxonomy();
+  // Walk the chain rooted at Areas.md to produce Areas → Categories
+  // → Folder refs. Sidebar consumes this as flat arrays so it can
+  // keep its existing drill UI without further refactor.
+  const vaultTaxonomy = useMemo(() => {
+    if (!notes) return { areas: [], hiddenRefs: new Set<string>() };
+    return buildVaultTaxonomy(notes.map((n) => ({
+      filename: n.filename,
+      frontmatter: n.frontmatter,
+      body: n.body,
+    })));
+  }, [notes]);
+
+  const cardsSubdir = useCallback(async (): Promise<string> => {
+    const dir = await documentDir();
+    return join(dir, "Dropbox", "order", "cards");
+  }, []);
+
+  const reloadNotes = useCallback(async () => {
+    try {
+      const fresh = await loadAndNormalizeAll();
+      setNotes(fresh);
+    } catch (err) {
+      console.error("reload failed:", err);
+    }
+  }, []);
+
+  const [capWarning, setCapWarning] = useState<string | null>(null);
+  const flashCap = useCallback((msg: string) => {
+    setCapWarning(msg);
+    setTimeout(() => setCapWarning((c) => (c === msg ? null : c)), 2500);
+  }, []);
+
+  /** Add an Area = append a bullet to Areas.md. Caps at 10. */
+  const handleAddArea = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const subdir = await cardsSubdir();
+    const path = await join(subdir, AREAS_FILENAME);
+    const ok = await mutateBullets(
+      path,
+      (p) => invoke<string>("read_text", { path: p }),
+      (p, c) => invoke("write_text", { path: p, content: c }),
+      (items) => {
+        if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
+        if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
+        return [...items, { ref: trimmed }];
+      },
+    );
+    if (ok) await reloadNotes();
+  }, [cardsSubdir, reloadNotes, flashCap]);
+
+  const handleRemoveArea = useCallback(async (name: string) => {
+    const subdir = await cardsSubdir();
+    const path = await join(subdir, AREAS_FILENAME);
+    await mutateBullets(
+      path,
+      (p) => invoke<string>("read_text", { path: p }),
+      (p, c) => invoke("write_text", { path: p, content: c }),
+      (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
+    );
+    await reloadNotes();
+  }, [cardsSubdir, reloadNotes]);
+
+  /** Add a Category to an Area = append a bullet to <Area>.md. If the
+   *  Area file doesn't exist yet, create it and also add the Area to
+   *  Areas.md. Caps at 10. */
+  const handleAddCategory = useCallback(async (name: string, areaName: string) => {
+    const trimmed = name.trim();
+    const trimmedArea = areaName.trim();
+    if (!trimmed || !trimmedArea) return;
+    const subdir = await cardsSubdir();
+    // Ensure Area is in Areas.md
+    await mutateBullets(
+      await join(subdir, AREAS_FILENAME),
+      (p) => invoke<string>("read_text", { path: p }),
+      (p, c) => invoke("write_text", { path: p, content: c }),
+      (items) => {
+        if (items.some((i) => i.ref.toLowerCase() === trimmedArea.toLowerCase())) return items;
+        if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
+        return [...items, { ref: trimmedArea }];
+      },
+    );
+    // Ensure Area file exists; create if missing.
+    const areaPath = await join(subdir, `${trimmedArea}.md`);
+    try { await invoke<string>("read_text", { path: areaPath }); }
+    catch {
+      const body = `# ${trimmedArea}\n`;
+      await invoke("write_text", { path: areaPath, content: joinFrontmatter({ list: "cards" }, body) });
+    }
+    // Append category bullet
+    const ok = await mutateBullets(
+      areaPath,
+      (p) => invoke<string>("read_text", { path: p }),
+      (p, c) => invoke("write_text", { path: p, content: c }),
+      (items) => {
+        if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
+        if (items.length >= 10) { flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return null; }
+        return [...items, { ref: trimmed }];
+      },
+    );
+    if (ok) await reloadNotes();
+  }, [cardsSubdir, reloadNotes, flashCap]);
+
+  const handleRemoveCategory = useCallback(async (name: string, areaName: string) => {
+    const subdir = await cardsSubdir();
+    const areaPath = await join(subdir, `${areaName}.md`);
+    await mutateBullets(
+      areaPath,
+      (p) => invoke<string>("read_text", { path: p }),
+      (p, c) => invoke("write_text", { path: p, content: c }),
+      (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
+    );
+    await reloadNotes();
+  }, [cardsSubdir, reloadNotes]);
+
+  // Shape Sidebar's existing API expects.
+  const storedAreas = vaultTaxonomy.areas.map((a) => a.ref);
+  const storedCategories = vaultTaxonomy.areas.flatMap((a) =>
+    a.categories.map((c) => ({ area: a.ref, name: c.ref })),
+  );
 
   // Popover state for the new-note picker (shows when multiple
   // folders are selected and the user clicks the + FAB).
@@ -422,13 +554,50 @@ export function CardGrid() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen, toggleSidebar]);
 
+  // One-shot migration to the unified list model. Generates Areas.md
+  // + per-Area + per-Category files from the legacy localStorage
+  // taxonomy and existing Notable Folder Main Docs, and rewrites NF
+  // YAML to use `list: cards` instead of `type: list`. Runs only if
+  // no Areas.md (or equivalent role:areas note) is present.
+  const migratedRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
-    loadAndNormalizeAll()
-      .then((loaded) => { if (!cancelled) setNotes(loaded); })
-      .catch((err: unknown) => {
+    (async () => {
+      try {
+        let loaded = await loadAndNormalizeAll();
+        if (cancelled) return;
+
+        const hasAreas = loaded.some(
+          (n) => n.filename === AREAS_FILENAME || n.frontmatter.role === "areas",
+        );
+        if (!hasAreas && !migratedRef.current) {
+          migratedRef.current = true;
+          // Re-read bodies for migration planning — loaded notes only
+          // carry frontmatter.
+          const withBody = await Promise.all(loaded.map(async (n) => {
+            const raw = await invoke<string>("read_text", { path: n.path });
+            const { body } = splitFrontmatter(raw);
+            return { filename: n.filename, path: n.path, body, frontmatter: n.frontmatter };
+          }));
+          const stored = readStoredTaxonomy();
+          const plan = planMigration(withBody, stored);
+          const dir = await documentDir();
+          const subdir = await join(dir, "Dropbox", "order", "cards");
+          for (const f of plan.newFiles) {
+            const p = await join(subdir, f.filename);
+            await invoke("write_text", { path: p, content: f.content });
+          }
+          for (const r of plan.rewrites) {
+            await invoke("write_text", { path: r.path, content: r.content });
+          }
+          loaded = await loadAndNormalizeAll();
+          if (cancelled) return;
+        }
+        setNotes(loaded);
+      } catch (err) {
         console.error("Could not load cards:", err);
-      });
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -504,7 +673,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, "") },
+      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "" },
     ]);
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Stream sorts it
@@ -571,7 +740,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: trimmed },
+      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body },
     ]);
   }, []);
 
@@ -614,13 +783,24 @@ export function CardGrid() {
     color: folderColor(f.name, f.frontmatter.color),
   }));
 
-  // Minimal vault index for resolving `- [[Name]]` bullets inside
-  // `type: list` Notable Folder Main Documents. Only the bits the list
-  // grid needs — filename for matching, frontmatter for cover/meta.
-  const vaultNotesIndex = notes.map((n) => ({
+  // Minimal vault index for resolving `- [[Name]]` bullets and
+  // evaluating `base` blocks. `folder` is the dirname's last segment
+  // so file.folder.contains("X") works against the literal directory
+  // name; ctime/mtime are left undefined until we plumb fs.stat
+  // through the load path.
+  const vaultNotesIndex: ListNoteRef[] = notes.map((n) => ({
     filename: n.filename,
     frontmatter: n.frontmatter,
+    folder: n.path.split("/").slice(-2, -1)[0] ?? "",
   }));
+
+  // Hide intermediate Area / Category list files from the Stream.
+  // They're navigation infrastructure; the Sidebar drill is the
+  // surface for editing them.
+  const streamCandidates = notes.filter((n) => {
+    const ref = n.filename.replace(/\.md$/, "");
+    return !vaultTaxonomy.hiddenRefs.has(ref);
+  });
 
   // Filter: if any folders are selected, only notes that belong to one
   // of them survive. Notable Folder Main Documents themselves count as
@@ -636,7 +816,7 @@ export function CardGrid() {
     return f !== null && folderFilter.has(f);
   };
 
-  const filteredNotes = filteringActive ? notes.filter(filterMatches) : notes;
+  const filteredNotes = filteringActive ? streamCandidates.filter(filterMatches) : streamCandidates;
 
   // Stream view sorts chronologically (newest first). With filters
   // active we hoist the matched Main Documents to the top of the list,
@@ -799,12 +979,12 @@ export function CardGrid() {
           onToggle={toggleFolderFilter}
           onClear={clearFolderFilter}
           onCreateFolder={handleCreateFolder}
-          storedAreas={taxonomy.areas}
-          storedCategories={taxonomy.categories}
-          onAddArea={taxonomy.addArea}
-          onRemoveArea={taxonomy.removeArea}
-          onAddCategory={taxonomy.addCategory}
-          onRemoveCategory={taxonomy.removeCategory}
+          storedAreas={storedAreas}
+          storedCategories={storedCategories}
+          onAddArea={handleAddArea}
+          onRemoveArea={handleRemoveArea}
+          onAddCategory={handleAddCategory}
+          onRemoveCategory={handleRemoveCategory}
           focusSearchSignal={searchFocusSignal}
         />
       )}
@@ -816,6 +996,10 @@ export function CardGrid() {
           onToggle={toggleFolderFilter}
           onClose={() => setPaletteOpen(false)}
         />
+      )}
+
+      {capWarning && (
+        <div className="cap-warning" role="status">{capWarning}</div>
       )}
     </div>
   );
