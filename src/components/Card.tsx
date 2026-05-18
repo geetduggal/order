@@ -361,6 +361,19 @@ export function Card(props: Props) {
     return smartMerge(parsedBase, vaultNotes ?? [], manualOrder).map((ref) => ({ ref }));
   }, [parsedBase, listItems, vaultNotes, manualOrder]);
 
+  /** "List of lists": at least one item resolves to another list
+   *  folder. Triggers inline sub-list expansion below each list-pointing
+   *  row and forces the render to lines. */
+  const isListOfLists = useMemo(() => {
+    if (!vaultNotes || itemsForView.length === 0) return false;
+    return itemsForView.some((item) => {
+      const note = vaultNotes.find(
+        (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === item.ref.toLowerCase(),
+      );
+      return !!(note && (note.frontmatter.list || note.frontmatter.type === "list"));
+    });
+  }, [itemsForView, vaultNotes]);
+
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
     // Save under <vault>/Attachments/. Vault root is the parent of the
     // cards dir, hence dirname(dirname(cardPath)).
@@ -529,11 +542,12 @@ export function Card(props: Props) {
             </div>
           )}
           <ListView
-            render={parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards"}
+            render={isListOfLists ? "lines" : (parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards")}
             items={itemsForView}
             vaultNotes={vaultNotes ?? []}
             onChange={handleListChange}
             readOnlyMembership={!!parsedBase}
+            expandSublists={isListOfLists}
           />
         </>
       )}

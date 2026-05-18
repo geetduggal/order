@@ -16,9 +16,12 @@ interface Props {
    *  for base-driven lists where membership is controlled by the
    *  base block. */
   readOnlyMembership?: boolean;
+  /** Lines-only: render each item's linked list folder as an
+   *  indented sub-list under the row. Display-only. */
+  expandSublists?: boolean;
 }
 
-export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership }: Props) {
+export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists }: Props) {
   if (render === "lines") {
     return (
       <ListLines
@@ -26,6 +29,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
         vaultNotes={vaultNotes}
         onChange={onChange}
         readOnlyMembership={readOnlyMembership}
+        expandSublists={expandSublists}
       />
     );
   }

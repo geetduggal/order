@@ -8,7 +8,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
-import type { ListItem, ListNoteRef } from "../lib/list-folder";
+import { isListFolder, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { resolveListItems } from "../lib/list-resolve";
 export type { ListNoteRef };
 
 interface Props {
@@ -17,6 +18,10 @@ interface Props {
   onChange: (next: ListItem[]) => void;
   /** Hide add row + per-item delete/inline-edit. Drag still works. */
   readOnlyMembership?: boolean;
+  /** When true, any row whose linked target is itself a list folder
+   *  renders its items as a small indented sub-list beneath the row.
+   *  Sub-lists are display-only — edit by navigating to that file. */
+  expandSublists?: boolean;
 }
 
 interface InsertPoint { beforeRef: string | null }
@@ -39,7 +44,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListLines({ items, vaultNotes, onChange, readOnlyMembership }: Props) {
+export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -241,6 +246,10 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership }: P
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggedRef;
+        const subItems = (expandSublists && note && note.body
+          && isListFolder(note.frontmatter))
+          ? resolveListItems(note.frontmatter, note.body, vaultNotes).slice(0, 12)
+          : null;
         return (
           <LineRow
             key={item.ref}
@@ -250,6 +259,8 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership }: P
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
+            subItems={subItems}
+            subItemNotes={subItems ? vaultNotes : undefined}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -276,6 +287,8 @@ interface LineRowProps {
   metaSuggestion: string;
   dragging: boolean;
   readOnly: boolean;
+  subItems?: ListItem[] | null;
+  subItemNotes?: ListNoteRef[];
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -283,7 +296,7 @@ interface LineRowProps {
 }
 
 function LineRow({
-  item, color, Icon, metaSuggestion, dragging, readOnly,
+  item, color, Icon, metaSuggestion, dragging, readOnly, subItems, subItemNotes,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -319,11 +332,19 @@ function LineRow({
     setEditingTitle(false);
   }
 
+  // When sub-items are present (list-of-lists expansion), wrap the
+  // header row + sub-list in a section so FLIP tracks the section as
+  // one unit and the sub-list animates along with its parent.
+  const Wrapper = subItems ? "section" : "div";
   return (
-    <div
-      className={"list-line" + (dragging ? " is-dragging" : "")}
+    <Wrapper
+      className={(subItems ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "")}
       data-flip-key={item.ref}
-      onPointerDown={(e) => onPointerDown(e, item.ref)}
+      onPointerDown={subItems ? undefined : (e) => onPointerDown(e, item.ref)}
+    >
+    <div
+      className={"list-line" + (dragging && !subItems ? " is-dragging" : "")}
+      onPointerDown={subItems ? (e) => onPointerDown(e, item.ref) : undefined}
     >
       <span className="lr-handle" title="Drag to reorder">
         <GripVertical size={14} strokeWidth={1.6} />
@@ -389,6 +410,26 @@ function LineRow({
         </button>
       )}
     </div>
+      {subItems && subItems.length > 0 && (
+        <ul className="lr-sublist">
+          {subItems.map((sub) => {
+            const subNote = subItemNotes?.find(
+              (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
+            );
+            const metaText = sub.meta
+              ?? (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
+              ?? (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
+            return (
+              <li key={sub.ref} className="lr-sublist-item">
+                <span className="lr-sublist-bullet">•</span>
+                <span className="lr-sublist-title">{sub.ref}</span>
+                {metaText && <span className="lr-sublist-meta">{metaText}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Wrapper>
   );
 }
 

@@ -1528,6 +1528,44 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--coral, #ff7f50);
   color: white;
 }
+/* List-of-lists expansion: the wrapper section + indented sub-list
+   below each row whose linked target is itself a list folder. */
+.list-line-section {
+  display: block;
+  border-bottom: 1px solid var(--rule);
+  transition: opacity 0.12s var(--ease-out);
+}
+.list-line-section.is-dragging { opacity: 0.5; }
+.list-line-section > .list-line {
+  border-bottom: none;
+}
+.lr-sublist {
+  list-style: none;
+  margin: 0;
+  padding: 2px 4px 8px 32px;
+}
+.lr-sublist-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.lr-sublist-bullet {
+  color: var(--ink-ghost);
+  flex-shrink: 0;
+}
+.lr-sublist-title {
+  color: var(--ink);
+}
+.lr-sublist-meta {
+  margin-left: 6px;
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
 .list-line-add {
   color: var(--ink-faint);
   cursor: pointer;

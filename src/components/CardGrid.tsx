@@ -792,6 +792,7 @@ export function CardGrid() {
     filename: n.filename,
     frontmatter: n.frontmatter,
     folder: n.path.split("/").slice(-2, -1)[0] ?? "",
+    body: n.body,
   }));
 
   // Hide intermediate Area / Category list files from the Stream.

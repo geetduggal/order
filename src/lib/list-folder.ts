@@ -16,13 +16,15 @@ export interface ListItem {
 /** Minimal vault index entry the list renderers + base evaluator
  *  share. `folder` / `ctime` / `mtime` are optional because some
  *  call sites (the local Card) don't have them; the base evaluator
- *  treats missing values as null. */
+ *  treats missing values as null. `body` is needed for inline
+ *  sub-list expansion ("list of lists" rendering). */
 export interface ListNoteRef {
   filename: string;
   frontmatter: Frontmatter;
   folder?: string;
   ctime?: number;
   mtime?: number;
+  body?: string;
 }
 
 export function listRender(frontmatter: Frontmatter): ListRender | null {
