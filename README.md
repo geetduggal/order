@@ -118,7 +118,7 @@ CardGrid                 # top: loads notes, owns view + filter state
 ├── Sidebar              # drill: Areas → Categories → Notable Folders
 ├── Card[]               # Stream view; each card owns its file
 │   ├── MilkdownSurface  # editor
-│   └── ListCards        # for type: list Main Docs only
+│   └── ListView         # ListCards / ListLines for any list folder
 ├── CalendarView         # Week / Month
 ├── YearLinearView       # Year — 12 rows × 37 cells
 └── CommandPalette       # Cmd+K folder picker
@@ -126,22 +126,113 @@ CardGrid                 # top: loads notes, owns view + filter state
 
 ### List folders
 
-A Notable Folder Main Document with `type: list` in its YAML is rendered as a
-basecard grid below the prose editor. The bullet list of wikilinks
-(`- [[Book Name]] · author · ★★★★`) is the source of truth on disk; on load
-we split it out into structured `ListItem[]` state so the editor only sees the
-prose, and on save we serialize it back.
+A list folder is any note whose YAML carries a `list:` key. The value names the
+render style:
+
+```yaml
+---
+list: cards   # or "lines"
+---
+
+# Books
+
+- [[On Photography]] · Susan Sontag · ★★★★½
+- [[Slowness]] · Milan Kundera · ★★★★
+```
+
+Bullets of wikilinks in the body are the source of truth for what's in the
+list and in what order. On load we split them off the prose (the editor only
+sees the prose); on save we serialize them back. Legacy `type: list` is still
+read (treated as `list: cards`) so vaults from before the unification render
+without migration.
+
+#### Renders
+
+- **`list: cards`** — basecard masonry, cover image (from the linked note's
+  `image:` field) or alternating royal/coral icon fallback, title, meta.
+- **`list: lines`** — dense one-row-per-item layout, drag-handle on hover,
+  click-to-edit title and meta.
 
 ![List folder — Books rendered as a basecard grid below the editor](img/list-folder-grid.png)
 
-The grid supports:
+Both renders share the same operations: drag-reorder with insertion-point
+preview + FLIP-animated nudge, click-to-edit title and meta inline, hover-×
+to delete, "+ New" tile/row to append. Pointer events end-to-end — Tauri's
+webview intercepts HTML5 drag-drop at the OS layer so `drop` never reaches
+in-page handlers.
 
-- **Drag to reorder**, with FLIP-animated reflow. Pointer events end-to-end —
-  HTML5 drag-drop is intercepted by Tauri's webview layer so the standard `drop`
-  event never fires in-page.
-- **Inline meta edit**, **hover-× delete**, **+ New** tile to append.
-- Cards resolve their cover image / author / description from the linked note's
-  YAML; fallback is a Lucide icon over an alternating royal / coral wash.
+#### Areas, Categories, Notable Folders — also list folders
+
+The three-level hierarchy is one consequence of the list model, not a separate
+concept:
+
+- `<vault>/cards/Areas.md` — `list: cards, role: areas`, capped at 10 bullets
+- each Area file — `list: cards`, bullets are Category wikilinks, capped at 10
+- each Category file — `list: cards`, bullets are Notable Folder wikilinks
+- each Notable Folder — `list: cards` (or `lines`), bullets are leaf notes
+
+The sidebar drill walks this chain. The 10-item caps fire from the same
+add-bullet path that any list folder uses; over-cap attempts flash a coral
+toast at the bottom of the screen and refuse the write.
+
+A one-shot migration runs on first launch: if no Areas.md exists, Order
+generates the chain from the legacy localStorage taxonomy + any Notable
+Folder Main Docs (notes with `category:` in YAML), and rewrites those notes'
+YAML to swap `type: list → list: cards`.
+
+#### Base blocks — auto-populated lists
+
+A fenced ```` ```base ```` code block inside a list folder body auto-populates
+the list from the rest of the vault, Obsidian Bases style:
+
+````yaml
+```base
+filters:
+  and:
+    - folder.contains("Books")
+views:
+  - type: cards
+    name: All Books
+    sort:
+      - property: file.mtime
+        direction: DESC
+    image: note.image
+```
+````
+
+Supported subset: `filters` with `and:`/`or:` composition; `.contains(string)`
+predicates; `file.name`/`file.folder`/`file.ctime`/`file.mtime` and arbitrary
+frontmatter keys; first `views[]` entry only; `view.type` of `cards` or `lines`;
+single-key `sort`; `image: note.<field>` for the cover. Anything outside the
+subset is parsed, ignored, and surfaced as a coral "(N unsupported)" hint
+above the grid.
+
+**Smart merge** preserves user reordering across regenerations. The base block
+is the source of truth for which items appear; the host note's
+`manual_order: [refs…]` YAML key is the source of truth for what order. On
+render: items still matching the base keep their saved position; newly-matched
+items append in the base's `sort` order; items no longer matching drop out.
+Drag in base mode updates `manual_order`. A "Reset order" button above the
+grid clears it.
+
+In base mode the membership UI is read-only — no add tile, no per-item delete,
+no inline rename (membership is the filter, not bullets) — but drag-reorder
+stays available.
+
+#### Lists of lists
+
+When a list folder's items resolve to other list folders, the parent renders
+as lines and each row gets the sub-list expanded inline below it. The sub-list
+honours its own `list:` value: `list: lines` shows as compact indented
+bullets, `list: cards` as a small basecard grid (read-only). Expansion is
+capped at 12 items per row so a long sub-list doesn't crowd the parent.
+
+#### Click-to-navigate
+
+Any item title whose linked target exists in the vault renders in royal blue
+and navigates on click — sets the folder filter to that ref so the Stream
+focuses on just that note. Items pointing at notes that don't exist yet fall
+back to inline rename, so broken/placeholder wikilinks stay editable.
 
 ### Masonry layout
 
