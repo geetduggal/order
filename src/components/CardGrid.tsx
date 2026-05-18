@@ -920,7 +920,11 @@ export function CardGrid() {
                 : noteFolder(n.frontmatter);
               const c = folderName ? folderColor(folderName) : undefined;
               return (
-                <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                <div
+                  className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
+                  data-path={n.path}
+                  key={n.id}
+                >
                   <Card
                     path={n.path}
                     color={c}

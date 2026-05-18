@@ -97,6 +97,11 @@ input, textarea, select { outline: none; box-shadow: none; }
      fixed, fixed-positioning ignores its OWN transforms for
      containing block purposes, only ancestors' transforms matter. */
 }
+/* Notable Folder Main Documents span every column. The masonry's
+   per-cell row-span calc still applies — only the column axis changes. */
+.card-grid-cell.is-full-width {
+  grid-column: 1 / -1;
+}
 .order-card {
   animation: order-card-mount 320ms var(--ease-out) both;
 }
