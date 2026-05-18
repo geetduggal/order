@@ -941,7 +941,7 @@ export function CardGrid() {
                     currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
                     availableFolders={isMain ? undefined : availableFolderRefs}
                     onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
-                    vaultNotes={isMain ? vaultNotesIndex : undefined}
+                    vaultNotes={vaultNotesIndex}
                     onNavigate={navigateToRef}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
