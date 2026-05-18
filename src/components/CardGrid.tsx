@@ -379,6 +379,13 @@ export function CardGrid() {
     });
   }, []);
   const clearFolderFilter = useCallback(() => setFolderFilter(new Set()), []);
+  /** Set the folder filter to a single ref. Bound to title-click in
+   *  the list renders so any item whose target exists navigates to
+   *  it. Lives up here (before the notes-loading early return) so the
+   *  hook order doesn't change between loading and ready states. */
+  const navigateToRef = useCallback((ref: string) => {
+    setFolderFilter(new Set([ref]));
+  }, []);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -816,10 +823,6 @@ export function CardGrid() {
     const f = noteFolder(n.frontmatter);
     return f !== null && folderFilter.has(f);
   };
-
-  const navigateToRef = useCallback((ref: string) => {
-    setFolderFilter(new Set([ref]));
-  }, []);
 
   const filteredNotes = filteringActive ? streamCandidates.filter(filterMatches) : streamCandidates;
 
