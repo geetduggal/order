@@ -453,29 +453,34 @@ function AreaTile({ label, coral, onClick, onRemove }: {
 }) {
   const Icon: LucideIcon = folderIcon(label);
   const color = folderColor(label);
+  // The remove × is a sibling of the open-tile button rather than a
+  // child — buttons can't nest in HTML. .box-wrapper carries the
+  // aspect-ratio so both children can size themselves freely.
   return (
-    <button
-      type="button"
-      className={"box no-image" + (coral ? " coral" : "")}
-      onClick={onClick}
-      title={`Open ${label}`}
-    >
+    <div className="box-wrapper">
+      <button
+        type="button"
+        className={"box no-image" + (coral ? " coral" : "")}
+        onClick={onClick}
+        title={`Open ${label}`}
+      >
+        <span className="box-icon-wrap" style={{ color }}>
+          <Icon size={20} strokeWidth={1.8} />
+        </span>
+        <span className="box-label">{label}</span>
+      </button>
       {onRemove && (
         <button
           type="button"
           className="box-remove"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          onClick={onRemove}
           title="Remove"
           aria-label="Remove"
         >
           <X size={10} strokeWidth={2.5} />
         </button>
       )}
-      <span className="box-icon-wrap" style={{ color }}>
-        <Icon size={20} strokeWidth={1.8} />
-      </span>
-      <span className="box-label">{label}</span>
-    </button>
+    </div>
   );
 }
 

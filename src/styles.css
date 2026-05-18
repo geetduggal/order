@@ -968,7 +968,19 @@ input, textarea, select { outline: none; box-shadow: none; }
 .box.coral.checked .box-check {
   background: var(--coral); border-color: var(--coral);
 }
-.box .box-remove {
+/* AreaTile wraps a .box button + an optional remove button so the
+   two aren't nested (HTML buttons can't nest). The wrapper carries
+   the grid cell's aspect-ratio; the .box fills it. */
+.box-wrapper {
+  position: relative;
+  aspect-ratio: 1 / 1;
+}
+.box-wrapper > .box {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.box-wrapper > .box-remove {
   position: absolute;
   top: 4px; right: 4px;
   font-size: 12px; line-height: 1;
@@ -979,9 +991,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex; align-items: center; justify-content: center;
   opacity: 0;
   z-index: 2;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.box:hover .box-remove { opacity: 1; }
-.box .box-remove:hover { color: var(--coral); background: var(--coral-soft); }
+.box-wrapper:hover > .box-remove { opacity: 1; }
+.box-wrapper > .box-remove:hover { color: var(--coral); background: var(--coral-soft); }
 
 .box.empty {
   background: transparent;
