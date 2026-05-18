@@ -30,6 +30,9 @@ interface Props {
   onChange: (next: ListItem[]) => void;
   /** Hide add tile + per-item delete/inline-edit. Drag still works. */
   readOnlyMembership?: boolean;
+  /** Click-on-title navigation. When omitted, title click falls back
+   *  to inline rename. */
+  onNavigate?: (ref: string) => void;
 }
 
 interface InsertPoint {
@@ -57,7 +60,7 @@ const DRAG_THRESHOLD_PX = 5;
 const FLIP_DURATION_MS = 280;
 const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
-export function ListCards({ items, vaultNotes, onChange, readOnlyMembership }: Props) {
+export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onNavigate }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -302,6 +305,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership }: P
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
+            onNavigate={note && onNavigate ? () => onNavigate(item.ref) : undefined}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -329,6 +333,7 @@ interface BaseCardProps {
   metaSuggestion: string;
   dragging: boolean;
   readOnly: boolean;
+  onNavigate?: () => void;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -337,7 +342,7 @@ interface BaseCardProps {
 
 function BaseCard({
   item, Icon, image, tintCls, metaSuggestion,
-  dragging, readOnly,
+  dragging, readOnly, onNavigate,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -422,10 +427,13 @@ function BaseCard({
           ) : (
             <button
               type="button"
-              className="basecard-title"
-              onClick={() => { if (!readOnly) setEditingTitle(true); }}
+              className={"basecard-title" + (onNavigate ? " is-link" : "")}
+              onClick={() => {
+                if (onNavigate) onNavigate();
+                else if (!readOnly) setEditingTitle(true);
+              }}
               onPointerDown={(e) => e.stopPropagation()}
-              title={readOnly ? item.ref : "Click to rename"}
+              title={onNavigate ? `Open ${item.ref}` : (readOnly ? item.ref : "Click to rename")}
             >
               {item.ref}
             </button>

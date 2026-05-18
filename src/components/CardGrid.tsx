@@ -809,13 +809,17 @@ export function CardGrid() {
   const filteringActive = folderFilter.size > 0;
   const filterMatches = (n: LoadedNote): boolean => {
     if (!filteringActive) return true;
-    const main = isNotableFolder(n.frontmatter)
-      ? n.filename.replace(/\.md$/, "")
-      : null;
-    if (main && folderFilter.has(main)) return true;
+    // Match by direct filename ref first so a single-folder filter
+    // can focus any note (leaf notes too), not just notable folders.
+    const ref = n.filename.replace(/\.md$/, "");
+    if (folderFilter.has(ref)) return true;
     const f = noteFolder(n.frontmatter);
     return f !== null && folderFilter.has(f);
   };
+
+  const navigateToRef = useCallback((ref: string) => {
+    setFolderFilter(new Set([ref]));
+  }, []);
 
   const filteredNotes = filteringActive ? streamCandidates.filter(filterMatches) : streamCandidates;
 
@@ -935,6 +939,7 @@ export function CardGrid() {
                     availableFolders={isMain ? undefined : availableFolderRefs}
                     onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
                     vaultNotes={isMain ? vaultNotesIndex : undefined}
+                    onNavigate={navigateToRef}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
                     onDelete={(path) => handleCardDelete(n.id, path)}

@@ -106,6 +106,10 @@ interface Props {
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
   vaultNotes?: ListNoteRef[];
+  /** Set the global folder filter to a single ref. The list renders
+   *  call this on title click when the linked target resolves to a
+   *  real note. */
+  onNavigate?: (ref: string) => void;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -123,6 +127,7 @@ export function Card(props: Props) {
     availableFolders,
     onAssignFolder,
     vaultNotes,
+    onNavigate,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -548,6 +553,7 @@ export function Card(props: Props) {
             onChange={handleListChange}
             readOnlyMembership={!!parsedBase}
             expandSublists={isListOfLists}
+            onNavigate={onNavigate}
           />
         </>
       )}

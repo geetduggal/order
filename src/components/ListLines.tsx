@@ -24,6 +24,9 @@ interface Props {
    *  renders its items as a small indented sub-list beneath the row.
    *  Sub-lists are display-only — edit by navigating to that file. */
   expandSublists?: boolean;
+  /** Click-on-title navigation. When omitted, title click falls back
+   *  to inline rename for every row. */
+  onNavigate?: (ref: string) => void;
 }
 
 interface InsertPoint { beforeRef: string | null }
@@ -46,7 +49,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists }: Props) {
+export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -267,6 +270,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                     vaultNotes={vaultNotes}
                     onChange={() => { /* sub-list edits are read-only here */ }}
                     readOnlyMembership
+                    onNavigate={onNavigate}
                   />
                 </div>
               );
@@ -280,10 +284,22 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                     const metaText = sub.meta
                       || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
                       || (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
+                    const canNav = !!(subNote && onNavigate);
                     return (
                       <li key={sub.ref} className="lr-sublist-item">
                         <span className="lr-sublist-bullet">•</span>
-                        <span className="lr-sublist-title">{sub.ref}</span>
+                        {canNav ? (
+                          <button
+                            type="button"
+                            className="lr-sublist-title is-link"
+                            onClick={() => onNavigate!(sub.ref)}
+                            title={`Open ${sub.ref}`}
+                          >
+                            {sub.ref}
+                          </button>
+                        ) : (
+                          <span className="lr-sublist-title">{sub.ref}</span>
+                        )}
                         {metaText && <span className="lr-sublist-meta">{metaText}</span>}
                       </li>
                     );
@@ -303,6 +319,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
             dragging={dragging}
             readOnly={!!readOnlyMembership}
             expansion={expansion}
+            onNavigate={note && onNavigate ? () => onNavigate(item.ref) : undefined}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -333,6 +350,8 @@ interface LineRowProps {
    *  bullet list). Caller decides what to render based on the
    *  linked target's `list:` value. */
   expansion?: React.ReactNode;
+  /** When provided, title click navigates instead of entering rename. */
+  onNavigate?: () => void;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -340,7 +359,7 @@ interface LineRowProps {
 }
 
 function LineRow({
-  item, color, Icon, metaSuggestion, dragging, readOnly, expansion,
+  item, color, Icon, metaSuggestion, dragging, readOnly, expansion, onNavigate,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -409,10 +428,13 @@ function LineRow({
       ) : (
         <button
           type="button"
-          className="lr-title"
-          onClick={() => { if (!readOnly) setEditingTitle(true); }}
+          className={"lr-title" + (onNavigate ? " is-link" : "")}
+          onClick={() => {
+            if (onNavigate) onNavigate();
+            else if (!readOnly) setEditingTitle(true);
+          }}
           onPointerDown={(e) => e.stopPropagation()}
-          title={readOnly ? item.ref : "Click to rename"}
+          title={onNavigate ? `Open ${item.ref}` : (readOnly ? item.ref : "Click to rename")}
         >
           {item.ref}
         </button>

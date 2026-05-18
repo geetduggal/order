@@ -19,9 +19,13 @@ interface Props {
   /** Lines-only: render each item's linked list folder as an
    *  indented sub-list under the row. Display-only. */
   expandSublists?: boolean;
+  /** Title-click handler: navigate to the linked target by setting
+   *  the folder filter to that ref. When omitted, title click falls
+   *  back to inline rename. */
+  onNavigate?: (ref: string) => void;
 }
 
-export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists }: Props) {
+export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate }: Props) {
   if (render === "lines") {
     return (
       <ListLines
@@ -30,6 +34,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
         onChange={onChange}
         readOnlyMembership={readOnlyMembership}
         expandSublists={expandSublists}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -39,6 +44,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
       vaultNotes={vaultNotes}
       onChange={onChange}
       readOnlyMembership={readOnlyMembership}
+      onNavigate={onNavigate}
     />
   );
 }

@@ -1559,7 +1559,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .lr-sublist-title {
   color: var(--ink);
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: default;
 }
+.lr-sublist-title.is-link {
+  cursor: pointer;
+  color: var(--royal, #4169e1);
+}
+.lr-sublist-title.is-link:hover { text-decoration: underline; }
+.lr-title.is-link,
+.basecard-title.is-link {
+  cursor: pointer;
+  color: var(--royal, #4169e1);
+}
+.lr-title.is-link:hover,
+.basecard-title.is-link:hover { text-decoration: underline; }
 .lr-sublist-meta {
   margin-left: 6px;
   color: var(--ink-faint);
