@@ -1565,6 +1565,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink-faint);
   font-size: 10px;
 }
+.lr-expansion-cards {
+  padding: 6px 4px 10px 32px;
+}
+.lr-expansion-cards .basecard-grid {
+  margin: 0;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
 
 .list-line-add {
   color: var(--ink-faint);

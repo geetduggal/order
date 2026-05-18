@@ -5,11 +5,13 @@
 //
 // Mirrors ListCards.tsx semantics so the dispatcher can swap freely.
 
+import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
-import { isListFolder, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveListItems } from "../lib/list-resolve";
+import { ListCards } from "./ListCards";
 export type { ListNoteRef };
 
 interface Props {
@@ -246,10 +248,51 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggedRef;
-        const subItems = (expandSublists && note && note.body
-          && isListFolder(note.frontmatter))
-          ? resolveListItems(note.frontmatter, note.body, vaultNotes).slice(0, 12)
-          : null;
+        // Expansion: when the linked target is itself a list folder,
+        // show its items inline below the parent row. Render type
+        // comes from the sub-list's own `list:` value — lines render
+        // as a compact indented bullet list, cards as a small basecard
+        // grid (read-only). Limit to 12 items so a long sub-list
+        // doesn't crowd the parent.
+        let expansion: React.ReactNode = null;
+        if (expandSublists && note && note.body && isListFolder(note.frontmatter)) {
+          const subItems = resolveListItems(note.frontmatter, note.body, vaultNotes).slice(0, 12);
+          if (subItems.length > 0) {
+            const subRender = listRender(note.frontmatter) ?? "cards";
+            if (subRender === "cards") {
+              expansion = (
+                <div className="lr-expansion-cards">
+                  <ListCards
+                    items={subItems}
+                    vaultNotes={vaultNotes}
+                    onChange={() => { /* sub-list edits are read-only here */ }}
+                    readOnlyMembership
+                  />
+                </div>
+              );
+            } else {
+              expansion = (
+                <ul className="lr-sublist">
+                  {subItems.map((sub) => {
+                    const subNote = vaultNotes.find(
+                      (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
+                    );
+                    const metaText = sub.meta
+                      || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
+                      || (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
+                    return (
+                      <li key={sub.ref} className="lr-sublist-item">
+                        <span className="lr-sublist-bullet">•</span>
+                        <span className="lr-sublist-title">{sub.ref}</span>
+                        {metaText && <span className="lr-sublist-meta">{metaText}</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            }
+          }
+        }
         return (
           <LineRow
             key={item.ref}
@@ -259,8 +302,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
-            subItems={subItems}
-            subItemNotes={subItems ? vaultNotes : undefined}
+            expansion={expansion}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
@@ -287,8 +329,10 @@ interface LineRowProps {
   metaSuggestion: string;
   dragging: boolean;
   readOnly: boolean;
-  subItems?: ListItem[] | null;
-  subItemNotes?: ListNoteRef[];
+  /** Pre-rendered sub-list to show below the row (cards grid or
+   *  bullet list). Caller decides what to render based on the
+   *  linked target's `list:` value. */
+  expansion?: React.ReactNode;
   onPointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
@@ -296,7 +340,7 @@ interface LineRowProps {
 }
 
 function LineRow({
-  item, color, Icon, metaSuggestion, dragging, readOnly, subItems, subItemNotes,
+  item, color, Icon, metaSuggestion, dragging, readOnly, expansion,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -332,19 +376,19 @@ function LineRow({
     setEditingTitle(false);
   }
 
-  // When sub-items are present (list-of-lists expansion), wrap the
-  // header row + sub-list in a section so FLIP tracks the section as
-  // one unit and the sub-list animates along with its parent.
-  const Wrapper = subItems ? "section" : "div";
+  // When an expansion is present, wrap header row + expansion in a
+  // section so FLIP tracks the whole section as one unit and the
+  // expansion animates with its parent.
+  const Wrapper = expansion ? "section" : "div";
   return (
     <Wrapper
-      className={(subItems ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "")}
+      className={(expansion ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "")}
       data-flip-key={item.ref}
-      onPointerDown={subItems ? undefined : (e) => onPointerDown(e, item.ref)}
+      onPointerDown={expansion ? undefined : (e) => onPointerDown(e, item.ref)}
     >
     <div
-      className={"list-line" + (dragging && !subItems ? " is-dragging" : "")}
-      onPointerDown={subItems ? (e) => onPointerDown(e, item.ref) : undefined}
+      className={"list-line" + (dragging && !expansion ? " is-dragging" : "")}
+      onPointerDown={expansion ? (e) => onPointerDown(e, item.ref) : undefined}
     >
       <span className="lr-handle" title="Drag to reorder">
         <GripVertical size={14} strokeWidth={1.6} />
@@ -410,25 +454,7 @@ function LineRow({
         </button>
       )}
     </div>
-      {subItems && subItems.length > 0 && (
-        <ul className="lr-sublist">
-          {subItems.map((sub) => {
-            const subNote = subItemNotes?.find(
-              (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
-            );
-            const metaText = sub.meta
-              ?? (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
-              ?? (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
-            return (
-              <li key={sub.ref} className="lr-sublist-item">
-                <span className="lr-sublist-bullet">•</span>
-                <span className="lr-sublist-title">{sub.ref}</span>
-                {metaText && <span className="lr-sublist-meta">{metaText}</span>}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {expansion}
     </Wrapper>
   );
 }
