@@ -1548,9 +1548,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 2px 0;
+  padding: 3px 0;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink-soft);
 }
 .lr-sublist-bullet {
@@ -1563,7 +1563,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 .lr-sublist-meta {
   margin-left: 6px;
   color: var(--ink-faint);
-  font-size: 10px;
+  font-size: 11px;
 }
 .lr-expansion-cards {
   padding: 6px 4px 10px 32px;
