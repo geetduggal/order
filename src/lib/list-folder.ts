@@ -86,6 +86,20 @@ export function splitBodyAndBullets(body: string): { prose: string; items: ListI
   return { prose: proseLines.join("\n"), items };
 }
 
+/** What to show as the visible title for a row. Prefers the linked
+ *  note's `title:` frontmatter — useful when filenames are
+ *  prettified (`Tech Habits — How I…`) but the article title proper
+ *  carries punctuation we can't put on disk (`Tech Habits: How I…`).
+ *  Falls back to the bullet's wikilink ref. */
+export function displayTitleFor(
+  item: ListItem,
+  note?: { frontmatter: Frontmatter } | null,
+): string {
+  const t = note?.frontmatter.title;
+  if (typeof t === "string" && t.trim()) return t;
+  return item.ref;
+}
+
 export function serializeListItems(items: ListItem[]): string {
   return items
     .map((item) => `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`)

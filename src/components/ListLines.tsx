@@ -9,7 +9,7 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
-import { isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveListItems } from "../lib/list-resolve";
 import { ListCards } from "./ListCards";
 export type { ListNoteRef };
@@ -285,6 +285,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                       || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
                       || (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
                     const canNav = !!(subNote && onNavigate);
+                    const subTitle = displayTitleFor(sub, subNote);
                     return (
                       <li key={sub.ref} className="lr-sublist-item">
                         <span className="lr-sublist-bullet">•</span>
@@ -293,12 +294,12 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                             type="button"
                             className="lr-sublist-title is-link"
                             onClick={() => onNavigate!(sub.ref)}
-                            title={`Open ${sub.ref}`}
+                            title={`Open ${subTitle}`}
                           >
-                            {sub.ref}
+                            {subTitle}
                           </button>
                         ) : (
-                          <span className="lr-sublist-title">{sub.ref}</span>
+                          <span className="lr-sublist-title">{subTitle}</span>
                         )}
                         {metaText && <span className="lr-sublist-meta">{metaText}</span>}
                       </li>
@@ -315,6 +316,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
             item={item}
             color={color}
             Icon={Icon}
+            displayTitle={displayTitleFor(item, note)}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
@@ -343,6 +345,9 @@ interface LineRowProps {
   item: ListItem;
   color: string;
   Icon: ReturnType<typeof folderIcon>;
+  /** Visible label; falls back to `item.ref` upstream when no
+   *  frontmatter `title:` exists on the linked note. */
+  displayTitle: string;
   metaSuggestion: string;
   dragging: boolean;
   readOnly: boolean;
@@ -359,7 +364,7 @@ interface LineRowProps {
 }
 
 function LineRow({
-  item, color, Icon, metaSuggestion, dragging, readOnly, expansion, onNavigate,
+  item, color, Icon, displayTitle, metaSuggestion, dragging, readOnly, expansion, onNavigate,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -434,9 +439,9 @@ function LineRow({
             else if (!readOnly) setEditingTitle(true);
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          title={onNavigate ? `Open ${item.ref}` : (readOnly ? item.ref : "Click to rename")}
+          title={onNavigate ? `Open ${displayTitle}` : (readOnly ? displayTitle : "Click to rename (link target)")}
         >
-          {item.ref}
+          {displayTitle}
         </button>
       )}
       {editingMeta ? (
