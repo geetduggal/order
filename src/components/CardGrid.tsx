@@ -222,6 +222,27 @@ export function CardGrid() {
     return vaultRoot();
   }, []);
 
+  /** Stable view of the loaded notes for callbacks with empty deps.
+   *  Used to look up the absolute path of any note by its ref so
+   *  write handlers can derive the correct nested directory. */
+  const notesRef = useRef<LoadedNote[] | null>(null);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
+
+  function notePathByRef(ref: string): string | null {
+    const list = notesRef.current;
+    if (!list) return null;
+    const lower = ref.toLowerCase();
+    const found = list.find((n) => n.filename.replace(/\.md$/i, "").toLowerCase() === lower);
+    return found?.path ?? null;
+  }
+
+  function noteDirByRef(ref: string): string | null {
+    const p = notePathByRef(ref);
+    if (!p) return null;
+    const i = p.lastIndexOf("/");
+    return i >= 0 ? p.slice(0, i) : null;
+  }
+
   const reloadNotes = useCallback(async () => {
     try {
       const fresh = await loadAndNormalizeAll();
@@ -357,8 +378,9 @@ export function CardGrid() {
   }, [cardsSubdir, reloadNotes]);
 
   /** Add a Category to an Area = append a bullet to <Area>.md. If the
-   *  Area file doesn't exist yet, create it and also add the Area to
-   *  Areas.md. Caps at 10. */
+   *  Area file doesn't exist yet, create it inside <vault>/<Area>/
+   *  per the nested chain layout and also add the Area to Areas.md.
+   *  Caps at 10. */
   const handleAddCategory = useCallback(async (name: string, areaName: string) => {
     const trimmed = name.trim();
     const trimmedArea = areaName.trim();
@@ -375,14 +397,15 @@ export function CardGrid() {
         return [...items, { ref: trimmedArea }];
       },
     );
-    // Ensure Area file exists; create if missing.
-    const areaPath = await join(subdir, `${trimmedArea}.md`);
-    try { await invoke<string>("read_text", { path: areaPath }); }
-    catch {
+    // Locate (or create) the Area file. Existing layout: lookup via
+    // loaded notes. Brand new Area: place at <vault>/<Area>/<Area>.md.
+    let areaPath = notePathByRef(trimmedArea);
+    if (!areaPath) {
+      areaPath = await join(subdir, trimmedArea, `${trimmedArea}.md`);
       const body = `# ${trimmedArea}\n`;
       await invoke("write_text", { path: areaPath, content: joinFrontmatter({ list: "cards" }, body) });
     }
-    // Append category bullet
+    // Append category bullet to the Area file.
     const ok = await mutateBullets(
       areaPath,
       (p) => invoke<string>("read_text", { path: p }),
@@ -396,17 +419,17 @@ export function CardGrid() {
     if (ok) await reloadNotes();
   }, [cardsSubdir, reloadNotes, flashCap]);
 
-  const handleRemoveCategory = useCallback(async (name: string, areaName: string) => {
-    const subdir = await cardsSubdir();
-    const areaPath = await join(subdir, `${areaName}.md`);
+  const handleRemoveCategory = useCallback(async (_name: string, areaName: string) => {
+    const areaPath = notePathByRef(areaName);
+    if (!areaPath) return;
     await mutateBullets(
       areaPath,
       (p) => invoke<string>("read_text", { path: p }),
       (p, c) => invoke("write_text", { path: p, content: c }),
-      (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
+      (items) => items.filter((i) => i.ref.toLowerCase() !== _name.toLowerCase()),
     );
     await reloadNotes();
-  }, [cardsSubdir, reloadNotes]);
+  }, [reloadNotes]);
 
   // Shape Sidebar's existing API expects.
   const storedAreas = vaultTaxonomy.areas.map((a) => a.ref);
@@ -588,8 +611,12 @@ export function CardGrid() {
     if (!frontmatter.folder && homeFolderRef.current) {
       frontmatter.folder = `[[${homeFolderRef.current}]]`;
     }
+    // New note's directory = the linked folder's directory in the
+    // chain (e.g., Creative/Creative Spaces/Geet Duggal/). We find
+    // it via the loaded notes; if the folder ref doesn't resolve,
+    // fall back to vault root.
     const folderRef = parseRef(frontmatter.folder);
-    const writeDir = folderRef ? await join(root, folderRef) : root;
+    const writeDir = folderRef && noteDirByRef(folderRef) || root;
     const content = joinFrontmatter(frontmatter, "");
     const title = typeof patch.title === "string" ? patch.title : "Untitled";
     const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
@@ -660,27 +687,48 @@ export function CardGrid() {
   }, []);
 
   /** Create a new Notable Folder Main Document for the given area +
-   *  category. Writes <Name>.md with seed YAML (+ optional numeric
-   *  suffix if the name already exists), then adds it to state. */
+   *  category. With the nested chain layout the file lives at
+   *  <vault>/<Area>/<Category>/<Name>/<Name>.md and the Category's
+   *  bullet list gains a [[Name]] entry. */
   const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
-    const subdir = await vaultRoot();
     const trimmed = name.trim();
     if (!trimmed) return;
+    // Locate the Category file via the loaded notes; the NF dir
+    // sits next to it inside the Category's directory.
+    const catDir = noteDirByRef(categoryName);
+    if (!catDir) {
+      flashCap(`Couldn't find ${categoryName} on disk — add the Category first.`);
+      return;
+    }
     const frontmatter: Frontmatter = {
       category: categoryName,
       area: areaName,
-      type: "prose",
+      list: "cards",
     };
     const body = `# ${trimmed}\n`;
     const content = joinFrontmatter(frontmatter, body);
-    const basename = `${trimmed.replace(/[\\/:*?"<>|]/g, "-")}.md`;
-    const path = await uniqueWrite(subdir, basename, content);
-    const filename = path.split("/").pop() ?? basename;
+    const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-");
+    const nfDir = await join(catDir, safe);
+    const path = await uniqueWrite(nfDir, `${safe}.md`, content);
+    const filename = path.split("/").pop() ?? `${safe}.md`;
+    // Add a bullet to the Category file so the chain picks the new
+    // folder up.
+    const catPath = notePathByRef(categoryName);
+    if (catPath) {
+      await mutateBullets(
+        catPath,
+        (p) => invoke<string>("read_text", { path: p }),
+        (p, c) => invoke("write_text", { path: p, content: c }),
+        (items) => items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())
+          ? items
+          : [...items, { ref: trimmed }],
+      );
+    }
     setNotes((prev) => [
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: trimmed, body },
     ]);
-  }, []);
+  }, [flashCap]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await invoke<string>("read_text", { path });
