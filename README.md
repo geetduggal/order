@@ -234,6 +234,40 @@ and navigates on click — sets the folder filter to that ref so the Stream
 focuses on just that note. Items pointing at notes that don't exist yet fall
 back to inline rename, so broken/placeholder wikilinks stay editable.
 
+### Files and organization
+
+Order doesn't require any particular layout on disk — any `.md` in the vault
+shows up in the Stream regardless of where it sits. The defaults are a
+convention, not a constraint, and the convention is small on purpose:
+
+- **Areas → Categories → Notable Folders** are where notes live. The three-level
+  chain absorbs the vast majority of what you'd ever want to write down, and
+  every note that belongs to a Category has an obvious home.
+- **`log/`** is the catch-all. Anything that doesn't naturally belong to a
+  Category — quick captures, scratch, daily notes — lands here by default
+  rather than scattering loose at the root.
+- **`Attachments/`** at the vault root holds pasted and dropped images, plus
+  any other binary attachments, following the Obsidian convention.
+
+The point isn't structure for its own sake. It's the smallest set of rules
+that keeps the vault legible at 10 notes and at 10,000, leaves room to grow
+into new file types without revisiting the layout, and stays honest to the
+spirit of Johnny Decimal — a place for everything, with the constraint as
+the thing that makes that possible.
+
+A few things follow from this:
+
+- **Order isn't a file browser, and isn't trying to be one.** Obsidian, VS
+  Code, and Finder are already excellent at browsing arbitrary trees. Order's
+  job is to browse Notable Folders efficiently and edit the notes inside them.
+  Reach for one of those other tools when you need to see the whole tree.
+- **Other file types are first-class citizens of a Notable Folder.** AI tools
+  increasingly produce sidecar artifacts — HTML one-pagers, generated diagrams,
+  exported PDFs, scratch JSON. Drop them next to the Main Document in the
+  Notable Folder's directory. Order won't render them, but they have a home
+  next to the note they belong to, and your other tools will find them exactly
+  where you'd expect.
+
 ### Masonry layout
 
 The Stream uses CSS Grid with `grid-auto-rows: 8px` plus a per-cell `grid-row-end:
