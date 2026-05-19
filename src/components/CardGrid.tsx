@@ -13,6 +13,7 @@ import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
+import { PublishPanel, type HomeFolder, type PublishableNote } from "./PublishPanel";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
   AREAS_FILENAME,
@@ -212,6 +213,48 @@ export function CardGrid() {
   }, []);
 
   const [capWarning, setCapWarning] = useState<string | null>(null);
+
+  /** Every Notable Folder whose YAML carries `home: "<user>/<repo>/<path>"`.
+   *  Drives both the Publish panel (lets the user pick when multiple)
+   *  and the new-capture catch-all (first one wins). */
+  const homeFolders: HomeFolder[] = useMemo(() => {
+    if (!notes) return [];
+    const out: HomeFolder[] = [];
+    for (const n of notes) {
+      const v = n.frontmatter.home;
+      if (typeof v !== "string" || !v.trim()) continue;
+      const name = n.filename.replace(/\.md$/i, "");
+      const titleFm = n.frontmatter.title;
+      const title = typeof titleFm === "string" && titleFm.trim() ? titleFm : name;
+      out.push({ name, title, target: v.trim() });
+    }
+    return out;
+  }, [notes]);
+
+  /** Filename (no .md) of the Notable Folder marked `home:` in its
+   *  YAML. New captures default their `folder:` to this so they land
+   *  in the catch-all rather than at vault root. Held as a ref so
+   *  createNote can read the latest value without re-running on
+   *  every notes change. */
+  const homeFolderRef = useRef<string | null>(null);
+  useEffect(() => {
+    homeFolderRef.current = homeFolders[0]?.name ?? null;
+  }, [homeFolders]);
+
+  /** Notes flagged `public: true` in YAML — the set that ships with
+   *  the next Publish action. */
+  const publishableNotes: PublishableNote[] = useMemo(() => {
+    if (!notes) return [];
+    return notes
+      .filter((n) => n.frontmatter.public === true)
+      .map((n) => ({
+        filename: n.filename.replace(/\.md$/i, ""),
+        title: (typeof n.frontmatter.title === "string" && n.frontmatter.title)
+          || n.filename.replace(/\.md$/i, ""),
+        folderRef: noteFolder(n.frontmatter) ?? null,
+        path: n.path,
+      }));
+  }, [notes]);
   const flashCap = useCallback((msg: string) => {
     setCapWarning(msg);
     setTimeout(() => setCapWarning((c) => (c === msg ? null : c)), 2500);
@@ -333,6 +376,7 @@ export function CardGrid() {
   // when the sidebar was already open.
   const [searchFocusSignal, setSearchFocusSignal] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -348,6 +392,11 @@ export function CardGrid() {
       if (e.key === "k" || e.key === "K") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        setPublishOpen((open) => !open);
         return;
       }
       if (e.key === ";") {
@@ -464,15 +513,23 @@ export function CardGrid() {
   }, [view, scrollTargetPath]);
 
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
-    const subdir = await vaultRoot();
+    const root = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
+    // Catch-all: a new capture with no explicit folder lands in the
+    // home Notable Folder (the one whose YAML carries `home: "..."`).
+    // Empty vaults skip this and the file just goes at root.
+    if (!frontmatter.folder && homeFolderRef.current) {
+      frontmatter.folder = `[[${homeFolderRef.current}]]`;
+    }
+    const folderRef = parseRef(frontmatter.folder);
+    const writeDir = folderRef ? await join(root, folderRef) : root;
     const content = joinFrontmatter(frontmatter, "");
     const title = typeof patch.title === "string" ? patch.title : "Untitled";
     const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
     const basename = basenameForEvent(date, title);
-    const path = await uniqueWrite(subdir, basename, content);
+    const path = await uniqueWrite(writeDir, basename, content);
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
@@ -519,6 +576,20 @@ export function CardGrid() {
     const next: Frontmatter = { ...frontmatter };
     if (folderName) next.folder = `[[${folderName}]]`;
     else delete next.folder;
+    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
+  }, []);
+
+  /** Toggle the note's `public: true` flag. Public = opted into the
+   *  static site bundle the Publish button generates. Absence of the
+   *  field means private; we strip the key on toggle-off so YAML
+   *  stays clean. */
+  const handleTogglePublic = useCallback(async (path: string, makePublic: boolean) => {
+    const raw = await invoke<string>("read_text", { path });
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const next: Frontmatter = { ...frontmatter };
+    if (makePublic) next.public = true;
+    else delete next.public;
     await invoke("write_text", { path, content: joinFrontmatter(next, body) });
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
@@ -713,6 +784,18 @@ export function CardGrid() {
         {sidebarOpen ? "›" : "‹"}
       </button>
 
+      <button
+        type="button"
+        className={"publish-pill" + (publishableNotes.length > 0 ? " has-pending" : "")}
+        onClick={() => setPublishOpen((o) => !o)}
+        title={`Publish (Cmd+P) — ${publishableNotes.length} public note${publishableNotes.length === 1 ? "" : "s"}`}
+      >
+        Publish
+        {publishableNotes.length > 0 && (
+          <span className="publish-pill-count">{publishableNotes.length}</span>
+        )}
+      </button>
+
       <main className="pane-main">
         {view === "stream" && (
           <div className="card-grid" ref={setGridEl}>
@@ -736,6 +819,7 @@ export function CardGrid() {
                     currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
                     availableFolders={isMain ? undefined : availableFolderRefs}
                     onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
+                    onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
                     vaultNotes={vaultNotesIndex}
                     onNavigate={navigateToRef}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
@@ -803,6 +887,14 @@ export function CardGrid() {
           selected={folderFilter}
           onToggle={toggleFolderFilter}
           onClose={() => setPaletteOpen(false)}
+        />
+      )}
+
+      {publishOpen && (
+        <PublishPanel
+          homes={homeFolders}
+          publishableNotes={publishableNotes}
+          onClose={() => setPublishOpen(false)}
         />
       )}
 

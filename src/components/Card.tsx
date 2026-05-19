@@ -103,6 +103,9 @@ interface Props {
   /** Called when the user picks (or clears) a folder for this note.
    *  Pass null to clear. CardGrid persists to YAML + updates state. */
   onAssignFolder?: (name: string | null) => Promise<void>;
+  /** Toggle the note's `public:` YAML flag. CardGrid persists and
+   *  updates state so the footer pill reflects the new value. */
+  onTogglePublic?: (makePublic: boolean) => Promise<void>;
   /** Minimal vault index for resolving `- [[Name]]` bullets (and for
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
@@ -127,6 +130,7 @@ export function Card(props: Props) {
     currentFolder,
     availableFolders,
     onAssignFolder,
+    onTogglePublic,
     vaultNotes,
     onNavigate,
   } = props;
@@ -560,6 +564,20 @@ export function Card(props: Props) {
       )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
+        {onTogglePublic && (() => {
+          const isPub = state.frontmatter.public === true;
+          return (
+            <button
+              type="button"
+              className={"order-card-public" + (isPub ? " is-on" : "")}
+              onClick={() => { void onTogglePublic(!isPub); }}
+              title={isPub ? "This note is in the public set" : "Mark as public"}
+              aria-pressed={isPub}
+            >
+              {isPub ? "public" : "private"}
+            </button>
+          );
+        })()}
         {/* Middle slot: breadcrumb for Notable Folders, folder picker for
             regular notes. Drops the slot entirely when neither applies. */}
         {(area || category) && (
