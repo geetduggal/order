@@ -240,12 +240,14 @@ Order doesn't require any particular layout on disk — any `.md` in the vault
 shows up in the Stream regardless of where it sits. The defaults are a
 convention, not a constraint, and the convention is small on purpose:
 
-- **Areas → Categories → Notable Folders** are where notes live. The three-level
-  chain absorbs the vast majority of what you'd ever want to write down, and
-  every note that belongs to a Category has an obvious home.
-- **`log/`** is the catch-all. Anything that doesn't naturally belong to a
-  Category — quick captures, scratch, daily notes — lands here by default
-  rather than scattering loose at the root.
+- **Notable Folders are the only place notes and files live.** Areas and
+  Categories are pure navigation — they organize Notable Folders, never hold
+  notes or files directly. This is the Johnny Decimal rule: only the leaf
+  level of the hierarchy holds items. Every note belongs to exactly one
+  Notable Folder.
+- **`log/`** is the default Notable Folder — the catch-all for anything that
+  doesn't naturally fit a Category. Quick captures, scratch, daily notes
+  land here rather than scattering loose at the root.
 - **`Attachments/`** at the vault root holds pasted and dropped images, plus
   any other binary attachments, following the Obsidian convention.
 
