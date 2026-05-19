@@ -19,10 +19,6 @@ interface Props {
   snippet?: boolean;
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /** Replace [[Ref]] and [[Ref|Alias]] with markdown links that
  *  resolve to the viewer's hash routes. Run BEFORE marked so it sees
  *  standard `[label](url)` syntax. Also strip the Milkdown bracket
@@ -38,13 +34,6 @@ function rewriteWikilinks(src: string, byRef: Map<string, PublishedNote>): strin
     return `[${label}](${url})`;
   });
   return s;
-}
-
-/** Strip a leading H1 if it matches the note's title so it doesn't
- *  duplicate the card heading. */
-function stripLeadingTitle(body: string, title: string): string {
-  const re = new RegExp(`^\\s*#\\s+${escapeRegex(title)}\\s*\\n+`);
-  return body.replace(re, "");
 }
 
 function firstParagraphs(md: string, n: number): string {
@@ -74,12 +63,15 @@ export function ViewerNote({ note, data, byRef, onNavigate, snippet }: Props) {
   const marked = useMemo(() => new Marked({ gfm: true, breaks: false }), []);
 
   const html = useMemo(() => {
-    let body = stripLeadingTitle(note.body, note.title);
+    // Keep the body's leading H1 — the viewer no longer renders a
+    // separate card title above the body, so the H1 IS the title.
+    // Matches Order's app where Milkdown renders the body in full.
+    let body = note.body;
     if (note.listRender !== null) body = stripWikilinkBullets(body);
     let prepared = rewriteWikilinks(body, byRef);
     if (snippet) prepared = firstParagraphs(prepared, 3);
     return marked.parse(prepared) as string;
-  }, [note.body, note.title, note.listRender, byRef, marked, snippet]);
+  }, [note.body, note.listRender, byRef, marked, snippet]);
 
   // Intercept anchor clicks so internal hash links update via the
   // viewer's router (history.pushState would also work but plain
@@ -113,7 +105,14 @@ export function ViewerNote({ note, data, byRef, onNavigate, snippet }: Props) {
 
   return (
     <>
-      <div className="viewer-prose" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
+      {/* Wrap in Milkdown's class hierarchy so every typography rule
+          the editor uses (h1 weight, paragraph rhythm, subtitle
+          treatment, code blocks, blockquote, links, etc.) applies
+          identically here. The viewer renders the same HTML shape
+          marked produces — these are presentational classes only. */}
+      <div className="milkdown-host" ref={ref}>
+        <div className="ProseMirror" dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
       {!snippet && note.listItems && note.listItems.length > 0 && note.listRender && (
         <ListView
           render={note.listRender}

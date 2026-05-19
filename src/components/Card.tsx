@@ -36,7 +36,7 @@ import {
   deflateAttachmentUrls,
   inflateAttachmentUrls,
 } from "../lib/attachments";
-import { ChevronRight, Folder as FolderIcon, X as XIcon } from "lucide-react";
+import { ChevronRight, Folder as FolderIcon, Trash2, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -106,6 +106,11 @@ interface Props {
   /** Toggle the note's `public:` YAML flag. CardGrid persists and
    *  updates state so the footer pill reflects the new value. */
   onTogglePublic?: (makePublic: boolean) => Promise<void>;
+  /** Authoritative `public:` value driven by CardGrid's note state.
+   *  The footer pill reads this so the label flips immediately after
+   *  the toggle handler resolves (Card's own loaded state is captured
+   *  once on mount and would otherwise stay stale). */
+  isPublic?: boolean;
   /** Minimal vault index for resolving `- [[Name]]` bullets (and for
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
@@ -114,6 +119,28 @@ interface Props {
    *  call this on title click when the linked target resolves to a
    *  real note. */
   onNavigate?: (ref: string) => void;
+  /** Additive variant: add a Notable Folder to the existing filter
+   *  set without clearing it. The list renders use this for NF refs
+   *  so multiple folders can accumulate. */
+  onAddFilter?: (ref: string) => void;
+  /** Drop this card's ref from the active folder filter set. When
+   *  provided the top-right × dismisses the card from the filtered
+   *  view (delete moves under the trash icon next to it). */
+  onRemoveFromFilter?: () => void;
+  /** Focus the editor after the editor mounts. Used to land the
+   *  cursor inside a freshly created note. */
+  autoFocus?: boolean;
+  /** Skip the Tauri disk read on mount and use this body +
+   *  frontmatter directly. Set together with `readOnly` for the
+   *  published web viewer, where there's no filesystem to read from
+   *  and editing is disabled. */
+  initialBody?: string;
+  initialFrontmatter?: Frontmatter;
+  /** When true, the card runs in display mode: Milkdown is read-only
+   *  (no caret, no block handles), the editor's onChange + save
+   *  pipeline is skipped, and top-right delete / dismiss controls
+   *  are hidden. */
+  readOnly?: boolean;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -131,8 +158,15 @@ export function Card(props: Props) {
     availableFolders,
     onAssignFolder,
     onTogglePublic,
+    isPublic,
     vaultNotes,
     onNavigate,
+    onAddFilter,
+    onRemoveFromFilter,
+    autoFocus,
+    initialBody,
+    initialFrontmatter,
+    readOnly,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -184,12 +218,25 @@ export function Card(props: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await invoke<string>("read_text", { path: initialPath });
-        if (cancelled) return;
-        const { frontmatter, body } = splitFrontmatter(raw);
-        const vault = await vaultRoot();
-        const prefix = attachmentAssetPrefix(vault);
-        const displayBody = inflateAttachmentUrls(body, prefix);
+        let body: string;
+        let frontmatter: Frontmatter;
+        if (initialBody !== undefined && initialFrontmatter !== undefined) {
+          // Pre-loaded source (web viewer). Skip Tauri entirely —
+          // attachment URLs in the body stay relative because the
+          // viewer is served from a webroot where `Attachments/`
+          // resolves directly.
+          body = initialBody;
+          frontmatter = initialFrontmatter;
+        } else {
+          const raw = await invoke<string>("read_text", { path: initialPath });
+          if (cancelled) return;
+          const split = splitFrontmatter(raw);
+          frontmatter = split.frontmatter;
+          body = split.body;
+        }
+        const displayBody = initialBody !== undefined
+          ? body
+          : inflateAttachmentUrls(body, attachmentAssetPrefix(await vaultRoot()));
         // List folders come in two flavors:
         //   - manual: bullet list of wikilinks in the body. We strip
         //     them on load so the editor only sees prose; the items
@@ -232,6 +279,7 @@ export function Card(props: Props) {
   }, [initialPath]);
 
   const flushNow = useCallback(async (): Promise<void> => {
+    if (readOnly) return;
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -321,11 +369,12 @@ export function Card(props: Props) {
   }, []);
 
   const scheduleSave = useCallback(() => {
+    if (readOnly) return;
     dirty.current = true;
     setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
-  }, [flushNow]);
+  }, [flushNow, readOnly]);
 
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
@@ -471,8 +520,12 @@ export function Card(props: Props) {
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "");
 
+  // Subtle full-border tint in the card's folder color (≈33% alpha).
+  // Skipped when no color is available so the default rule color
+  // stays. `${color}55` works because folderColor returns a 6-digit
+  // hex string.
   const cardStyle: React.CSSProperties | undefined = color
-    ? { borderLeft: `3px solid ${color}` }
+    ? { borderColor: `${color}55` }
     : undefined;
 
   return (
@@ -487,7 +540,20 @@ export function Card(props: Props) {
         >
           {fullscreen ? "⤡" : "⤢"}
         </button>
-        {confirmingDelete ? (
+        {/* Filter-remove × stays available even when read-only — it's
+            navigation, not mutation. Delete chrome is editor-only. */}
+        {onRemoveFromFilter && !confirmingDelete && (
+          <button
+            type="button"
+            className="order-card-dismiss"
+            onClick={onRemoveFromFilter}
+            title="Remove from filtered view"
+            aria-label="Remove from filtered view"
+          >
+            <XIcon size={13} strokeWidth={2.2} />
+          </button>
+        )}
+        {!readOnly && (confirmingDelete ? (
           <span className="order-card-delete-confirm">
             <button
               type="button"
@@ -514,15 +580,17 @@ export function Card(props: Props) {
             title="Delete this note"
             aria-label="Delete note"
           >
-            ×
+            <Trash2 size={13} strokeWidth={1.8} />
           </button>
-        )}
+        ))}
       </div>
       <MilkdownSurface
         initial={state.body}
         onChange={handleChange}
         onDone={() => { void flushNow(); }}
-        onImageUpload={handleImageUpload}
+        onImageUpload={readOnly ? undefined : handleImageUpload}
+        autoFocus={autoFocus && !readOnly}
+        readOnly={readOnly}
       />
       {isListFolder(state.frontmatter) && (
         <>
@@ -558,14 +626,22 @@ export function Card(props: Props) {
             onChange={handleListChange}
             readOnlyMembership={!!parsedBase}
             expandSublists={isListOfLists}
-            onNavigate={onNavigate}
+            onNavigate={onNavigate ? (ref) => { if (fullscreen) setFullscreen(false); onNavigate(ref); } : undefined}
+            onAddFilter={onAddFilter ? (ref) => { if (fullscreen) setFullscreen(false); onAddFilter(ref); } : undefined}
           />
         </>
       )}
       <div className="order-card-status">
-        <span className={saving ? "is-saving" : "is-saved"}>{saving ? "saving…" : "saved"}</span>
+        <span className={saving ? "is-saving" : "is-saved"}>
+          {readOnly ? "" : (saving ? "saving…" : "saved")}
+        </span>
         {onTogglePublic && (() => {
-          const isPub = state.frontmatter.public === true;
+          // Prefer the prop (driven by CardGrid's notes state) so the
+          // pill flips synchronously with the toggle; fall back to the
+          // initially-loaded frontmatter if no prop was passed.
+          const isPub = isPublic !== undefined
+            ? isPublic
+            : state.frontmatter.public === true;
           return (
             <button
               type="button"
@@ -578,8 +654,10 @@ export function Card(props: Props) {
             </button>
           );
         })()}
-        {/* Middle slot: breadcrumb for Notable Folders, folder picker for
-            regular notes. Drops the slot entirely when neither applies. */}
+        {/* Middle slot: breadcrumb for Notable Folders; folder picker
+            for regular notes; both together when an NF Main Doc also
+            carries a `folder:` (e.g. an article that's its own NF
+            but lives inside the Articles list). */}
         {(area || category) && (
           <span className="order-card-breadcrumb" style={color ? { color } : undefined}>
             {area && <span>{area}</span>}

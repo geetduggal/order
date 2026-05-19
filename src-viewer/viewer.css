@@ -41,54 +41,10 @@
 .viewer-crumbs a { color: inherit; }
 .viewer-crumbs a:hover { color: var(--royal); }
 
-.viewer-prose {
-  font-family: var(--serif);
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--ink);
-}
-.viewer-prose h1, .viewer-prose h2, .viewer-prose h3,
-.viewer-prose h4, .viewer-prose h5, .viewer-prose h6 {
-  font-family: var(--sans);
-  letter-spacing: -0.01em;
-}
-.viewer-prose p, .viewer-prose li { color: var(--ink); }
-.viewer-prose a { color: var(--royal); }
-.viewer-prose a:hover { text-decoration: underline; }
-.viewer-prose img { max-width: 100%; height: auto; }
-.viewer-prose code {
-  font-family: var(--mono);
-  background: var(--bg-elev);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-.viewer-prose pre {
-  background: var(--bg-elev);
-  padding: 12px 16px;
-  border-radius: 4px;
-  overflow-x: auto;
-}
-.viewer-prose pre code { background: transparent; padding: 0; }
-.viewer-prose blockquote {
-  border-left: 3px solid var(--rule);
-  padding-left: 16px;
-  color: var(--ink-soft);
-  margin: 1em 0;
-}
-.viewer-prose hr { border: none; border-top: 1px solid var(--rule); margin: 2em 0; }
-.viewer-prose table {
-  border-collapse: collapse;
-  font-family: var(--sans);
-  font-size: 13px;
-  margin: 1em 0;
-}
-.viewer-prose table th,
-.viewer-prose table td {
-  padding: 6px 12px;
-  border: 1px solid var(--rule);
-  text-align: left;
-}
+/* Prose rendering reuses the .milkdown-host .ProseMirror rules from
+   the main stylesheet — same typography as the editor produces, no
+   parallel set of selectors to maintain. (.viewer-prose is no longer
+   used; keep this comment as a breadcrumb.) */
 
 .viewer-section-h {
   font-family: var(--sans);
@@ -100,11 +56,24 @@
 }
 .viewer-folder-list { list-style: none; padding: 0; margin: 0; }
 .viewer-folder-list li {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 4px 0;
   font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+}
+.viewer-folder-date {
+  flex-shrink: 0;
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  color: var(--ink-soft);
   font-size: 13px;
 }
+.viewer-folder-list li a { color: var(--royal); }
+.viewer-folder-list li a:hover { text-decoration: underline; }
 
 .viewer-not-found {
   max-width: 560px;

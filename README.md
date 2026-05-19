@@ -94,27 +94,39 @@ exposes thin file-IO commands (`read_text`, `write_text`, `write_binary`,
 
 ### Storage layout
 
+The on-disk directory tree literally mirrors the chain: every Notable
+Folder lives in its own directory inside its Category, which lives inside
+its Area, all rooted at the vault.
+
 ```
-<vault root>/
-├── Areas.md               navigation root — list of Areas
-├── Personal.md            an Area — list of Categories (no children on disk)
-├── Reading.md             a Category — list of Notable Folders (no children on disk)
-├── Books/                 a Notable Folder — directory holds the notes
-│   ├── Books.md             Main Document for the folder
-│   ├── On Photography.md    a leaf note
-│   └── reading-stats.html   sidecar artifact (any file type is welcome)
-├── log/                   default Notable Folder — catch-all for un-categorized notes
-│   └── 2026-05-19.md
-└── Attachments/           pasted / dropped images, Obsidian convention
-    └── foo.png
+~/Development/Home/                     (vault root)
+├── Areas.md                            list: cards, role: areas
+├── Attachments/                        pasted / dropped images
+├── Creative/
+│   ├── Creative.md                     list: cards (the Area file)
+│   ├── Creative Spaces/                Category dir
+│   │   ├── Creative Spaces.md
+│   │   ├── Articles/                   Notable Folder
+│   │   │   └── Articles.md
+│   │   └── Geet Duggal/                NF — home Notable Folder
+│   │       ├── Geet Duggal.md          (home: "<gh user>/<repo>/<path>")
+│   │       └── 2024-07-22 - First Geet.md
+│   └── Creative Projects/              every published article as its own NF
+│       └── Tech Habits — …/
+└── Craft/
+    ├── Craft.md
+    ├── Craft Spaces/{Tools, Academic}/
+    └── Craft Projects/                 every tool & paper as its own NF
 ```
 
-Only Notable Folders are directories with contents on disk — Areas and
-Categories are markdown files that exist purely to organize the level below
-them. Image uploads write to `Attachments/`. The markdown on disk stores
-**relative** paths (`Attachments/foo.png`) for portability; at edit time those
-paths are inflated to absolute `asset://` URLs so the webview can render them,
-and deflated back on save.
+Every level of the chain is a directory on disk — Areas, Categories, and
+Notable Folders each get their own folder, with a Main Document inside
+named after the folder. Image uploads write to `Attachments/`. The
+markdown on disk stores **relative** paths (`Attachments/foo.png`) for
+portability; at edit time those paths are inflated to absolute `asset://`
+URLs so the webview can render them, and deflated back on save. PDF and
+other non-image attachment links go through the OS opener (Tauri
+`open_path`) so they launch in the user's default app.
 
 ### State
 
@@ -129,12 +141,16 @@ parents back via props when their path / title / frontmatter changes.
 CardGrid                 # top: loads notes, owns view + filter state
 ├── Sidebar              # drill: Areas → Categories → Notable Folders
 ├── Card[]               # Stream view; each card owns its file
-│   ├── MilkdownSurface  # editor
+│   ├── MilkdownSurface  # editor (or readonly Crepe in the viewer)
 │   └── ListView         # ListCards / ListLines for any list folder
 ├── CalendarView         # Week / Month
 ├── YearLinearView       # Year — 12 rows × 37 cells
 └── CommandPalette       # Cmd+K folder picker
 ```
+
+The Stream's masonry-style row sizing lives in `src/lib/grid-layout.ts`
+(`useGridLayout`) so the same hook drives the layout in both the
+desktop app and the published web viewer.
 
 ### List folders
 
@@ -237,8 +253,13 @@ stays available.
 When a list folder's items resolve to other list folders, the parent renders
 as lines and each row gets the sub-list expanded inline below it. The sub-list
 honours its own `list:` value: `list: lines` shows as compact indented
-bullets, `list: cards` as a small basecard grid (read-only). Expansion is
-capped at 12 items per row so a long sub-list doesn't crowd the parent.
+bullets, `list: cards` as a small basecard grid (read-only). Sub-list rows
+are uncapped — long lists render in full.
+
+Section headings ("Articles", "Tools", "Academic") render at 26px / weight
+900, flush-left under their colored icon. Sub-list rows align under the
+heading text, with each row's title link in royal blue and any meta
+(date, journal · year, description) inline after a middle dot.
 
 #### Click-to-navigate
 
@@ -294,6 +315,22 @@ three independent sources:
 - **Capturing `input` / `keyup` listener** on the grid — backstop in case MO's
   attribute filter ever misses a frame.
 
+### Chrome
+
+A thin left rail of icon buttons sits in the top-left:
+
+- `+` — new note (auto-folder if the filter has exactly one chip; opens a
+  picker for two or more; plain capture when the filter is empty).
+- `home` — reset the filter to the home Notable Folder.
+- `⇊ / ⇈` — jump past pinned NF Main Documents to the first regular note;
+  flips to `⇈` after one press and scrolls back to top.
+- `↑` — open the Publish panel.
+
+The right edge holds a `›/‹` sidebar toggle only. Each card carries its own
+top-right controls (fullscreen ⤢, filter-remove ×, trash 🗑) and a subtle
+footer status bar (public pill, breadcrumb / folder chip, filename) that
+fades up on hover.
+
 ### Keyboard
 
 - `Cmd +/-/0` — webview zoom (uses Tauri's native setZoom, not CSS, so caret
@@ -301,6 +338,48 @@ three independent sources:
 - `Cmd O` — open the right sidebar and focus the folder search.
 - `Cmd K` — open the centered command palette to toggle folder filters.
 - `Cmd ;` — toggle the right sidebar.
+- `Cmd P` — open the Publish panel.
+
+---
+
+## Publishing
+
+A Notable Folder marked with `home: "<github user>/<repo>/<path>"` in its
+YAML becomes the publish root. Hit the Upload icon (or `Cmd+P`), confirm
+the target, and Order:
+
+1. Walks the vault, collects every note flagged `public: true`, and emits a
+   `data.json` snapshot (notes + frontmatter + bodies + chain taxonomy).
+2. Hands `data.json` + a pre-built React bundle (`dist-viewer/`) to the
+   Rust side (`publish_site`), which clones — or pulls — the target GitHub
+   repo, wipes the chosen path, copies the bundle + the vault's
+   `Attachments/`, and `git commit && git push origin <branch>`. Auth uses
+   the local git credential helper or SSH key; no new login flow.
+
+### The web viewer
+
+The published site is **the same React components as Order**, just in
+read-only mode:
+
+- `Card` accepts `initialBody` + `initialFrontmatter` and skips the Tauri
+  disk read entirely. With `readOnly` set, Crepe runs as a read-only
+  ProseMirror, save / rename / delete are short-circuited, and the
+  edit-only chrome (trash, dismiss-pair) hides while navigation
+  affordances (×-remove from filter, fullscreen) stay.
+- The viewer's `StreamView` renders `<Card>` for every published note —
+  same masonry, same sort (NF Main Docs pinned, then by date), same
+  list-of-lists expansion, same folder-color border tint.
+- `useGridLayout` (the row-span hook) lives in `src/lib/grid-layout.ts`
+  and is imported by both the desktop CardGrid and the viewer's
+  StreamView. One source of truth for the masonry.
+- All hash routes (`#/note/X`, `#/folder/X`, `#/stream?folders=…`)
+  resolve to a single stream view with the appropriate filter set —
+  the published site has exactly one screen, same as the app.
+- `Cmd+K` palette, Week / Month / Year calendar views, and the right
+  sidebar all work; calendar move/create handlers are wired to no-ops.
+
+Build the viewer bundle once with `pnpm build:viewer` before the first
+publish; subsequent publishes reuse it.
 
 ---
 
@@ -325,10 +404,14 @@ pnpm tauri:ios:dev    # opens iOS Simulator
 pnpm tauri:ios:build  # device build
 ```
 
-First launch reads `~/Documents/Dropbox/order/`. Areas.md and the Notable
-Folder directories (with their Main Docs and seed notes) are written on first
-run if absent; any other `.md` files you drop into a Notable Folder show up
-on next scan.
+First launch reads `~/Development/Home/` (the vault root) and walks
+**every** `.md` file recursively — depth is arbitrary, since the chain
+encodes the hierarchy. Areas.md and the per-level directories (with their
+Main Docs) are written on first run if absent; otherwise a one-shot
+migration generates the Areas / Categories / Notable Folder files from
+any notes with `category:` set and the legacy `order.taxonomy`
+localStorage key. Any other `.md` files you drop into a Notable Folder
+show up on the next scan.
 
 ---
 
@@ -349,8 +432,9 @@ A meditation on the camera's relationship to the world.
 ```
 
 A note becomes a **Notable Folder Main Document** when its YAML has a `category`
-field. A list folder additionally carries `type: list` and its body holds the
-wikilink bullets that the card grid renders.
+field. A list folder additionally carries `list: cards` (or `lines`) and its
+body holds the wikilink bullets that the card grid renders. Notes opt into
+publishing by adding `public: true` to their frontmatter.
 
 ## License
 

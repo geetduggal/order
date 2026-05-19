@@ -8,7 +8,7 @@
 import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
-import { folderColor, folderIcon } from "../lib/folders";
+import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveListItems } from "../lib/list-resolve";
 import { ListCards } from "./ListCards";
@@ -27,6 +27,10 @@ interface Props {
   /** Click-on-title navigation. When omitted, title click falls back
    *  to inline rename for every row. */
   onNavigate?: (ref: string) => void;
+  /** Additive filter — used when the linked target is a Notable
+   *  Folder so a click ACCUMULATES filter chips instead of
+   *  replacing the set. */
+  onAddFilter?: (ref: string) => void;
 }
 
 interface InsertPoint { beforeRef: string | null }
@@ -49,7 +53,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate }: Props) {
+export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -251,6 +255,15 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggedRef;
+        // Click semantics: an NF target accumulates into the active
+        // filter set (so multi-folder views build up by drilling);
+        // any other resolved note replaces with a single-ref filter.
+        const isNF = !!(note && isNotableFolder(note.frontmatter));
+        const titleHandler = note
+          ? (isNF && onAddFilter ? () => onAddFilter(item.ref)
+              : onNavigate ? () => onNavigate(item.ref)
+              : undefined)
+          : undefined;
         // Expansion: when the linked target is itself a list folder,
         // show its items inline below the parent row. Render type
         // comes from the sub-list's own `list:` value — lines render
@@ -259,7 +272,15 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
         // doesn't crowd the parent.
         let expansion: React.ReactNode = null;
         if (expandSublists && note && note.body && isListFolder(note.frontmatter)) {
-          const subItems = resolveListItems(note.frontmatter, note.body, vaultNotes).slice(0, 12);
+          const subItems = resolveListItems(note.frontmatter, note.body, vaultNotes);
+          function metaText(sub: ListItem): string {
+            const subNote = vaultNotes.find(
+              (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
+            );
+            return sub.meta
+              || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
+              || (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
+          }
           if (subItems.length > 0) {
             const subRender = listRender(note.frontmatter) ?? "cards";
             if (subRender === "cards") {
@@ -271,6 +292,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                     onChange={() => { /* sub-list edits are read-only here */ }}
                     readOnlyMembership
                     onNavigate={onNavigate}
+                    onAddFilter={onAddFilter}
                   />
                 </div>
               );
@@ -281,19 +303,21 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                     const subNote = vaultNotes.find(
                       (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
                     );
-                    const metaText = sub.meta
-                      || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
-                      || (typeof subNote?.frontmatter.description === "string" ? subNote.frontmatter.description : "");
-                    const canNav = !!(subNote && onNavigate);
+                    const meta = metaText(sub);
+                    const subIsNF = !!(subNote && isNotableFolder(subNote.frontmatter));
+                    const subClick = subNote
+                      ? (subIsNF && onAddFilter ? () => onAddFilter(sub.ref)
+                          : onNavigate ? () => onNavigate(sub.ref)
+                          : undefined)
+                      : undefined;
                     const subTitle = displayTitleFor(sub, subNote);
                     return (
                       <li key={sub.ref} className="lr-sublist-item">
-                        <span className="lr-sublist-bullet">•</span>
-                        {canNav ? (
+                        {subClick ? (
                           <button
                             type="button"
                             className="lr-sublist-title is-link"
-                            onClick={() => onNavigate!(sub.ref)}
+                            onClick={subClick}
                             title={`Open ${subTitle}`}
                           >
                             {subTitle}
@@ -301,7 +325,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                         ) : (
                           <span className="lr-sublist-title">{subTitle}</span>
                         )}
-                        {metaText && <span className="lr-sublist-meta">{metaText}</span>}
+                        {meta && <span className="lr-sublist-meta"> · {meta}</span>}
                       </li>
                     );
                   })}
@@ -321,7 +345,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
             dragging={dragging}
             readOnly={!!readOnlyMembership}
             expansion={expansion}
-            onNavigate={note && onNavigate ? () => onNavigate(item.ref) : undefined}
+            onNavigate={titleHandler}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}

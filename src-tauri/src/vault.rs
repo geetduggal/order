@@ -463,3 +463,22 @@ pub fn rename_file(from: String, to: String) -> Result<(), String> {
     }
     std::fs::rename(&from, &to).map_err(|e| e.to_string())
 }
+
+// Hand a file off to the OS so attachments (PDFs, etc.) launch in
+// the user's default viewer instead of trying to render inside the
+// webview. macOS uses `open`; Linux uses xdg-open; Windows uses the
+// cmd start verb.
+#[tauri::command]
+pub fn open_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("not found: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&path).spawn();
+    #[cfg(target_os = "linux")]
+    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn();
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
