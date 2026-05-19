@@ -6,7 +6,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X as XIcon } from "lucide-react";
-import type { Frontmatter } from "../lib/frontmatter";
 
 export interface PublishableNote {
   filename: string;       // no .md
@@ -24,29 +23,56 @@ export interface HomeFolder {
   target: string;
 }
 
+export interface PublishOutcome {
+  pushed_to: string;
+  branch: string;
+  commit_message: string;
+  had_changes: boolean;
+}
+
 interface Props {
   homes: HomeFolder[];
   publishableNotes: PublishableNote[];
+  /** Kicks off the build + push for a chosen home. Resolves with the
+   *  Rust-side outcome; rejects with a string error message. */
+  onPublish: (home: HomeFolder) => Promise<PublishOutcome>;
   onClose: () => void;
 }
 
-export function PublishPanel({ homes, publishableNotes, onClose }: Props) {
+export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Props) {
   const [selectedHome, setSelectedHome] = useState<string | null>(
     homes[0]?.name ?? null,
   );
+  const [status, setStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "publishing" }
+    | { kind: "ok"; outcome: PublishOutcome }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      if (e.key === "Escape" && status.kind !== "publishing") { e.preventDefault(); onClose(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, status.kind]);
 
   const current = useMemo(
     () => homes.find((h) => h.name === selectedHome) ?? null,
     [homes, selectedHome],
   );
+
+  async function runPublish() {
+    if (!current) return;
+    setStatus({ kind: "publishing" });
+    try {
+      const outcome = await onPublish(current);
+      setStatus({ kind: "ok", outcome });
+    } catch (err) {
+      setStatus({ kind: "error", message: typeof err === "string" ? err : (err instanceof Error ? err.message : String(err)) });
+    }
+  }
 
   return (
     <div className="publish-backdrop" onMouseDown={onClose}>
@@ -125,13 +151,24 @@ export function PublishPanel({ homes, publishableNotes, onClose }: Props) {
             )}
 
             <div className="publish-actions">
+              {status.kind === "ok" && (
+                <span className="publish-status is-ok">
+                  {status.outcome.had_changes
+                    ? `Pushed to ${status.outcome.pushed_to} (${status.outcome.commit_message})`
+                    : "Site already up to date — nothing to push."}
+                </span>
+              )}
+              {status.kind === "error" && (
+                <span className="publish-status is-err">{status.message}</span>
+              )}
               <button
                 type="button"
                 className="publish-go"
-                disabled
-                title="Phase 3 will wire the build + push"
+                disabled={status.kind === "publishing"}
+                onClick={() => { void runPublish(); }}
+                title="Build the static bundle, write into the target repo, git push"
               >
-                Publish (coming in Phase 3)
+                {status.kind === "publishing" ? "Publishing…" : "Publish"}
               </button>
             </div>
           </>

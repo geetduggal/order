@@ -1636,9 +1636,20 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--royal, #4169e1);
   color: white;
   border: none;
-  cursor: not-allowed;
-  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.12s var(--ease-out);
 }
+.publish-go:hover { opacity: 0.92; }
+.publish-go:disabled { cursor: not-allowed; opacity: 0.5; }
+.publish-status {
+  flex: 1 1 auto;
+  margin-right: 12px;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.publish-status.is-ok { color: var(--royal, #4169e1); }
+.publish-status.is-err { color: var(--coral, #ff7f50); white-space: pre-wrap; }
 
 /* ---------- Cap-reached toast ---------- */
 .cap-warning {
