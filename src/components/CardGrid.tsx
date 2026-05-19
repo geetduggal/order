@@ -6,14 +6,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
+import { homeDir, join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
-import { PublishPanel, type HomeFolder, type PublishableNote } from "./PublishPanel";
+import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
+import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import {
   AREAS_FILENAME,
@@ -240,6 +241,34 @@ export function CardGrid() {
   useEffect(() => {
     homeFolderRef.current = homeFolders[0]?.name ?? null;
   }, [homeFolders]);
+
+  /** Build the static bundle and hand it to the Rust side for the
+   *  clone → write → commit → push dance. Called by PublishPanel
+   *  when the user confirms. Resolves with the Rust outcome (errors
+   *  string-flow back to the panel which surfaces them inline). */
+  const handlePublish = useCallback(async (home: HomeFolder): Promise<PublishOutcome> => {
+    if (!notes) throw "Notes not loaded";
+    const site = collectPublishedSite({
+      vaultNotes: notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+      home,
+    });
+    const dataJson = JSON.stringify(site);
+    const vault = await vaultRoot();
+    // Viewer bundle path: in dev this is <project>/dist-viewer. The
+    // user must `pnpm build:viewer` once before publishing. A
+    // production build would resolve via Tauri resource_dir; the
+    // hardcoded dev path stays for now.
+    const home_root = await homeDir();
+    const viewerBundlePath = await join(home_root, "Documents", "Dropbox", "order", "src", "dist-viewer");
+    return invoke<PublishOutcome>("publish_site", {
+      input: {
+        home_target: home.target,
+        vault_path: vault,
+        viewer_bundle_path: viewerBundlePath,
+        data_json: dataJson,
+      },
+    });
+  }, [notes]);
 
   /** Notes flagged `public: true` in YAML — the set that ships with
    *  the next Publish action. */
@@ -894,6 +923,7 @@ export function CardGrid() {
         <PublishPanel
           homes={homeFolders}
           publishableNotes={publishableNotes}
+          onPublish={handlePublish}
           onClose={() => setPublishOpen(false)}
         />
       )}

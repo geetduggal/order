@@ -1,52 +1,204 @@
-// Publishing pipeline: copy public-flagged notes into vault/public/, commit, push.
-// The Git remote and static site build happen outside this command (GitHub Actions).
+// Publishing pipeline: receive a pre-rendered index.html + the vault
+// root from the frontend, clone (or pull) the target repo into the
+// app data dir, wipe + repopulate the home-target subdirectory with
+// the bundle and the vault's Attachments, then git commit + push.
+//
+// Auth uses the user's local git credentials (HTTPS cred helper or
+// SSH key). No new auth flow.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
-use serde_yaml::Value as YamlValue;
-use crate::vault::split_frontmatter;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const CLONES_SUBDIR: &str = "publish-clones";
+
+#[derive(serde::Deserialize)]
+pub struct PublishInput {
+    /// "<user>/<repo>/<path>" from the home Notable Folder's YAML.
+    pub home_target: String,
+    /// Absolute path to the vault root (used to find Attachments/).
+    pub vault_path: String,
+    /// Absolute path to the built viewer bundle (the dist-viewer/
+    /// directory produced by `pnpm build:viewer`).
+    pub viewer_bundle_path: String,
+    /// JSON-serialized PublishedSite — the viewer fetches this at
+    /// runtime via fetch("./data.json").
+    pub data_json: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct PublishResult {
+    pub repo_url: String,
+    pub branch: String,
+    pub pushed_to: String,
+    pub commit_message: String,
+    pub had_changes: bool,
+}
+
+fn parse_target(s: &str) -> Result<(String, String, String), String> {
+    let parts: Vec<&str> = s.splitn(3, '/').collect();
+    if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+        return Err(format!(
+            "invalid home target: {:?} (expected `<user>/<repo>/<path>`)",
+            s
+        ));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()))
+}
+
+fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    let out = Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git {:?} failed to spawn: {}", args, e))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {:?} exited {}: {}",
+            args,
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn clone_to(url: &str, dest: &Path) -> Result<(), String> {
+    let out = Command::new("git")
+        .args(["clone", url])
+        .arg(dest)
+        .output()
+        .map_err(|e| format!("git clone failed to spawn: {}", e))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git clone {} exited {}: {}",
+            url,
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn timestamp_label() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{}", secs)
+}
 
 #[tauri::command]
-pub fn publish_public(vault: String) -> Result<u32, String> {
-    let root = PathBuf::from(&vault);
-    let public_dir = root.join("public");
-    fs::create_dir_all(&public_dir).map_err(|e| e.to_string())?;
+pub fn publish_site(
+    app: tauri::AppHandle,
+    input: PublishInput,
+) -> Result<PublishResult, String> {
+    use tauri::Manager;
 
-    let mut count = 0u32;
+    let (user, repo, sub) = parse_target(&input.home_target)?;
+    let repo_url = format!("https://github.com/{}/{}.git", user, repo);
 
-    for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
-        let p = entry.path();
-        if !p.is_file() { continue; }
-        if p.starts_with(&public_dir) { continue; }
-        if p.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("could not locate app data dir: {}", e))?;
+    let clone_root = app_dir.join(CLONES_SUBDIR).join(&user).join(&repo);
 
-        let raw = match fs::read_to_string(p) { Ok(s) => s, Err(_) => continue };
-        let (fm_str, _body) = split_frontmatter(&raw);
-        let is_public = serde_yaml::from_str::<YamlValue>(fm_str)
-            .ok()
-            .and_then(|v| v.get("public").and_then(YamlValue::as_bool))
-            .unwrap_or(false);
-
-        if !is_public { continue; }
-
-        let rel = p.strip_prefix(&root).unwrap_or(p);
-        let dest = public_dir.join(rel);
-        if let Some(parent) = dest.parent() {
+    if !clone_root.join(".git").is_dir() {
+        if clone_root.exists() {
+            fs::remove_dir_all(&clone_root)
+                .map_err(|e| format!("remove stale dir {}: {}", clone_root.display(), e))?;
+        }
+        if let Some(parent) = clone_root.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        fs::copy(p, &dest).map_err(|e| e.to_string())?;
-        count += 1;
+        clone_to(&repo_url, &clone_root)?;
+    } else {
+        run_git(&clone_root, &["fetch", "origin"])?;
+        let branch = run_git(&clone_root, &["rev-parse", "--abbrev-ref", "HEAD"])?
+            .trim()
+            .to_string();
+        run_git(
+            &clone_root,
+            &["reset", "--hard", &format!("origin/{}", branch)],
+        )
+        .map_err(|e| format!("git reset to origin/{} failed: {}", branch, e))?;
     }
 
-    // Git commit + push if vault is a git repo. Failures here don't roll back
-    // the staging copy — the user can retry the publish.
-    if root.join(".git").is_dir() {
-        let _ = Command::new("git").arg("-C").arg(&root).arg("add").arg("public/").status();
-        let _ = Command::new("git").arg("-C").arg(&root).arg("commit").arg("-m").arg(format!("publish: {} notes", count)).status();
-        let _ = Command::new("git").arg("-C").arg(&root).arg("push").status();
+    let branch = run_git(&clone_root, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+
+    let target_dir = clone_root.join(&sub);
+    if target_dir.exists() {
+        fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("clear {}: {}", target_dir.display(), e))?;
+    }
+    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+
+    // Copy the viewer bundle in. The bundle is a directory of HTML
+    // + JS + CSS produced by `pnpm build:viewer` at Order's project
+    // root (in dev) or shipped as a Tauri resource (in production).
+    let bundle = PathBuf::from(&input.viewer_bundle_path);
+    if !bundle.is_dir() {
+        return Err(format!(
+            "viewer bundle not found at {} — run `pnpm build:viewer` first",
+            bundle.display(),
+        ));
+    }
+    copy_dir_recursive(&bundle, &target_dir)
+        .map_err(|e| format!("copy viewer bundle: {}", e))?;
+
+    // The viewer loads ./data.json at runtime; write the per-publish
+    // payload next to index.html.
+    fs::write(target_dir.join("data.json"), &input.data_json)
+        .map_err(|e| format!("write data.json: {}", e))?;
+
+    let attach = PathBuf::from(&input.vault_path).join("Attachments");
+    if attach.is_dir() {
+        copy_dir_recursive(&attach, &target_dir.join("Attachments"))
+            .map_err(|e| format!("copy Attachments: {}", e))?;
     }
 
-    Ok(count)
+    run_git(&clone_root, &["add", "-A"])?;
+    let status = run_git(&clone_root, &["status", "--porcelain"])?;
+    let pushed_to = format!("{}/{}/{}", user, repo, sub);
+    let commit_msg = format!("Publish: {}", timestamp_label());
+
+    if status.trim().is_empty() {
+        return Ok(PublishResult {
+            repo_url,
+            branch,
+            pushed_to,
+            commit_message: "(no changes)".to_string(),
+            had_changes: false,
+        });
+    }
+
+    run_git(&clone_root, &["commit", "-m", &commit_msg])?;
+    run_git(&clone_root, &["push", "origin", &branch])?;
+
+    Ok(PublishResult {
+        repo_url,
+        branch,
+        pushed_to,
+        commit_message: commit_msg,
+        had_changes: true,
+    })
 }

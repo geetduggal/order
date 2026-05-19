@@ -19,3 +19,10 @@ src-tauri/gen/android/
 .vscode/
 .idea/
 tsconfig.tsbuildinfo
+---
+
+# Viewer bundle output — produced by `pnpm build:viewer`; keep an
+# empty dist-viewer/ so `tauri:dev` doesn't fail before the user
+# has built the viewer for the first time.
+dist-viewer/*
+!dist-viewer/.gitkeep

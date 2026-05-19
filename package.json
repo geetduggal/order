@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:viewer": "vite build --config vite.viewer.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -33,6 +34,7 @@
     "@tauri-apps/plugin-fs": "^2.0.3",
     "js-yaml": "^4.1.1",
     "lucide-react": "^1.16.0",
+    "marked": "^18.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

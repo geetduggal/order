@@ -29,7 +29,7 @@ pub fn run() {
             vault::rename_file,
             vault::delete_file,
             watcher::start_watcher,
-            publish::publish_public,
+            publish::publish_site,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
