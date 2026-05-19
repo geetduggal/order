@@ -96,13 +96,25 @@ exposes thin file-IO commands (`read_text`, `write_text`, `write_binary`,
 
 ```
 <vault root>/
-├── cards/                 *.md notes — events, prose, Notable Folder Main Docs
+├── Areas.md               navigation root — list of Areas
+├── Personal.md            an Area — list of Categories (no children on disk)
+├── Reading.md             a Category — list of Notable Folders (no children on disk)
+├── Books/                 a Notable Folder — directory holds the notes
+│   ├── Books.md             Main Document for the folder
+│   ├── On Photography.md    a leaf note
+│   └── reading-stats.html   sidecar artifact (any file type is welcome)
+├── log/                   default Notable Folder — catch-all for un-categorized notes
+│   └── 2026-05-19.md
 └── Attachments/           pasted / dropped images, Obsidian convention
+    └── foo.png
 ```
 
-Image uploads write here. The markdown on disk stores **relative** paths
-(`Attachments/foo.png`) for portability; at edit time those paths are inflated to
-absolute `asset://` URLs so the webview can render them, and deflated back on save.
+Only Notable Folders are directories with contents on disk — Areas and
+Categories are markdown files that exist purely to organize the level below
+them. Image uploads write to `Attachments/`. The markdown on disk stores
+**relative** paths (`Attachments/foo.png`) for portability; at edit time those
+paths are inflated to absolute `asset://` URLs so the webview can render them,
+and deflated back on save.
 
 ### State
 
@@ -166,10 +178,11 @@ in-page handlers.
 The three-level hierarchy is one consequence of the list model, not a separate
 concept:
 
-- `<vault>/cards/Areas.md` — `list: cards, role: areas`, capped at 10 bullets
+- `<vault>/Areas.md` — `list: cards, role: areas`, capped at 10 bullets
 - each Area file — `list: cards`, bullets are Category wikilinks, capped at 10
 - each Category file — `list: cards`, bullets are Notable Folder wikilinks
-- each Notable Folder — `list: cards` (or `lines`), bullets are leaf notes
+- each Notable Folder's Main Document (inside the folder's directory) —
+  `list: cards` (or `lines`), bullets are leaf notes
 
 The sidebar drill walks this chain. The 10-item caps fire from the same
 add-bullet path that any list folder uses; over-cap attempts flash a coral
@@ -312,9 +325,10 @@ pnpm tauri:ios:dev    # opens iOS Simulator
 pnpm tauri:ios:build  # device build
 ```
 
-First launch reads `~/Documents/Dropbox/order/cards/`. Notable Folder Main Docs and
-seed notes are written on first run if absent; any other `.md` files you drop into
-that directory show up on next scan.
+First launch reads `~/Documents/Dropbox/order/`. Areas.md and the Notable
+Folder directories (with their Main Docs and seed notes) are written on first
+run if absent; any other `.md` files you drop into a Notable Folder show up
+on next scan.
 
 ---
 
