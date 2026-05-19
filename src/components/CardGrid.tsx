@@ -34,6 +34,24 @@ function readSidebarOpen(): boolean {
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
+
+const FILTER_KEY = "order.folderFilter";
+function readStoredFilter(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr)
+      ? new Set(arr.filter((x: unknown): x is string => typeof x === "string"))
+      : new Set();
+  } catch { return new Set(); }
+}
+function writeStoredFilter(s: Set<string>): void {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(Array.from(s))); } catch { /* non-fatal */ }
+}
+function hasStoredFilter(): boolean {
+  try { return localStorage.getItem(FILTER_KEY) !== null; } catch { return false; }
+}
 import {
   basenameForEvent,
   isoDate,
@@ -161,7 +179,7 @@ export function CardGrid() {
   const [view, setView] = useState<View>("stream");
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
-  const [folderFilter, setFolderFilter] = useState<Set<string>>(new Set());
+  const [folderFilter, setFolderFilter] = useState<Set<string>>(() => readStoredFilter());
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -241,6 +259,24 @@ export function CardGrid() {
   useEffect(() => {
     homeFolderRef.current = homeFolders[0]?.name ?? null;
   }, [homeFolders]);
+
+  // Default to the home Notable Folder on the very first load (when
+  // localStorage has no saved filter). Subsequent runs honour the
+  // user's last-saved filter set — including an explicitly empty one.
+  const initialFilterFromStorage = useRef<boolean>(hasStoredFilter());
+  const defaultedToHome = useRef<boolean>(initialFilterFromStorage.current);
+  useEffect(() => {
+    if (defaultedToHome.current) return;
+    if (!notes) return;
+    const home = homeFolders[0]?.name;
+    if (!home) return;
+    defaultedToHome.current = true;
+    setFolderFilter(new Set([home]));
+  }, [notes, homeFolders]);
+
+  // Persist user-visible filter changes so opening Order on the same
+  // vault picks back up where it left off.
+  useEffect(() => { writeStoredFilter(folderFilter); }, [folderFilter]);
 
   /** Build the static bundle and hand it to the Rust side for the
    *  clone → write → commit → push dance. Called by PublishPanel
