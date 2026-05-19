@@ -6,8 +6,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir, join } from "@tauri-apps/api/path";
-import { readDir } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
+import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
@@ -69,194 +69,6 @@ async function uniqueWrite(dir: string, basename: string, content: string): Prom
   throw new Error(`Couldn't find a unique name for ${basename}`);
 }
 
-const SEEDS: { filename: string; seed: string }[] = [
-  {
-    filename: "01-quick-log.md",
-    seed:
-`Cold this morning. Light came in at a low angle through the kitchen and made the cream paper of the journal almost glow.`,
-  },
-  {
-    filename: "02-publish-thought.md",
-    seed:
-`What if **publish** is just a checkbox in the YAML drawer, no other ceremony?
-
-That's the whole loop: write, check, save. Static rebuild handles the rest.`,
-  },
-  {
-    filename: "03-on-photography.md",
-    seed:
-`From [On Photography](#): *"To collect photographs is to collect the world."*
-
-Same for notes — collecting them is the cheap part. The hard part is rereading them later and finding the ones that earned their place.`,
-  },
-  {
-    filename: "04-order-essay.md",
-    seed:
-`# Notes that age well
-
-If a note still makes sense to me a year from now without context, it earned its place. Most don't, and that's fine — Log absorbs the rest.
-
-## The constraint
-
-The 10-box constraint isn't just a discipline — it's a *visual* promise. Empty slots are part of the design.
-
-## What I keep
-
-- Things I'll reread
-- Ideas that fight back when I try to refine them
-- Drafts in motion
-
-The rest goes to Log, where time decides.`,
-  },
-  {
-    filename: "05-code-snippet.md",
-    seed:
-`Tried this little debounce wrapper today:
-
-\`\`\`ts
-function debounce<A extends unknown[]>(
-  fn: (...args: A) => void,
-  ms: number,
-) {
-  let t: ReturnType<typeof setTimeout> | null = null;
-  return (...args: A) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
-\`\`\`
-
-Clean enough. The trailing-call semantics are good for autosave but bad for search-as-you-type.`,
-  },
-  {
-    filename: "06-slow.md",
-    seed:
-`Kundera: the pleasure of slowness is the inverse of forgetfulness.
-
-> Speed forgets; slowness remembers.
-
-I want a tool that lets me be slow without feeling guilty about it.`,
-  },
-  {
-    filename: "07-walk.md",
-    seed:
-`Sat afternoon. Up the ridge, all the way to the cell tower, and back along the creek. The light through the new leaves did the thing it does in late spring — that translucent green that looks like the leaves are lit from inside.
-
-Stopped at the bench by the bend. Made a note about the trail being washed out from the storm last week. Three blowdowns since I was here last.
-
-Home in time to make dinner.`,
-  },
-  {
-    filename: "08-design-doc.md",
-    seed:
-`# Order — design doc (excerpt)
-
-Order is a specialized note app. **Thinking, browsing, and publishing happen in one constrained surface** — a workspace, an explorer, and a publish space sharing the same screen.
-
-It is deliberately *not* an all-in-one: Readwise still handles your highlights, Obsidian still hosts your vault, your camera roll is still your camera roll. Order's specific job is **in-place editing and exploration within a constrained three-level hierarchy** (Areas → Categories → Notable Folders).
-
-## What this looks like
-
-1. Cards in a stream
-2. Notable Folder sections below
-3. Right sidebar for navigation
-4. Same surface for reading and writing
-
-That's the whole product.`,
-  },
-  // Notable Folder Main Documents — these get the special role because
-  // their frontmatter carries a `category` field. They drive the right
-  // sidebar's hierarchy. Type: list / cards / prose.
-  {
-    filename: "Books.md",
-    seed:
-`---
-category: Reading
-area: Personal
-type: list
----
-
-# Books
-
-A running list of what I'm reading, what I want to read, and what landed.
-
-- [[On Photography]] · Susan Sontag · ★★★★½
-- [[Slowness]] · Milan Kundera · ★★★★
-- [[The Artist's Way]] · Julia Cameron · ★★★★
-- [[A Field Guide to Getting Lost]] · Rebecca Solnit · ★★★★★
-- [[Ways of Seeing]] · John Berger · ★★★★★
-- [[Tao Te Ching]] · Le Guin (trans.) · ★★★★★`,
-  },
-  {
-    filename: "On Photography.md",
-    seed:
-`---
-folder: "[[Books]]"
-author: Susan Sontag
-rating: 4.5
-description: A meditation on the camera's relationship to the world.
----
-
-# On Photography
-
-A meditation on the relationship between photography, ethics, and the world.`,
-  },
-  {
-    filename: "Slowness.md",
-    seed:
-`---
-folder: "[[Books]]"
-author: Milan Kundera
-rating: 4
-description: A novel on speed, memory, and forgetting.
----
-
-# Slowness
-
-A short novel that braids two stories — one from the 18th century, one from the present — around the relationship between speed and memory.`,
-  },
-  {
-    filename: "The Artist's Way.md",
-    seed:
-`---
-folder: "[[Books]]"
-author: Julia Cameron
-rating: 4
-description: A twelve-week course on recovering creative agency.
----
-
-# The Artist's Way
-
-A twelve-week program centered on morning pages and artist dates.`,
-  },
-  {
-    filename: "Walks.md",
-    seed:
-`---
-category: Health
-area: Personal
-type: prose
----
-
-# Walks
-
-Notes from walks — light, weather, trail conditions, what was in my head.`,
-  },
-  {
-    filename: "Tech Habits.md",
-    seed:
-`---
-category: Habits
-area: Projects
-type: prose
-icon: code
----
-
-# Tech Habits
-
-Small, durable engineering practices worth keeping. Defaults that pay back over years.`,
-  },
-];
 
 const GRID_ROW_PX = 8;
 
@@ -323,38 +135,22 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
 }
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
-  const dir = await documentDir();
-  const subdir = await join(dir, "Dropbox", "order", "cards");
+  // Walk every .md file under the vault root. Notes can sit at
+  // root or nested in per-Notable-Folder directories; we don't
+  // care about the OS layout — the bullet chain encodes the
+  // hierarchy. SEEDS-based first-run seeding is gone: the vault is
+  // the source of truth, and an empty vault is migrated into
+  // shape by the chain-walk + planMigration in CardGrid's mount
+  // effect.
+  const entries = await walkVaultMarkdown();
   const out: LoadedNote[] = [];
-  const seen = new Set<string>();
-
-  // First pass: ensure each seed file exists on disk and load it.
-  for (const { filename, seed } of SEEDS) {
-    const path = await join(subdir, filename);
-    out.push(await loadOne(path, filename, seed));
-    seen.add(filename);
-  }
-
-  // Second pass: load any other .md files the user has created since.
-  // Without this, every user-created note disappears after restart
-  // because only SEEDS were ever read back.
-  let entries: { name: string; isFile?: boolean }[] = [];
-  try {
-    entries = await readDir(subdir);
-  } catch (err) {
-    console.warn("Could not scan cards directory:", err);
-  }
-  for (const entry of entries) {
-    if (!entry.name?.endsWith(".md")) continue;
-    if (seen.has(entry.name)) continue;
-    const path = await join(subdir, entry.name);
+  for (const { path, filename } of entries) {
     try {
-      out.push(await loadOne(path, entry.name));
+      out.push(await loadOne(path, filename));
     } catch (err) {
       console.warn("Failed to load card", path, err);
     }
   }
-
   return out;
 }
 
@@ -400,8 +196,10 @@ export function CardGrid() {
   }, [notes]);
 
   const cardsSubdir = useCallback(async (): Promise<string> => {
-    const dir = await documentDir();
-    return join(dir, "Dropbox", "order", "cards");
+    // Name kept for compat with existing callers — returns the vault
+    // root (the "cards" subdir concept has gone away with the new
+    // per-Notable-Folder directory layout).
+    return vaultRoot();
   }, []);
 
   const reloadNotes = useCallback(async () => {
@@ -588,8 +386,7 @@ export function CardGrid() {
           }));
           const stored = readStoredTaxonomy();
           const plan = planMigration(withBody, stored);
-          const dir = await documentDir();
-          const subdir = await join(dir, "Dropbox", "order", "cards");
+          const subdir = await vaultRoot();
           for (const f of plan.newFiles) {
             const p = await join(subdir, f.filename);
             await invoke("write_text", { path: p, content: f.content });
@@ -667,8 +464,7 @@ export function CardGrid() {
   }, [view, scrollTargetPath]);
 
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
-    const dir = await documentDir();
-    const subdir = await join(dir, "Dropbox", "order", "cards");
+    const subdir = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
@@ -731,8 +527,7 @@ export function CardGrid() {
    *  category. Writes <Name>.md with seed YAML (+ optional numeric
    *  suffix if the name already exists), then adds it to state. */
   const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
-    const dir = await documentDir();
-    const subdir = await join(dir, "Dropbox", "order", "cards");
+    const subdir = await vaultRoot();
     const trimmed = name.trim();
     if (!trimmed) return;
     const frontmatter: Frontmatter = {

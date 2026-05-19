@@ -21,7 +21,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
 import { folderIcon } from "../lib/folders";
-import type { ListItem, ListNoteRef } from "../lib/list-folder";
+import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 export type { ListNoteRef };
 
 interface Props {
@@ -302,6 +302,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
             Icon={Icon}
             image={image}
             tintCls={tintCls}
+            displayTitle={displayTitleFor(item, note)}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
@@ -330,6 +331,10 @@ interface BaseCardProps {
   Icon: ReturnType<typeof folderIcon>;
   image?: string;
   tintCls: string;
+  /** Visible label — prefers linked note's frontmatter `title:` over
+   *  the bullet's wikilink ref so filenames-on-disk can be pretty
+   *  while the displayed title keeps original punctuation. */
+  displayTitle: string;
   metaSuggestion: string;
   dragging: boolean;
   readOnly: boolean;
@@ -341,7 +346,7 @@ interface BaseCardProps {
 }
 
 function BaseCard({
-  item, Icon, image, tintCls, metaSuggestion,
+  item, Icon, image, tintCls, displayTitle, metaSuggestion,
   dragging, readOnly, onNavigate,
   onPointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
@@ -433,9 +438,9 @@ function BaseCard({
                 else if (!readOnly) setEditingTitle(true);
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              title={onNavigate ? `Open ${item.ref}` : (readOnly ? item.ref : "Click to rename")}
+              title={onNavigate ? `Open ${displayTitle}` : (readOnly ? displayTitle : "Click to rename (link target)")}
             >
-              {item.ref}
+              {displayTitle}
             </button>
           )}
           {editingMeta ? (

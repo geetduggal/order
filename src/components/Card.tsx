@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { dirname, join } from "@tauri-apps/api/path";
+import { vaultRoot } from "../lib/vault";
 import { MilkdownSurface } from "./MilkdownSurface";
 import {
   basenameForEvent,
@@ -182,7 +183,7 @@ export function Card(props: Props) {
         const raw = await invoke<string>("read_text", { path: initialPath });
         if (cancelled) return;
         const { frontmatter, body } = splitFrontmatter(raw);
-        const vault = await dirname(await dirname(initialPath));
+        const vault = await vaultRoot();
         const prefix = attachmentAssetPrefix(vault);
         const displayBody = inflateAttachmentUrls(body, prefix);
         // List folders come in two flavors:
@@ -269,7 +270,7 @@ export function Card(props: Props) {
 
       // Collapse runtime asset:// URLs back to vault-relative paths so
       // the file on disk is portable / Obsidian-friendly.
-      const vault = await dirname(await dirname(path));
+      const vault = await vaultRoot();
       const persistedBody = deflateAttachmentUrls(outBody, attachmentAssetPrefix(vault));
       const content = joinFrontmatter(outFrontmatter, persistedBody);
       await invoke("write_text", { path, content });
@@ -380,10 +381,10 @@ export function Card(props: Props) {
   }, [itemsForView, vaultNotes]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
-    // Save under <vault>/Attachments/. Vault root is the parent of the
-    // cards dir, hence dirname(dirname(cardPath)).
-    const cardDir = await dirname(pathRef.current);
-    const vault = await dirname(cardDir);
+    // Save under <vault>/Attachments/. vaultRoot() returns the
+    // hardcoded vault path so this works regardless of where the
+    // card itself lives (root or nested NF directory).
+    const vault = await vaultRoot();
     const filename = attachmentName(file);
     const absolute = await join(vault, ATTACHMENTS_DIRNAME, filename);
     const bytes = new Uint8Array(await file.arrayBuffer());

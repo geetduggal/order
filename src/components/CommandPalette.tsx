@@ -23,11 +23,18 @@ export function CommandPalette({ folders, selected, onToggle, onClose }: Props) 
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = q
-      ? folders.filter((f) => f.name.toLowerCase().includes(q))
-      : folders;
-    return base.slice(0, 12);
+    if (!q) return folders.slice(0, 12);
+    return folders.filter((f) => {
+      const t = f.frontmatter.title;
+      const hay = (f.name + " " + (typeof t === "string" ? t : "")).toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 12);
   }, [folders, query]);
+
+  function labelOf(f: typeof folders[number]): string {
+    const t = f.frontmatter.title;
+    return typeof t === "string" && t.trim() ? t : f.name;
+  }
 
   // Keep active index in range when matches shrink.
   useEffect(() => {
@@ -93,7 +100,7 @@ export function CommandPalette({ folders, selected, onToggle, onClose }: Props) 
                   onClick={() => { onToggle(f.name); onClose(); }}
                 >
                   <Icon size={14} strokeWidth={1.8} style={{ color }} />
-                  <span className="cmdk-item-name">{f.name}</span>
+                  <span className="cmdk-item-name">{labelOf(f)}</span>
                   {(f.area || f.category) && (
                     <span className="cmdk-item-crumb">
                       {f.area}{f.area && f.category ? " › " : ""}{f.category}

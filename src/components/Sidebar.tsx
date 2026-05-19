@@ -175,7 +175,11 @@ export function Sidebar({
   const searchMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return folders.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 8);
+    return folders.filter((f) => {
+      const t = f.frontmatter.title;
+      const haystack = (f.name + " " + (typeof t === "string" ? t : "")).toLowerCase();
+      return haystack.includes(q);
+    }).slice(0, 8);
   }, [folders, query]);
 
   return (
@@ -546,6 +550,8 @@ function FolderRow({ folder, checked, onToggle }: {
 }) {
   const Icon: LucideIcon = folderIcon(folder.name, folder.frontmatter.icon);
   const color = folderColor(folder.name, folder.frontmatter.color);
+  const titleFm = folder.frontmatter.title;
+  const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
   return (
     <li>
       <button
@@ -559,7 +565,7 @@ function FolderRow({ folder, checked, onToggle }: {
         >
           <Icon size={13} strokeWidth={2} />
         </span>
-        <span className="sb-folder-name">{folder.name}</span>
+        <span className="sb-folder-name">{label}</span>
         {checked && (
           <span className="sb-folder-check" style={{ color }}>
             <Check size={12} strokeWidth={2.5} />
