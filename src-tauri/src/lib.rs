@@ -28,6 +28,7 @@ pub fn run() {
             vault::write_binary,
             vault::rename_file,
             vault::delete_file,
+            vault::open_path,
             watcher::start_watcher,
             publish::publish_site,
         ])

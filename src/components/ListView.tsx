@@ -23,9 +23,12 @@ interface Props {
    *  the folder filter to that ref. When omitted, title click falls
    *  back to inline rename. */
   onNavigate?: (ref: string) => void;
+  /** Additive filter handler — used for NF refs so a title click
+   *  ADDS the folder to the active set rather than replacing it. */
+  onAddFilter?: (ref: string) => void;
 }
 
-export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate }: Props) {
+export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
   if (render === "lines") {
     return (
       <ListLines
@@ -35,6 +38,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
         readOnlyMembership={readOnlyMembership}
         expandSublists={expandSublists}
         onNavigate={onNavigate}
+        onAddFilter={onAddFilter}
       />
     );
   }
@@ -45,6 +49,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
       onChange={onChange}
       readOnlyMembership={readOnlyMembership}
       onNavigate={onNavigate}
+      onAddFilter={onAddFilter}
     />
   );
 }

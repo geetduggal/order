@@ -20,7 +20,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
-import { folderIcon } from "../lib/folders";
+import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 export type { ListNoteRef };
 
@@ -33,6 +33,9 @@ interface Props {
   /** Click-on-title navigation. When omitted, title click falls back
    *  to inline rename. */
   onNavigate?: (ref: string) => void;
+  /** Additive filter — used when the linked target is a Notable
+   *  Folder so a click accumulates filter chips. */
+  onAddFilter?: (ref: string) => void;
 }
 
 interface InsertPoint {
@@ -60,7 +63,7 @@ const DRAG_THRESHOLD_PX = 5;
 const FLIP_DURATION_MS = 280;
 const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
-export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onNavigate }: Props) {
+export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onNavigate, onAddFilter }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
   const [adding, setAdding] = useState(false);
@@ -306,7 +309,13 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
             readOnly={!!readOnlyMembership}
-            onNavigate={note && onNavigate ? () => onNavigate(item.ref) : undefined}
+            onNavigate={(() => {
+              if (!note) return undefined;
+              const isNF = isNotableFolder(note.frontmatter);
+              if (isNF && onAddFilter) return () => onAddFilter(item.ref);
+              if (onNavigate) return () => onNavigate(item.ref);
+              return undefined;
+            })()}
             onPointerDown={onPointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}

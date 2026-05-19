@@ -4,10 +4,12 @@
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Home as HouseIcon, ChevronsDown, ChevronsUp, Upload as UploadIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
+import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
 import { YearLinearView } from "./YearLinearView";
@@ -35,23 +37,11 @@ function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
-const FILTER_KEY = "order.folderFilter";
-function readStoredFilter(): Set<string> {
-  try {
-    const raw = localStorage.getItem(FILTER_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr)
-      ? new Set(arr.filter((x: unknown): x is string => typeof x === "string"))
-      : new Set();
-  } catch { return new Set(); }
-}
-function writeStoredFilter(s: Set<string>): void {
-  try { localStorage.setItem(FILTER_KEY, JSON.stringify(Array.from(s))); } catch { /* non-fatal */ }
-}
-function hasStoredFilter(): boolean {
-  try { return localStorage.getItem(FILTER_KEY) !== null; } catch { return false; }
-}
+// Filter state used to be cached in localStorage so reopens
+// preserved the selection. That collided with the "open on home"
+// default — a stored empty set (or any non-home set) would always
+// win. Each session now starts on the home Notable Folder and
+// changes during the session are not persisted across launches.
 import {
   basenameForEvent,
   isoDate,
@@ -178,8 +168,16 @@ export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>("stream");
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
+  /** Path of the most recently created note. The matching Card
+   *  mounts with `autoFocus` so the cursor lands inside its editor
+   *  the moment it appears. Cleared by the same scroll-target
+   *  effect that handles the highlight pulse. */
+  const [focusPath, setFocusPath] = useState<string | null>(null);
+  /** Toggles the left-rail jump-to-notes icon between "down" (jump
+   *  to the first regular note) and "up" (jump back to the top). */
+  const [jumpedDown, setJumpedDown] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
-  const [folderFilter, setFolderFilter] = useState<Set<string>>(() => readStoredFilter());
+  const [folderFilter, setFolderFilter] = useState<Set<string>>(() => new Set());
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -201,6 +199,24 @@ export function CardGrid() {
    *  hook order doesn't change between loading and ready states. */
   const navigateToRef = useCallback((ref: string) => {
     setFolderFilter(new Set([ref]));
+    // Scroll the target into view (and pulse-highlight it) once
+    // the filter change has populated the stream. notePathByRef
+    // resolves through the notes ref, so it works even right after
+    // a create + render.
+    const path = notePathByRef(ref);
+    if (path) setScrollTargetPath(path);
+  }, []);
+  /** Additive variant: a wikilink-to-NF click that should accumulate
+   *  rather than replace the existing filter set. Used by list-row
+   *  title clicks when the linked target is a Notable Folder. */
+  const addFolderToFilter = useCallback((ref: string) => {
+    setFolderFilter((prev) => {
+      const next = new Set(prev);
+      next.add(ref);
+      return next;
+    });
+    const path = notePathByRef(ref);
+    if (path) setScrollTargetPath(path);
   }, []);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
@@ -281,12 +297,14 @@ export function CardGrid() {
     homeFolderRef.current = homeFolders[0]?.name ?? null;
   }, [homeFolders]);
 
-  // Default to the home Notable Folder on the very first load (when
-  // localStorage has no saved filter). Subsequent runs honour the
-  // user's last-saved filter set — including an explicitly empty one.
-  const initialFilterFromStorage = useRef<boolean>(hasStoredFilter());
-  const defaultedToHome = useRef<boolean>(initialFilterFromStorage.current);
-  useEffect(() => {
+  // Every launch starts filtered on the home Notable Folder (the
+  // one whose YAML carries `home: "..."`). useLayoutEffect (vs
+  // useEffect) sets the filter BEFORE the first paint after notes
+  // load, so the user never sees a flash of the unfiltered stream.
+  // Fires once per session — after that the user is free to
+  // add/clear chips without us undoing their choice.
+  const defaultedToHome = useRef<boolean>(false);
+  useLayoutEffect(() => {
     if (defaultedToHome.current) return;
     if (!notes) return;
     const home = homeFolders[0]?.name;
@@ -294,10 +312,6 @@ export function CardGrid() {
     defaultedToHome.current = true;
     setFolderFilter(new Set([home]));
   }, [notes, homeFolders]);
-
-  // Persist user-visible filter changes so opening Order on the same
-  // vault picks back up where it left off.
-  useEffect(() => { writeStoredFilter(folderFilter); }, [folderFilter]);
 
   /** Build the static bundle and hand it to the Rust side for the
    *  clone → write → commit → push dance. Called by PublishPanel
@@ -588,7 +602,7 @@ export function CardGrid() {
           `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
         );
         if (cell) {
-          cell.scrollIntoView({ behavior: "smooth", block: "center" });
+          cell.scrollIntoView({ behavior: "smooth", block: "start" });
           cell.classList.add("is-target");
           setTimeout(() => cell.classList.remove("is-target"), 1400);
         } else {
@@ -596,6 +610,10 @@ export function CardGrid() {
         }
       }
       setScrollTargetPath(null);
+      // Drop the autoFocus flag once the Card has had time to
+      // consume it; otherwise re-renders far in the future would
+      // still re-fire focus on the same card.
+      setFocusPath(null);
     }, 120);
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
@@ -627,6 +645,11 @@ export function CardGrid() {
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "" },
     ]);
+    // Land focus + scroll on the new note. Both Stream and the
+    // calendar views consume scrollTargetPath; the Card itself
+    // picks up autoFocus on mount.
+    setFocusPath(path);
+    setScrollTargetPath(path);
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Stream sorts it
     // into place by date+startTime.
@@ -700,28 +723,36 @@ export function CardGrid() {
       flashCap(`Couldn't find ${categoryName} on disk — add the Category first.`);
       return;
     }
+    // Cap on-disk folder names at 78 chars so we don't bump into
+    // path-length limits and so the filesystem stays browsable. The
+    // bullet ref + filename track each other (the resolver matches
+    // by filename); the full original goes to `title:` so the card
+    // label and list rows can render the pretty form.
+    const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
     const frontmatter: Frontmatter = {
       category: categoryName,
       area: areaName,
       list: "cards",
+      ...(safe !== trimmed ? { title: trimmed } : {}),
     };
     const body = `# ${trimmed}\n`;
     const content = joinFrontmatter(frontmatter, body);
-    const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-");
     const nfDir = await join(catDir, safe);
     const path = await uniqueWrite(nfDir, `${safe}.md`, content);
     const filename = path.split("/").pop() ?? `${safe}.md`;
-    // Add a bullet to the Category file so the chain picks the new
-    // folder up.
+    // Bullet ref = the on-disk basename (safe) so the resolver finds
+    // the file; without this the parent's list would point at a name
+    // that no .md file matches.
+    const bulletRef = filename.replace(/\.md$/i, "");
     const catPath = notePathByRef(categoryName);
     if (catPath) {
       await mutateBullets(
         catPath,
         (p) => invoke<string>("read_text", { path: p }),
         (p, c) => invoke("write_text", { path: p, content: c }),
-        (items) => items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())
+        (items) => items.some((i) => i.ref.toLowerCase() === bulletRef.toLowerCase())
           ? items
-          : [...items, { ref: trimmed }],
+          : [...items, { ref: bulletRef }],
       );
     }
     setNotes((prev) => [
@@ -749,6 +780,22 @@ export function CardGrid() {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
 
+  // Category → Area map derived from the on-disk chain (Areas.md
+  // walk). Lets us fill in a Notable Folder's missing `area:` from
+  // the structure rather than requiring every NF YAML to repeat it.
+  const areaByCategory = new Map<string, string>();
+  for (const a of vaultTaxonomy.areas) {
+    for (const c of a.categories) areaByCategory.set(c.ref, a.ref);
+  }
+
+  function inferredArea(n: LoadedNote): string {
+    const yaml = parseRef(n.frontmatter.area);
+    if (yaml) return yaml;
+    const cat = parseRef(n.frontmatter.category);
+    if (cat) return areaByCategory.get(cat) ?? "";
+    return "";
+  }
+
   // Notable Folder Main Documents — notes whose YAML carries `category`.
   // Their title comes from the filename minus the .md (which is also
   // the slug other notes use to point at them via `folder: [[Name]]`).
@@ -756,7 +803,7 @@ export function CardGrid() {
     .filter((n) => isNotableFolder(n.frontmatter))
     .map((n) => ({
       name: n.filename.replace(/\.md$/, ""),
-      area: parseRef(n.frontmatter.area) ?? "",
+      area: inferredArea(n),
       category: parseRef(n.frontmatter.category) ?? "",
       frontmatter: n.frontmatter,
       path: n.path,
@@ -862,6 +909,45 @@ export function CardGrid() {
         +
       </button>
 
+      <button
+        type="button"
+        className="jump-to-notes"
+        onClick={() => {
+          // Toggle between jumping down to the first non-NF note in
+          // the active filter and jumping back to the top of the
+          // grid. The icon flips to match the next action.
+          if (jumpedDown) {
+            const grid = gridEl;
+            grid?.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            setJumpedDown(false);
+            return;
+          }
+          const firstNote = sortedNotes.find((n) => !isNotableFolder(n.frontmatter));
+          if (firstNote) {
+            setView("stream");
+            setScrollTargetPath(firstNote.path);
+            setJumpedDown(true);
+          }
+        }}
+        title={jumpedDown ? "Back to top" : "Jump to notes"}
+        aria-label={jumpedDown ? "Back to top" : "Jump to notes for this folder"}
+      >
+        {jumpedDown
+          ? <ChevronsUp size={13} strokeWidth={1.8} />
+          : <ChevronsDown size={13} strokeWidth={1.8} />}
+      </button>
+
+      <button
+        type="button"
+        className="publish-fab"
+        onClick={() => setPublishOpen((o) => !o)}
+        title="Publish (Cmd+P)"
+        aria-label="Publish"
+      >
+        <UploadIcon size={13} strokeWidth={1.8} />
+      </button>
+
       {creatorOpen && (
         <div className="new-note-picker" role="menu">
           {[...folderFilter].map((name) => {
@@ -899,14 +985,16 @@ export function CardGrid() {
 
       <button
         type="button"
-        className={"publish-pill" + (publishableNotes.length > 0 ? " has-pending" : "")}
-        onClick={() => setPublishOpen((o) => !o)}
-        title={`Publish (Cmd+P) — ${publishableNotes.length} public note${publishableNotes.length === 1 ? "" : "s"}`}
+        className="home-reset"
+        onClick={() => {
+          const home = homeFolders[0]?.name;
+          setFolderFilter(home ? new Set([home]) : new Set());
+          setJumpedDown(false);
+        }}
+        title="Reset filter to home"
+        aria-label="Reset filter to home"
       >
-        Publish
-        {publishableNotes.length > 0 && (
-          <span className="publish-pill-count">{publishableNotes.length}</span>
-        )}
+        <HouseIcon size={13} strokeWidth={1.8} />
       </button>
 
       <main className="pane-main">
@@ -914,10 +1002,10 @@ export function CardGrid() {
           <div className="card-grid" ref={setGridEl}>
             {sortedNotes.map((n) => {
               const isMain = isNotableFolder(n.frontmatter);
-              const folderName = isMain
-                ? n.filename.replace(/\.md$/, "")
-                : noteFolder(n.frontmatter);
+              const ref = n.filename.replace(/\.md$/, "");
+              const folderName = isMain ? ref : noteFolder(n.frontmatter);
               const c = folderName ? folderColor(folderName) : undefined;
+              const inFilter = folderFilter.has(ref);
               return (
                 <div
                   className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
@@ -927,14 +1015,18 @@ export function CardGrid() {
                   <Card
                     path={n.path}
                     color={c}
-                    area={isMain ? parseRef(n.frontmatter.area) ?? undefined : undefined}
+                    area={isMain ? inferredArea(n) ?? undefined : undefined}
                     category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
                     currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
                     availableFolders={isMain ? undefined : availableFolderRefs}
                     onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
                     onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
+                    isPublic={n.frontmatter.public === true}
                     vaultNotes={vaultNotesIndex}
                     onNavigate={navigateToRef}
+                    onAddFilter={addFolderToFilter}
+                    onRemoveFromFilter={inFilter ? () => toggleFolderFilter(ref) : undefined}
+                    autoFocus={focusPath === n.path}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
                     onDelete={(path) => handleCardDelete(n.id, path)}
@@ -1019,86 +1111,3 @@ export function CardGrid() {
   );
 }
 
-function useGridLayout(grid: HTMLDivElement | null) {
-  useEffect(() => {
-    if (!grid) return;
-
-    function relayoutCell(cell: HTMLElement) {
-      const styles = getComputedStyle(grid as HTMLElement);
-      const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
-      const child = cell.firstElementChild as HTMLElement | null;
-      if (!child) return;
-      const rows = Math.max(1, Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)));
-      cell.style.gridRowEnd = `span ${rows}`;
-    }
-    function relayoutAll() {
-      const cells = grid?.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells?.forEach((c) => relayoutCell(c));
-    }
-
-    // Observe each .order-card. RO catches size changes from images
-    // loading, font swaps, fullscreen toggles, breadcrumb appearing.
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) {
-        const target = e.target as HTMLElement;
-        const cell = target.closest(".card-grid-cell");
-        if (cell instanceof HTMLElement) relayoutCell(cell);
-      }
-    });
-
-    // Per-card MutationObservers catch ProseMirror's internal DOM
-    // changes when the user types — RO alone is unreliable here
-    // because ProseMirror's incremental DOM updates don't always
-    // produce a measurable layout change in the same frame.
-    const cardMOs = new WeakMap<Element, MutationObserver>();
-
-    function attachCardObservers(cell: HTMLElement) {
-      const card = cell.firstElementChild;
-      if (!(card instanceof HTMLElement)) return;
-      ro.observe(card);
-      if (cardMOs.has(card)) return;
-      const cmo = new MutationObserver(() => relayoutCell(cell));
-      cmo.observe(card, {
-        childList: true, subtree: true, characterData: true, attributes: true,
-      });
-      cardMOs.set(card, cmo);
-    }
-
-    function reattachAndRelayout() {
-      if (!grid) return;
-      ro.disconnect();
-      const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells.forEach(attachCardObservers);
-      relayoutAll();
-    }
-    reattachAndRelayout();
-
-    // MutationObserver on the grid catches cell add/remove (filter
-    // toggles, create-note, delete) — those don't trigger RO either.
-    const mo = new MutationObserver(reattachAndRelayout);
-    mo.observe(grid, { childList: true });
-
-    // Belt-and-suspenders: any keystroke in an editor inside a cell
-    // triggers an immediate relayout of that cell. Capturing phase so
-    // we see it before the editor processes it.
-    function onInput(e: Event) {
-      const t = e.target;
-      if (!(t instanceof Element)) return;
-      const cell = t.closest(".card-grid-cell");
-      if (cell instanceof HTMLElement) {
-        requestAnimationFrame(() => relayoutCell(cell));
-      }
-    }
-    grid.addEventListener("input", onInput, true);
-    grid.addEventListener("keyup", onInput, true);
-
-    window.addEventListener("resize", relayoutAll);
-    return () => {
-      ro.disconnect();
-      mo.disconnect();
-      grid.removeEventListener("input", onInput, true);
-      grid.removeEventListener("keyup", onInput, true);
-      window.removeEventListener("resize", relayoutAll);
-    };
-  }, [grid]);
-}

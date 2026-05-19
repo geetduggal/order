@@ -12,22 +12,26 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
-import { ListView } from "../src/components/ListView";
 import { CommandPalette } from "../src/components/CommandPalette";
-import { ViewerNote } from "./ViewerNote";
+import { Card } from "../src/components/Card";
+import { CalendarView, type NoteMeta } from "../src/components/CalendarView";
+import { YearLinearView } from "../src/components/YearLinearView";
 import type { ListNoteRef } from "../src/lib/list-folder";
+import { useGridLayout } from "../src/lib/grid-layout";
+import { folderColor } from "../src/lib/folders";
+import { Home as HouseIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 
-type Route =
-  | { kind: "stream"; filters: string[] }
-  | { kind: "note"; ref: string }
-  | { kind: "folder"; ref: string };
+// The viewer has one view — the stream — same as Order's app. Old
+// `#/note/<ref>` and `#/folder/<ref>` URLs collapse into a stream
+// filtered to that ref so external links keep working.
+type Route = { kind: "stream"; filters: string[] };
 
 function parseHash(h: string): Route {
   if (h.startsWith("#/note/")) {
-    return { kind: "note", ref: decodeURIComponent(h.slice("#/note/".length)) };
+    return { kind: "stream", filters: [decodeURIComponent(h.slice("#/note/".length))] };
   }
   if (h.startsWith("#/folder/")) {
-    return { kind: "folder", ref: decodeURIComponent(h.slice("#/folder/".length)) };
+    return { kind: "stream", filters: [decodeURIComponent(h.slice("#/folder/".length))] };
   }
   if (h.startsWith("#/stream")) {
     const q = h.split("?")[1] ?? "";
@@ -48,10 +52,17 @@ function useHashRoute(): Route {
   return route;
 }
 
+type View = "stream" | "week" | "month" | "year";
+
 export function ViewerApp({ data }: { data: PublishedSite }) {
   const route = useHashRoute();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar hidden by default on the published page — viewers
+  // shouldn't have a wall of UI on first paint. Toggle via the
+  // top-right › / ‹ button or Cmd+;.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [view, setView] = useState<View>("stream");
+  const [jumpedDown, setJumpedDown] = useState(false);
 
   // index by ref for fast lookup
   const byRef = useMemo(() => {
@@ -60,18 +71,30 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     return m;
   }, [data.notes]);
 
+  // Category → Area from the published chain. Lets us fill in each
+  // Notable Folder's area without requiring each note's YAML to
+  // repeat it (same trick Order's CardGrid uses).
+  const areaByCategory = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of data.taxonomy.areas) {
+      for (const c of a.categories) m.set(c.ref, a.ref);
+    }
+    return m;
+  }, [data.taxonomy]);
+
   // Build NotableFolder[] for Sidebar from notes with category set.
+  // Area is inferred from the chain so Sidebar's grouping populates.
   const notableFolders: NotableFolder[] = useMemo(
     () => data.notes
       .filter((n) => n.category)
       .map((n) => ({
         name: n.ref,
-        area: "",  // not needed for display — Sidebar derives from notes
+        area: n.category ? (areaByCategory.get(n.category) ?? "") : "",
         category: n.category ?? "",
         frontmatter: n.frontmatter,
         path: n.ref,
       })),
-    [data.notes],
+    [data.notes, areaByCategory],
   );
 
   // Build the chain-derived stored taxonomy Sidebar expects.
@@ -82,13 +105,10 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 
   // Folder filter from the URL → Sidebar's `selected` Set. Toggling
   // updates the URL.
-  const selectedSet = useMemo(() => {
-    if (route.kind === "stream") return new Set(route.filters);
-    return new Set<string>();
-  }, [route]);
+  const selectedSet = useMemo(() => new Set(route.filters), [route]);
 
   function toggleFolder(name: string) {
-    const current = route.kind === "stream" ? route.filters : [];
+    const current = route.filters;
     const next = current.includes(name)
       ? current.filter((x) => x !== name)
       : [...current, name];
@@ -98,7 +118,63 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   }
   function clearFolders() { window.location.hash = "#/"; }
   function navigate(ref: string) {
-    window.location.hash = `#/note/${encodeURIComponent(ref)}`;
+    // Wikilink click → filter the stream to that ref. Mirrors
+    // Order's `navigateToRef` behaviour exactly.
+    window.location.hash = `#/stream?folders=${encodeURIComponent(ref)}`;
+  }
+
+  // Calendar event projection mirrors Order's CardGrid: every note
+  // with a date becomes an event, color comes from its folder.
+  const filterSet = useMemo(
+    () => new Set(
+      (route.filters.length === 0 ? [data.home.name] : route.filters).map((f) => f.toLowerCase()),
+    ),
+    [route.filters, data.home.name],
+  );
+  const calendarNotes: NoteMeta[] = useMemo(() => {
+    const hidden = new Set(data.hiddenRefs.map((r) => r.toLowerCase()));
+    return data.notes
+      .filter((n) => {
+        if (hidden.has(n.ref.toLowerCase())) return false;
+        if (filterSet.has(n.ref.toLowerCase())) return true;
+        if (n.folder && filterSet.has(n.folder.toLowerCase())) return true;
+        return false;
+      })
+      .map((n) => ({
+        path: `${n.ref}.md`,
+        filename: `${n.ref}.md`,
+        title: n.title,
+        frontmatter: n.frontmatter,
+        color: n.folder ? folderColor(n.folder) : (n.category ? folderColor(n.ref) : undefined),
+      }));
+  }, [data.notes, data.hiddenRefs, filterSet]);
+
+  // Clicking a calendar event → switch to stream + filter to that
+  // note's ref. Read-only, so no event-drag / event-create handlers.
+  const onEventClick = (path: string) => {
+    const ref = path.replace(/\.md$/i, "").replace(/^.*\//, "");
+    setView("stream");
+    navigate(ref);
+  };
+  const noopMove = async () => { /* read-only */ };
+  const noopCreate = async () => { /* read-only */ };
+
+  function jumpToNotes() {
+    if (jumpedDown) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setJumpedDown(false);
+      return;
+    }
+    const grid = document.querySelector(".card-grid");
+    const cell = grid?.querySelector<HTMLElement>(".card-grid-cell:not(.is-full-width)");
+    if (cell) {
+      cell.scrollIntoView({ behavior: "smooth", block: "start" });
+      setJumpedDown(true);
+    }
+  }
+  function resetToHome() {
+    window.location.hash = "#/";
+    setJumpedDown(false);
   }
 
   // Cmd+K opens the palette (mirroring Order). Esc closes it.
@@ -120,6 +196,27 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
       <button
         type="button"
+        className="home-reset"
+        onClick={resetToHome}
+        title="Reset filter to home"
+        aria-label="Reset filter to home"
+      >
+        <HouseIcon size={13} strokeWidth={1.8} />
+      </button>
+      <button
+        type="button"
+        className="jump-to-notes"
+        onClick={jumpToNotes}
+        title={jumpedDown ? "Back to top" : "Jump to notes"}
+        aria-label={jumpedDown ? "Back to top" : "Jump to notes for this folder"}
+      >
+        {jumpedDown
+          ? <ChevronsUp size={13} strokeWidth={1.8} />
+          : <ChevronsDown size={13} strokeWidth={1.8} />}
+      </button>
+
+      <button
+        type="button"
         className="sidebar-toggle"
         onClick={() => setSidebarOpen((o) => !o)}
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
@@ -128,15 +225,50 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       </button>
 
       <main className="pane-main">
-        {route.kind === "stream" && <StreamView data={data} byRef={byRef} filters={route.filters} onNavigate={navigate} />}
-        {route.kind === "note" && <NoteView ref={route.ref} byRef={byRef} data={data} onNavigate={navigate} />}
-        {route.kind === "folder" && <FolderView ref={route.ref} byRef={byRef} data={data} onNavigate={navigate} />}
+        {view === "stream" && (
+          <StreamView
+            data={data}
+            byRef={byRef}
+            filters={route.filters.length === 0 ? [data.home.name] : route.filters}
+            onNavigate={navigate}
+            onRemoveFromFilter={toggleFolder}
+          />
+        )}
+        {view === "week" && (
+          <CalendarView
+            key="week"
+            notes={calendarNotes}
+            initialView="timeGridWeek"
+            onMoveEvent={noopMove}
+            onEventClick={onEventClick}
+            onCreate={noopCreate}
+          />
+        )}
+        {view === "month" && (
+          <CalendarView
+            key="month"
+            notes={calendarNotes}
+            initialView="dayGridMonth"
+            onMoveEvent={noopMove}
+            onEventClick={onEventClick}
+            onCreate={noopCreate}
+          />
+        )}
+        {view === "year" && (
+          <YearLinearView
+            key="year"
+            notes={calendarNotes}
+            onMoveEvent={noopMove}
+            onEventClick={onEventClick}
+            onCreate={noopCreate}
+          />
+        )}
       </main>
 
       {sidebarOpen && (
         <Sidebar
-          view="stream"
-          onSelectView={() => { /* read-only viewer is stream-only */ }}
+          view={view}
+          onSelectView={setView}
           folders={notableFolders}
           selected={selectedSet}
           onToggle={toggleFolder}
@@ -165,116 +297,27 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 // ---------- Stream view ----------
 
 function StreamView({
-  data, byRef, filters, onNavigate,
+  data, byRef, filters, onNavigate, onRemoveFromFilter,
 }: {
   data: PublishedSite;
   byRef: Map<string, PublishedNote>;
   filters: string[];
   onNavigate: (ref: string) => void;
+  /** Drop a ref from the current filter set. Each card with its
+   *  ref in the active filter shows the same top-right × the app
+   *  card shows. */
+  onRemoveFromFilter: (ref: string) => void;
 }) {
+  // Callback-ref state so useGridLayout fires once the .card-grid
+  // div is actually in the DOM (a plain useRef is stable and the
+  // effect would never re-run).
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  useGridLayout(gridEl);
   const hidden = useMemo(() => new Set(data.hiddenRefs.map((r) => r.toLowerCase())), [data.hiddenRefs]);
   const filterSet = useMemo(() => new Set(filters.map((f) => f.toLowerCase())), [filters]);
 
-  const visible = useMemo(() => {
-    if (filterSet.size > 0) {
-      return data.notes.filter((n) => {
-        if (filterSet.has(n.ref.toLowerCase())) return true;
-        if (n.folder && filterSet.has(n.folder.toLowerCase())) return true;
-        return false;
-      });
-    }
-    return data.notes.filter((n) => !hidden.has(n.ref.toLowerCase()));
-  }, [data.notes, hidden, filterSet]);
-
-  return (
-    <div className="card-grid">
-      {visible.map((n) => (
-        <div
-          key={n.ref}
-          className={"card-grid-cell" + (n.category || n.isHome ? " is-full-width" : "")}
-        >
-          <article className="order-card">
-            <div className="order-card-body">
-              <h2 className="viewer-card-title">
-                <a href={`#/note/${encodeURIComponent(n.ref)}`} onClick={(e) => {
-                  e.preventDefault(); onNavigate(n.ref);
-                }}>{n.title}</a>
-              </h2>
-              {(n.category || n.folder) && (
-                <div className="viewer-card-meta">
-                  {n.category ?? n.folder}
-                </div>
-              )}
-              <ViewerNote
-                note={n}
-                data={data}
-                byRef={byRef}
-                onNavigate={onNavigate}
-                snippet
-              />
-            </div>
-          </article>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------- Single note view ----------
-
-function NoteView({
-  ref, byRef, data, onNavigate,
-}: {
-  ref: string;
-  byRef: Map<string, PublishedNote>;
-  data: PublishedSite;
-  onNavigate: (ref: string) => void;
-}) {
-  const note = byRef.get(ref.toLowerCase());
-  if (!note) {
-    return (
-      <div className="viewer-not-found">
-        <h1>Not found</h1>
-        <p>No public note named "{ref}".</p>
-        <p><a href="#/">← back to stream</a></p>
-      </div>
-    );
-  }
-  return (
-    <article className="order-card viewer-single">
-      <div className="viewer-crumbs">
-        <a href="#/" onClick={(e) => { e.preventDefault(); window.location.hash = "#/"; }}>{data.home.title}</a>
-        {note.folder && (
-          <>
-            <span> › </span>
-            <a
-              href={`#/folder/${encodeURIComponent(note.folder)}`}
-              onClick={(e) => { e.preventDefault(); window.location.hash = `#/folder/${encodeURIComponent(note.folder!)}`; }}
-            >{note.folder}</a>
-          </>
-        )}
-      </div>
-      <ViewerNote note={note} data={data} byRef={byRef} onNavigate={onNavigate} />
-    </article>
-  );
-}
-
-// ---------- Folder view ----------
-
-function FolderView({
-  ref, byRef, data, onNavigate,
-}: {
-  ref: string;
-  byRef: Map<string, PublishedNote>;
-  data: PublishedSite;
-  onNavigate: (ref: string) => void;
-}) {
-  const note = byRef.get(ref.toLowerCase());
-  const children = useMemo(
-    () => data.notes.filter((n) => n.folder?.toLowerCase() === ref.toLowerCase()),
-    [data.notes, ref],
-  );
-  // Build a ListNoteRef view that the existing ListView understands.
+  // Shared vault index for `<ListView>` so wikilink bullets resolve
+  // and list-of-lists expansion can find sub-lists by name.
   const vaultNotes: ListNoteRef[] = useMemo(
     () => data.notes.map((n) => ({
       filename: `${n.ref}.md`,
@@ -284,45 +327,74 @@ function FolderView({
     [data.notes],
   );
 
+  // Apply the filter, hide intermediate list files, and sort like
+  // Order's stream: NF Main Documents pinned at the top, regular
+  // notes by date (desc).
+  const sorted = useMemo(() => {
+    const filtered = data.notes.filter((n) => {
+      if (hidden.has(n.ref.toLowerCase())) return false;
+      if (filterSet.size === 0) return true;
+      if (filterSet.has(n.ref.toLowerCase())) return true;
+      if (n.folder && filterSet.has(n.folder.toLowerCase())) return true;
+      return false;
+    });
+    const dateKey = (n: PublishedNote) => {
+      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+      const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
+      return `${d} ${t}`;
+    };
+    return [
+      ...filtered.filter((n) => !!n.category),
+      ...filtered
+        .filter((n) => !n.category)
+        .sort((a, b) => dateKey(b).localeCompare(dateKey(a))),
+    ];
+  }, [data.notes, hidden, filterSet]);
+
+  // The viewer reuses Order's actual `<Card>` component. We hand
+  // each note's body + frontmatter in as props so Card skips the
+  // Tauri disk read entirely, and pass `readOnly` so Milkdown comes
+  // up read-only and the edit/save/delete plumbing short-circuits.
   return (
-    <article className="order-card viewer-single">
-      <div className="viewer-crumbs">
-        <a href="#/" onClick={(e) => { e.preventDefault(); window.location.hash = "#/"; }}>{data.home.title}</a>
-        <span> › </span>
-        <span>{note?.title ?? ref}</span>
-      </div>
-      {note && (
-        <ViewerNote note={note} data={data} byRef={byRef} onNavigate={onNavigate} />
-      )}
-      {note?.listItems && note.listItems.length > 0 && note.listRender && (
-        <ListView
-          render={note.listRender}
-          items={note.listItems}
-          vaultNotes={vaultNotes}
-          onChange={() => { /* no-op in viewer */ }}
-          readOnlyMembership
-          onNavigate={onNavigate}
-          expandSublists={note.listItems.some((it) => {
-            const sub = byRef.get(it.ref.toLowerCase());
-            return !!sub?.listRender;
-          })}
-        />
-      )}
-      {children.length > 0 && (
-        <>
-          <h3 className="viewer-section-h">More in this folder</h3>
-          <ul className="viewer-folder-list">
-            {children.map((c) => (
-              <li key={c.ref}>
-                <a
-                  href={`#/note/${encodeURIComponent(c.ref)}`}
-                  onClick={(e) => { e.preventDefault(); onNavigate(c.ref); }}
-                >{c.title}</a>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </article>
+    <div className="card-grid" ref={setGridEl}>
+      {sorted.map((n) => {
+        const isMain = !!n.category;
+        const areaRaw = n.frontmatter.area;
+        const areaName = typeof areaRaw === "string"
+          ? areaRaw.replace(/^\[\[|\]\]$/g, "").trim()
+          : "";
+        const colorSource = isMain ? n.ref : n.folder;
+        const cardColor = colorSource ? folderColor(colorSource) : undefined;
+        return (
+          <div
+            key={n.ref}
+            className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
+            data-path={n.ref}
+          >
+            <Card
+              path={`${n.ref}.md`}
+              initialBody={n.body}
+              initialFrontmatter={n.frontmatter}
+              readOnly
+              color={cardColor}
+              area={isMain ? (areaName || undefined) : undefined}
+              category={isMain ? (n.category ?? undefined) : undefined}
+              currentFolder={isMain ? undefined : (n.folder ?? null)}
+              isPublic={n.frontmatter.public === true}
+              vaultNotes={vaultNotes}
+              onNavigate={onNavigate}
+              onRemoveFromFilter={filterSet.has(n.ref.toLowerCase())
+                ? () => onRemoveFromFilter(n.ref)
+                : undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }
+
+// Single-note / single-folder routes used to render bespoke views.
+// Those are gone — every URL now resolves to a StreamView with the
+// appropriate filter set, exactly the way Order's app works. Old
+// hash links (#/note/X, #/folder/X) are translated in parseHash.

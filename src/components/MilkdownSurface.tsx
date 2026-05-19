@@ -8,6 +8,10 @@ import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
+import { invoke } from "@tauri-apps/api/core";
+import { vaultRoot } from "../lib/vault";
+import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
+import { join } from "@tauri-apps/api/path";
 
 type Props = {
   initial: string;
@@ -18,9 +22,16 @@ type Props = {
    *  protocol concerns — this component just inserts `![](<url>)` at
    *  the cursor once the upload resolves. */
   onImageUpload?: (file: File) => Promise<string>;
+  /** Focus the ProseMirror surface once Crepe finishes its async
+   *  initialisation. Used to land the cursor in a freshly created
+   *  note so the user can start typing immediately. */
+  autoFocus?: boolean;
+  /** Run Crepe in read-only mode — no caret, no block handles, no
+   *  edits saved. Used by the published web viewer. */
+  readOnly?: boolean;
 };
 
-export function MilkdownSurface({ initial, onChange, onDone, onImageUpload }: Props) {
+export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, autoFocus, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   const onDoneRef = useRef(onDone);
@@ -40,11 +51,22 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload }: Pr
       .create()
       .then(() => {
         if (cancelled || !crepe) return;
+        if (readOnly) {
+          crepe.setReadonly(true);
+        }
         crepe.on((listener) => {
           listener.markdownUpdated((_ctx, markdown) => {
             onChangeRef.current(markdown);
           });
         });
+        if (autoFocus && host.current) {
+          // ProseMirror needs a frame after Crepe wires up its
+          // plugins before .focus() lands the caret reliably.
+          requestAnimationFrame(() => {
+            const pm = host.current?.querySelector<HTMLElement>(".ProseMirror");
+            pm?.focus();
+          });
+        }
       })
       .catch((err: unknown) => {
         console.error("Crepe init failed:", err);
@@ -56,6 +78,57 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload }: Pr
       crepe = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Link click handler. Attachments (PDFs, etc.) inside Milkdown
+  // resolve to either bare `Attachments/foo.pdf` (read-only paths
+  // the editor never inflated) or `asset://localhost/...` URLs
+  // (inflated image links re-used for other media). In both cases
+  // the webview can't navigate to them in a useful way, so route
+  // the click through the OS opener.
+  useEffect(() => {
+    const root = host.current;
+    if (!root) return;
+    async function onClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      const anchor = t.closest("a");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const raw = anchor.getAttribute("href") ?? "";
+      if (!raw) return;
+      // External http(s) URLs: let the default handler (or Tauri's
+      // shell allowlist) take over.
+      if (/^https?:\/\//i.test(raw) || raw.startsWith("mailto:")) return;
+      const lower = raw.toLowerCase();
+      // Resolve to an absolute filesystem path the OS opener can use.
+      let absolute: string | null = null;
+      try {
+        const vault = await vaultRoot();
+        if (raw.startsWith(`${ATTACHMENTS_DIRNAME}/`)) {
+          absolute = await join(vault, raw);
+        } else {
+          const prefix = attachmentAssetPrefix(vault);
+          if (lower.startsWith(prefix.toLowerCase())) {
+            const rest = raw.slice(prefix.length);
+            let decoded = rest;
+            try { decoded = decodeURI(rest); } catch { /* keep raw */ }
+            absolute = await join(vault, ATTACHMENTS_DIRNAME, decoded);
+          }
+        }
+      } catch (err) {
+        console.warn("link resolve failed:", err);
+      }
+      if (!absolute) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await invoke("open_path", { path: absolute });
+      } catch (err) {
+        console.error("open_path failed:", err);
+      }
+    }
+    root.addEventListener("click", onClick, true);
+    return () => { root.removeEventListener("click", onClick, true); };
   }, []);
 
   // Image paste/drop handler. Capture phase so it runs before Milkdown's
