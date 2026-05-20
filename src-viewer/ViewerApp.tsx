@@ -1,13 +1,8 @@
-// Root of the read-only viewer. Hash routes:
-//
-//   #/                        → Stream (default)
-//   #/stream?folders=A,B,C    → Stream filtered to folder refs
-//   #/note/<ref>              → single note view
-//   #/folder/<ref>            → single Notable Folder view
-//
-// Reuses Order's Sidebar + ListView + CommandPalette as-is. Their
-// add/remove/edit handlers are wired to no-ops so the UI never tries
-// to mutate disk (there's no disk here).
+// Root of the read-only web viewer. It mirrors Order's desktop app
+// 1:1 — same Stream, same filter-pill model, same Card component —
+// just read-only. There is one screen (the Stream) plus the calendar
+// views; filtering is managed exclusively through the left-rail pills,
+// identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
@@ -16,64 +11,66 @@ import { CommandPalette } from "../src/components/CommandPalette";
 import { Card } from "../src/components/Card";
 import { CalendarView, type NoteMeta } from "../src/components/CalendarView";
 import { YearLinearView } from "../src/components/YearLinearView";
+import { FilterPillStack } from "../src/components/FilterPillStack";
+import type { Filter } from "../src/lib/filters";
 import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
 import { folderColor } from "../src/lib/folders";
 import { Home as HouseIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 
-// The viewer has one view — the stream — same as Order's app. Old
-// `#/note/<ref>` and `#/folder/<ref>` URLs collapse into a stream
-// filtered to that ref so external links keep working.
-type Route = { kind: "stream"; filters: string[] };
-
-function parseHash(h: string): Route {
-  if (h.startsWith("#/note/")) {
-    return { kind: "stream", filters: [decodeURIComponent(h.slice("#/note/".length))] };
-  }
-  if (h.startsWith("#/folder/")) {
-    return { kind: "stream", filters: [decodeURIComponent(h.slice("#/folder/".length))] };
-  }
-  if (h.startsWith("#/stream")) {
-    const q = h.split("?")[1] ?? "";
-    const params = new URLSearchParams(q);
-    const folders = (params.get("folders") ?? "").split(",").filter(Boolean);
-    return { kind: "stream", filters: folders };
-  }
-  return { kind: "stream", filters: [] };
-}
-
-function useHashRoute(): Route {
-  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash || "#/"));
-  useEffect(() => {
-    function onHash() { setRoute(parseHash(window.location.hash || "#/")); }
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-  return route;
-}
-
 type View = "stream" | "week" | "month" | "year";
 
 export function ViewerApp({ data }: { data: PublishedSite }) {
-  const route = useHashRoute();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // Sidebar hidden by default on the published page — viewers
-  // shouldn't have a wall of UI on first paint. Toggle via the
-  // top-right › / ‹ button or Cmd+;.
+  // Sidebar hidden by default — viewers shouldn't get a wall of UI on
+  // first paint. Toggle via the › / ‹ button or Cmd+;.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>("stream");
   const [jumpedDown, setJumpedDown] = useState(false);
 
-  // index by ref for fast lookup
-  const byRef = useMemo(() => {
-    const m = new Map<string, PublishedNote>();
-    for (const n of data.notes) m.set(n.ref.toLowerCase(), n);
-    return m;
-  }, [data.notes]);
+  // Default view = the home Notable Folder focused (single include),
+  // exactly like the desktop app's first-launch default.
+  const [filters, setFilters] = useState<Filter[]>(
+    () => data.home.name ? [{ kind: "include", ref: data.home.name }] : [],
+  );
+  // The folder whose Main Document is pinned to the top of the Stream.
+  // Set by clicking a pill; cleared when the filter set changes.
+  const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
+  useEffect(() => { setFocusedFolder(null); }, [filters]);
+  // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
+  // the scroll fires.
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
 
-  // Category → Area from the published chain. Lets us fill in each
-  // Notable Folder's area without requiring each note's YAML to
-  // repeat it (same trick Order's CardGrid uses).
+  const includeSet = useMemo(
+    () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
+    [filters],
+  );
+
+  function addInclude(ref: string) {
+    setFilters((prev) =>
+      prev.some((f) => f.kind === "include" && f.ref === ref)
+        ? prev
+        : [...prev, { kind: "include", ref }],
+    );
+  }
+  function removeFilter(target: Filter) {
+    setFilters((prev) => prev.filter(
+      (f) => !(f.kind === target.kind && f.ref === target.ref),
+    ));
+  }
+  function resetToDefault() {
+    setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
+    setJumpedDown(false);
+  }
+  // Wikilink / list-row click → add an include + scroll to it.
+  function navigate(ref: string) {
+    setView("stream");
+    addInclude(ref);
+    setScrollTarget(ref);
+  }
+
+  // Category → Area from the published chain, so Sidebar grouping
+  // populates without each note repeating its area in YAML.
   const areaByCategory = useMemo(() => {
     const m = new Map<string, string>();
     for (const a of data.taxonomy.areas) {
@@ -82,8 +79,6 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     return m;
   }, [data.taxonomy]);
 
-  // Build NotableFolder[] for Sidebar from notes with category set.
-  // Area is inferred from the chain so Sidebar's grouping populates.
   const notableFolders: NotableFolder[] = useMemo(
     () => data.notes
       .filter((n) => n.category)
@@ -96,68 +91,82 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       })),
     [data.notes, areaByCategory],
   );
-
-  // Build the chain-derived stored taxonomy Sidebar expects.
   const storedAreas = data.taxonomy.areas.map((a) => a.ref);
   const storedCategories = data.taxonomy.areas.flatMap((a) =>
     a.categories.map((c) => ({ area: a.ref, name: c.ref })),
   );
 
-  // Folder filter from the URL → Sidebar's `selected` Set. Toggling
-  // updates the URL.
-  const selectedSet = useMemo(() => new Set(route.filters), [route]);
-
-  function toggleFolder(name: string) {
-    const current = route.filters;
-    const next = current.includes(name)
-      ? current.filter((x) => x !== name)
-      : [...current, name];
-    window.location.hash = next.length
-      ? `#/stream?folders=${next.map(encodeURIComponent).join(",")}`
-      : "#/";
-  }
-  function clearFolders() { window.location.hash = "#/"; }
-  function navigate(ref: string) {
-    // Wikilink click → filter the stream to that ref. Mirrors
-    // Order's `navigateToRef` behaviour exactly.
-    window.location.hash = `#/stream?folders=${encodeURIComponent(ref)}`;
-  }
-
-  // Calendar event projection mirrors Order's CardGrid: every note
-  // with a date becomes an event, color comes from its folder.
-  const filterSet = useMemo(
-    () => new Set(
-      (route.filters.length === 0 ? [data.home.name] : route.filters).map((f) => f.toLowerCase()),
-    ),
-    [route.filters, data.home.name],
+  // ---- Stream filtering + sort (mirrors CardGrid) ----
+  const hidden = useMemo(
+    () => new Set(data.hiddenRefs.map((r) => r.toLowerCase())),
+    [data.hiddenRefs],
   );
-  const calendarNotes: NoteMeta[] = useMemo(() => {
-    const hidden = new Set(data.hiddenRefs.map((r) => r.toLowerCase()));
-    return data.notes
-      .filter((n) => {
-        if (hidden.has(n.ref.toLowerCase())) return false;
-        if (filterSet.has(n.ref.toLowerCase())) return true;
-        if (n.folder && filterSet.has(n.folder.toLowerCase())) return true;
-        return false;
-      })
-      .map((n) => ({
-        path: `${n.ref}.md`,
-        filename: `${n.ref}.md`,
-        title: n.title,
-        frontmatter: n.frontmatter,
-        color: n.folder ? folderColor(n.folder) : (n.category ? folderColor(n.ref) : undefined),
-      }));
-  }, [data.notes, data.hiddenRefs, filterSet]);
+  const includeRefs = filters.filter((f) => f.kind === "include").map((f) => f.ref);
+  const excludeRefs = filters.filter((f) => f.kind === "exclude").map((f) => f.ref);
+  const belongsTo = (n: PublishedNote, ref: string) =>
+    n.ref === ref || n.folder === ref;
 
-  // Clicking a calendar event → switch to stream + filter to that
-  // note's ref. Read-only, so no event-drag / event-create handlers.
+  const visible = useMemo(() => {
+    const filtered = data.notes.filter((n) => {
+      if (hidden.has(n.ref.toLowerCase())) return false;
+      if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
+      if (excludeRefs.some((r) => belongsTo(n, r))) return false;
+      return true;
+    });
+    const dateKey = (n: PublishedNote) => {
+      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+      const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
+      return `${d} ${t}`;
+    };
+    // Pin one Main Document to the top: the clicked (focused) folder,
+    // else the sole include filter.
+    const pinnedRef = focusedFolder ?? (includeRefs.length === 1 ? includeRefs[0] : null);
+    const isPinned = (n: PublishedNote) => !!n.category && pinnedRef !== null && n.ref === pinnedRef;
+    return [...filtered].sort((a, b) => {
+      const am = isPinned(a);
+      const bm = isPinned(b);
+      if (am !== bm) return am ? -1 : 1;
+      return dateKey(b).localeCompare(dateKey(a));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.notes, hidden, filters, focusedFolder]);
+
+  // Calendar projection from the same filtered set.
+  const calendarNotes: NoteMeta[] = useMemo(
+    () => visible.map((n) => ({
+      path: `${n.ref}.md`,
+      filename: `${n.ref}.md`,
+      title: n.title,
+      frontmatter: n.frontmatter,
+      color: n.folder ? folderColor(n.folder) : (n.category ? folderColor(n.ref) : undefined),
+    })),
+    [visible],
+  );
   const onEventClick = (path: string) => {
     const ref = path.replace(/\.md$/i, "").replace(/^.*\//, "");
-    setView("stream");
     navigate(ref);
   };
-  const noopMove = async () => { /* read-only */ };
-  const noopCreate = async () => { /* read-only */ };
+  const noop = async () => { /* read-only */ };
+
+  // Smooth-scroll + coral flash to the target card after a filter
+  // change has rendered it.
+  useEffect(() => {
+    if (view !== "stream" || !scrollTarget) return;
+    const target = scrollTarget.toLowerCase();
+    const timer = setTimeout(() => {
+      const cells = document.querySelectorAll<HTMLElement>(".card-grid-cell");
+      const cell = Array.from(cells).find(
+        (c) => (c.dataset.path ?? "").toLowerCase() === target,
+      );
+      if (cell) {
+        cell.scrollIntoView({ behavior: "smooth", block: "start" });
+        cell.classList.add("is-target");
+        setTimeout(() => cell.classList.remove("is-target"), 1400);
+      }
+      setScrollTarget(null);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [view, scrollTarget, filters]);
 
   function jumpToNotes() {
     if (jumpedDown) {
@@ -165,19 +174,13 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       setJumpedDown(false);
       return;
     }
-    const grid = document.querySelector(".card-grid");
-    const cell = grid?.querySelector<HTMLElement>(".card-grid-cell:not(.is-full-width)");
+    const cell = document.querySelector<HTMLElement>(".card-grid-cell:not(.is-full-width)");
     if (cell) {
       cell.scrollIntoView({ behavior: "smooth", block: "start" });
       setJumpedDown(true);
     }
   }
-  function resetToHome() {
-    window.location.hash = "#/";
-    setJumpedDown(false);
-  }
 
-  // Cmd+K opens the palette (mirroring Order). Esc closes it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -197,9 +200,9 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       <button
         type="button"
         className="home-reset"
-        onClick={resetToHome}
-        title="Reset filter to home"
-        aria-label="Reset filter to home"
+        onClick={resetToDefault}
+        title="Reset filters (home view)"
+        aria-label="Reset filters to the default home view"
       >
         <HouseIcon size={13} strokeWidth={1.8} />
       </button>
@@ -215,6 +218,16 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
           : <ChevronsDown size={13} strokeWidth={1.8} />}
       </button>
 
+      <FilterPillStack
+        filters={filters}
+        onRemove={removeFilter}
+        onJump={(ref) => {
+          setView("stream");
+          setFocusedFolder(ref);
+          setScrollTarget(ref);
+        }}
+      />
+
       <button
         type="button"
         className="sidebar-toggle"
@@ -227,41 +240,24 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       <main className="pane-main">
         {view === "stream" && (
           <StreamView
+            notes={visible}
             data={data}
-            byRef={byRef}
-            filters={route.filters.length === 0 ? [data.home.name] : route.filters}
+            includeSet={includeSet}
             onNavigate={navigate}
-            onRemoveFromFilter={toggleFolder}
+            onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
           />
         )}
         {view === "week" && (
-          <CalendarView
-            key="week"
-            notes={calendarNotes}
-            initialView="timeGridWeek"
-            onMoveEvent={noopMove}
-            onEventClick={onEventClick}
-            onCreate={noopCreate}
-          />
+          <CalendarView key="week" notes={calendarNotes} initialView="timeGridWeek"
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
         )}
         {view === "month" && (
-          <CalendarView
-            key="month"
-            notes={calendarNotes}
-            initialView="dayGridMonth"
-            onMoveEvent={noopMove}
-            onEventClick={onEventClick}
-            onCreate={noopCreate}
-          />
+          <CalendarView key="month" notes={calendarNotes} initialView="dayGridMonth"
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
         )}
         {view === "year" && (
-          <YearLinearView
-            key="year"
-            notes={calendarNotes}
-            onMoveEvent={noopMove}
-            onEventClick={onEventClick}
-            onCreate={noopCreate}
-          />
+          <YearLinearView key="year" notes={calendarNotes}
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
         )}
       </main>
 
@@ -270,9 +266,10 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
           view={view}
           onSelectView={setView}
           folders={notableFolders}
-          selected={selectedSet}
-          onToggle={toggleFolder}
-          onClear={clearFolders}
+          // Pure navigation: clicking a folder ADDS an include pill.
+          selected={includeSet}
+          onToggle={addInclude}
+          onClear={resetToDefault}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
           onAddArea={() => { /* no-op */ }}
@@ -285,8 +282,8 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       {paletteOpen && (
         <CommandPalette
           folders={notableFolders}
-          selected={selectedSet}
-          onToggle={(name) => { toggleFolder(name); }}
+          selected={includeSet}
+          onToggle={addInclude}
           onClose={() => setPaletteOpen(false)}
         />
       )}
@@ -297,27 +294,17 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 // ---------- Stream view ----------
 
 function StreamView({
-  data, byRef, filters, onNavigate, onRemoveFromFilter,
+  notes, data, includeSet, onNavigate, onRemoveInclude,
 }: {
+  notes: PublishedNote[];
   data: PublishedSite;
-  byRef: Map<string, PublishedNote>;
-  filters: string[];
+  includeSet: Set<string>;
   onNavigate: (ref: string) => void;
-  /** Drop a ref from the current filter set. Each card with its
-   *  ref in the active filter shows the same top-right × the app
-   *  card shows. */
-  onRemoveFromFilter: (ref: string) => void;
+  onRemoveInclude: (ref: string) => void;
 }) {
-  // Callback-ref state so useGridLayout fires once the .card-grid
-  // div is actually in the DOM (a plain useRef is stable and the
-  // effect would never re-run).
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
-  const hidden = useMemo(() => new Set(data.hiddenRefs.map((r) => r.toLowerCase())), [data.hiddenRefs]);
-  const filterSet = useMemo(() => new Set(filters.map((f) => f.toLowerCase())), [filters]);
 
-  // Shared vault index for `<ListView>` so wikilink bullets resolve
-  // and list-of-lists expansion can find sub-lists by name.
   const vaultNotes: ListNoteRef[] = useMemo(
     () => data.notes.map((n) => ({
       filename: `${n.ref}.md`,
@@ -327,37 +314,9 @@ function StreamView({
     [data.notes],
   );
 
-  // Apply the filter, hide intermediate list files, and sort like
-  // Order's stream: NF Main Documents pinned at the top, regular
-  // notes by date (desc).
-  const sorted = useMemo(() => {
-    const filtered = data.notes.filter((n) => {
-      if (hidden.has(n.ref.toLowerCase())) return false;
-      if (filterSet.size === 0) return true;
-      if (filterSet.has(n.ref.toLowerCase())) return true;
-      if (n.folder && filterSet.has(n.folder.toLowerCase())) return true;
-      return false;
-    });
-    const dateKey = (n: PublishedNote) => {
-      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
-      const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
-      return `${d} ${t}`;
-    };
-    return [
-      ...filtered.filter((n) => !!n.category),
-      ...filtered
-        .filter((n) => !n.category)
-        .sort((a, b) => dateKey(b).localeCompare(dateKey(a))),
-    ];
-  }, [data.notes, hidden, filterSet]);
-
-  // The viewer reuses Order's actual `<Card>` component. We hand
-  // each note's body + frontmatter in as props so Card skips the
-  // Tauri disk read entirely, and pass `readOnly` so Milkdown comes
-  // up read-only and the edit/save/delete plumbing short-circuits.
   return (
     <div className="card-grid" ref={setGridEl}>
-      {sorted.map((n) => {
+      {notes.map((n) => {
         const isMain = !!n.category;
         const areaRaw = n.frontmatter.area;
         const areaName = typeof areaRaw === "string"
@@ -383,8 +342,9 @@ function StreamView({
               isPublic={n.frontmatter.public === true}
               vaultNotes={vaultNotes}
               onNavigate={onNavigate}
-              onRemoveFromFilter={filterSet.has(n.ref.toLowerCase())
-                ? () => onRemoveFromFilter(n.ref)
+              onAddFilter={onNavigate}
+              onRemoveFromFilter={includeSet.has(n.ref)
+                ? () => onRemoveInclude(n.ref)
                 : undefined}
             />
           </div>
@@ -393,8 +353,3 @@ function StreamView({
     </div>
   );
 }
-
-// Single-note / single-folder routes used to render bespoke views.
-// Those are gone — every URL now resolves to a StreamView with the
-// appropriate filter set, exactly the way Order's app works. Old
-// hash links (#/note/X, #/folder/X) are translated in parseHash.
