@@ -118,13 +118,19 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       return true;
     });
     // Single-folder mode pins that folder's Main Doc to the top (its
-    // "cover"); any other state is a flat recency timeline.
+    // "cover"); any other state is a flat recency timeline keyed off
+    // date + startTime frontmatter.
+    const dateKey = (n: PublishedNote) => {
+      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+      const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
+      return `${d} ${t}`;
+    };
     const isPinned = (n: PublishedNote) => !!n.category && pinnedRef !== null && n.ref === pinnedRef;
     return [...filtered].sort((a, b) => {
       const am = isPinned(a);
       const bm = isPinned(b);
       if (am !== bm) return am ? -1 : 1;
-      return (b.mtime ?? 0) - (a.mtime ?? 0);
+      return dateKey(b).localeCompare(dateKey(a));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.notes, hidden, filters, focusedFolder]);

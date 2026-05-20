@@ -12,9 +12,8 @@ import { smartMerge } from "./list-merge";
 import type { ListNoteRef } from "./list-folder";
 
 export interface CollectInput {
-  /** Every note in the vault, with bodies. `mtime` (epoch ms) drives
-   *  the viewer's recency sort; optional for callers that lack it. */
-  vaultNotes: { filename: string; frontmatter: Frontmatter; body: string; mtime?: number }[];
+  /** Every note in the vault, with bodies. */
+  vaultNotes: { filename: string; frontmatter: Frontmatter; body: string }[];
   /** The home Notable Folder selected for this publish. */
   home: { name: string; title: string; target: string };
 }
@@ -29,8 +28,6 @@ export interface PublishedNote {
   listItems: { ref: string; meta?: string }[] | null;
   isHome: boolean;
   frontmatter: Frontmatter;
-  /** File modified time (epoch ms; 0 if unknown). */
-  mtime: number;
 }
 
 export interface PublishedSite {
@@ -111,7 +108,6 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
       listItems: items,
       isHome: refOf(n.filename) === home.name,
       frontmatter: n.frontmatter,
-      mtime: n.mtime ?? 0,
     };
   });
 

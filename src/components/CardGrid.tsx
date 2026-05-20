@@ -8,7 +8,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Home as HouseIcon, ChevronsDown, ChevronsUp, Upload as UploadIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import { stat } from "@tauri-apps/plugin-fs";
 import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
@@ -123,9 +122,6 @@ interface LoadedNote {
    *  bullets from this; the Card editor re-reads its own body
    *  separately on mount. */
   body: string;
-  /** File modified time (epoch ms; 0 if unavailable). Drives the
-   *  Stream's recency sort in multi/no-filter mode. */
-  mtime: number;
 }
 
 let nextNoteId = 0;
@@ -162,11 +158,6 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
       console.warn("Failed to inject calendar metadata for", path, err);
     }
   }
-  let mtime = 0;
-  try {
-    const info = await stat(path);
-    mtime = info.mtime ? info.mtime.getTime() : 0;
-  } catch { /* mtime stays 0 */ }
   return {
     id: newNoteId(),
     path,
@@ -174,7 +165,6 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
     frontmatter,
     title: deriveTitle(body, filename.replace(/\.md$/, "")),
     body,
-    mtime,
   };
 }
 
@@ -185,20 +175,17 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   // hierarchy. SEEDS-based first-run seeding is gone: the vault is
   // the source of truth, and an empty vault is migrated into
   // shape by the chain-walk + planMigration in CardGrid's mount
-  // effect. Load in parallel — each loadOne does read_text + stat,
-  // so serial would be slow over a large vault.
+  // effect.
   const entries = await walkVaultMarkdown();
-  const settled = await Promise.all(
-    entries.map(async ({ path, filename }) => {
-      try {
-        return await loadOne(path, filename);
-      } catch (err) {
-        console.warn("Failed to load card", path, err);
-        return null;
-      }
-    }),
-  );
-  return settled.filter((n): n is LoadedNote => n !== null);
+  const out: LoadedNote[] = [];
+  for (const { path, filename } of entries) {
+    try {
+      out.push(await loadOne(path, filename));
+    } catch (err) {
+      console.warn("Failed to load card", path, err);
+    }
+  }
+  return out;
 }
 
 export function CardGrid() {
@@ -392,7 +379,7 @@ export function CardGrid() {
     const fresh = await loadAndNormalizeAll();
     setNotes(fresh);
     const site = collectPublishedSite({
-      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, mtime: n.mtime })),
+      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
       home,
     });
     const dataJson = JSON.stringify(site);
@@ -715,7 +702,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "", mtime: Date.now() },
+      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "" },
     ]);
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
@@ -829,7 +816,7 @@ export function CardGrid() {
     }
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
+      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body },
     ]);
   }, [flashCap]);
 
@@ -940,8 +927,13 @@ export function CardGrid() {
   // cards in a flat recency timeline.
   const singleFolderMode = includeRefs.length === 1;
 
-  // The Stream sorts newest-first by file modified time.
-  const sortKey = (n: LoadedNote): number => n.mtime;
+  // The Stream is one recency-ordered timeline (newest first), keyed
+  // off the note's date + startTime frontmatter.
+  const sortKey = (n: LoadedNote): string => {
+    const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+    const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
+    return `${d} ${t}`;
+  };
   // In single-folder mode, pin that folder's Main Document to the very
   // top (its cover). Driven by the include, or by an explicit pill
   // click (focusedFolder) which only matters in single mode.
@@ -956,7 +948,7 @@ export function CardGrid() {
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
-    return sortKey(b) - sortKey(a);
+    return sortKey(b).localeCompare(sortKey(a));
   });
 
   // Calendar events carry their folder's color so Week/Month/Year
