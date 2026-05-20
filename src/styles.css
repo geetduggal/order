@@ -289,9 +289,17 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink-soft);
   background: var(--bg);
   line-height: 1.55;
+  /* Keep the chip on one line — a long Notable Folder name truncates
+     with an ellipsis instead of wrapping into a tall blob. */
+  max-width: 160px;
+  min-width: 0;
 }
 .order-card-folder-name {
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .order-card-folder-clear {
   display: inline-flex;
@@ -2132,8 +2140,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   line-height: 1.5;
 }
 .lr-sublist-item {
-  padding: 4px 0;
-  overflow-wrap: anywhere;
+  padding: 3px 0;
+  overflow-wrap: break-word;
 }
 .lr-sublist-title {
   color: var(--royal, #4169e1);
@@ -2143,14 +2151,15 @@ input, textarea, select { outline: none; box-shadow: none; }
   font: inherit;
   text-align: left;
   cursor: default;
+  /* Balance the title's own wrapping so it doesn't strand one short
+     word on the last line. */
+  text-wrap: pretty;
 }
 .lr-sublist-title.is-link { cursor: pointer; }
 .lr-sublist-title.is-link:hover { text-decoration: underline; }
 .lr-sublist-meta {
-  color: var(--ink);
+  color: var(--ink-soft);
 }
-.lr-sublist-title.is-link { cursor: pointer; }
-.lr-sublist-title.is-link:hover { text-decoration: underline; }
 
 .lr-title.is-link,
 .basecard-title.is-link {
@@ -2482,6 +2491,109 @@ input, textarea, select { outline: none; box-shadow: none; }
   margin-left: 8px;
 }
 
+/* ---------- Newspaper sections ---------- */
+/* Each Notable Folder renders as a "section": Main Document
+   centerpiece (spans 2 columns / orbits) at the top, recent notes in
+   the masonry below + beside it, a Show more control, and a divider
+   between sections. */
+.nf-sections {
+  width: 100%;
+  padding: clamp(16px, 4vh, 40px) clamp(16px, 4vw, 40px) 80px;
+}
+.nf-grid {
+  /* Inherits the .card-grid masonry; the section wrapper supplies the
+     outer padding, so the grid itself sits flush. */
+  padding: 0;
+}
+/* Below the desktop breakpoint the centerpiece is a full-width lead
+   at the top of its own row; notes flow in the grid beneath it. */
+.nf-grid .is-centerpiece {
+  grid-column: 1 / -1;
+}
+/* Desktop: a fixed 3-column grid with a wider centre. The Main
+   Document occupies the centre column; notes orbit into the left and
+   right columns beside it (grid-auto-flow: row dense, inherited from
+   .card-grid, fills the side gaps), then continue below it. */
+@media (min-width: 1080px) {
+  .nf-grid {
+    grid-template-columns: 1fr 2.8fr 1fr;
+  }
+  .nf-grid .is-centerpiece {
+    grid-column: 2;
+  }
+}
+
+.nf-show-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+.nf-show-more {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 6px 18px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.nf-show-more:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* Section divider — a hairline with a small centered ornament,
+   generous breathing room on either side. The last section omits it. */
+.nf-divider {
+  position: relative;
+  height: 1px;
+  background: var(--rule);
+  margin: 52px clamp(0px, 6vw, 80px);
+}
+.nf-divider::after {
+  content: "✦";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 12px;
+  background: var(--bg);
+  color: var(--ink-ghost);
+  font-size: 11px;
+  line-height: 1;
+}
+.nf-section:last-child .nf-divider { display: none; }
+
+/* ---------- Card height cap (newspaper "Read more") ---------- */
+.order-card-content { position: relative; }
+/* Fade overlay at the bottom of a capped card. */
+.order-card-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 88px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 92%);
+  pointer-events: none;
+}
+.order-card-readmore {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--royal, #4169e1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out);
+}
+.order-card-readmore:hover { color: var(--ink); }
+
 /* ---------- Mobile / narrow viewports ---------- */
 /* Long unbroken tokens (URLs, code, slugs) shouldn't force a card
    wider than the screen. Applies everywhere but matters most on
@@ -2512,6 +2624,13 @@ input, textarea, select { outline: none; box-shadow: none; }
     row-gap: 8px;
   }
   .order-card { padding: 10px 16px 12px; }
+
+  /* Newspaper sections collapse to a single column; the section
+     wrapper supplies the left-rail clearance, the inner grid sits
+     flush. Centerpiece span clamps to the single track automatically. */
+  .nf-sections { padding: 12px 12px 64px 38px; }
+  .nf-grid { column-gap: 8px; row-gap: 8px; }
+  .nf-divider { margin: 36px 8px; }
 
   /* Full-bleed prose at a comfortable mobile size. */
   .milkdown-host .ProseMirror { font-size: 16px; }

@@ -12,6 +12,7 @@ import { Card } from "../src/components/Card";
 import { CalendarView, type NoteMeta } from "../src/components/CalendarView";
 import { YearLinearView } from "../src/components/YearLinearView";
 import { FilterPillStack } from "../src/components/FilterPillStack";
+import { NotebookSection, type SectionCell } from "../src/components/NotebookSection";
 import type { Filter } from "../src/lib/filters";
 import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
@@ -27,6 +28,8 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>("stream");
   const [jumpedDown, setJumpedDown] = useState(false);
+  // Bumped by the home-reset to collapse Show-more expansions.
+  const [collapseNonce, setCollapseNonce] = useState(0);
 
   // Default view = the home Notable Folder focused (single include),
   // exactly like the desktop app's first-launch default.
@@ -61,6 +64,7 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   function resetToDefault() {
     setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
     setJumpedDown(false);
+    setCollapseNonce((n) => n + 1);
   }
   // Wikilink / list-row click → add an include + scroll to it.
   function navigate(ref: string) {
@@ -246,8 +250,9 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
           <StreamView
             notes={visible}
             data={data}
+            includeRefs={includeRefs}
             includeSet={includeSet}
-            fullWidthRef={singleFolderMode ? pinnedRef : null}
+            collapseSignal={collapseNonce}
             onNavigate={navigate}
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
           />
@@ -298,15 +303,19 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 
 // ---------- Stream view ----------
 
+const MAIN_CAP = 1400;
+const NOTE_CAP = 440;
+
 function StreamView({
-  notes, data, includeSet, fullWidthRef, onNavigate, onRemoveInclude,
+  notes, data, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
+  /** Active include filters in order. ≥1 → newspaper sections;
+   *  0 → flat temporal grid. */
+  includeRefs: string[];
   includeSet: Set<string>;
-  /** The single Notable Folder whose Main Doc gets full-width cover
-   *  treatment (only set in single-folder mode); null otherwise. */
-  fullWidthRef: string | null;
+  collapseSignal: number;
   onNavigate: (ref: string) => void;
   onRemoveInclude: (ref: string) => void;
 }) {
@@ -322,43 +331,72 @@ function StreamView({
     [data.notes],
   );
 
+  const cardNode = (n: PublishedNote, capHeight?: number) => {
+    const isMain = !!n.category;
+    const areaRaw = n.frontmatter.area;
+    const areaName = typeof areaRaw === "string"
+      ? areaRaw.replace(/^\[\[|\]\]$/g, "").trim()
+      : "";
+    const colorSource = isMain ? n.ref : n.folder;
+    const cardColor = colorSource ? folderColor(colorSource) : undefined;
+    return (
+      <Card
+        path={`${n.ref}.md`}
+        initialBody={n.body}
+        initialFrontmatter={n.frontmatter}
+        readOnly
+        color={cardColor}
+        area={isMain ? (areaName || undefined) : undefined}
+        category={isMain ? (n.category ?? undefined) : undefined}
+        currentFolder={isMain ? undefined : (n.folder ?? null)}
+        isPublic={n.frontmatter.public === true}
+        vaultNotes={vaultNotes}
+        onNavigate={onNavigate}
+        onAddFilter={onNavigate}
+        onRemoveFromFilter={includeSet.has(n.ref) ? () => onRemoveInclude(n.ref) : undefined}
+        capHeight={capHeight}
+      />
+    );
+  };
+
+  // Newspaper mode: one section per included Notable Folder. A single
+  // section (home page / one folder) shows its Main Doc uncapped;
+  // multiple stacked sections cap each Main Doc for even weight.
+  const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
+  if (includeRefs.length >= 1) {
+    return (
+      <div className="nf-sections">
+        {includeRefs.map((ref) => {
+          const mainNote = notes.find((n) => !!n.category && n.ref === ref);
+          const sectionNotes = notes.filter((n) => !n.category && n.folder === ref);
+          const centerpiece: SectionCell | null = mainNote
+            ? { key: mainNote.ref, dataPath: mainNote.ref, node: cardNode(mainNote, mainCap) }
+            : null;
+          const noteCells: SectionCell[] = sectionNotes.map((n) => ({
+            key: n.ref, dataPath: n.ref, node: cardNode(n, NOTE_CAP),
+          }));
+          return (
+            <NotebookSection
+              key={ref}
+              sectionRef={ref}
+              centerpiece={centerpiece}
+              notes={noteCells}
+              collapseSignal={collapseSignal}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Flat temporal grid (no Notable Folder filtered in).
   return (
     <div className="card-grid" ref={setGridEl}>
-      {notes.map((n) => {
-        const isMain = !!n.category;
-        const areaRaw = n.frontmatter.area;
-        const areaName = typeof areaRaw === "string"
-          ? areaRaw.replace(/^\[\[|\]\]$/g, "").trim()
-          : "";
-        const colorSource = isMain ? n.ref : n.folder;
-        const cardColor = colorSource ? folderColor(colorSource) : undefined;
-        const fullWidth = isMain && n.ref === fullWidthRef;
-        return (
-          <div
-            key={n.ref}
-            className={"card-grid-cell" + (fullWidth ? " is-full-width" : "")}
-            data-path={n.ref}
-          >
-            <Card
-              path={`${n.ref}.md`}
-              initialBody={n.body}
-              initialFrontmatter={n.frontmatter}
-              readOnly
-              color={cardColor}
-              area={isMain ? (areaName || undefined) : undefined}
-              category={isMain ? (n.category ?? undefined) : undefined}
-              currentFolder={isMain ? undefined : (n.folder ?? null)}
-              isPublic={n.frontmatter.public === true}
-              vaultNotes={vaultNotes}
-              onNavigate={onNavigate}
-              onAddFilter={onNavigate}
-              onRemoveFromFilter={includeSet.has(n.ref)
-                ? () => onRemoveInclude(n.ref)
-                : undefined}
-            />
-          </div>
-        );
-      })}
+      {notes.map((n) => (
+        <div key={n.ref} className="card-grid-cell" data-path={n.ref}>
+          {cardNode(n)}
+        </div>
+      ))}
     </div>
   );
 }

@@ -141,6 +141,11 @@ interface Props {
    *  pipeline is skipped, and top-right delete / dismiss controls
    *  are hidden. */
   readOnly?: boolean;
+  /** Newspaper layout: cap the card body to this many pixels with a
+   *  fade + "Read more" until expanded. Focusing the editor (when
+   *  editable) or clicking Read more lifts the cap. Omit for the
+   *  uncapped temporal-stream behaviour. */
+  capHeight?: number;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -167,12 +172,21 @@ export function Card(props: Props) {
     initialBody,
     initialFrontmatter,
     readOnly,
+    capHeight,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  /** Newspaper height-cap state: `expanded` lifts the cap (Read more
+   *  or, when editable, focusing the card); `overflowing` is whether
+   *  the body actually exceeds the cap (only then do we show the
+   *  fade + Read more). */
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const articleRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   /** Lifecycle state that drives the delete exit animation. */
   const [exiting, setExiting] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -502,6 +516,37 @@ export function Card(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen, toggleFullscreen]);
 
+  // Cap active = a capHeight is set, the card isn't expanded, and
+  // we're not in fullscreen. Measured against the content's natural
+  // height so the fade / Read more only appear when there's actually
+  // hidden content.
+  const capActive = capHeight !== undefined && !expanded && !fullscreen;
+
+  // Measure whether the body overflows the cap. Re-runs on content
+  // resize (Milkdown async render, image load, list expansion).
+  useEffect(() => {
+    if (capHeight === undefined) { setOverflowing(false); return; }
+    const el = contentRef.current;
+    if (!el) return;
+    const measure = () => setOverflowing(el.scrollHeight > capHeight + 8);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [capHeight, state, expanded]);
+
+  // Editable cards lift the cap the moment the user focuses into them
+  // (so you never edit behind a fade). Read-only cards stay capped
+  // until Read more.
+  useEffect(() => {
+    if (readOnly || capHeight === undefined) return;
+    const root = articleRef.current;
+    if (!root) return;
+    const onFocusIn = () => setExpanded(true);
+    root.addEventListener("focusin", onFocusIn);
+    return () => root.removeEventListener("focusin", onFocusIn);
+  }, [readOnly, capHeight]);
+
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
   if (state.kind === "loading") {
@@ -518,7 +563,8 @@ export function Card(props: Props) {
   const cardClass =
     "order-card" +
     (fullscreen ? " is-fullscreen" : "") +
-    (exiting ? " is-exiting" : "");
+    (exiting ? " is-exiting" : "") +
+    (capActive && overflowing ? " is-capped" : "");
 
   // Subtle full-border tint in the card's folder color (≈33% alpha).
   // Skipped when no color is available so the default rule color
@@ -529,7 +575,7 @@ export function Card(props: Props) {
     : undefined;
 
   return (
-    <article className={cardClass} style={cardStyle}>
+    <article className={cardClass} style={cardStyle} ref={articleRef}>
       <div className="order-card-controls" aria-hidden={false}>
         <button
           type="button"
@@ -584,52 +630,68 @@ export function Card(props: Props) {
           </button>
         ))}
       </div>
-      <MilkdownSurface
-        initial={state.body}
-        onChange={handleChange}
-        onDone={() => { void flushNow(); }}
-        onImageUpload={readOnly ? undefined : handleImageUpload}
-        autoFocus={autoFocus && !readOnly}
-        readOnly={readOnly}
-      />
-      {isListFolder(state.frontmatter) && (
-        <>
-          {parsedBase && (
-            <div className="order-card-list-controls">
-              <span className="order-card-list-mode">
-                base · {parsedBase.view.name ?? "view"}
-                {parsedBase.unsupported.length > 0 && (
-                  <span
-                    className="order-card-list-hint"
-                    title={parsedBase.unsupported.join("\n")}
+      <div
+        className="order-card-content"
+        ref={contentRef}
+        style={capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined}
+      >
+        <MilkdownSurface
+          initial={state.body}
+          onChange={handleChange}
+          onDone={() => { void flushNow(); }}
+          onImageUpload={readOnly ? undefined : handleImageUpload}
+          autoFocus={autoFocus && !readOnly}
+          readOnly={readOnly}
+        />
+        {isListFolder(state.frontmatter) && (
+          <>
+            {parsedBase && (
+              <div className="order-card-list-controls">
+                <span className="order-card-list-mode">
+                  base · {parsedBase.view.name ?? "view"}
+                  {parsedBase.unsupported.length > 0 && (
+                    <span
+                      className="order-card-list-hint"
+                      title={parsedBase.unsupported.join("\n")}
+                    >
+                      {" "}({parsedBase.unsupported.length} unsupported)
+                    </span>
+                  )}
+                </span>
+                {manualOrder.length > 0 && (
+                  <button
+                    type="button"
+                    className="order-card-list-reset"
+                    onClick={resetManualOrder}
+                    title="Discard manual order and re-sort from the base"
                   >
-                    {" "}({parsedBase.unsupported.length} unsupported)
-                  </span>
+                    Reset order
+                  </button>
                 )}
-              </span>
-              {manualOrder.length > 0 && (
-                <button
-                  type="button"
-                  className="order-card-list-reset"
-                  onClick={resetManualOrder}
-                  title="Discard manual order and re-sort from the base"
-                >
-                  Reset order
-                </button>
-              )}
-            </div>
-          )}
-          <ListView
-            render={isListOfLists ? "lines" : (parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards")}
-            items={itemsForView}
-            vaultNotes={vaultNotes ?? []}
-            onChange={handleListChange}
-            readOnlyMembership={!!parsedBase}
-            expandSublists={isListOfLists}
-            onNavigate={onNavigate ? (ref) => { if (fullscreen) setFullscreen(false); onNavigate(ref); } : undefined}
-            onAddFilter={onAddFilter ? (ref) => { if (fullscreen) setFullscreen(false); onAddFilter(ref); } : undefined}
-          />
-        </>
+              </div>
+            )}
+            <ListView
+              render={isListOfLists ? "lines" : (parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards")}
+              items={itemsForView}
+              vaultNotes={vaultNotes ?? []}
+              onChange={handleListChange}
+              readOnlyMembership={!!parsedBase}
+              expandSublists={isListOfLists}
+              onNavigate={onNavigate ? (ref) => { if (fullscreen) setFullscreen(false); onNavigate(ref); } : undefined}
+              onAddFilter={onAddFilter ? (ref) => { if (fullscreen) setFullscreen(false); onAddFilter(ref); } : undefined}
+            />
+          </>
+        )}
+        {capActive && overflowing && <div className="order-card-fade" aria-hidden />}
+      </div>
+      {capActive && overflowing && (
+        <button
+          type="button"
+          className="order-card-readmore"
+          onClick={() => setExpanded(true)}
+        >
+          Read more
+        </button>
       )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>
@@ -713,7 +775,7 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
     const f = available.find((x) => x.name === current);
     const color = f?.color;
     return (
-      <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined}>
+      <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined} title={current}>
         <FolderIcon size={10} strokeWidth={2} />
         <span className="order-card-folder-name">{current}</span>
         <button
