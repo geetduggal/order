@@ -19,6 +19,7 @@ import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcom
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import { FilterPillStack } from "./FilterPillStack";
+import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
 import {
   AREAS_FILENAME,
@@ -205,6 +206,9 @@ export function CardGrid() {
   // default-home-exclude effect can tell "never set" from "user
   // cleared everything".
   const [filters, setFilters] = useState<Filter[]>(() => readStoredFilters() ?? []);
+  // Bumped by the home-reset to collapse every section's Show-more
+  // expansion back to its first batch.
+  const [collapseNonce, setCollapseNonce] = useState(0);
   // The folder whose Main Document is pinned to the top of the Stream.
   // Set by clicking a filter pill; cleared whenever the filter set
   // changes so a stale pin doesn't linger.
@@ -240,11 +244,13 @@ export function CardGrid() {
     ));
   }, []);
   /** Reset to the default view: a single include pill for the home
-   *  Notable Folder. The home-reset icon and the sidebar's clear-×
-   *  both call this. Empty vault (no home) → no filters. */
+   *  Notable Folder, AND collapse every section's Show-more
+   *  expansion (via collapseNonce). The home-reset icon and the
+   *  sidebar's clear-× both call this. Empty vault → no filters. */
   const resetToDefault = useCallback(() => {
     const home = homeFoldersRef.current[0];
     setFilters(home ? [{ kind: "include", ref: home }] : []);
+    setCollapseNonce((n) => n + 1);
   }, []);
   /** Add an include filter AND scroll the stream to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
@@ -655,18 +661,15 @@ export function CardGrid() {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
     const timer = setTimeout(() => {
-      const grid = gridEl;
-      if (grid) {
-        const cell = grid.querySelector<HTMLElement>(
-          `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
-        );
-        if (cell) {
-          cell.scrollIntoView({ behavior: "smooth", block: "start" });
-          cell.classList.add("is-target");
-          setTimeout(() => cell.classList.remove("is-target"), 1400);
-        } else {
-          console.warn("scroll target cell not found:", target);
-        }
+      // Query the document, not a single grid — newspaper mode renders
+      // many per-section grids, so the flat `gridEl` is null there.
+      const cell = document.querySelector<HTMLElement>(
+        `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
+      );
+      if (cell) {
+        cell.scrollIntoView({ behavior: "smooth", block: "start" });
+        cell.classList.add("is-target");
+        setTimeout(() => cell.classList.remove("is-target"), 1400);
       }
       setScrollTargetPath(null);
       // Drop the autoFocus flag once the Card has had time to
@@ -951,6 +954,69 @@ export function CardGrid() {
     return sortKey(b).localeCompare(sortKey(a));
   });
 
+  // Render one note as a <Card>. Shared by the temporal flat grid and
+  // the newspaper sections; capHeight is only set in newspaper mode.
+  const cardNode = (n: LoadedNote, capHeight?: number) => {
+    const isMain = isNotableFolder(n.frontmatter);
+    const ref = n.filename.replace(/\.md$/, "");
+    const folderName = isMain ? ref : noteFolder(n.frontmatter);
+    const c = folderName ? folderColor(folderName) : undefined;
+    const inFilter = includeSet.has(ref);
+    return (
+      <Card
+        path={n.path}
+        color={c}
+        area={isMain ? inferredArea(n) ?? undefined : undefined}
+        category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
+        currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
+        availableFolders={isMain ? undefined : availableFolderRefs}
+        onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
+        onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
+        isPublic={n.frontmatter.public === true}
+        vaultNotes={vaultNotesIndex}
+        onNavigate={navigateToRef}
+        onAddFilter={addFolderToFilter}
+        onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
+        autoFocus={focusPath === n.path}
+        capHeight={capHeight}
+        onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+        onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
+        onDelete={(path) => handleCardDelete(n.id, path)}
+      />
+    );
+  };
+
+  // Newspaper mode: active whenever ≥1 Notable Folder is filtered IN
+  // (this includes the default single home-include view). Each
+  // included folder becomes a section — its Main Document as the
+  // centerpiece, its notes orbiting below, newest first. An empty or
+  // exclude-only filter falls through to the flat temporal stream.
+  const MAIN_CAP = 1400;
+  const NOTE_CAP = 440;
+  const newspaperMode = includeRefs.length >= 1;
+  // A single section (the home page, or one folder filtered in) shows
+  // its Main Document uncapped so the page reads uninterrupted. With
+  // several stacked sections, cap each Main Doc to keep visual weight
+  // even.
+  const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
+  const sections = newspaperMode
+    ? includeRefs.map((ref) => {
+        const mainNote = filteredNotes.find(
+          (n) => isNotableFolder(n.frontmatter) && n.filename.replace(/\.md$/, "") === ref,
+        );
+        const sectionNotes = filteredNotes
+          .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
+          .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+        const centerpiece: SectionCell | null = mainNote
+          ? { key: mainNote.id, dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
+          : null;
+        const noteCells: SectionCell[] = sectionNotes.map((n) => ({
+          key: n.id, dataPath: n.path, node: cardNode(n, NOTE_CAP),
+        }));
+        return { ref, centerpiece, noteCells };
+      })
+    : [];
+
   // Calendar events carry their folder's color so Week/Month/Year
   // events read at a glance.
   const calendarNotes: NoteMeta[] = filteredNotes.map((n) => {
@@ -1092,48 +1158,27 @@ export function CardGrid() {
 
       <main className="pane-main">
         {view === "stream" && (
-          <div className="card-grid" ref={setGridEl}>
-            {sortedNotes.map((n) => {
-              const isMain = isNotableFolder(n.frontmatter);
-              const ref = n.filename.replace(/\.md$/, "");
-              const folderName = isMain ? ref : noteFolder(n.frontmatter);
-              const c = folderName ? folderColor(folderName) : undefined;
-              // Full-width "cover" treatment only in single-folder mode
-              // (and only for the focused folder's Main Doc). Otherwise
-              // Notable Folders render as ordinary cards.
-              const fullWidth = isMain && singleFolderMode && ref === pinnedRef;
-              // Card × removes this folder's INCLUDE pill (only NF
-              // Main Docs whose ref is an active include show it).
-              const inFilter = includeSet.has(ref);
-              return (
-                <div
-                  className={"card-grid-cell" + (fullWidth ? " is-full-width" : "")}
-                  data-path={n.path}
-                  key={n.id}
-                >
-                  <Card
-                    path={n.path}
-                    color={c}
-                    area={isMain ? inferredArea(n) ?? undefined : undefined}
-                    category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
-                    currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
-                    availableFolders={isMain ? undefined : availableFolderRefs}
-                    onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
-                    onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
-                    isPublic={n.frontmatter.public === true}
-                    vaultNotes={vaultNotesIndex}
-                    onNavigate={navigateToRef}
-                    onAddFilter={addFolderToFilter}
-                    onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
-                    autoFocus={focusPath === n.path}
-                    onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
-                    onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
-                    onDelete={(path) => handleCardDelete(n.id, path)}
-                  />
+          newspaperMode ? (
+            <div className="nf-sections">
+              {sections.map((s) => (
+                <NotebookSection
+                  key={s.ref}
+                  sectionRef={s.ref}
+                  centerpiece={s.centerpiece}
+                  notes={s.noteCells}
+                  collapseSignal={collapseNonce}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="card-grid" ref={setGridEl}>
+              {sortedNotes.map((n) => (
+                <div className="card-grid-cell" data-path={n.path} key={n.id}>
+                  {cardNode(n)}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )
         )}
         {view === "week" && (
           <CalendarView
