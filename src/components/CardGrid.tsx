@@ -18,6 +18,8 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { FilterPillStack } from "./FilterPillStack";
+import type { Filter } from "../lib/filters";
 import {
   AREAS_FILENAME,
   buildVaultTaxonomy,
@@ -37,11 +39,33 @@ function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
-// Filter state used to be cached in localStorage so reopens
-// preserved the selection. That collided with the "open on home"
-// default — a stored empty set (or any non-home set) would always
-// win. Each session now starts on the home Notable Folder and
-// changes during the session are not persisted across launches.
+// Filter model (`Filter`, pill stack) is shared with the web viewer
+// via ../lib/filters + ./FilterPillStack.
+//
+// Bumped to .v2 when the default flipped from exclude-home to
+// include-home — invalidates any pre-existing persisted set one time
+// so the new home-focused default seeds on next launch.
+const FILTERS_KEY = "order.activeFilters.v2";
+
+function readStoredFilters(): Filter[] | null {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (f): f is Filter =>
+        !!f && typeof f === "object"
+        && (f.kind === "include" || f.kind === "exclude")
+        && typeof f.ref === "string",
+    );
+  } catch { return null; }
+}
+
+function writeStoredFilters(filters: Filter[]): void {
+  try { localStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch { /* non-fatal */ }
+}
+
 import {
   basenameForEvent,
   isoDate,
@@ -177,7 +201,15 @@ export function CardGrid() {
    *  to the first regular note) and "up" (jump back to the top). */
   const [jumpedDown, setJumpedDown] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
-  const [folderFilter, setFolderFilter] = useState<Set<string>>(() => new Set());
+  // Active filter pills. `null` until hydrated so the first-load
+  // default-home-exclude effect can tell "never set" from "user
+  // cleared everything".
+  const [filters, setFilters] = useState<Filter[]>(() => readStoredFilters() ?? []);
+  // The folder whose Main Document is pinned to the top of the Stream.
+  // Set by clicking a filter pill; cleared whenever the filter set
+  // changes so a stale pin doesn't linger.
+  const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
+  useEffect(() => { setFocusedFolder(null); }, [filters]);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -185,39 +217,47 @@ export function CardGrid() {
   // short-circuits below), so .current would stay null forever.
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
 
-  const toggleFolderFilter = useCallback((name: string) => {
-    setFolderFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
+  // Include-filter refs as a Set — the Sidebar, CommandPalette, and
+  // per-card × all key off "is this folder an active include filter".
+  const includeSet = useMemo(
+    () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
+    [filters],
+  );
+
+  /** Add an include filter for `ref`. No-op if one already exists
+   *  (duplicate pills are disallowed). Excludes are managed
+   *  separately (only the default-home one, removable via its ×). */
+  const addInclude = useCallback((ref: string) => {
+    setFilters((prev) => {
+      if (prev.some((f) => f.kind === "include" && f.ref === ref)) return prev;
+      return [...prev, { kind: "include", ref }];
     });
   }, []);
-  const clearFolderFilter = useCallback(() => setFolderFilter(new Set()), []);
-  /** Set the folder filter to a single ref. Bound to title-click in
-   *  the list renders so any item whose target exists navigates to
-   *  it. Lives up here (before the notes-loading early return) so the
-   *  hook order doesn't change between loading and ready states. */
+  /** Remove a specific pill (matched by kind + ref). */
+  const removeFilter = useCallback((target: Filter) => {
+    setFilters((prev) => prev.filter(
+      (f) => !(f.kind === target.kind && f.ref === target.ref),
+    ));
+  }, []);
+  /** Reset to the default view: a single include pill for the home
+   *  Notable Folder. The home-reset icon and the sidebar's clear-×
+   *  both call this. Empty vault (no home) → no filters. */
+  const resetToDefault = useCallback(() => {
+    const home = homeFoldersRef.current[0];
+    setFilters(home ? [{ kind: "include", ref: home }] : []);
+  }, []);
+  /** Add an include filter AND scroll the stream to it. Bound to
+   *  wikilink title-clicks in the list renders. Lives above the
+   *  notes-loading early return so hook order is stable. */
   const navigateToRef = useCallback((ref: string) => {
-    setFolderFilter(new Set([ref]));
-    // Scroll the target into view (and pulse-highlight it) once
-    // the filter change has populated the stream. notePathByRef
-    // resolves through the notes ref, so it works even right after
-    // a create + render.
+    addInclude(ref);
     const path = notePathByRef(ref);
     if (path) setScrollTargetPath(path);
-  }, []);
-  /** Additive variant: a wikilink-to-NF click that should accumulate
-   *  rather than replace the existing filter set. Used by list-row
-   *  title clicks when the linked target is a Notable Folder. */
-  const addFolderToFilter = useCallback((ref: string) => {
-    setFolderFilter((prev) => {
-      const next = new Set(prev);
-      next.add(ref);
-      return next;
-    });
-    const path = notePathByRef(ref);
-    if (path) setScrollTargetPath(path);
-  }, []);
+  }, [addInclude]);
+  // Wikilink-to-NF clicks accumulate (same as navigateToRef now that
+  // includes always compose with OR). Kept as a distinct name for the
+  // list-render prop contract.
+  const addFolderToFilter = navigateToRef;
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -293,25 +333,37 @@ export function CardGrid() {
    *  createNote can read the latest value without re-running on
    *  every notes change. */
   const homeFolderRef = useRef<string | null>(null);
+  // All home Notable Folder names — resetToDefault rebuilds the
+  // default exclude set from this.
+  const homeFoldersRef = useRef<string[]>([]);
   useEffect(() => {
     homeFolderRef.current = homeFolders[0]?.name ?? null;
+    homeFoldersRef.current = homeFolders.map((h) => h.name);
   }, [homeFolders]);
 
-  // Every launch starts filtered on the home Notable Folder (the
-  // one whose YAML carries `home: "..."`). useLayoutEffect (vs
-  // useEffect) sets the filter BEFORE the first paint after notes
-  // load, so the user never sees a flash of the unfiltered stream.
-  // Fires once per session — after that the user is free to
-  // add/clear chips without us undoing their choice.
-  const defaultedToHome = useRef<boolean>(false);
+  // First-ever launch (no persisted filters) seeds an `include` pill
+  // for the home Notable Folder, so Order opens focused on home (its
+  // Main Doc pinned, its notes below). Runs in useLayoutEffect so it
+  // lands before first paint (no flash of the unfiltered stream).
+  // After the first run, the persisted set wins and the user is free
+  // to add/remove pills.
+  const seededDefault = useRef<boolean>(readStoredFilters() !== null);
   useLayoutEffect(() => {
-    if (defaultedToHome.current) return;
+    if (seededDefault.current) return;
     if (!notes) return;
     const home = homeFolders[0]?.name;
     if (!home) return;
-    defaultedToHome.current = true;
-    setFolderFilter(new Set([home]));
+    seededDefault.current = true;
+    setFilters([{ kind: "include", ref: home }]);
   }, [notes, homeFolders]);
+
+  // Persist pill state across launches. Gated on notes being loaded
+  // so the empty initial state can't overwrite a persisted set (or
+  // pre-empt the first-launch home-exclude seed) before hydration.
+  useEffect(() => {
+    if (!notes) return;
+    writeStoredFilters(filters);
+  }, [filters, notes]);
 
   /** Build the static bundle and hand it to the Rust side for the
    *  clone → write → commit → push dance. Called by PublishPanel
@@ -319,8 +371,15 @@ export function CardGrid() {
    *  string-flow back to the panel which surfaces them inline). */
   const handlePublish = useCallback(async (home: HomeFolder): Promise<PublishOutcome> => {
     if (!notes) throw "Notes not loaded";
+    // Re-read every note fresh from disk before building the payload.
+    // CardGrid's in-memory `notes[].body` is only set at load time —
+    // Card edits write to disk but don't flow back into this array, so
+    // using it here would publish stale (often empty) bodies for any
+    // note created or edited this session.
+    const fresh = await loadAndNormalizeAll();
+    setNotes(fresh);
     const site = collectPublishedSite({
-      vaultNotes: notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
       home,
     });
     const dataJson = JSON.stringify(site);
@@ -579,7 +638,7 @@ export function CardGrid() {
       }, ms),
     );
     return () => timeouts.forEach(clearTimeout);
-  }, [gridEl, notes, folderFilter, view]);
+  }, [gridEl, notes, filters, view]);
 
   const handleEventClick = useCallback((path: string) => {
     setView("stream");
@@ -836,38 +895,53 @@ export function CardGrid() {
     return !vaultTaxonomy.hiddenRefs.has(ref);
   });
 
-  // Filter: if any folders are selected, only notes that belong to one
-  // of them survive. Notable Folder Main Documents themselves count as
-  // "belonging to" their own folder so they're always pinned at top.
-  const filteringActive = folderFilter.size > 0;
-  const filterMatches = (n: LoadedNote): boolean => {
-    if (!filteringActive) return true;
-    // Match by direct filename ref first so a single-folder filter
-    // can focus any note (leaf notes too), not just notable folders.
-    const ref = n.filename.replace(/\.md$/, "");
-    if (folderFilter.has(ref)) return true;
-    const f = noteFolder(n.frontmatter);
-    return f !== null && folderFilter.has(f);
+  // Does this note belong to `ref` — either it IS that folder's Main
+  // Document, or it links to that folder via `folder: [[ref]]`.
+  const belongsTo = (n: LoadedNote, ref: string): boolean => {
+    if (n.filename.replace(/\.md$/, "") === ref) return true;
+    return noteFolder(n.frontmatter) === ref;
   };
 
-  const filteredNotes = filteringActive ? streamCandidates.filter(filterMatches) : streamCandidates;
+  // Filter semantics:
+  //   - include pills compose with OR — a note survives if it belongs
+  //     to ANY include. With zero includes, everything passes the
+  //     include stage.
+  //   - exclude pills then drop any note belonging to an excluded
+  //     folder.
+  const includeRefs = filters.filter((f) => f.kind === "include").map((f) => f.ref);
+  const excludeRefs = filters.filter((f) => f.kind === "exclude").map((f) => f.ref);
+  const filterMatches = (n: LoadedNote): boolean => {
+    if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
+    if (excludeRefs.some((r) => belongsTo(n, r))) return false;
+    return true;
+  };
 
-  // Stream view sorts chronologically (newest first). With filters
-  // active we hoist the matched Main Documents to the top of the list,
-  // then the rest below by date desc.
+  const filteredNotes = (includeRefs.length > 0 || excludeRefs.length > 0)
+    ? streamCandidates.filter(filterMatches)
+    : streamCandidates;
+
+  // The Stream is one recency-ordered timeline (newest first).
   const sortKey = (n: LoadedNote): string => {
     const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
     const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
     return `${d} ${t}`;
   };
-  const sortedNotes = filteringActive
-    ? [
-        ...filteredNotes.filter((n) => isNotableFolder(n.frontmatter)),
-        ...filteredNotes
-          .filter((n) => !isNotableFolder(n.frontmatter))
-          .sort((a, b) => sortKey(b).localeCompare(sortKey(a))),
-      ]
-    : [...filteredNotes].sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+  // Pin one Notable Folder's Main Document to the very top (its
+  // "cover"). Two triggers:
+  //   - filtering to exactly one folder auto-pins it, and
+  //   - clicking a filter pill pins that folder (focusedFolder).
+  // The explicit pill click wins when both apply.
+  const pinnedRef = focusedFolder ?? (includeRefs.length === 1 ? includeRefs[0] : null);
+  const isPinnedMain = (n: LoadedNote): boolean =>
+    pinnedRef !== null
+    && isNotableFolder(n.frontmatter)
+    && n.filename.replace(/\.md$/, "") === pinnedRef;
+  const sortedNotes = [...filteredNotes].sort((a, b) => {
+    const am = isPinnedMain(a);
+    const bm = isPinnedMain(b);
+    if (am !== bm) return am ? -1 : 1;
+    return sortKey(b).localeCompare(sortKey(a));
+  });
 
   // Calendar events carry their folder's color so Week/Month/Year
   // events read at a glance.
@@ -888,10 +962,11 @@ export function CardGrid() {
         type="button"
         className="new-note-fab"
         onClick={() => {
-          const sel = [...folderFilter];
-          // No filter active → plain new note. Exactly one folder
-          // selected → auto-assign it. 2+ selected → open the
-          // lightweight picker.
+          // New captures key off the INCLUDE filters only (excludes
+          // like the default-home one don't imply a capture target).
+          // 1 include → auto-assign; 0 → plain note (lands in home);
+          // 2+ → picker.
+          const sel = [...includeSet];
           if (sel.length === 1) {
             void createNote({
               date: isoDate(), startTime: isoTime(), allDay: false,
@@ -950,7 +1025,7 @@ export function CardGrid() {
 
       {creatorOpen && (
         <div className="new-note-picker" role="menu">
-          {[...folderFilter].map((name) => {
+          {[...includeSet].map((name) => {
             const color = folderColor(name);
             return (
               <button
@@ -986,16 +1061,26 @@ export function CardGrid() {
       <button
         type="button"
         className="home-reset"
-        onClick={() => {
-          const home = homeFolders[0]?.name;
-          setFolderFilter(home ? new Set([home]) : new Set());
-          setJumpedDown(false);
-        }}
-        title="Reset filter to home"
-        aria-label="Reset filter to home"
+        onClick={() => { resetToDefault(); setJumpedDown(false); }}
+        title="Reset filters (home view)"
+        aria-label="Reset filters to the default home view"
       >
         <HouseIcon size={13} strokeWidth={1.8} />
       </button>
+
+      <FilterPillStack
+        filters={filters}
+        onRemove={removeFilter}
+        onJump={(ref) => {
+          // Focus this folder: pin its Main Document to the top of the
+          // Stream (without changing the filter set), then scroll to
+          // it. (× on the pill removes the filter.)
+          setView("stream");
+          setFocusedFolder(ref);
+          const path = notePathByRef(ref);
+          if (path) setScrollTargetPath(path);
+        }}
+      />
 
       <main className="pane-main">
         {view === "stream" && (
@@ -1005,7 +1090,9 @@ export function CardGrid() {
               const ref = n.filename.replace(/\.md$/, "");
               const folderName = isMain ? ref : noteFolder(n.frontmatter);
               const c = folderName ? folderColor(folderName) : undefined;
-              const inFilter = folderFilter.has(ref);
+              // Card × removes this folder's INCLUDE pill (only NF
+              // Main Docs whose ref is an active include show it).
+              const inFilter = includeSet.has(ref);
               return (
                 <div
                   className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
@@ -1025,7 +1112,7 @@ export function CardGrid() {
                     vaultNotes={vaultNotesIndex}
                     onNavigate={navigateToRef}
                     onAddFilter={addFolderToFilter}
-                    onRemoveFromFilter={inFilter ? () => toggleFolderFilter(ref) : undefined}
+                    onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
                     autoFocus={focusPath === n.path}
                     onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
                     onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
@@ -1072,9 +1159,12 @@ export function CardGrid() {
           view={view}
           onSelectView={setView}
           folders={notableFolders}
-          selected={folderFilter}
-          onToggle={toggleFolderFilter}
-          onClear={clearFolderFilter}
+          // Sidebar is pure navigation now: clicking a folder ADDS an
+          // include pill (never toggles). `selected` only drives the
+          // visual checkmark for orientation. Clear resets to default.
+          selected={includeSet}
+          onToggle={addInclude}
+          onClear={resetToDefault}
           onCreateFolder={handleCreateFolder}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
@@ -1089,8 +1179,8 @@ export function CardGrid() {
       {paletteOpen && (
         <CommandPalette
           folders={notableFolders}
-          selected={folderFilter}
-          onToggle={toggleFolderFilter}
+          selected={includeSet}
+          onToggle={addInclude}
           onClose={() => setPaletteOpen(false)}
         />
       )}
