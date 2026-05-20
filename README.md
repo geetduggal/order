@@ -2,31 +2,56 @@
 
 *Your notes, at home at last.*
 
-A specialized note app. One screen for thinking, browsing, and (eventually) publishing.
-Local markdown files, YAML frontmatter as the source of truth, Obsidian-compatible vault.
-Built with Tauri v2 — same codebase ships desktop today and iOS next.
+A specialized, local-first note app. One screen for thinking, browsing, and
+publishing. Markdown files with YAML frontmatter as the single source of truth,
+an Obsidian-compatible vault, built on Tauri v2 — the same codebase ships desktop
+today and iOS next.
 
-![Stream view at wide width — three columns of cards, hairline dividers, no chrome](img/stream-wide.png)
+![Order — a Notable Folder rendered as a newspaper section: the Main Document as a wide centerpiece with recent notes orbiting around it](img/order-home.png)
+
+> **A twenty-year through line.** The impulse behind Order is old. It first
+> surfaced around 2004 in [*PileTiddly*](https://geetduggal.com/PileTiddly.html) —
+> a TiddlyWiki experiment, preserved here for nostalgia — built on the idea that
+> digital spaces should behave like *piles*: recently touched things float up,
+> ignored things sink, structure follows attention instead of imposing on it.
+> Two decades later the same shape keeps returning: a digital space that feels
+> like a real **place**, where what you see is what you have, and where structure
+> serves attention rather than constraining it. Order is the latest and most
+> complete expression of that idea, and nearly every decision below traces back
+> to it. This isn't a fresh aesthetic; it's a twenty-five-year-old itch finally
+> scratched.
 
 ---
 
 ## Principles
 
-1. **Local-first.** Files live on your machine as plain `.md` with YAML frontmatter.
-   No proprietary store, no cloud lock-in. Sync is whatever you already use
-   (Dropbox, iCloud, git).
+1. **Local-first, plain text forever.** Files live on your machine as plain `.md`
+   with YAML frontmatter. No proprietary store, no cloud lock-in; sync is whatever
+   you already use (Dropbox, iCloud, git). This is less a technical choice than a
+   *covenant with your future self* — tools die, companies pivot, subscriptions
+   lapse, but plain text has outlived every decade of personal computing. The
+   files outlive the tool. If Order vanished tomorrow, the vault still opens.
 2. **Portable conventions.** The vault opens cleanly in Obsidian. Same files, same
-   YAML, same wikilinks. Order is a different surface on the same data.
+   YAML, same wikilinks. Order is a different *surface* on the same data — never a
+   place your notes are trapped.
 3. **Edit in place.** Every interaction — capture, browse, refine — happens on the
-   same surface. No modals, no editor/viewer toggle. Double-click and type.
-4. **Constraint as clarity.** Johnny Decimal limits: max 10 Areas, max 10 Categories
-   per Area. The 10-box grid makes the limit visible. No tags, no plugins, no graph
-   view — structure is a forcing function for better thinking.
+   same surface. No modals, no editor/viewer toggle. Double-click and type. The
+   itch here is old: WYSIWYG that goes back to Microsoft FrontPage in the nineties,
+   the conviction that authoring and the finished thing should not be two places.
+4. **Constraint as clarity.** Johnny Decimal limits: max 10 Areas, max 10
+   Categories per Area. The 10-box grid makes the limit visible. The constraint is
+   the *feature* — by promising you only ten Areas, it forces you to ask what your
+   ten Areas actually are. Most tools invite infinite branching, and infinite
+   branching is exactly what makes a system rot: you forget where things are, you
+   duplicate, you abandon and start over. Fewer choices, clearer mind.
 5. **Workspace is presentation space.** What you see while editing is what your
-   reader sees. There's no separate "article view."
+   reader sees — there's no separate "article view." This is a small act of
+   honesty: no draft mode hiding behind a rendered mode, no translation layer
+   between authoring and publishing.
 6. **Subtle UI.** Two accents only — royal blue `#4169E1` and coral `#FF7F50`.
-   Sans-serif for chrome, serif for prose. Whitespace and hairlines do the work
-   of borders.
+   Sans-serif for chrome, serif for prose. Whitespace and hairlines do the work of
+   borders. The aim is *sehaj* — an intuitive equipoise where the layout asks
+   nothing of you; you don't navigate it, you inhabit it.
 7. **Speed matters.** Startup, scan, filter, edit, save — all optimized for flow.
 
 ---
@@ -42,6 +67,17 @@ Built with Tauri v2 — same codebase ships desktop today and iOS next.
 Areas and Categories are derived from the Notable Folders themselves (no separate
 storage). Names you've explicitly added are persisted in `localStorage` under
 `order.taxonomy` so empty Areas / Categories survive a vault scan.
+
+Why "Notable" and not "Project"? Most PKM systems organize around projects
+(PARA's *Projects, Areas, Resources, Archives*), but projects come and go while
+people, long arcs, and the spaces of a life persist. Order leans toward ALPPS
+(*Archives, Logs, People, Projects, Spaces*): a Notable Folder can be a person, a
+creative project, a paper, a tool, an idea, a whole section of life — anything
+that *holds your attention*. The shape of your Notable Folders becomes a record
+of what you've cared about, which is closer to a true map of a life than a project
+list will ever be. And because the 10×10 grid maps cleanly onto a small set of
+essential life spaces, the structure of the file system ends up mirroring the
+structure of attention itself.
 
 ---
 
@@ -315,6 +351,28 @@ three independent sources:
 - **Capturing `input` / `keyup` listener** on the grid — backstop in case MO's
   attribute filter ever misses a frame.
 
+### Notable Folder sections — the newspaper template
+
+The Stream is dynamic on purpose: it's the work surface, where thinking happens
+and recency matters. But the moment you *focus* — filter to one or more Notable
+Folders, or land on the home page — the dynamism falls away and a fixed,
+templated layout takes over. Each filtered Notable Folder renders as a
+**section**: its Main Document as a wide centered centerpiece, recent notes
+orbiting in the left/right columns and below, a "Show more" to dig into older
+entries, and a hairline divider before the next section.
+
+The motivation is liturgical. A newspaper has weight — when you pick it up you're
+*arriving* somewhere specific, and the sections sit in known positions every time.
+A tool that filters and reflows under you can't give you that. The section
+template can: you arrive at a Notable Folder and always know where things are,
+because the template never changes. Two modes, each suited to its purpose — a
+fluid Stream for working, a still page for reading and publishing.
+
+(Mechanically: newspaper mode kicks in whenever ≥1 Notable Folder is filtered in
+— including the default home view. Empty or exclude-only filters keep the flat
+temporal Stream. `NotebookSection` is shared by the app and the web viewer so the
+"page" is identical in both.)
+
 ### Chrome
 
 A thin left rail of icon buttons sits in the top-left:
@@ -344,6 +402,15 @@ fades up on hover.
 
 ## Publishing
 
+Order keeps one vault for two lives. Every note carries `public: true` or it
+doesn't, and that single boolean is the only thing separating a private journal
+entry from a published article. No separate blog, no draft folder, no second
+system to copy content into — you can draft in the open marked private and flip it
+public when it's ready, with public and private notes living side by side, shaped
+by the same thinking and the same hierarchy. The vault stays a record of one
+continuous mind, partially exposed and partially private, never split into two
+selves.
+
 A Notable Folder marked with `home: "<github user>/<repo>/<path>"` in its
 YAML becomes the publish root. Hit the Upload icon (or `Cmd+P`), confirm
 the target, and Order:
@@ -358,8 +425,12 @@ the target, and Order:
 
 ### The web viewer
 
-The published site is **the same React components as Order**, just in
-read-only mode:
+The published site is **the same React components as Order**, just in read-only
+mode. There's no static-site generator in between, no separate template that
+quietly diverges from what you authored — what you arranged in the app while
+working on the home page is exactly what a visitor lands on. The publish button
+doesn't *transform* anything; it just makes a copy other people can reach. That's
+the WYSIWYG promise kept all the way to the published artifact:
 
 - `Card` accepts `initialBody` + `initialFrontmatter` and skips the Tauri
   disk read entirely. With `readOnly` set, Crepe runs as a read-only
