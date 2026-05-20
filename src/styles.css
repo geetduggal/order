@@ -2523,6 +2523,22 @@ input, textarea, select { outline: none; box-shadow: none; }
   }
 }
 
+/* In a newspaper section the full 2.25em prose H1 dwarfs the section.
+   Scale headings down inside section cards — modestly on the
+   centerpiece, more on the orbiting notes — so a note's big heading
+   doesn't tower over everything. Fullscreen reading keeps the normal
+   scale. */
+.nf-grid .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h1 { font-size: 1.4em; }
+.nf-grid .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h2 { font-size: 1.15em; }
+.nf-grid .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h3 { font-size: 1.02em; }
+.nf-grid .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror :is(h4, h5, h6) { font-size: 0.92em; }
+.nf-grid .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h1 + p { font-size: 1em; }
+
+/* Centerpiece (the Main Document) keeps a bit more presence. */
+.nf-grid .is-centerpiece .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h1 { font-size: 1.85em; }
+.nf-grid .is-centerpiece .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h2 { font-size: 1.3em; }
+.nf-grid .is-centerpiece .order-card:not(.is-fullscreen) .milkdown-host .ProseMirror h3 { font-size: 1.1em; }
+
 .nf-show-more-row {
   display: flex;
   justify-content: center;
