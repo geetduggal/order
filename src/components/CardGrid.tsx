@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Home as HouseIcon, ChevronsDown, ChevronsUp, Upload as UploadIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
+import { stat } from "@tauri-apps/plugin-fs";
 import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
@@ -122,6 +123,9 @@ interface LoadedNote {
    *  bullets from this; the Card editor re-reads its own body
    *  separately on mount. */
   body: string;
+  /** File modified time (epoch ms; 0 if unavailable). Drives the
+   *  Stream's recency sort in multi/no-filter mode. */
+  mtime: number;
 }
 
 let nextNoteId = 0;
@@ -158,6 +162,11 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
       console.warn("Failed to inject calendar metadata for", path, err);
     }
   }
+  let mtime = 0;
+  try {
+    const info = await stat(path);
+    mtime = info.mtime ? info.mtime.getTime() : 0;
+  } catch { /* mtime stays 0 */ }
   return {
     id: newNoteId(),
     path,
@@ -165,6 +174,7 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
     frontmatter,
     title: deriveTitle(body, filename.replace(/\.md$/, "")),
     body,
+    mtime,
   };
 }
 
@@ -175,17 +185,20 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   // hierarchy. SEEDS-based first-run seeding is gone: the vault is
   // the source of truth, and an empty vault is migrated into
   // shape by the chain-walk + planMigration in CardGrid's mount
-  // effect.
+  // effect. Load in parallel — each loadOne does read_text + stat,
+  // so serial would be slow over a large vault.
   const entries = await walkVaultMarkdown();
-  const out: LoadedNote[] = [];
-  for (const { path, filename } of entries) {
-    try {
-      out.push(await loadOne(path, filename));
-    } catch (err) {
-      console.warn("Failed to load card", path, err);
-    }
-  }
-  return out;
+  const settled = await Promise.all(
+    entries.map(async ({ path, filename }) => {
+      try {
+        return await loadOne(path, filename);
+      } catch (err) {
+        console.warn("Failed to load card", path, err);
+        return null;
+      }
+    }),
+  );
+  return settled.filter((n): n is LoadedNote => n !== null);
 }
 
 export function CardGrid() {
@@ -379,7 +392,7 @@ export function CardGrid() {
     const fresh = await loadAndNormalizeAll();
     setNotes(fresh);
     const site = collectPublishedSite({
-      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, mtime: n.mtime })),
       home,
     });
     const dataJson = JSON.stringify(site);
@@ -702,7 +715,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "" },
+      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "", mtime: Date.now() },
     ]);
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
@@ -816,7 +829,7 @@ export function CardGrid() {
     }
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body },
+      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
     ]);
   }, [flashCap]);
 
@@ -920,18 +933,21 @@ export function CardGrid() {
     ? streamCandidates.filter(filterMatches)
     : streamCandidates;
 
-  // The Stream is one recency-ordered timeline (newest first).
-  const sortKey = (n: LoadedNote): string => {
-    const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
-    const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
-    return `${d} ${t}`;
-  };
-  // Pin one Notable Folder's Main Document to the very top (its
-  // "cover"). Two triggers:
-  //   - filtering to exactly one folder auto-pins it, and
-  //   - clicking a filter pill pins that folder (focusedFolder).
-  // The explicit pill click wins when both apply.
-  const pinnedRef = focusedFolder ?? (includeRefs.length === 1 ? includeRefs[0] : null);
+  // Single-folder mode = exactly one include filter. In this mode the
+  // folder reads like a "page": its Main Document gets the full-width
+  // cover treatment at the top, its notes below. Any other state
+  // (multiple includes, or none) treats Notable Folders as ordinary
+  // cards in a flat recency timeline.
+  const singleFolderMode = includeRefs.length === 1;
+
+  // The Stream sorts newest-first by file modified time.
+  const sortKey = (n: LoadedNote): number => n.mtime;
+  // In single-folder mode, pin that folder's Main Document to the very
+  // top (its cover). Driven by the include, or by an explicit pill
+  // click (focusedFolder) which only matters in single mode.
+  const pinnedRef = singleFolderMode
+    ? (focusedFolder ?? includeRefs[0])
+    : null;
   const isPinnedMain = (n: LoadedNote): boolean =>
     pinnedRef !== null
     && isNotableFolder(n.frontmatter)
@@ -940,7 +956,7 @@ export function CardGrid() {
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
-    return sortKey(b).localeCompare(sortKey(a));
+    return sortKey(b) - sortKey(a);
   });
 
   // Calendar events carry their folder's color so Week/Month/Year
@@ -1090,12 +1106,16 @@ export function CardGrid() {
               const ref = n.filename.replace(/\.md$/, "");
               const folderName = isMain ? ref : noteFolder(n.frontmatter);
               const c = folderName ? folderColor(folderName) : undefined;
+              // Full-width "cover" treatment only in single-folder mode
+              // (and only for the focused folder's Main Doc). Otherwise
+              // Notable Folders render as ordinary cards.
+              const fullWidth = isMain && singleFolderMode && ref === pinnedRef;
               // Card × removes this folder's INCLUDE pill (only NF
               // Main Docs whose ref is an active include show it).
               const inFilter = includeSet.has(ref);
               return (
                 <div
-                  className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
+                  className={"card-grid-cell" + (fullWidth ? " is-full-width" : "")}
                   data-path={n.path}
                   key={n.id}
                 >
