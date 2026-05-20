@@ -103,6 +103,10 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   );
   const includeRefs = filters.filter((f) => f.kind === "include").map((f) => f.ref);
   const excludeRefs = filters.filter((f) => f.kind === "exclude").map((f) => f.ref);
+  // Single-folder mode = exactly one include → full-width Main Doc
+  // "cover" + notes below. Otherwise NFs render as ordinary cards.
+  const singleFolderMode = includeRefs.length === 1;
+  const pinnedRef = singleFolderMode ? (focusedFolder ?? includeRefs[0]) : null;
   const belongsTo = (n: PublishedNote, ref: string) =>
     n.ref === ref || n.folder === ref;
 
@@ -113,20 +117,14 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
       return true;
     });
-    const dateKey = (n: PublishedNote) => {
-      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
-      const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
-      return `${d} ${t}`;
-    };
-    // Pin one Main Document to the top: the clicked (focused) folder,
-    // else the sole include filter.
-    const pinnedRef = focusedFolder ?? (includeRefs.length === 1 ? includeRefs[0] : null);
+    // Single-folder mode pins that folder's Main Doc to the top (its
+    // "cover"); any other state is a flat recency timeline.
     const isPinned = (n: PublishedNote) => !!n.category && pinnedRef !== null && n.ref === pinnedRef;
     return [...filtered].sort((a, b) => {
       const am = isPinned(a);
       const bm = isPinned(b);
       if (am !== bm) return am ? -1 : 1;
-      return dateKey(b).localeCompare(dateKey(a));
+      return (b.mtime ?? 0) - (a.mtime ?? 0);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.notes, hidden, filters, focusedFolder]);
@@ -243,6 +241,7 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
             notes={visible}
             data={data}
             includeSet={includeSet}
+            fullWidthRef={singleFolderMode ? pinnedRef : null}
             onNavigate={navigate}
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
           />
@@ -294,11 +293,14 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 // ---------- Stream view ----------
 
 function StreamView({
-  notes, data, includeSet, onNavigate, onRemoveInclude,
+  notes, data, includeSet, fullWidthRef, onNavigate, onRemoveInclude,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
   includeSet: Set<string>;
+  /** The single Notable Folder whose Main Doc gets full-width cover
+   *  treatment (only set in single-folder mode); null otherwise. */
+  fullWidthRef: string | null;
   onNavigate: (ref: string) => void;
   onRemoveInclude: (ref: string) => void;
 }) {
@@ -324,10 +326,11 @@ function StreamView({
           : "";
         const colorSource = isMain ? n.ref : n.folder;
         const cardColor = colorSource ? folderColor(colorSource) : undefined;
+        const fullWidth = isMain && n.ref === fullWidthRef;
         return (
           <div
             key={n.ref}
-            className={"card-grid-cell" + (isMain ? " is-full-width" : "")}
+            className={"card-grid-cell" + (fullWidth ? " is-full-width" : "")}
             data-path={n.ref}
           >
             <Card
