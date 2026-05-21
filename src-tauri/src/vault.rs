@@ -480,5 +480,12 @@ pub fn open_path(path: String) -> Result<(), String> {
     let result = std::process::Command::new("xdg-open").arg(&path).spawn();
     #[cfg(target_os = "windows")]
     let result = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn();
+    // Desktop only. On mobile (iOS/Android) there's no shell to spawn,
+    // so `result` would otherwise be undefined and fail to compile.
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "open_path is not supported on this platform",
+    ));
     result.map(|_| ()).map_err(|e| e.to_string())
 }

@@ -571,7 +571,7 @@ export function Card(props: Props) {
   // stays. `${color}55` works because folderColor returns a 6-digit
   // hex string.
   const cardStyle: React.CSSProperties | undefined = color
-    ? { borderColor: `${color}55` }
+    ? { borderColor: `${color}88` }
     : undefined;
 
   return (

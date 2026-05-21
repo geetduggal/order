@@ -9,8 +9,8 @@
   --ink-soft:  #0d0d0d;
   --ink-faint: #8a8a87;
   --ink-ghost: #c4c2bd;
-  --rule:      #ececea;
-  --rule-soft: #f0efed;
+  --rule:      #d4d4cf;
+  --rule-soft: #e2e1dd;
 
   --royal:      #2a4ec0;
   --royal-soft: #e0e7f7;
@@ -500,17 +500,31 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .milkdown-host .ProseMirror p:last-child { margin-bottom: 0; }
 
-/* Lists: looser than the prose default so each item reads as its
-   own thought; nested lists tighten back up by 25%. */
+/* Lists: tight vertical rhythm so a bullet list reads as a compact
+   cluster, not a sea of gaps. */
 .milkdown-host .ProseMirror :is(ul, ol) {
-  margin: 0 0 1.05em;
-  padding-left: 1.5em;
+  margin: 0.35em 0 0.7em;
+  padding-left: 1.4em;
 }
-.milkdown-host .ProseMirror li { margin: 0.3em 0; }
-.milkdown-host .ProseMirror li > :is(ul, ol) {
-  margin: 0.3em 0;
+.milkdown-host .ProseMirror li {
+  margin: 0.05em 0;
 }
 .milkdown-host .ProseMirror li > p { margin: 0; }
+
+/* Distinct marker per nesting level. */
+.milkdown-host .ProseMirror ul { list-style-type: disc; }
+.milkdown-host .ProseMirror ul ul { list-style-type: circle; }
+.milkdown-host .ProseMirror ul ul ul { list-style-type: square; }
+.milkdown-host .ProseMirror li::marker { color: var(--ink-faint); }
+
+/* Nested lists: a subtle vertical bar marks each indentation level,
+   and the rows stay tight. */
+.milkdown-host .ProseMirror li > :is(ul, ol) {
+  margin: 0.05em 0 0.15em;
+  margin-left: 0.15em;
+  padding-left: 1.05em;
+  border-left: 1px solid var(--rule);
+}
 
 /* Block quotes: pulled-in italic with a soft left rule. */
 .milkdown-host .ProseMirror blockquote {
@@ -1494,39 +1508,10 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .new-note-fab:active { transform: scale(0.92); }
 
-/* Sits below the home-reset icon; click to scroll past pinned NF
-   Main Documents and land on the first regular note in the
-   currently-filtered set. Subtler than the + FAB. */
-.jump-to-notes {
-  position: fixed;
-  top: 66px;
-  left: 10px;
-  z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-ghost);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  opacity: 0.55;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
-}
-.jump-to-notes:hover {
-  opacity: 1;
-  color: var(--ink);
-  background: var(--bg-elev);
-}
-.jump-to-notes:active { transform: scale(0.92); }
-
-/* Publish action — same visual weight as the jump-to-notes icon,
-   sits below it on the left rail. Picks up a small coral badge
-   when there are public-flagged notes ready to ship. */
+/* Publish action — sits below the + FAB on the left rail. */
 .publish-fab {
   position: fixed;
-  top: 94px;
+  top: 38px;
   left: 10px;
   z-index: 50;
   width: 22px;
@@ -1534,11 +1519,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-ghost);
+  color: var(--ink-faint);
   background: transparent;
   border: none;
   border-radius: 4px;
-  opacity: 0.55;
+  opacity: 0.7;
   transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .publish-fab:hover {
@@ -1549,22 +1534,43 @@ input, textarea, select { outline: none; box-shadow: none; }
 .publish-fab:active { transform: scale(0.92); }
 
 /* ---------- Filter pill stack ---------- */
-/* Vertical column of active-filter pills, fixed to the left rail
-   below the +/home/jump/publish buttons (those occupy 10–116px).
-   Compact folder icons that expand on hover to reveal the name + a
-   remove ×. Sticky/fixed so they're always visible while scrolling. */
+/* Vertical column on the left rail: a search icon (opens the command
+   palette) at the top, then the active-filter pills. Sits below the +
+   and Publish buttons. */
 .filter-pills {
+  /* left: 8px centers the 26px circles on the same x-axis as the 22px
+     + / publish FABs above (which sit at left: 10px → center 21px). */
   position: fixed;
-  top: 124px;
-  left: 6px;
+  top: 70px;
+  left: 8px;
   z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 7px;
   align-items: flex-start;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - 86px);
   overflow: visible;
 }
+/* Search icon — opens the folder search dialog (same as Cmd+K). */
+.filter-search {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.filter-search:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+  background: var(--bg-elev);
+}
+.filter-search:active { transform: scale(0.92); }
 .filter-pill {
   display: flex;
   align-items: center;
@@ -1683,33 +1689,6 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 
 /* ---------- Publish pill + panel ---------- */
-/* Home-reset joins the left rail under the + FAB. Same visual
-   weight as the other left-rail icons so the column reads as a
-   single control strip. */
-.home-reset {
-  position: fixed;
-  top: 38px;
-  left: 10px;
-  z-index: 50;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  color: var(--ink-ghost);
-  background: transparent;
-  border: none;
-  opacity: 0.55;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
-}
-.home-reset:hover {
-  opacity: 1;
-  color: var(--ink);
-  background: var(--bg-elev, rgba(0, 0, 0, 0.04));
-}
-.home-reset:active { transform: scale(0.92); }
-
 /* Legacy pill rule kept for safety in case any stale markup
    references it — the visible publish action is now `.publish-fab`
    on the left rail. */
@@ -2632,21 +2611,22 @@ input, textarea, select { outline: none; box-shadow: none; }
     padding-top: 44px;
   }
 
-  /* Tighter gutters; clear the fixed left rail so the first column of
-     cards doesn't sit under the +/home/jump/publish icons. */
+  /* Dock the left-rail controls into a short horizontal row at the
+     very top so they don't carve a tall empty gutter down the side —
+     the content then uses nearly the full width. */
+  /* Icons keep the desktop vertical rail; content goes full width and
+     the fixed rail simply floats over the left edge. */
   .card-grid {
-    padding: 12px 12px 64px 38px;
+    padding: 12px 10px 64px 10px;
     column-gap: 8px;
     row-gap: 8px;
   }
   .order-card { padding: 10px 16px 12px; }
 
-  /* Newspaper sections collapse to a single column; the section
-     wrapper supplies the left-rail clearance, the inner grid sits
-     flush. Centerpiece span clamps to the single track automatically. */
-  .nf-sections { padding: 12px 12px 64px 38px; }
+  /* Newspaper sections collapse to a single column, flush to the edges. */
+  .nf-sections { padding: 12px 10px 64px 10px; }
   .nf-grid { column-gap: 8px; row-gap: 8px; }
-  .nf-divider { margin: 36px 8px; }
+  .nf-divider { margin: 32px 4px; }
 
   /* Full-bleed prose at a comfortable mobile size. */
   .milkdown-host .ProseMirror { font-size: 16px; }

@@ -92,3 +92,19 @@
   color: var(--coral);
 }
 .viewer-error code { font-family: var(--mono); }
+
+/* The viewer's only left-rail control is the filter search + pills.
+   There's no + / publish FAB above them, so start the rail at the top
+   rather than at the app's 70px offset. */
+.filter-pills { top: 10px; }
+
+/* ---------- Mobile: full-width content, vertical rail floats over it ---------- */
+/* The vertical icon rail stays (like desktop); content goes full width
+   and the fixed rail simply overlays the left edge. */
+@media (max-width: 640px) {
+  .nf-sections,
+  .card-grid {
+    padding: 12px 10px 64px 10px;
+  }
+  .nf-divider { margin: 32px 4px; }
+}

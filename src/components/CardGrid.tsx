@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Home as HouseIcon, ChevronsDown, ChevronsUp, Upload as UploadIcon } from "lucide-react";
+import { Upload as UploadIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
@@ -198,9 +198,6 @@ export function CardGrid() {
    *  the moment it appears. Cleared by the same scroll-target
    *  effect that handles the highlight pulse. */
   const [focusPath, setFocusPath] = useState<string | null>(null);
-  /** Toggles the left-rail jump-to-notes icon between "down" (jump
-   *  to the first regular note) and "up" (jump back to the top). */
-  const [jumpedDown, setJumpedDown] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
   // Active filter pills. `null` until hydrated so the first-load
   // default-home-exclude effect can tell "never set" from "user
@@ -210,10 +207,16 @@ export function CardGrid() {
   // expansion back to its first batch.
   const [collapseNonce, setCollapseNonce] = useState(0);
   // The folder whose Main Document is pinned to the top of the Stream.
-  // Set by clicking a filter pill; cleared whenever the filter set
-  // changes so a stale pin doesn't linger.
+  // Set by clicking a filter pill or picking one in the command
+  // palette. Cleared only when that folder is no longer an active
+  // include — so adding it (which changes `filters`) doesn't wipe the
+  // focus we just set.
   const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
-  useEffect(() => { setFocusedFolder(null); }, [filters]);
+  useEffect(() => {
+    setFocusedFolder((cur) =>
+      cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
+    );
+  }, [filters]);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -264,6 +267,16 @@ export function CardGrid() {
   // includes always compose with OR). Kept as a distinct name for the
   // list-render prop contract.
   const addFolderToFilter = navigateToRef;
+  /** Pick a folder from the command palette: switch to the Stream,
+   *  add it as an include, pin its Main Document, and scroll to it —
+   *  so Cmd+K lands you ON that page. */
+  const focusFolder = useCallback((ref: string) => {
+    setView("stream");
+    addInclude(ref);
+    setFocusedFolder(ref);
+    const path = notePathByRef(ref);
+    if (path) setScrollTargetPath(path);
+  }, [addInclude]);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -1060,41 +1073,12 @@ export function CardGrid() {
 
       <button
         type="button"
-        className="jump-to-notes"
-        onClick={() => {
-          // Toggle between jumping down to the first non-NF note in
-          // the active filter and jumping back to the top of the
-          // grid. The icon flips to match the next action.
-          if (jumpedDown) {
-            const grid = gridEl;
-            grid?.scrollIntoView({ behavior: "smooth", block: "start" });
-            window.scrollTo({ top: 0, behavior: "smooth" });
-            setJumpedDown(false);
-            return;
-          }
-          const firstNote = sortedNotes.find((n) => !isNotableFolder(n.frontmatter));
-          if (firstNote) {
-            setView("stream");
-            setScrollTargetPath(firstNote.path);
-            setJumpedDown(true);
-          }
-        }}
-        title={jumpedDown ? "Back to top" : "Jump to notes"}
-        aria-label={jumpedDown ? "Back to top" : "Jump to notes for this folder"}
-      >
-        {jumpedDown
-          ? <ChevronsUp size={13} strokeWidth={1.8} />
-          : <ChevronsDown size={13} strokeWidth={1.8} />}
-      </button>
-
-      <button
-        type="button"
         className="publish-fab"
         onClick={() => setPublishOpen((o) => !o)}
         title="Publish (Cmd+P)"
         aria-label="Publish"
       >
-        <UploadIcon size={13} strokeWidth={1.8} />
+        <UploadIcon size={14} strokeWidth={2.1} />
       </button>
 
       {creatorOpen && (
@@ -1132,19 +1116,10 @@ export function CardGrid() {
         {sidebarOpen ? "›" : "‹"}
       </button>
 
-      <button
-        type="button"
-        className="home-reset"
-        onClick={() => { resetToDefault(); setJumpedDown(false); }}
-        title="Reset filters (home view)"
-        aria-label="Reset filters to the default home view"
-      >
-        <HouseIcon size={13} strokeWidth={1.8} />
-      </button>
-
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}
+        onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           // Focus this folder: pin its Main Document to the top of the
           // Stream (without changing the filter set), then scroll to
@@ -1237,7 +1212,7 @@ export function CardGrid() {
         <CommandPalette
           folders={notableFolders}
           selected={includeSet}
-          onToggle={addInclude}
+          onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
         />
       )}

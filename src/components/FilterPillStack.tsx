@@ -1,23 +1,38 @@
-// Filter pill stack — sticky left rail below the fixed top buttons.
-// Each active filter is a compact folder icon that expands on hover to
-// reveal the folder name + a remove ×. Clicking the icon body focuses
-// that folder (pins its Main Document to the top of the Stream);
-// clicking × removes the pill. Shared by the app and the web viewer.
+// Filter pill stack — sticky left rail. A search icon sits at the top
+// (opens the command palette, same as Cmd+K), with the active-filter
+// pills below it. Each pill is a compact folder icon that expands on
+// hover to reveal the folder name + a remove ×. Clicking the icon body
+// focuses that folder (pins its Main Document to the top of the
+// Stream); clicking × removes the pill. Shared by app + web viewer.
 
-import { X as XIcon } from "lucide-react";
+import { Search as SearchIcon, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { Filter } from "../lib/filters";
 
 export function FilterPillStack({
-  filters, onRemove, onJump,
+  filters, onRemove, onJump, onSearch,
 }: {
   filters: Filter[];
   onRemove: (f: Filter) => void;
   onJump: (ref: string) => void;
+  /** Open the folder search dialog (the Cmd+K command palette). When
+   *  set, a search icon renders just above the pills. */
+  onSearch?: () => void;
 }) {
-  if (filters.length === 0) return null;
+  if (filters.length === 0 && !onSearch) return null;
   return (
     <div className="filter-pills" role="list" aria-label="Active filters">
+      {onSearch && (
+        <button
+          type="button"
+          className="filter-search"
+          onClick={onSearch}
+          title="Search folders (Cmd+K)"
+          aria-label="Search folders"
+        >
+          <SearchIcon size={15} strokeWidth={2.2} />
+        </button>
+      )}
       {filters.map((f) => {
         const color = folderColor(f.ref);
         const Icon = folderIcon(f.ref);
@@ -36,7 +51,7 @@ export function FilterPillStack({
               title={isExclude ? `Excluding ${f.ref} — click to jump` : `Jump to ${f.ref}`}
             >
               <span className="filter-pill-icon">
-                <Icon size={14} strokeWidth={1.8} />
+                <Icon size={14} strokeWidth={2.2} />
               </span>
               <span className="filter-pill-name">{f.ref}</span>
             </button>

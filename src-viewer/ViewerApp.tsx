@@ -17,7 +17,6 @@ import type { Filter } from "../src/lib/filters";
 import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
 import { folderColor } from "../src/lib/folders";
-import { Home as HouseIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 
 type View = "stream" | "week" | "month" | "year";
 
@@ -27,8 +26,7 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   // first paint. Toggle via the › / ‹ button or Cmd+;.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>("stream");
-  const [jumpedDown, setJumpedDown] = useState(false);
-  // Bumped by the home-reset to collapse Show-more expansions.
+  // Bumped by resetToDefault to collapse Show-more expansions.
   const [collapseNonce, setCollapseNonce] = useState(0);
 
   // Default view = the home Notable Folder focused (single include),
@@ -37,9 +35,15 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     () => data.home.name ? [{ kind: "include", ref: data.home.name }] : [],
   );
   // The folder whose Main Document is pinned to the top of the Stream.
-  // Set by clicking a pill; cleared when the filter set changes.
+  // Set by clicking a pill or picking one in the palette. Cleared only
+  // when it's no longer an active include, so adding it doesn't wipe
+  // the focus we just set.
   const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
-  useEffect(() => { setFocusedFolder(null); }, [filters]);
+  useEffect(() => {
+    setFocusedFolder((cur) =>
+      cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
+    );
+  }, [filters]);
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
   // the scroll fires.
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
@@ -63,13 +67,20 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   }
   function resetToDefault() {
     setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
-    setJumpedDown(false);
     setCollapseNonce((n) => n + 1);
   }
   // Wikilink / list-row click → add an include + scroll to it.
   function navigate(ref: string) {
     setView("stream");
     addInclude(ref);
+    setScrollTarget(ref);
+  }
+  // Command palette pick → like navigate, but also pins the folder's
+  // Main Document so Cmd+K lands you ON that page.
+  function focusFolder(ref: string) {
+    setView("stream");
+    addInclude(ref);
+    setFocusedFolder(ref);
     setScrollTarget(ref);
   }
 
@@ -176,19 +187,6 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     return () => clearTimeout(timer);
   }, [view, scrollTarget, filters]);
 
-  function jumpToNotes() {
-    if (jumpedDown) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      setJumpedDown(false);
-      return;
-    }
-    const cell = document.querySelector<HTMLElement>(".card-grid-cell:not(.is-full-width)");
-    if (cell) {
-      cell.scrollIntoView({ behavior: "smooth", block: "start" });
-      setJumpedDown(true);
-    }
-  }
-
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -205,30 +203,10 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
 
   return (
     <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
-      <button
-        type="button"
-        className="home-reset"
-        onClick={resetToDefault}
-        title="Reset filters (home view)"
-        aria-label="Reset filters to the default home view"
-      >
-        <HouseIcon size={13} strokeWidth={1.8} />
-      </button>
-      <button
-        type="button"
-        className="jump-to-notes"
-        onClick={jumpToNotes}
-        title={jumpedDown ? "Back to top" : "Jump to notes"}
-        aria-label={jumpedDown ? "Back to top" : "Jump to notes for this folder"}
-      >
-        {jumpedDown
-          ? <ChevronsUp size={13} strokeWidth={1.8} />
-          : <ChevronsDown size={13} strokeWidth={1.8} />}
-      </button>
-
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}
+        onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           setView("stream");
           setFocusedFolder(ref);
@@ -293,7 +271,7 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
         <CommandPalette
           folders={notableFolders}
           selected={includeSet}
-          onToggle={addInclude}
+          onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
         />
       )}
