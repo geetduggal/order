@@ -9,6 +9,8 @@ today and iOS next.
 
 ![Order — a Notable Folder rendered as a newspaper section: the Main Document as a wide centerpiece with recent notes orbiting around it](img/order-home.png)
 
+**Demo videos:** [Basics](https://drive.google.com/file/d/1H2Yv9Jf59Og1bimFuDhJmIlOvjCA4iDp/view?usp=sharing) · [Lists](https://drive.google.com/file/d/1TdWU6fPFFOTDnodDT3AWenjyuuMRjffg/view?usp=sharing)
+
 > **A twenty-year through line.** The impulse behind Order is old. It first
 > surfaced around 2004 in [*PileTiddly*](https://geetduggal.com/PileTiddly.html) —
 > a TiddlyWiki experiment, preserved here for nostalgia — built on the idea that
