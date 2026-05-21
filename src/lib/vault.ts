@@ -7,11 +7,37 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { readDir } from "@tauri-apps/plugin-fs";
 import { ATTACHMENTS_DIRNAME } from "./attachments";
 
-export const VAULT_SUBPATH = "Development/Home";
+// Vault location relative to the home dir. Per-machine default via a
+// gitignored `.env.local` (VITE_VAULT_SUBPATH=...); the in-app
+// Settings folder picker overrides it (absolute path in localStorage)
+// so moving between machines never needs a code or env edit.
+export const VAULT_SUBPATH = import.meta.env.VITE_VAULT_SUBPATH ?? "Documents/Dropbox/Home";
 
-export async function vaultRoot(): Promise<string> {
+const VAULT_PATH_KEY = "order.vaultPath";
+
+/** Absolute vault path chosen in Settings, or null to use the default. */
+export function getVaultOverride(): string | null {
+  try { return localStorage.getItem(VAULT_PATH_KEY); } catch { return null; }
+}
+export function setVaultOverride(path: string | null): void {
+  try {
+    if (path) localStorage.setItem(VAULT_PATH_KEY, path);
+    else localStorage.removeItem(VAULT_PATH_KEY);
+  } catch { /* non-fatal */ }
+}
+
+/** The env/default vault path (ignores any Settings override). */
+export async function defaultVaultRoot(): Promise<string> {
   const home = await homeDir();
   return join(home, VAULT_SUBPATH);
+}
+
+/** The effective vault root: a Settings override if set, else the
+ *  env/default location. */
+export async function vaultRoot(): Promise<string> {
+  const override = getVaultOverride();
+  if (override) return override;
+  return defaultVaultRoot();
 }
 
 /** Walk every `.md` file under the vault, skipping the Attachments

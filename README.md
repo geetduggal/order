@@ -135,7 +135,7 @@ Folder lives in its own directory inside its Category, which lives inside
 its Area, all rooted at the vault.
 
 ```
-~/Development/Home/                     (vault root)
+~/Documents/Dropbox/Home/               (vault root)
 ├── Areas.md                            list: cards, role: areas
 ├── Attachments/                        pasted / dropped images
 ├── Creative/
@@ -475,7 +475,7 @@ pnpm tauri:ios:dev    # opens iOS Simulator
 pnpm tauri:ios:build  # device build
 ```
 
-First launch reads `~/Development/Home/` (the vault root) and walks
+First launch reads `~/Documents/Dropbox/Home/` (the vault root) and walks
 **every** `.md` file recursively — depth is arbitrary, since the chain
 encodes the hierarchy. Areas.md and the per-level directories (with their
 Main Docs) are written on first run if absent; otherwise a one-shot

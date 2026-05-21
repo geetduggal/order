@@ -25,8 +25,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$HOME/Development/Home/**",
-          "$HOME/Documents/Dropbox/order/**"
+          "$HOME/**"
         ]
       }
     }

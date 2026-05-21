@@ -5,10 +5,10 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import { vaultRoot, walkVaultMarkdown } from "../lib/vault";
+import { vaultRoot, walkVaultMarkdown, setVaultOverride } from "../lib/vault";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
@@ -16,6 +16,7 @@ import { YearLinearView } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
+import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import { FilterPillStack } from "./FilterPillStack";
@@ -557,6 +558,17 @@ export function CardGrid() {
   const [searchFocusSignal, setSearchFocusSignal] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /** Change (or reset) the vault folder from Settings: persist the
+   *  choice, re-seed the home filter for the new vault, and reload. */
+  const handleChangeVault = useCallback(async (path: string | null) => {
+    setVaultOverride(path);
+    seededDefault.current = false;
+    setFilters([]);
+    setFocusedFolder(null);
+    await reloadNotes();
+  }, [reloadNotes]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -1081,6 +1093,16 @@ export function CardGrid() {
         <UploadIcon size={14} strokeWidth={2.1} />
       </button>
 
+      <button
+        type="button"
+        className="settings-fab"
+        onClick={() => setSettingsOpen(true)}
+        title="Settings"
+        aria-label="Settings"
+      >
+        <SettingsIcon size={14} strokeWidth={2.1} />
+      </button>
+
       {creatorOpen && (
         <div className="new-note-picker" role="menu">
           {[...includeSet].map((name) => {
@@ -1223,6 +1245,13 @@ export function CardGrid() {
           publishableNotes={publishableNotes}
           onPublish={handlePublish}
           onClose={() => setPublishOpen(false)}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsPanel
+          onChangeVault={handleChangeVault}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 

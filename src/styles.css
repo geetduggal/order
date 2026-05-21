@@ -1533,6 +1533,126 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .publish-fab:active { transform: scale(0.92); }
 
+/* Settings gear — pinned to the bottom-left so it stays out of the
+   way of the + / publish / filter rail up top. */
+.settings-fab {
+  position: fixed;
+  bottom: 12px;
+  left: 10px;
+  z-index: 50;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.settings-fab:hover { opacity: 1; color: var(--ink); background: var(--bg-elev); }
+.settings-fab:active { transform: scale(0.92); }
+
+/* ---------- Settings panel ---------- */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(20, 20, 20, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.settings-panel {
+  width: min(540px, 92vw);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(20, 20, 20, 0.18);
+  padding: 18px 20px 20px;
+  font-family: var(--sans);
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.settings-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.settings-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.settings-close:hover { color: var(--ink); background: var(--bg-elev); }
+.settings-row { display: flex; flex-direction: column; gap: 8px; }
+.settings-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.settings-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  word-break: break-all;
+}
+.settings-tag {
+  font-family: var(--sans);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.settings-actions { display: flex; gap: 8px; margin-top: 4px; }
+.settings-btn {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.settings-btn:hover { border-color: var(--ink-faint); background: var(--bg-elev); }
+.settings-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-btn-quiet { border-color: transparent; color: var(--ink-faint); }
+.settings-btn-quiet:hover { color: var(--ink); }
+.settings-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin-top: 6px;
+}
+
 /* ---------- Filter pill stack ---------- */
 /* Vertical column on the left rail: a search icon (opens the command
    palette) at the top, then the active-filter pills. Sits below the +

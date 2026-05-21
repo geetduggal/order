@@ -1,6 +1,10 @@
 node_modules/
 .DS_Store
 
+# Per-machine env overrides (e.g. VITE_VAULT_SUBPATH for a different vault path)
+.env.local
+.env.*.local
+
 # Vite output (populated by `pnpm build`); keep an empty dist/ so Tauri's
 # `generate_context!` macro validates the configured path.
 dist/*
@@ -19,7 +23,6 @@ src-tauri/gen/android/
 .vscode/
 .idea/
 tsconfig.tsbuildinfo
----
 
 # Viewer bundle output — produced by `pnpm build:viewer`; keep an
 # empty dist-viewer/ so `tauri:dev` doesn't fail before the user
