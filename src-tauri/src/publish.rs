@@ -8,7 +8,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CLONES_SUBDIR: &str = "publish-clones";
@@ -47,8 +47,20 @@ fn parse_target(s: &str) -> Result<(String, String, String), String> {
     Ok((parts[0].to_string(), parts[1].to_string(), parts[2].to_string()))
 }
 
+/// A `git` invocation that can never block on an interactive prompt.
+/// The app runs without a controlling terminal, so a credential or SSH
+/// host-key prompt would hang the push forever; forcing non-interactive
+/// turns an auth failure into a fast error the Publish panel can show.
+fn git_base() -> Command {
+    let mut cmd = Command::new("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+        .stdin(Stdio::null());
+    cmd
+}
+
 fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    let out = git_base()
         .current_dir(cwd)
         .args(args)
         .output()
@@ -65,7 +77,7 @@ fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn clone_to(url: &str, dest: &Path) -> Result<(), String> {
-    let out = Command::new("git")
+    let out = git_base()
         .args(["clone", url])
         .arg(dest)
         .output()
@@ -105,7 +117,20 @@ fn timestamp_label() -> String {
 }
 
 #[tauri::command]
-pub fn publish_site(
+pub async fn publish_site(
+    app: tauri::AppHandle,
+    input: PublishInput,
+) -> Result<PublishResult, String> {
+    // The body does blocking git + filesystem work. Tauri drives sync
+    // command bodies on the main thread, which freezes the window (the
+    // macOS "beach ball") for the whole clone/copy/push. Run it on a
+    // blocking worker so the UI stays responsive while publishing.
+    tauri::async_runtime::spawn_blocking(move || publish_site_inner(app, input))
+        .await
+        .map_err(|e| format!("publish task failed to join: {}", e))?
+}
+
+fn publish_site_inner(
     app: tauri::AppHandle,
     input: PublishInput,
 ) -> Result<PublishResult, String> {
@@ -155,8 +180,22 @@ pub fn publish_site(
     // Copy the viewer bundle in. The bundle is a directory of HTML
     // + JS + CSS produced by `pnpm build:viewer` at Order's project
     // root (in dev) or shipped as a Tauri resource (in production).
-    let bundle = PathBuf::from(&input.viewer_bundle_path);
-    if !bundle.is_dir() {
+    // Prefer the path the frontend passed, but fall back to the dev
+    // build dir next to this crate so publishing isn't tied to one
+    // machine's checkout location (the frontend can't know the repo
+    // root). Production (TODO) should resolve via the resource dir.
+    let bundle = {
+        let from_fe = PathBuf::from(&input.viewer_bundle_path);
+        if from_fe.join("index.html").is_file() {
+            from_fe
+        } else {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .map(|p| p.join("dist-viewer"))
+                .unwrap_or(from_fe)
+        }
+    };
+    if !bundle.join("index.html").is_file() {
         return Err(format!(
             "viewer bundle not found at {} — run `pnpm build:viewer` first",
             bundle.display(),
