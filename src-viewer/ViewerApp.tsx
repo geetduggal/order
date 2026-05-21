@@ -5,6 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
+import { ChevronsDown, ChevronsUp } from "lucide-react";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
@@ -47,6 +48,10 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
   // the scroll fires.
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // Ref of the card the "jump to first note" toggle points at — its
+  // border stays coral while jumped. Any filter change exits the state.
+  const [coralRef, setCoralRef] = useState<string | null>(null);
+  useEffect(() => { setCoralRef(null); }, [filters]);
 
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
@@ -150,6 +155,21 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.notes, hidden, filters, focusedFolder]);
 
+  // "Jump to first note" toggle: scroll between the folder cover (its
+  // Main Doc) and its first ordinary entry, marking that entry coral.
+  const firstEntry = visible.find((n) => !n.category) ?? null;
+  const folderTop = visible.find((n) => !!n.category) ?? null;
+  function toggleFirstEntry() {
+    if (coralRef) {
+      if (folderTop) setScrollTarget(folderTop.ref);
+      setCoralRef(null);
+      return;
+    }
+    if (!firstEntry) return;
+    setScrollTarget(firstEntry.ref);
+    setCoralRef(firstEntry.ref);
+  }
+
   // Calendar projection from the same filtered set.
   const calendarNotes: NoteMeta[] = useMemo(
     () => visible.map((n) => ({
@@ -187,6 +207,18 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     return () => clearTimeout(timer);
   }, [view, scrollTarget, filters]);
 
+  // Persistent coral border on the card the "jump to first note" toggle
+  // points at (works in both the newspaper and flat-grid renders).
+  useEffect(() => {
+    document.querySelectorAll(".card-grid-cell.is-coral-pinned")
+      .forEach((el) => el.classList.remove("is-coral-pinned"));
+    if (!coralRef) return;
+    const target = coralRef.toLowerCase();
+    Array.from(document.querySelectorAll<HTMLElement>(".card-grid-cell"))
+      .find((c) => (c.dataset.path ?? "").toLowerCase() === target)
+      ?.classList.add("is-coral-pinned");
+  }, [coralRef, view, filters]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -202,7 +234,21 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   }, []);
 
   return (
-    <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+    <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+      <button
+        type="button"
+        className={"first-note-fab" + (coralRef ? " is-on" : "")}
+        onClick={toggleFirstEntry}
+        disabled={!coralRef && !firstEntry}
+        title={coralRef ? "Back to folder" : "Jump to first note"}
+        aria-label={coralRef ? "Back to folder" : "Jump to first note"}
+        aria-pressed={!!coralRef}
+      >
+        {coralRef
+          ? <ChevronsUp size={14} strokeWidth={2.1} />
+          : <ChevronsDown size={14} strokeWidth={2.1} />}
+      </button>
+
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}

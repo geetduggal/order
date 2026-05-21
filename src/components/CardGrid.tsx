@@ -5,9 +5,9 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { homeDir, join } from "@tauri-apps/api/path";
+import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride } from "../lib/vault";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
@@ -45,9 +45,11 @@ function writeSidebarOpen(open: boolean): void {
 // via ../lib/filters + ./FilterPillStack.
 //
 // Bumped to .v2 when the default flipped from exclude-home to
-// include-home — invalidates any pre-existing persisted set one time
-// so the new home-focused default seeds on next launch.
-const FILTERS_KEY = "order.activeFilters.v2";
+// include-home, then .v3 to clear a stale empty-set a transient build
+// could persist (which suppressed the home seed) — each bump
+// invalidates the pre-existing persisted set once so the home-focused
+// default re-seeds on next launch.
+const FILTERS_KEY = "order.activeFilters.v3";
 
 function readStoredFilters(): Filter[] | null {
   try {
@@ -218,6 +220,12 @@ export function CardGrid() {
       cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
     );
   }, [filters]);
+  // Path of the card the "jump to first note" toggle points at. Non-null
+  // === we've scrolled to the folder's first ordinary note (its border is
+  // coral); the next click scrolls back to the folder cover. Any manual
+  // filter change exits the jumped state.
+  const [coralPath, setCoralPath] = useState<string | null>(null);
+  useEffect(() => { setCoralPath(null); }, [filters]);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -404,17 +412,13 @@ export function CardGrid() {
     });
     const dataJson = JSON.stringify(site);
     const vault = await vaultRoot();
-    // Viewer bundle path: in dev this is <project>/dist-viewer. The
-    // user must `pnpm build:viewer` once before publishing. A
-    // production build would resolve via Tauri resource_dir; the
-    // hardcoded dev path stays for now.
-    const home_root = await homeDir();
-    const viewerBundlePath = await join(home_root, "Documents", "Dropbox", "order", "src", "dist-viewer");
     return invoke<PublishOutcome>("publish_site", {
       input: {
         home_target: home.target,
         vault_path: vault,
-        viewer_bundle_path: viewerBundlePath,
+        // Rust resolves the viewer bundle (dev build dir, or the
+        // Tauri resource dir in production) — nothing to send here.
+        viewer_bundle_path: "",
         data_json: dataJson,
       },
     });
@@ -705,6 +709,18 @@ export function CardGrid() {
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
+  // Persistent coral border on the card the "jump to first note" toggle
+  // points at. Applied document-wide so it works in both the flat grid
+  // and the per-section newspaper render.
+  useEffect(() => {
+    document.querySelectorAll(".card-grid-cell.is-coral-pinned")
+      .forEach((el) => el.classList.remove("is-coral-pinned"));
+    if (!coralPath) return;
+    document
+      .querySelector(`.card-grid-cell[data-path="${CSS.escape(coralPath)}"]`)
+      ?.classList.add("is-coral-pinned");
+  }, [coralPath, view, notes]);
+
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
     const root = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
@@ -979,6 +995,22 @@ export function CardGrid() {
     return sortKey(b).localeCompare(sortKey(a));
   });
 
+  // The "jump to first note" toggle scrolls between the folder cover (its
+  // Notable-Folder Main Doc) and its first ordinary entry, marking that
+  // entry with a coral border. Pure scroll — no filter/view change.
+  const firstEntry = sortedNotes.find((n) => !isNotableFolder(n.frontmatter)) ?? null;
+  const folderTop = sortedNotes.find((n) => isNotableFolder(n.frontmatter)) ?? null;
+  const toggleFirstEntry = () => {
+    if (coralPath) {
+      if (folderTop) setScrollTargetPath(folderTop.path);
+      setCoralPath(null);
+      return;
+    }
+    if (!firstEntry) return;
+    setScrollTargetPath(firstEntry.path);
+    setCoralPath(firstEntry.path);
+  };
+
   // Render one note as a <Card>. Shared by the temporal flat grid and
   // the newspaper sections; capHeight is only set in newspaper mode.
   const cardNode = (n: LoadedNote, capHeight?: number) => {
@@ -1091,6 +1123,20 @@ export function CardGrid() {
         aria-label="Publish"
       >
         <UploadIcon size={14} strokeWidth={2.1} />
+      </button>
+
+      <button
+        type="button"
+        className={"first-note-fab" + (coralPath ? " is-on" : "")}
+        onClick={toggleFirstEntry}
+        disabled={!coralPath && !firstEntry}
+        title={coralPath ? "Back to folder" : "Jump to first note"}
+        aria-label={coralPath ? "Back to folder" : "Jump to first note"}
+        aria-pressed={!!coralPath}
+      >
+        {coralPath
+          ? <ChevronsUp size={14} strokeWidth={2.1} />
+          : <ChevronsDown size={14} strokeWidth={2.1} />}
       </button>
 
       <button

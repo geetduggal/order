@@ -53,6 +53,23 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
+// Pull a date/year out of a list item's meta so it can be pinned to the
+// right of the row. `secondary` is any remaining text (e.g. an academic
+// venue) to show as a dim subtitle that wraps under the title.
+function splitDatedMeta(meta: string): { pinned: string; secondary: string } | null {
+  const m = meta.trim();
+  if (!m) return null;
+  // Articles: a leading ISO date is the whole meta.
+  if (/^\d{4}-\d{2}-\d{2}/.test(m)) return { pinned: m, secondary: "" };
+  // Academic: "Venue · 2017" — pin the trailing 4-digit year.
+  const parts = m.split(" · ");
+  const last = parts[parts.length - 1].trim();
+  if (parts.length > 1 && /^\d{4}$/.test(last)) {
+    return { pinned: last, secondary: parts.slice(0, -1).join(" · ").trim() };
+  }
+  return null;
+}
+
 export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
   const [draggedRef, setDraggedRef] = useState<string | null>(null);
   const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
@@ -311,21 +328,33 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                           : undefined)
                       : undefined;
                     const subTitle = displayTitleFor(sub, subNote);
+                    // Pin a leading ISO date (Articles) or a trailing
+                    // year (Academic: "Venue · 2017") to the right; the
+                    // remainder, if any, wraps as a dim subtitle.
+                    const dated = splitDatedMeta(meta);
+                    const titleEl = subClick ? (
+                      <button
+                        type="button"
+                        className="lr-sublist-title is-link"
+                        onClick={subClick}
+                        title={`Open ${subTitle}`}
+                      >
+                        {subTitle}
+                      </button>
+                    ) : (
+                      <span className="lr-sublist-title">{subTitle}</span>
+                    );
                     return (
-                      <li key={sub.ref} className="lr-sublist-item">
-                        {subClick ? (
-                          <button
-                            type="button"
-                            className="lr-sublist-title is-link"
-                            onClick={subClick}
-                            title={`Open ${subTitle}`}
-                          >
-                            {subTitle}
-                          </button>
-                        ) : (
-                          <span className="lr-sublist-title">{subTitle}</span>
-                        )}
-                        {meta && <span className="lr-sublist-meta"> · {meta}</span>}
+                      <li key={sub.ref} className={"lr-sublist-item" + (dated ? " is-dated" : "")}>
+                        {dated ? (
+                          <span className="lr-sublist-main">
+                            {titleEl}
+                            {dated.secondary && <span className="lr-sublist-sub">{dated.secondary}</span>}
+                          </span>
+                        ) : titleEl}
+                        {dated
+                          ? <span className="lr-sublist-date">{dated.pinned}</span>
+                          : (meta && <span className="lr-sublist-meta"> · {meta}</span>)}
                       </li>
                     );
                   })}
