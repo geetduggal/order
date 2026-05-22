@@ -786,15 +786,35 @@ export function CardGrid() {
   }, []);
 
   /** Assign (or clear) a regular note's Notable Folder. Writes the
-   *  `folder: [[Name]]` field into the file's YAML, then mirrors the
-   *  change into local state so the chip + filtering reflect it. */
+   *  `folder: [[Name]]` field into the file's YAML AND moves the file
+   *  into that folder's directory on disk so the layout matches the
+   *  YAML (mirrors where createNote places new notes). Clearing a
+   *  folder just rewrites YAML and leaves the file where it is. */
   const handleAssignFolder = useCallback(async (path: string, folderName: string | null) => {
     const raw = await invoke<string>("read_text", { path });
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
     if (folderName) next.folder = `[[${folderName}]]`;
     else delete next.folder;
-    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    const content = joinFrontmatter(next, body);
+
+    // Move into the target folder's directory when it resolves and
+    // differs from where the file currently lives. write-new + delete-
+    // old (via uniqueWrite) handles name collisions in the target.
+    const targetDir = folderName ? noteDirByRef(folderName) : null;
+    const curDir = path.slice(0, path.lastIndexOf("/"));
+    if (targetDir && targetDir !== curDir) {
+      const filename = path.split("/").pop() ?? "note.md";
+      const newPath = await uniqueWrite(targetDir, filename, content);
+      await invoke("delete_file", { path });
+      setNotes((prev) => prev?.map((n) =>
+        n.path === path
+          ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }
+          : n) ?? null);
+      return;
+    }
+
+    await invoke("write_text", { path, content });
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 

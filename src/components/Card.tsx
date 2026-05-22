@@ -774,16 +774,34 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
   if (current && !open) {
     const f = available.find((x) => x.name === current);
     const color = f?.color;
-    return (
-      <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined} title={current}>
+    const label = (
+      <>
         <FolderIcon size={10} strokeWidth={2} />
         <span className="order-card-folder-name">{current}</span>
+      </>
+    );
+    return (
+      <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined} title={current}>
+        {available.length > 0 ? (
+          // Default action: open the picker to move this note to another
+          // folder (same affordance as "+ folder" when unassigned).
+          <button
+            type="button"
+            className="order-card-folder-chip-btn"
+            onClick={onOpen}
+            title={`Change folder — currently ${current}`}
+          >
+            {label}
+          </button>
+        ) : (
+          label
+        )}
         <button
           type="button"
           className="order-card-folder-clear"
           onClick={() => { void onAssign(null); }}
-          title="Remove folder"
-          aria-label="Remove folder"
+          title="Remove from folder"
+          aria-label="Remove from folder"
         >
           <XIcon size={10} strokeWidth={2.5} />
         </button>
