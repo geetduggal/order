@@ -1,4 +1,5 @@
 mod vault;
+mod vault_fs;
 mod watcher;
 mod publish;
 
@@ -15,8 +16,18 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { vault_path: Mutex::new(None) })
+        .manage(vault_fs::VaultState::default())
         .invoke_handler(tauri::generate_handler![
             vault::set_vault,
+            vault_fs::vault_set_root,
+            vault_fs::vault_read_text,
+            vault_fs::vault_write_text,
+            vault_fs::vault_write_binary,
+            vault_fs::vault_read_dir,
+            vault_fs::vault_exists,
+            vault_fs::vault_stat,
+            vault_fs::vault_rename,
+            vault_fs::vault_remove,
             vault::scan_vault,
             vault::refresh_note,
             vault::read_note,
