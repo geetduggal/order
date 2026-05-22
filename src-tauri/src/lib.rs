@@ -2,6 +2,7 @@ mod vault;
 mod vault_fs;
 mod watcher;
 mod publish;
+mod publish_ios;
 
 use std::sync::Mutex;
 use tauri::Manager;
