@@ -6,6 +6,7 @@
 import { homeDir, join } from "@tauri-apps/api/path";
 import { readDir } from "@tauri-apps/plugin-fs";
 import { ATTACHMENTS_DIRNAME } from "./attachments";
+import { vaultFs } from "./vault-fs";
 
 // Vault location relative to the home dir. Per-machine default via a
 // gitignored `.env.local` (VITE_VAULT_SUBPATH=...); the in-app
@@ -40,12 +41,24 @@ export async function vaultRoot(): Promise<string> {
   return defaultVaultRoot();
 }
 
+/** Resolve the effective vault root AND push it to the Rust FS bridge,
+ *  so vault-relative commands (vaultFs.*) resolve correctly. Called at
+ *  the start of every load and whenever the vault override changes.
+ *  Returns the absolute root for callers that still need it. */
+export async function syncVaultRoot(): Promise<string> {
+  const root = await vaultRoot();
+  await vaultFs.setRoot(root);
+  return root;
+}
+
 /** Walk every `.md` file under the vault, skipping the Attachments
  *  dir and any dotfiles. Returns absolute paths + basenames.
  *  Recursive because Notable Folder Main Docs may live one or more
  *  directories deep. */
 export async function walkVaultMarkdown(): Promise<{ path: string; filename: string }[]> {
-  const root = await vaultRoot();
+  // syncVaultRoot (not vaultRoot) so the Rust FS bridge always has the
+  // current root before any vault-relative op runs this load cycle.
+  const root = await syncVaultRoot();
   const out: { path: string; filename: string }[] = [];
   await walk(root);
   return out;
