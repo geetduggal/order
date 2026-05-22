@@ -41,14 +41,32 @@ export async function vaultRoot(): Promise<string> {
   return defaultVaultRoot();
 }
 
+// Last absolute root pushed to the Rust bridge. Cached so toVaultRel can
+// strip it synchronously at FS call sites without an await.
+let cachedRoot: string | null = null;
+
 /** Resolve the effective vault root AND push it to the Rust FS bridge,
  *  so vault-relative commands (vaultFs.*) resolve correctly. Called at
  *  the start of every load and whenever the vault override changes.
  *  Returns the absolute root for callers that still need it. */
 export async function syncVaultRoot(): Promise<string> {
   const root = await vaultRoot();
+  cachedRoot = root;
   await vaultFs.setRoot(root);
   return root;
+}
+
+/** Convert an absolute path under the vault to a vault-relative path for
+ *  the vaultFs bridge. Idempotent: an already-relative path (no leading
+ *  cached root, no leading "/") passes through unchanged, so call sites
+ *  can wrap any path without knowing which form they hold. */
+export function toVaultRel(p: string): string {
+  if (cachedRoot) {
+    if (p === cachedRoot) return "";
+    const prefix = cachedRoot.endsWith("/") ? cachedRoot : `${cachedRoot}/`;
+    if (p.startsWith(prefix)) return p.slice(prefix.length);
+  }
+  return p.replace(/^\/+/, "");
 }
 
 /** Walk every `.md` file under the vault, skipping the Attachments
