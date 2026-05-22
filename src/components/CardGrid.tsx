@@ -784,7 +784,7 @@ export function CardGrid() {
 
   const handleCardDelete = useCallback(async (id: string, path: string) => {
     try {
-      await invoke("delete_file", { path });
+      await vaultFs.remove(toVaultRel(path));
     } catch (err) {
       console.error("delete_file failed:", err);
       throw err;
@@ -813,7 +813,7 @@ export function CardGrid() {
     if (targetDir && targetDir !== curDir) {
       const filename = path.split("/").pop() ?? "note.md";
       const newPath = await uniqueWrite(targetDir, filename, content);
-      await invoke("delete_file", { path });
+      await vaultFs.remove(toVaultRel(path));
       setNotes((prev) => prev?.map((n) =>
         n.path === path
           ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }

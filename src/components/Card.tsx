@@ -5,9 +5,10 @@
 // views stay in sync.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { dirname, join } from "@tauri-apps/api/path";
-import { vaultRoot } from "../lib/vault";
+import { vaultRoot, toVaultRel } from "../lib/vault";
+import { vaultFs } from "../lib/vault-fs";
 import { MilkdownSurface } from "./MilkdownSurface";
 import {
   basenameForEvent,
@@ -64,7 +65,7 @@ async function uniqueRename(dir: string, oldPath: string, basename: string): Pro
     const newPath = await join(dir, candidate);
     if (newPath === oldPath) return oldPath;
     try {
-      await invoke("rename_file", { from: oldPath, to: newPath });
+      await vaultFs.rename(toVaultRel(oldPath), toVaultRel(newPath));
       return newPath;
     } catch {
       candidate = `${stem} ${n}${ext}`;
@@ -242,7 +243,7 @@ export function Card(props: Props) {
           body = initialBody;
           frontmatter = initialFrontmatter;
         } else {
-          const raw = await invoke<string>("read_text", { path: initialPath });
+          const raw = await vaultFs.readText(toVaultRel(initialPath));
           if (cancelled) return;
           const split = splitFrontmatter(raw);
           frontmatter = split.frontmatter;
@@ -308,7 +309,7 @@ export function Card(props: Props) {
       const path = pathRef.current;
       // Re-read latest frontmatter so out-of-band edits (Week view drag)
       // are preserved when we write our body.
-      const current = await invoke<string>("read_text", { path });
+      const current = await vaultFs.readText(toVaultRel(path));
       const { frontmatter } = splitFrontmatter(current);
 
       // Three save shapes:
@@ -339,7 +340,7 @@ export function Card(props: Props) {
       const vault = await vaultRoot();
       const persistedBody = deflateAttachmentUrls(outBody, attachmentAssetPrefix(vault));
       const content = joinFrontmatter(outFrontmatter, persistedBody);
-      await invoke("write_text", { path, content });
+      await vaultFs.writeText(toVaultRel(path), content);
 
       // Auto-rename whenever the body's first line of text changes —
       // heading or not. firstLineTitle strips leading markdown markers
@@ -455,7 +456,7 @@ export function Card(props: Props) {
     const filename = attachmentName(file);
     const absolute = await join(vault, ATTACHMENTS_DIRNAME, filename);
     const bytes = new Uint8Array(await file.arrayBuffer());
-    await invoke("write_binary", { path: absolute, data: Array.from(bytes) });
+    await vaultFs.writeBinary(toVaultRel(absolute), Array.from(bytes));
     return convertFileSrc(absolute);
   }, []);
 
