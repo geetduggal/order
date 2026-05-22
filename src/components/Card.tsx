@@ -5,7 +5,6 @@
 // views stay in sync.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { dirname, join } from "@tauri-apps/api/path";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
@@ -449,15 +448,14 @@ export function Card(props: Props) {
   }, [itemsForView, vaultNotes]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
-    // Save under <vault>/Attachments/. vaultRoot() returns the
-    // hardcoded vault path so this works regardless of where the
-    // card itself lives (root or nested NF directory).
-    const vault = await vaultRoot();
+    // Save under <vault>/Attachments/ (relative — works regardless of
+    // where the card itself lives) and return the vaultasset:// URL the
+    // custom protocol serves, so the just-uploaded image renders live.
     const filename = attachmentName(file);
-    const absolute = await join(vault, ATTACHMENTS_DIRNAME, filename);
+    const rel = `${ATTACHMENTS_DIRNAME}/${filename}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
-    await vaultFs.writeBinary(toVaultRel(absolute), Array.from(bytes));
-    return convertFileSrc(absolute);
+    await vaultFs.writeBinary(rel, Array.from(bytes));
+    return `${attachmentAssetPrefix()}${encodeURI(filename)}`;
   }, []);
 
   useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);

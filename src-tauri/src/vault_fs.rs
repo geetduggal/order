@@ -134,3 +134,25 @@ pub fn vault_remove(state: tauri::State<VaultState>, rel: String) -> Result<(), 
     }
     .map_err(|e| e.to_string())
 }
+
+/// Read raw bytes for a vault-relative path. Used by the `vaultasset`
+/// URI-scheme handler to serve attachment images to the webview (the
+/// stock asset:// protocol can't reach a bookmarked iOS folder).
+pub fn read_asset(state: &VaultState, rel: &str) -> Result<Vec<u8>, String> {
+    fs::read(resolve(state, rel)?).map_err(|e| e.to_string())
+}
+
+/// Best-effort MIME from a file extension, for the asset handler.
+pub fn mime_for(rel: &str) -> &'static str {
+    match rel.rsplit('.').next().map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("avif") => "image/avif",
+        Some("bmp") => "image/bmp",
+        Some("pdf") => "application/pdf",
+        _ => "application/octet-stream",
+    }
+}

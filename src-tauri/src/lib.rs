@@ -17,6 +17,27 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(vault_fs::VaultState::default())
+        // Serve attachment images from the vault via vaultasset://localhost/<rel>.
+        // Resolves through the same VaultState as the FS bridge, so it works for
+        // an absolute desktop root or a bookmarked iOS folder alike.
+        .register_uri_scheme_protocol("vaultasset", |ctx, request| {
+            use tauri::Manager;
+            let rel = percent_encoding::percent_decode_str(request.uri().path().trim_start_matches('/'))
+                .decode_utf8_lossy()
+                .to_string();
+            let state = ctx.app_handle().state::<vault_fs::VaultState>();
+            match vault_fs::read_asset(&state, &rel) {
+                Ok(bytes) => tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", vault_fs::mime_for(&rel))
+                    .body(bytes)
+                    .unwrap(),
+                Err(_) => tauri::http::Response::builder()
+                    .status(404)
+                    .body(Vec::new())
+                    .unwrap(),
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             vault::set_vault,
             vault_fs::vault_set_root,
