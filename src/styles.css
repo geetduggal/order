@@ -549,18 +549,20 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-left: 1px solid var(--rule);
 }
 
-/* Crepe renders each bullet as a flex row whose marker (.label-wrapper /
-   .label) is a fixed 32px tall, and list paragraphs still pick up the
-   global 1.05em paragraph margin — together that's the obnoxious gap the
-   plain .ProseMirror li rules above never reached (they don't match
-   Crepe's .milkdown-list-item-block markup). Collapse the marker to one
-   line-height and zero the in-list paragraph margins. Selectors mirror
-   Crepe's own, prefixed with .milkdown-host so they win on specificity. */
-.milkdown-host .milkdown .milkdown-list-item-block li { gap: 6px; }
-.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper { height: 1.7em; }
-.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper .label { height: 1.7em; padding: 0; }
-.milkdown-host .milkdown .milkdown-list-item-block .children > p { margin: 0; }
+/* Crepe renders each bullet as a flex row: a marker (.label-wrapper with
+   a hardcoded 24px svg) + content in .children > .content-dom > p. Two
+   things make the rows airy: that 24px marker, and the global 1.05em
+   paragraph margin still applying to the in-list <p> (which lives under a
+   .content-dom wrapper, so a `.children > p` rule never reached it).
+   Shrink the marker to the text line and zero + tighten the in-list
+   paragraphs so a list reads as a compact cluster. Selectors mirror
+   Crepe's own, prefixed with .milkdown-host to win on specificity. */
 .milkdown-host .milkdown .milkdown-list-item-block { margin: 0; }
+.milkdown-host .milkdown .milkdown-list-item-block li { gap: 4px; }
+.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper { height: 1.5em; width: 1.1em; }
+.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper .label { height: 1.5em; padding: 0; }
+.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper svg { width: 1.05em; height: 1.05em; }
+.milkdown-host .milkdown .milkdown-list-item-block .children p { margin: 0; padding: 0; line-height: 1.5; }
 
 /* Block quotes: pulled-in italic with a soft left rule. */
 .milkdown-host .ProseMirror blockquote {
