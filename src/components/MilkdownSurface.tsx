@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
 import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
 import { join } from "@tauri-apps/api/path";
-import { wikilinkProsePlugin } from "../lib/milkdown-wikilink";
+import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import type { WikiRef } from "../lib/wikilink";
 
 type Props = {
@@ -63,6 +63,10 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     // plugin added via editor.use() before create.)
     try {
       crepe.editor.use(wikilinkProsePlugin(() => wikiNotesRef.current));
+      // Autocomplete only when editable — the viewer is read-only.
+      if (!readOnly) {
+        crepe.editor.use(wikilinkAutocompletePlugin(() => wikiNotesRef.current));
+      }
     } catch (err) {
       console.warn("wikilink plugin registration failed:", err);
     }

@@ -13,10 +13,11 @@
 // wikilink.ts, so the editor agrees with the list renderers and publish.
 
 import { $prose } from "@milkdown/kit/utils";
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
-import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
+import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { resolveWikilink, type WikiRef } from "./wikilink";
+import { isNotableFolder } from "./folders";
 
 const KEY = new PluginKey("order-wikilink");
 // The editor shows the rendered (unescaped) text, so we match plain
@@ -59,5 +60,159 @@ export function wikilinkProsePlugin(getVault: () => WikiRef[]) {
           },
         },
       }),
+  );
+}
+
+// ---------- `[[` autocomplete ----------
+
+const SUGGEST_KEY = new PluginKey("order-wikilink-suggest");
+const MAX_SUGGESTIONS = 8;
+// An open `[[` immediately before the cursor, capturing the query so far.
+// Excludes `]` and newline so a closed link or a line break ends it.
+const TRIGGER_RE = /\[\[([^[\]\n]*)$/;
+
+interface Suggestion { name: string; kind: "folder" | "note" }
+
+function filterVault(vault: WikiRef[], query: string): Suggestion[] {
+  const q = query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const out: Suggestion[] = [];
+  for (const n of vault) {
+    const name = n.filename.replace(/\.md$/i, "");
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    if (q && !key.includes(q)) continue;
+    seen.add(key);
+    out.push({ name, kind: isNotableFolder(n.frontmatter) ? "folder" : "note" });
+  }
+  // Prefix matches first, then folders, then alphabetical.
+  out.sort((a, b) => {
+    const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+    const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return out.slice(0, MAX_SUGGESTIONS);
+}
+
+/** Find an open `[[query` ending at the (empty) cursor, returning the
+ *  range from the first `[` to the cursor plus the query text. */
+function activeTrigger(view: EditorView): { from: number; to: number; query: string } | null {
+  const sel = view.state.selection;
+  if (!sel.empty) return null;
+  const $from = sel.$from;
+  const blockStart = $from.start();
+  const before = view.state.doc.textBetween(blockStart, $from.pos, "\n", "\n");
+  const m = TRIGGER_RE.exec(before);
+  if (!m) return null;
+  return { from: $from.pos - m[0].length, to: $from.pos, query: m[1] };
+}
+
+/** `[[` typeahead: a popup of Notable Folders + notes, filtered as you
+ *  type, inserting `[[Name]]` on select. Keyboard (↑ ↓ Enter/Tab Esc)
+ *  and click. Kept out of read-only (viewer) editors. */
+export function wikilinkAutocompletePlugin(getVault: () => WikiRef[]) {
+  return $prose(
+    () => {
+      let popup: HTMLDivElement | null = null;
+      let items: Suggestion[] = [];
+      let selected = 0;
+      let range: { from: number; to: number } | null = null;
+
+      const close = () => {
+        popup?.remove();
+        popup = null;
+        range = null;
+        items = [];
+        selected = 0;
+      };
+
+      const accept = (view: EditorView, item: Suggestion) => {
+        const to = view.state.selection.from;
+        const from = range ? range.from : to;
+        const text = `[[${item.name}]]`;
+        const tr = view.state.tr.insertText(text, from, to);
+        const after = from + text.length;
+        tr.setSelection(TextSelection.create(tr.doc, after));
+        view.dispatch(tr);
+        close();
+        view.focus();
+      };
+
+      const render = (view: EditorView) => {
+        if (!range) return close();
+        if (!popup) {
+          popup = document.createElement("div");
+          popup.className = "wikilink-suggest";
+          document.body.appendChild(popup);
+        }
+        popup.innerHTML = "";
+        if (items.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "wikilink-suggest-empty";
+          empty.textContent = "No matches";
+          popup.appendChild(empty);
+        } else {
+          items.forEach((it, i) => {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "wikilink-suggest-item" + (i === selected ? " is-selected" : "");
+            const name = document.createElement("span");
+            name.className = "wikilink-suggest-name";
+            name.textContent = it.name;
+            const kind = document.createElement("span");
+            kind.className = "wikilink-suggest-kind";
+            kind.textContent = it.kind;
+            row.append(name, kind);
+            // mousedown (not click) so the editor doesn't lose the selection first.
+            row.addEventListener("mousedown", (e) => { e.preventDefault(); accept(view, it); });
+            popup!.appendChild(row);
+          });
+        }
+        const coords = view.coordsAtPos(range.from);
+        popup.style.left = `${coords.left}px`;
+        popup.style.top = `${coords.bottom + 4}px`;
+      };
+
+      return new Plugin({
+        key: SUGGEST_KEY,
+        view() {
+          return {
+            update: (view) => {
+              const trig = activeTrigger(view);
+              if (!trig) return close();
+              range = { from: trig.from, to: trig.to };
+              items = filterVault(getVault(), trig.query);
+              if (selected >= items.length) selected = 0;
+              render(view);
+            },
+            destroy: close,
+          };
+        },
+        props: {
+          handleKeyDown(view, event) {
+            if (!popup || !range) return false;
+            if (event.key === "Escape") { close(); return true; }
+            if (items.length === 0) return false;
+            if (event.key === "ArrowDown") {
+              selected = (selected + 1) % items.length;
+              render(view);
+              return true;
+            }
+            if (event.key === "ArrowUp") {
+              selected = (selected - 1 + items.length) % items.length;
+              render(view);
+              return true;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+              accept(view, items[selected]);
+              return true;
+            }
+            return false;
+          },
+        },
+      });
+    },
   );
 }
