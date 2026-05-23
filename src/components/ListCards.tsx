@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { resolveNoteRef } from "../lib/wikilink";
 export type { ListNoteRef };
 
 interface Props {
@@ -43,12 +44,6 @@ interface InsertPoint {
   beforeRef: string | null;
 }
 
-function resolve(ref: string, vaultNotes: ListNoteRef[]): ListNoteRef | undefined {
-  const needle = ref.toLowerCase();
-  return vaultNotes.find(
-    (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === needle,
-  );
-}
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
   if (item.meta) return item.meta;
@@ -290,7 +285,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
   return (
     <div ref={gridRef} className="basecard-grid">
       {previewItems.map((item) => {
-        const note = resolve(item.ref, vaultNotes);
+        const note = resolveNoteRef(item.ref, vaultNotes);
         const image = note && typeof note.frontmatter.image === "string"
           ? note.frontmatter.image as string
           : undefined;
