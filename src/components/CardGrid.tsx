@@ -431,10 +431,10 @@ export function CardGrid() {
         ? n.frontmatter.title : n.filename.replace(/\.md$/i, "");
       const slug = dedupeSlug(slugify(title), taken);
       taken.add(slug);
-      const raw = await invoke<string>("read_text", { path: n.path });
+      const raw = await readVault(n.path);
       const { frontmatter, body } = splitFrontmatter(raw);
       frontmatter.slug = slug;
-      await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, body) });
+      await writeVault(n.path, joinFrontmatter(frontmatter, body));
       n.frontmatter.slug = slug; // reflect into the fresh copy collect reads
     }
 
@@ -807,13 +807,13 @@ export function CardGrid() {
     for (const n of list) {
       if (n.filename.replace(/\.md$/i, "") === newName) continue; // the renamed file itself
       try {
-        const raw = await invoke<string>("read_text", { path: n.path });
+        const raw = await readVault(n.path);
         const { frontmatter, body } = splitFrontmatter(raw);
         // Cheap filter before the rewrite pass.
         if (!body.toLowerCase().includes(target)) continue;
         const nextBody = rewriteWikilinksForRename(body, oldName, newName);
         if (nextBody === body) continue;
-        await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, nextBody) });
+        await writeVault(n.path, joinFrontmatter(frontmatter, nextBody));
         setNotes((prev) => prev?.map((x) => (x.id === n.id ? { ...x, body: nextBody } : x)) ?? null);
       } catch (err) {
         console.warn("inbound wikilink rewrite skipped for", n.path, err);
