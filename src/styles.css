@@ -455,6 +455,13 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card:hover .order-card-controls { opacity: 0.7; }
 .order-card-controls:hover,
 .order-card-controls:focus-within { opacity: 1; }
+/* Fullscreen card is fixed at the viewport top, so its top-right controls
+   land under the status bar / notch — offset them by the safe-area inset
+   (no-op on desktop). */
+.order-card.is-fullscreen .order-card-controls {
+  top: calc(6px + env(safe-area-inset-top));
+  right: calc(6px + env(safe-area-inset-right));
+}
 
 .order-card-fullscreen,
 .order-card-delete {
