@@ -21,7 +21,19 @@ import { folderColor } from "../src/lib/folders";
 
 type View = "stream" | "week" | "month" | "year";
 
-export function ViewerApp({ data }: { data: PublishedSite }) {
+export function ViewerApp({ data, initialSlug }: { data: PublishedSite; initialSlug?: string | null }) {
+  // Deep-link from the permalink the page was served at. A folder slug
+  // filters to that folder; a note slug filters to the note's folder and
+  // scrolls to the note. Falls back to the home default.
+  const deeplink = (() => {
+    const ref = initialSlug ? data.slugMap[initialSlug] : undefined;
+    if (!ref) return null;
+    const note = data.notes.find((n) => n.ref === ref);
+    if (!note) return null;
+    if (note.category) return { include: note.ref, scroll: null as string | null }; // folder page
+    return { include: note.folder ?? note.ref, scroll: note.ref };                   // note page
+  })();
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Sidebar hidden by default — viewers shouldn't get a wall of UI on
   // first paint. Toggle via the › / ‹ button or Cmd+;.
@@ -31,9 +43,12 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
   const [collapseNonce, setCollapseNonce] = useState(0);
 
   // Default view = the home Notable Folder focused (single include),
-  // exactly like the desktop app's first-launch default.
+  // exactly like the desktop app's first-launch default. A deep-link
+  // (permalink page) overrides it.
   const [filters, setFilters] = useState<Filter[]>(
-    () => data.home.name ? [{ kind: "include", ref: data.home.name }] : [],
+    () => deeplink
+      ? [{ kind: "include", ref: deeplink.include }]
+      : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
   // The folder whose Main Document is pinned to the top of the Stream.
   // Set by clicking a pill or picking one in the palette. Cleared only
@@ -46,8 +61,8 @@ export function ViewerApp({ data }: { data: PublishedSite }) {
     );
   }, [filters]);
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
-  // the scroll fires.
-  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // the scroll fires. Seeded from a note-page deep-link.
+  const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
   // Ref of the card the "jump to first note" toggle points at — its
   // border stays coral while jumped. Any filter change exits the state.
   const [coralRef, setCoralRef] = useState<string | null>(null);
