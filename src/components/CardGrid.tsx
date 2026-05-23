@@ -676,6 +676,17 @@ export function CardGrid() {
     let cancelled = false;
     (async () => {
       try {
+        // iOS with no vault bookmark yet → prompt a pick instead of
+        // loading (and skip migration, which would write to a bogus
+        // desktop path). setNotes([]) so we leave the "Preparing…" state.
+        const root = await syncVaultRoot();
+        if (!root && (await isIos())) {
+          if (cancelled) return;
+          setIosNeedsVault(true);
+          setNotes([]);
+          return;
+        }
+
         let loaded = await loadAndNormalizeAll();
         if (cancelled) return;
 
@@ -693,10 +704,11 @@ export function CardGrid() {
           }));
           const stored = readStoredTaxonomy();
           const plan = planMigration(withBody, stored);
-          const subdir = await vaultRoot();
+          // Vault-relative writes (writeVault resolves against the root),
+          // so this works on desktop and iOS without joining an absolute
+          // root that doesn't exist on iOS.
           for (const f of plan.newFiles) {
-            const p = await join(subdir, f.filename);
-            await writeVault(p, f.content);
+            await writeVault(f.filename, f.content);
           }
           for (const r of plan.rewrites) {
             await writeVault(r.path, r.content);
