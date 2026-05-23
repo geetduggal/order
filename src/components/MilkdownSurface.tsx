@@ -12,11 +12,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
 import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
 import { join } from "@tauri-apps/api/path";
+import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
+import type { WikiRef } from "../lib/wikilink";
 
 type Props = {
   initial: string;
   onChange: (markdown: string) => void;
   onDone?: () => void;
+  /** Vault index for resolving `[[..]]` decorations (broken vs resolved).
+   *  Read live via a ref so the decoration pass sees the current vault. */
+  wikiNotes?: WikiRef[];
+  /** Click handler for a rendered `[[..]]` link — receives the bare name.
+   *  The caller resolves folder vs note and navigates. */
+  onWikiNavigate?: (name: string) => void;
   /** Called when the user pastes (or drops) an image into the editor.
    *  Returns a URL the editor can display. The card owns the path / asset
    *  protocol concerns — this component just inserts `![](<url>)` at
@@ -31,8 +39,12 @@ type Props = {
   readOnly?: boolean;
 };
 
-export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, autoFocus, readOnly }: Props) {
+export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const wikiNotesRef = useRef<WikiRef[]>(wikiNotes ?? []);
+  useEffect(() => { wikiNotesRef.current = wikiNotes ?? []; }, [wikiNotes]);
+  const onWikiNavigateRef = useRef(onWikiNavigate);
+  useEffect(() => { onWikiNavigateRef.current = onWikiNavigate; }, [onWikiNavigate]);
   const onChangeRef = useRef(onChange);
   const onDoneRef = useRef(onDone);
   const onImageUploadRef = useRef(onImageUpload);
@@ -46,6 +58,18 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, auto
     let crepe: Crepe | null = null;
 
     crepe = new Crepe({ root: host.current, defaultValue: initial });
+    // Register the wikilink decoration plugin before create() so it's
+    // part of the editor's plugin set. (SPIKE: verify Crepe applies a
+    // plugin added via editor.use() before create.)
+    try {
+      crepe.editor.use(wikilinkProsePlugin(() => wikiNotesRef.current));
+      // Autocomplete only when editable — the viewer is read-only.
+      if (!readOnly) {
+        crepe.editor.use(wikilinkAutocompletePlugin(() => wikiNotesRef.current));
+      }
+    } catch (err) {
+      console.warn("wikilink plugin registration failed:", err);
+    }
 
     crepe
       .create()
@@ -92,6 +116,17 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, auto
     async function onClick(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (!t) return;
+      // Wikilink decoration spans carry data-wikilink — navigate on click.
+      const wiki = t.closest("[data-wikilink]");
+      if (wiki instanceof HTMLElement) {
+        const name = wiki.getAttribute("data-wikilink");
+        if (name && onWikiNavigateRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onWikiNavigateRef.current(name);
+          return;
+        }
+      }
       const anchor = t.closest("a");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       const raw = anchor.getAttribute("href") ?? "";

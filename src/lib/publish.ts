@@ -21,6 +21,9 @@ export interface CollectInput {
 export interface PublishedNote {
   ref: string;
   title: string;
+  /** Stable URL slug, pinned in frontmatter at publish (see CardGrid
+   *  handlePublish). Permalinks derive from this, never the title. */
+  slug: string;
   body: string;
   folder: string | null;
   category: string | null;
@@ -40,6 +43,9 @@ export interface PublishedSite {
   /** Refs of intermediate Area / Category list files — the viewer
    *  hides them from the Stream like Order does. */
   hiddenRefs: string[];
+  /** slug → ref, so a permalinked page can deep-link the viewer to the
+   *  right note/folder from its URL. */
+  slugMap: Record<string, string>;
   generatedAt: string;
 }
 
@@ -101,6 +107,7 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
     return {
       ref: refOf(n.filename),
       title: pickTitle(n),
+      slug: typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "",
       body: n.body,
       folder: parseRef(n.frontmatter.folder),
       category: parseRef(n.frontmatter.category),
@@ -137,11 +144,15 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
     }
   }
 
+  const slugMap: Record<string, string> = {};
+  for (const n of notes) if (n.slug) slugMap[n.slug] = n.ref;
+
   return {
     home,
     notes,
     taxonomy: { areas },
     hiddenRefs: Array.from(hidden),
+    slugMap,
     generatedAt: new Date().toISOString(),
   };
 }

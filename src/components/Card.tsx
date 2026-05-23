@@ -30,6 +30,7 @@ import { extractBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { resolveWikilink } from "../lib/wikilink";
 import {
   ATTACHMENTS_DIRNAME,
   attachmentAssetPrefix,
@@ -447,6 +448,17 @@ export function Card(props: Props) {
     });
   }, [itemsForView, vaultNotes]);
 
+  // Click on a rendered `[[Name]]` in the editor: resolve folder vs note
+  // and route. Folder links accumulate into the filter (like list NF
+  // clicks); note links navigate. Broken links no-op.
+  const handleWikiNavigate = useCallback((name: string) => {
+    const res = resolveWikilink(name, vaultNotes ?? []);
+    if (res.kind === "broken") return;
+    const ref = res.ref.filename.replace(/\.md$/i, "");
+    if (res.kind === "folder") (onAddFilter ?? onNavigate)?.(ref);
+    else onNavigate?.(ref);
+  }, [vaultNotes, onNavigate, onAddFilter]);
+
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
     // Save under <vault>/Attachments/ (relative — works regardless of
     // where the card itself lives) and return the vaultasset:// URL the
@@ -639,6 +651,8 @@ export function Card(props: Props) {
           onChange={handleChange}
           onDone={() => { void flushNow(); }}
           onImageUpload={readOnly ? undefined : handleImageUpload}
+          wikiNotes={vaultNotes}
+          onWikiNavigate={handleWikiNavigate}
           autoFocus={autoFocus && !readOnly}
           readOnly={readOnly}
         />
