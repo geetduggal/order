@@ -2982,3 +2982,24 @@ input, textarea, select { outline: none; box-shadow: none; }
   .filter-pill:hover { max-width: min(72vw, 240px); }
   .filter-pill:hover .filter-pill-name { max-width: min(60vw, 175px); }
 }
+
+/* ---------- iOS safe area ---------- */
+/* Offset the fixed left/right rails below the status bar / notch (and the
+   settings gear above the home indicator). env(safe-area-inset-*) is 0 on
+   desktop and non-notched contexts, so these are no-ops there. Requires
+   viewport-fit=cover (set in index.html). Placed last so they win on
+   source order over the base rail rules. */
+.new-note-fab { top: calc(10px + env(safe-area-inset-top)); }
+.publish-fab { top: calc(38px + env(safe-area-inset-top)); }
+.first-note-fab { top: calc(66px + env(safe-area-inset-top)); }
+.filter-pills {
+  top: calc(98px + env(safe-area-inset-top));
+  max-height: calc(100vh - 114px - env(safe-area-inset-top));
+}
+.sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
+.settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
+.viewer-shell .first-note-fab { top: calc(10px + env(safe-area-inset-top)); }
+.viewer-shell .filter-pills {
+  top: calc(42px + env(safe-area-inset-top));
+  max-height: calc(100vh - 58px - env(safe-area-inset-top));
+}
