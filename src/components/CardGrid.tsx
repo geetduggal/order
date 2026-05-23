@@ -111,6 +111,21 @@ async function uniqueWrite(dir: string, basename: string, content: string): Prom
 }
 
 
+/** Derive the published base URL from a home target "user/repo/path".
+ *  A `<user>.github.io` repo is served at its root; other repos live
+ *  under /<repo>/. (A custom domain still resolves the github.io URL.)
+ *  Used to build a copyable permalink for a public note on desktop. */
+function publicBaseUrl(target: string): string | null {
+  const parts = target.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const [user, repo, ...rest] = parts;
+  const path = rest.join("/");
+  const host = repo.toLowerCase() === `${user.toLowerCase()}.github.io`
+    ? repo
+    : `${user}.github.io/${repo}`;
+  return `https://${host}/${path ? `${path}/` : ""}`;
+}
+
 const GRID_ROW_PX = 8;
 
 type View = "stream" | "week" | "month" | "year";
@@ -1099,9 +1114,16 @@ export function CardGrid() {
     const folderName = isMain ? ref : noteFolder(n.frontmatter);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
+    // Permalink only for a public note whose slug is pinned (after a
+    // publish) and when a home target exists to build the URL from.
+    const slug = typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "";
+    const base = homeFolders[0]?.target ? publicBaseUrl(homeFolders[0].target) : null;
+    const permalink =
+      n.frontmatter.public === true && slug && base ? `${base}${slug}/` : undefined;
     return (
       <Card
         path={n.path}
+        permalink={permalink}
         color={c}
         area={isMain ? inferredArea(n) ?? undefined : undefined}
         category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}

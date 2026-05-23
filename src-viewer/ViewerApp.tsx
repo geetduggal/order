@@ -374,6 +374,7 @@ export function ViewerApp(
           <StreamView
             notes={visible}
             data={data}
+            basePath={basePath}
             includeRefs={includeRefs}
             includeSet={includeSet}
             collapseSignal={collapseNonce}
@@ -431,10 +432,11 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function StreamView({
-  notes, data, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
+  basePath: string;
   /** Active include filters in order. ≥1 → newspaper sections;
    *  0 → flat temporal grid. */
   includeRefs: string[];
@@ -463,12 +465,15 @@ function StreamView({
       : "";
     const colorSource = isMain ? n.ref : n.folder;
     const cardColor = colorSource ? folderColor(colorSource) : undefined;
+    // Full public permalink (origin is the published domain at runtime).
+    const permalink = n.slug ? `${location.origin}${basePath}${n.slug}/` : undefined;
     return (
       <Card
         path={`${n.ref}.md`}
         initialBody={n.body}
         initialFrontmatter={n.frontmatter}
         readOnly
+        permalink={permalink}
         color={cardColor}
         area={isMain ? (areaName || undefined) : undefined}
         category={isMain ? (n.category ?? undefined) : undefined}

@@ -443,6 +443,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-fullscreen:active,
 .order-card-delete:active { transform: scale(0.9); }
 
+.order-card-permalink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.order-card-permalink:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.order-card-permalink.is-copied {
+  color: #2e7d52; /* brief confirmation green */
+}
+.order-card-permalink:active { transform: scale(0.9); }
+
 .order-card-delete-confirm {
   display: inline-flex;
   align-items: center;
