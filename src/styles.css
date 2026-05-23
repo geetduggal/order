@@ -201,7 +201,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 0;
   box-shadow: none;
   background: var(--bg);
-  padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
+  padding: calc(env(safe-area-inset-top) + clamp(40px, 6vh, 80px)) clamp(40px, 10vw, 120px) calc(env(safe-area-inset-bottom) + clamp(40px, 6vh, 80px));
   overflow: auto;
   max-width: none;
   /* "Settle into place" entrance: starts slightly oversized and
@@ -2971,7 +2971,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 
   /* Full-bleed prose at a comfortable mobile size. */
   .milkdown-host .ProseMirror { font-size: 16px; }
-  .order-card.is-fullscreen { padding: 32px 18px; }
+  .order-card.is-fullscreen { padding: calc(44px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)) 18px; }
   .order-card.is-fullscreen .milkdown-host .ProseMirror { font-size: 17px; }
 
   /* Section headings scale down so they don't dominate a small card. */
