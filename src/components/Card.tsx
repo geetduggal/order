@@ -37,7 +37,7 @@ import {
   deflateAttachmentUrls,
   inflateAttachmentUrls,
 } from "../lib/attachments";
-import { ChevronRight, Folder as FolderIcon, Trash2, X as XIcon } from "lucide-react";
+import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -147,6 +147,10 @@ interface Props {
    *  editable) or clicking Read more lifts the cap. Omit for the
    *  uncapped temporal-stream behaviour. */
   capHeight?: number;
+  /** Full public permalink URL for this note. When set, a link icon in
+   *  the card's top-right copies it. Omitted when the note has no
+   *  published permalink (private / unpublished). */
+  permalink?: string;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -174,6 +178,7 @@ export function Card(props: Props) {
     initialFrontmatter,
     readOnly,
     capHeight,
+    permalink,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -194,6 +199,13 @@ export function Card(props: Props) {
   /** Folder picker (autocomplete) state for regular notes. */
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [folderPickerQuery, setFolderPickerQuery] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
+  const copyPermalink = useCallback(() => {
+    if (!permalink) return;
+    void navigator.clipboard?.writeText(permalink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 1400);
+  }, [permalink]);
   /** Mirrors the editor body so saves can fold the current prose
    *  with the structured list items below. Milkdown stays uncontrolled
    *  — this state is downstream-only. */
@@ -589,6 +601,17 @@ export function Card(props: Props) {
   return (
     <article className={cardClass} style={cardStyle} ref={articleRef}>
       <div className="order-card-controls" aria-hidden={false}>
+        {permalink && (
+          <button
+            type="button"
+            className={"order-card-permalink" + (copiedLink ? " is-copied" : "")}
+            onClick={copyPermalink}
+            title={copiedLink ? "Permalink copied" : "Copy permalink"}
+            aria-label="Copy permalink"
+          >
+            {copiedLink ? <Check size={13} strokeWidth={2.4} /> : <Link2 size={13} strokeWidth={2} />}
+          </button>
+        )}
         <button
           type="button"
           className="order-card-fullscreen"
