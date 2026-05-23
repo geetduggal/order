@@ -25,6 +25,20 @@ pub struct PublishInput {
     /// JSON-serialized PublishedSite — the viewer fetches this at
     /// runtime via fetch("./data.json").
     pub data_json: String,
+    /// Prerendered static pages (one per public note + folder). Each is
+    /// wrapped in the bundle shell and written at its permalink.
+    pub pages: Vec<Page>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Page {
+    /// Path relative to the publish target dir, e.g. "salmon/index.html".
+    pub path: String,
+    /// Prerendered body HTML, injected into #viewer-root.
+    pub content_html: String,
+    /// Page <title>.
+    pub title: String,
 }
 
 #[derive(serde::Serialize)]
@@ -213,6 +227,46 @@ fn publish_site_inner(
     if attach.is_dir() {
         copy_dir_recursive(&attach, &target_dir.join("Attachments"))
             .map_err(|e| format!("copy Attachments: {}", e))?;
+    }
+
+    // Prerendered permalink pages. The bundle's index.html is the shell;
+    // for each page we inject the content into #viewer-root, set the
+    // title, point asset + data URLs at the publish root (pages live one
+    // level deep so relative URLs would break), and expose
+    // window.__ORDER__ for the viewer boot.
+    if !input.pages.is_empty() {
+        let shell = fs::read_to_string(target_dir.join("index.html"))
+            .map_err(|e| format!("read bundle index.html: {}", e))?;
+        let root_abs = format!("/{}/", sub);
+        let shell = shell
+            .replace("./assets/", &format!("{}assets/", root_abs))
+            .replace("./data.json", &format!("{}data.json", root_abs))
+            .replace("href=\"./", &format!("href=\"{}", root_abs));
+        let data_url = format!("{}data.json", root_abs);
+        for page in &input.pages {
+            let slug = page.path.trim_end_matches("/index.html");
+            let order_global = format!(
+                "<script>window.__ORDER__={{\"slug\":{},\"dataUrl\":{}}}</script>",
+                serde_json::to_string(slug).unwrap_or_else(|_| "\"\"".into()),
+                serde_json::to_string(&data_url).unwrap_or_else(|_| "\"\"".into()),
+            );
+            let injected = format!(
+                "<div id=\"viewer-root\"><article class=\"prerendered\">{}</article></div>{}",
+                page.content_html, order_global,
+            );
+            let title_tag = format!(
+                "<title>{}</title>",
+                page.title.replace('<', "&lt;").replace('>', "&gt;"),
+            );
+            let html = shell
+                .replacen("<div id=\"viewer-root\"></div>", &injected, 1)
+                .replacen("<title>Order</title>", &title_tag, 1);
+            let dest = target_dir.join(&page.path);
+            if let Some(parent) = dest.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            fs::write(&dest, html).map_err(|e| format!("write {}: {}", page.path, e))?;
+        }
     }
 
     run_git(&clone_root, &["add", "-A"])?;
