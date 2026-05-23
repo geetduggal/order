@@ -20,6 +20,8 @@ import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
+import { slugify, dedupeSlug } from "../lib/slug";
+import { prerenderPages } from "../lib/prerender";
 import { FilterPillStack } from "./FilterPillStack";
 import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
@@ -407,11 +409,35 @@ export function CardGrid() {
     // note created or edited this session.
     const fresh = await loadAndNormalizeAll();
     setNotes(fresh);
+
+    // Pin a stable slug into every public note that lacks one, so
+    // permalinks never derive from (mutable) titles. Writes frontmatter
+    // to disk; runs before collect so the payload carries the slugs.
+    const publicNotes = fresh.filter((n) => n.frontmatter.public === true);
+    const taken = new Set<string>();
+    for (const n of publicNotes) {
+      if (typeof n.frontmatter.slug === "string" && n.frontmatter.slug) taken.add(n.frontmatter.slug);
+    }
+    for (const n of publicNotes) {
+      if (typeof n.frontmatter.slug === "string" && n.frontmatter.slug) continue;
+      const title = typeof n.frontmatter.title === "string" && n.frontmatter.title.trim()
+        ? n.frontmatter.title : n.filename.replace(/\.md$/i, "");
+      const slug = dedupeSlug(slugify(title), taken);
+      taken.add(slug);
+      const raw = await invoke<string>("read_text", { path: n.path });
+      const { frontmatter, body } = splitFrontmatter(raw);
+      frontmatter.slug = slug;
+      await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, body) });
+      n.frontmatter.slug = slug; // reflect into the fresh copy collect reads
+    }
+
     const site = collectPublishedSite({
       vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
       home,
     });
     const dataJson = JSON.stringify(site);
+    const sub = home.target.split("/").slice(2).join("/");
+    const pages = prerenderPages(site, sub);
     const vault = await vaultRoot();
     return invoke<PublishOutcome>("publish_site", {
       input: {
@@ -421,6 +447,7 @@ export function CardGrid() {
         // Tauri resource dir in production) — nothing to send here.
         viewer_bundle_path: "",
         data_json: dataJson,
+        pages,
       },
     });
   }, [notes]);
