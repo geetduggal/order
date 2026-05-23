@@ -16,6 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_vault::init())
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(vault_fs::VaultState::default())
         // Serve attachment images from the vault via vaultasset://localhost/<rel>.
