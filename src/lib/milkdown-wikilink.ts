@@ -102,10 +102,17 @@ function activeTrigger(view: EditorView): { from: number; to: number; query: str
   const sel = view.state.selection;
   if (!sel.empty) return null;
   const $from = sel.$from;
-  const blockStart = $from.start();
-  const before = view.state.doc.textBetween(blockStart, $from.pos, "\n", "\n");
+  const before = view.state.doc.textBetween($from.start(), $from.pos, "\n", "\n");
   const m = TRIGGER_RE.exec(before);
   if (!m) return null;
+  // Suppress when this `[[` is already closed by a `]]` ahead of the
+  // cursor (before any next `[[`). That distinguishes typing a fresh
+  // `[[query` from clicking into an existing `[[Name]]` link to follow
+  // it — the popup should only open while authoring an unclosed link.
+  const after = view.state.doc.textBetween($from.pos, $from.end(), "\n", "\n");
+  const closeIdx = after.indexOf("]]");
+  const openIdx = after.indexOf("[[");
+  if (closeIdx !== -1 && (openIdx === -1 || closeIdx < openIdx)) return null;
   return { from: $from.pos - m[0].length, to: $from.pos, query: m[1] };
 }
 
