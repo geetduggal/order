@@ -52,6 +52,13 @@ export async function isIos(): Promise<boolean> {
   return cachedIsIos;
 }
 
+/** Synchronous read of the cached platform flag — valid only after the
+ *  first isIos()/syncVaultRoot() call (which the load path always runs
+ *  before this is read). Returns false until then. */
+export function isIosSync(): boolean {
+  return cachedIsIos === true;
+}
+
 /** Resolve the effective vault root AND push it to the Rust FS bridge,
  *  so vault-relative commands (vaultFs.*) resolve correctly. Called at
  *  the start of every load. On desktop the root is the home-dir path (or

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
-import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, syncVaultRoot } from "../lib/vault";
+import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
@@ -413,11 +413,21 @@ export function CardGrid() {
   // After the first run, the persisted set wins and the user is free
   // to add/remove pills.
   const seededDefault = useRef<boolean>(readStoredFilters() !== null);
+  // iOS: always open on the home folder as the only filter (ignore the
+  // persisted set), once per launch. Desktop: seed home only on a first
+  // launch with no persisted pills.
+  const homeForcedIos = useRef(false);
   useLayoutEffect(() => {
-    if (seededDefault.current) return;
     if (!notes) return;
     const home = homeFolders[0]?.name;
     if (!home) return;
+    if (isIosSync()) {
+      if (homeForcedIos.current) return;
+      homeForcedIos.current = true;
+      setFilters([{ kind: "include", ref: home }]);
+      return;
+    }
+    if (seededDefault.current) return;
     seededDefault.current = true;
     setFilters([{ kind: "include", ref: home }]);
   }, [notes, homeFolders]);
