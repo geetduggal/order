@@ -47,7 +47,7 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
   const attachPrefix = `/${pubPath}/${ATTACHMENTS_DIRNAME}/`;
   return site.notes
     .filter((n) => n.slug || n.isHome)
-    .map((n) => {
+    .flatMap((n) => {
       const withLinks = rewriteWikilinks(n.body, vault, slugOf);
       let html = marked.parse(withLinks, { async: false }) as string;
       // Rewrite attachment image src (relative `Attachments/…` or
@@ -57,10 +57,12 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
         /(<img\b[^>]*\bsrc=")(?:\.\/)?Attachments\//g,
         `$1${attachPrefix}`,
       );
-      return {
-        path: n.isHome ? "index.html" : `${n.slug}/index.html`,
-        contentHtml: html,
-        title: n.title,
-      };
+      // The home note lives at the site root (index.html), but it also
+      // has a slug — links/permalinks point at /<slug>/ — so emit it at
+      // BOTH paths or that permalink 404s. Non-home notes: just /<slug>/.
+      const paths: string[] = [];
+      if (n.isHome) paths.push("index.html");
+      if (n.slug) paths.push(`${n.slug}/index.html`);
+      return paths.map((path) => ({ path, contentHtml: html, title: n.title }));
     });
 }
