@@ -36,13 +36,23 @@ export function ViewerApp(
   // Encode the pill set as `?f=<inc-slugs>&x=<exc-slugs>` (slugs, falling
   // back to the raw ref). Empty → just the base path.
   const filtersToUrl = (fs: Filter[]): string => {
-    const enc = (kind: "include" | "exclude") =>
-      fs.filter((f) => f.kind === kind)
+    const incs = fs.filter((f) => f.kind === "include");
+    const excs = fs.filter((f) => f.kind === "exclude");
+    // A single folder/note with no excludes is a real prerendered page —
+    // emit its crawlable `/slug/` permalink rather than a `?f=` query the
+    // static host ignores (and serves the home page to crawlers for).
+    // `?f=` is only for genuine multi-pill views, which aren't one page.
+    if (incs.length === 1 && excs.length === 0) {
+      const slug = refToSlug.get(incs[0].ref.toLowerCase());
+      if (slug) return `${basePath}${slug}/`;
+    }
+    const enc = (list: Filter[]) =>
+      list
         .map((f) => refToSlug.get(f.ref.toLowerCase()) ?? f.ref)
         .map(encodeURIComponent)
         .join(",");
-    const inc = enc("include");
-    const exc = enc("exclude");
+    const inc = enc(incs);
+    const exc = enc(excs);
     const qs = [inc && `f=${inc}`, exc && `x=${exc}`].filter(Boolean).join("&");
     return qs ? `${basePath}?${qs}` : basePath;
   };
