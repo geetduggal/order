@@ -616,6 +616,25 @@ input, textarea, select { outline: none; box-shadow: none; }
   text-decoration: underline;
 }
 
+/* Wikilinks: `[[Name]]` decorated inline (royal accent, subtle). The
+   brackets stay visible as part of the source — we only tint + make it
+   clickable. Broken links read muted so they're visible without jarring. */
+.milkdown-host .ProseMirror .wikilink {
+  color: var(--royal, #4169e1);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.milkdown-host .ProseMirror .wikilink:hover {
+  background: var(--royal-soft, rgba(65, 105, 225, 0.1));
+}
+.milkdown-host .ProseMirror .wikilink-broken {
+  color: var(--ink-faint, #8a8a87);
+  cursor: default;
+}
+.milkdown-host .ProseMirror .wikilink-broken:hover {
+  background: transparent;
+}
+
 /* Images breathe a little above and below; cap width so a large
    asset can't blow out the card. */
 .milkdown-host .ProseMirror img {
