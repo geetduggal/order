@@ -19,6 +19,7 @@ import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcom
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { FilterPillStack } from "./FilterPillStack";
 import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
@@ -758,8 +759,38 @@ export function CardGrid() {
     // into place by date+startTime.
   }, []);
 
+  /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
+   *  when a target is renamed, so source links stay valid (Obsidian
+   *  behaviour). Reads each candidate fresh from disk before rewriting.
+   *  NOTE: wired to the note-rename path below; Notable Folder Main Docs
+   *  don't auto-rename today (their filename is their identity), so
+   *  folder-rename rewriting awaits a dedicated folder-rename action. */
+  const rewriteInboundWikilinks = useCallback(async (oldName: string, newName: string) => {
+    if (!oldName || oldName === newName) return;
+    const list = notesRef.current;
+    if (!list) return;
+    const target = oldName.toLowerCase();
+    for (const n of list) {
+      if (n.filename.replace(/\.md$/i, "") === newName) continue; // the renamed file itself
+      try {
+        const raw = await invoke<string>("read_text", { path: n.path });
+        const { frontmatter, body } = splitFrontmatter(raw);
+        // Cheap filter before the rewrite pass.
+        if (!body.toLowerCase().includes(target)) continue;
+        const nextBody = rewriteWikilinksForRename(body, oldName, newName);
+        if (nextBody === body) continue;
+        await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, nextBody) });
+        setNotes((prev) => prev?.map((x) => (x.id === n.id ? { ...x, body: nextBody } : x)) ?? null);
+      } catch (err) {
+        console.warn("inbound wikilink rewrite skipped for", n.path, err);
+      }
+    }
+  }, []);
+
   const handleCardRenamed = useCallback((id: string, newPath: string) => {
     const newFilename = newPath.split("/").pop() ?? newPath;
+    const oldName = notesRef.current?.find((n) => n.id === id)?.filename.replace(/\.md$/i, "") ?? null;
+    const newName = newFilename.replace(/\.md$/i, "");
     setNotes((prev) =>
       prev?.map((n) =>
         n.id === id
@@ -767,7 +798,9 @@ export function CardGrid() {
           : n,
       ) ?? null,
     );
-  }, []);
+    // Keep inbound links pointing at the new name.
+    if (oldName && oldName !== newName) void rewriteInboundWikilinks(oldName, newName);
+  }, [rewriteInboundWikilinks]);
 
   const handleCardTitleChanged = useCallback((id: string, newTitle: string) => {
     setNotes((prev) =>

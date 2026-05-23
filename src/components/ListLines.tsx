@@ -10,6 +10,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
 import { ListCards } from "./ListCards";
 export type { ListNoteRef };
@@ -38,11 +39,6 @@ interface InsertPoint { beforeRef: string | null }
 const DRAG_THRESHOLD_PX = 5;
 const FLIP_DURATION_MS = 220;
 const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
-
-function resolve(ref: string, vault: ListNoteRef[]): ListNoteRef | undefined {
-  const needle = ref.toLowerCase();
-  return vault.find((n) => n.filename.replace(/\.md$/i, "").toLowerCase() === needle);
-}
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
   if (item.meta) return item.meta;
@@ -267,7 +263,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
   return (
     <div ref={listRef} className="list-lines">
       {previewItems.map((item) => {
-        const note = resolve(item.ref, vaultNotes);
+        const note = resolveNoteRef(item.ref, vaultNotes);
         const originalIdx = items.findIndex((i) => i.ref === item.ref);
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
