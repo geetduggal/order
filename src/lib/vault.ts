@@ -4,8 +4,6 @@
 // Calling vaultRoot() everywhere is robust to any layout.
 
 import { homeDir, join } from "@tauri-apps/api/path";
-import { readDir } from "@tauri-apps/plugin-fs";
-import { ATTACHMENTS_DIRNAME } from "./attachments";
 import { vaultFs } from "./vault-fs";
 
 // Vault location relative to the home dir. Per-machine default via a
@@ -45,11 +43,29 @@ export async function vaultRoot(): Promise<string> {
 // strip it synchronously at FS call sites without an await.
 let cachedRoot: string | null = null;
 
+// Cached platform check (iOS vs desktop) — the vault source differs.
+let cachedIsIos: boolean | null = null;
+export async function isIos(): Promise<boolean> {
+  if (cachedIsIos === null) {
+    try { cachedIsIos = await vaultFs.isIos(); } catch { cachedIsIos = false; }
+  }
+  return cachedIsIos;
+}
+
 /** Resolve the effective vault root AND push it to the Rust FS bridge,
  *  so vault-relative commands (vaultFs.*) resolve correctly. Called at
- *  the start of every load and whenever the vault override changes.
- *  Returns the absolute root for callers that still need it. */
+ *  the start of every load. On desktop the root is the home-dir path (or
+ *  Settings override); on iOS it's the security-scoped bookmark resolved
+ *  by the native plugin, or "" when no vault has been picked yet (the
+ *  caller then prompts a pick). Returns the absolute root. */
 export async function syncVaultRoot(): Promise<string> {
+  if (await isIos()) {
+    let root = "";
+    try { root = (await vaultFs.restore()).path ?? ""; } catch { root = ""; }
+    cachedRoot = root;
+    if (root) await vaultFs.setRoot(root);
+    return root;
+  }
   const root = await vaultRoot();
   cachedRoot = root;
   await vaultFs.setRoot(root);
@@ -74,31 +90,10 @@ export function toVaultRel(p: string): string {
  *  Recursive because Notable Folder Main Docs may live one or more
  *  directories deep. */
 export async function walkVaultMarkdown(): Promise<{ path: string; filename: string }[]> {
-  // syncVaultRoot (not vaultRoot) so the Rust FS bridge always has the
-  // current root before any vault-relative op runs this load cycle.
+  // syncVaultRoot first so the Rust bridge has the current root, then walk
+  // via the Rust command (works on desktop and under iOS scoped access;
+  // returns absolute paths). Empty root => no vault picked yet (iOS).
   const root = await syncVaultRoot();
-  const out: { path: string; filename: string }[] = [];
-  await walk(root);
-  return out;
-
-  async function walk(dir: string): Promise<void> {
-    let entries: { name?: string; isFile?: boolean; isDirectory?: boolean }[] = [];
-    try {
-      entries = await readDir(dir);
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const name = e.name;
-      if (!name) continue;
-      if (name.startsWith(".")) continue;
-      if (name === ATTACHMENTS_DIRNAME) continue;
-      const full = await join(dir, name);
-      if (e.isDirectory) {
-        await walk(full);
-      } else if (name.endsWith(".md")) {
-        out.push({ path: full, filename: name });
-      }
-    }
-  }
+  if (!root) return [];
+  return vaultFs.walk();
 }

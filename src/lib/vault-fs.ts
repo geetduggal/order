@@ -9,9 +9,24 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface VaultDirEntry { name: string; isDir: boolean }
 export interface VaultStat { mtime: number; size: number }
+export interface VaultFolder { path: string | null; name: string | null }
 
 export const vaultFs = {
   setRoot: (path: string) => invoke<void>("vault_set_root", { path }),
+  isIos: () => invoke<boolean>("vault_is_ios"),
+  /** Recursive .md walk under the root (absolute paths). Works on
+   *  desktop and under iOS scoped access — the JS plugin-fs walk can't
+   *  reach a bookmarked iOS folder. */
+  walk: (): Promise<{ path: string; filename: string }[]> =>
+    invoke<{ path: string; name: string }[]>("vault_walk").then((es) =>
+      es.map((e) => ({ path: e.path, filename: e.name })),
+    ),
+  /** iOS: present the folder picker, mint + persist a bookmark, return
+   *  the resolved path + name (path null if cancelled). */
+  pickFolder: () => invoke<VaultFolder>("plugin:vault|pick_folder"),
+  /** iOS: resolve the saved bookmark, open scoped access for the
+   *  session, return its path (null if none/stale → re-pick). */
+  restore: () => invoke<VaultFolder>("plugin:vault|restore"),
   readText: (rel: string) => invoke<string>("vault_read_text", { rel }),
   writeText: (rel: string, content: string) =>
     invoke<void>("vault_write_text", { rel, content }),

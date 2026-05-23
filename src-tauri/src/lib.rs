@@ -43,6 +43,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vault::set_vault,
             vault_fs::vault_set_root,
+            vault_fs::vault_is_ios,
+            vault_fs::vault_walk,
             vault_fs::vault_read_text,
             vault_fs::vault_write_text,
             vault_fs::vault_write_binary,

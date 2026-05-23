@@ -30,6 +30,56 @@ pub fn vault_set_root(state: tauri::State<VaultState>, path: String) -> Result<(
     Ok(())
 }
 
+/// True on iOS — lets the frontend choose the bookmark-based vault flow
+/// (vault plugin) vs the desktop home-dir path.
+#[tauri::command]
+pub fn vault_is_ios() -> bool {
+    cfg!(target_os = "ios")
+}
+
+#[derive(serde::Serialize)]
+pub struct WalkEntry {
+    pub path: String,
+    pub name: String,
+}
+
+/// Recursively list every `.md` file under the vault root (absolute
+/// paths), skipping the Attachments dir and dotfiles. Runs through
+/// std::fs so it works on desktop and under iOS scoped access alike —
+/// the JS plugin-fs walk can't reach a bookmarked iOS folder.
+#[tauri::command]
+pub fn vault_walk(state: tauri::State<VaultState>) -> Result<Vec<WalkEntry>, String> {
+    let root = {
+        let guard = state.root.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("vault root not set")?.clone()
+    };
+    let mut out = Vec::new();
+    walk_dir(&root, &mut out);
+    Ok(out)
+}
+
+fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "Attachments" {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            walk_dir(&entry.path(), out);
+        } else if name.ends_with(".md") {
+            out.push(WalkEntry {
+                path: entry.path().to_string_lossy().to_string(),
+                name,
+            });
+        }
+    }
+}
+
 #[tauri::command]
 pub fn vault_read_text(state: tauri::State<VaultState>, rel: String) -> Result<String, String> {
     fs::read_to_string(resolve(&state, &rel)?).map_err(|e| e.to_string())

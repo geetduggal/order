@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
-import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel } from "../lib/vault";
+import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, syncVaultRoot } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
@@ -337,14 +337,41 @@ export function CardGrid() {
     return i >= 0 ? p.slice(0, i) : null;
   }
 
+  // iOS only: true when no vault folder has been picked yet (no stored
+  // bookmark), so the UI prompts to choose one instead of showing empty.
+  const [iosNeedsVault, setIosNeedsVault] = useState(false);
+
   const reloadNotes = useCallback(async () => {
     try {
+      // On iOS an empty root means no vault bookmark yet — prompt a pick
+      // rather than rendering an empty vault.
+      const root = await syncVaultRoot();
+      if (!root && (await isIos())) {
+        setIosNeedsVault(true);
+        setNotes([]);
+        return;
+      }
+      setIosNeedsVault(false);
       const fresh = await loadAndNormalizeAll();
       setNotes(fresh);
     } catch (err) {
       console.error("reload failed:", err);
     }
   }, []);
+
+  /** iOS: present the native folder picker; on selection the bookmark is
+   *  persisted, so a reload restores + opens it for the session. */
+  const pickVaultIos = useCallback(async () => {
+    try {
+      const v = await vaultFs.pickFolder();
+      if (v.path) {
+        setIosNeedsVault(false);
+        await reloadNotes();
+      }
+    } catch (err) {
+      console.error("pick vault failed:", err);
+    }
+  }, [reloadNotes]);
 
   const [capWarning, setCapWarning] = useState<string | null>(null);
 
@@ -965,6 +992,18 @@ export function CardGrid() {
     await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
+
+  if (iosNeedsVault) {
+    return (
+      <div className="vault-pick">
+        <h1>Choose your vault</h1>
+        <p>Pick the folder that holds your notes (e.g. your Dropbox or iCloud vault). Order remembers it.</p>
+        <button type="button" className="vault-pick-btn" onClick={() => { void pickVaultIos(); }}>
+          Choose folder
+        </button>
+      </div>
+    );
+  }
 
   if (notes === null) {
     return <div className="card-grid-empty">Preparing cards…</div>;
