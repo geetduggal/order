@@ -36,11 +36,15 @@ async function boot() {
     return;
   }
 
+  // Base path the site is served under (e.g. "/order-home/"), derived
+  // from the data URL, so filter state can be encoded in the URL.
+  const basePath = dataUrl.replace(/data\.json$/, "");
+
   // createRoot (not hydrateRoot) replaces any prerendered static content
   // in #viewer-root — the takeover.
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
-      <ViewerApp data={data} initialSlug={order?.slug || null} />
+      <ViewerApp data={data} initialSlug={order?.slug || null} basePath={basePath} />
     </React.StrictMode>,
   );
 }

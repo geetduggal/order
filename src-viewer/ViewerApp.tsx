@@ -21,7 +21,45 @@ import { folderColor } from "../src/lib/folders";
 
 type View = "stream" | "week" | "month" | "year";
 
-export function ViewerApp({ data, initialSlug }: { data: PublishedSite; initialSlug?: string | null }) {
+export function ViewerApp(
+  { data, initialSlug, basePath = "/" }:
+  { data: PublishedSite; initialSlug?: string | null; basePath?: string },
+) {
+  // ref → slug, so the active filter set can be encoded in the URL with
+  // clean slugs (slug → ref via data.slugMap on the way back).
+  const refToSlug = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [slug, ref] of Object.entries(data.slugMap)) m.set(ref.toLowerCase(), slug);
+    return m;
+  }, [data.slugMap]);
+
+  // Encode the pill set as `?f=<inc-slugs>&x=<exc-slugs>` (slugs, falling
+  // back to the raw ref). Empty → just the base path.
+  const filtersToUrl = (fs: Filter[]): string => {
+    const enc = (kind: "include" | "exclude") =>
+      fs.filter((f) => f.kind === kind)
+        .map((f) => refToSlug.get(f.ref.toLowerCase()) ?? f.ref)
+        .map(encodeURIComponent)
+        .join(",");
+    const inc = enc("include");
+    const exc = enc("exclude");
+    const qs = [inc && `f=${inc}`, exc && `x=${exc}`].filter(Boolean).join("&");
+    return qs ? `${basePath}?${qs}` : basePath;
+  };
+
+  // Parse `?f=…&x=…` back into pills (slug → ref). Unknown slugs are
+  // passed through as raw refs so hand-typed names still resolve.
+  const filtersFromSearch = (search: string): Filter[] => {
+    const p = new URLSearchParams(search);
+    const dec = (key: string, kind: "include" | "exclude"): Filter[] =>
+      (p.get(key) || "")
+        .split(",")
+        .map((s) => decodeURIComponent(s.trim()))
+        .filter(Boolean)
+        .map((s) => ({ kind, ref: data.slugMap[s] ?? s }));
+    return [...dec("f", "include"), ...dec("x", "exclude")];
+  };
+
   // Deep-link from the permalink the page was served at. A folder slug
   // filters to that folder; a note slug filters to the note's folder and
   // scrolls to the note. Falls back to the home default.
@@ -33,6 +71,10 @@ export function ViewerApp({ data, initialSlug }: { data: PublishedSite; initialS
     if (note.category) return { include: note.ref, scroll: null as string | null }; // folder page
     return { include: note.folder ?? note.ref, scroll: note.ref };                   // note page
   })();
+
+  // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
+  // the arrival deep-link, else the home default.
+  const fromSearch = typeof location !== "undefined" ? filtersFromSearch(location.search) : [];
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Sidebar hidden by default — viewers shouldn't get a wall of UI on
@@ -46,9 +88,11 @@ export function ViewerApp({ data, initialSlug }: { data: PublishedSite; initialS
   // exactly like the desktop app's first-launch default. A deep-link
   // (permalink page) overrides it.
   const [filters, setFilters] = useState<Filter[]>(
-    () => deeplink
-      ? [{ kind: "include", ref: deeplink.include }]
-      : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
+    () => fromSearch.length > 0
+      ? fromSearch
+      : deeplink
+        ? [{ kind: "include", ref: deeplink.include }]
+        : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
   // The folder whose Main Document is pinned to the top of the Stream.
   // Set by clicking a pill or picking one in the palette. Cleared only
@@ -73,36 +117,67 @@ export function ViewerApp({ data, initialSlug }: { data: PublishedSite; initialS
     [filters],
   );
 
+  // Apply a new pill set AND mirror it into the URL (pushState), so the
+  // address bar always matches the pills and is shareable / back-able.
+  // Pills still ACCUMULATE — this only adds URL sync, it never replaces.
+  function commitFilters(next: Filter[]) {
+    setFilters(next);
+    if (typeof history !== "undefined") history.pushState({}, "", filtersToUrl(next));
+  }
   function addInclude(ref: string) {
-    setFilters((prev) =>
-      prev.some((f) => f.kind === "include" && f.ref === ref)
-        ? prev
-        : [...prev, { kind: "include", ref }],
-    );
+    if (filters.some((f) => f.kind === "include" && f.ref === ref)) return;
+    commitFilters([...filters, { kind: "include", ref }]);
   }
   function removeFilter(target: Filter) {
-    setFilters((prev) => prev.filter(
-      (f) => !(f.kind === target.kind && f.ref === target.ref),
-    ));
+    commitFilters(filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref)));
   }
   function resetToDefault() {
-    setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
+    commitFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
     setCollapseNonce((n) => n + 1);
   }
-  // Wikilink / list-row click → add an include + scroll to it.
+  // Wikilink / list-row click → accumulate an include + scroll to it.
   function navigate(ref: string) {
     setView("stream");
-    addInclude(ref);
+    if (!filters.some((f) => f.kind === "include" && f.ref === ref)) {
+      commitFilters([...filters, { kind: "include", ref }]);
+    }
     setScrollTarget(ref);
   }
   // Command palette pick → like navigate, but also pins the folder's
   // Main Document so Cmd+K lands you ON that page.
   function focusFolder(ref: string) {
     setView("stream");
-    addInclude(ref);
+    if (!filters.some((f) => f.kind === "include" && f.ref === ref)) {
+      commitFilters([...filters, { kind: "include", ref }]);
+    }
     setFocusedFolder(ref);
     setScrollTarget(ref);
   }
+
+  // Back/forward: restore the pill set from the URL (no new history
+  // entry). A `?f=` query is authoritative; otherwise fall back to a
+  // `/slug/` path or the home default.
+  useEffect(() => {
+    function onPop() {
+      const next = filtersFromSearch(location.search);
+      if (next.length > 0) { setFilters(next); return; }
+      const rest = location.pathname.startsWith(basePath)
+        ? location.pathname.slice(basePath.length)
+        : location.pathname.replace(/^\//, "");
+      const slug = rest.replace(/\/+$/, "");
+      const ref = slug ? data.slugMap[slug] : null;
+      if (ref) {
+        const note = data.notes.find((n) => n.ref === ref);
+        const inc = note && !note.category && note.folder ? note.folder : ref;
+        setFilters([{ kind: "include", ref: inc }]);
+      } else {
+        setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
+      }
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Category → Area from the published chain, so Sidebar grouping
   // populates without each note repeating its area in YAML.
