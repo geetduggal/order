@@ -8,6 +8,8 @@ import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
+import { editorViewCtx, parserCtx } from "@milkdown/kit/core";
+import { Slice } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
 import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
@@ -41,6 +43,7 @@ type Props = {
 
 export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const crepeRef = useRef<Crepe | null>(null);
   const wikiNotesRef = useRef<WikiRef[]>(wikiNotes ?? []);
   useEffect(() => { wikiNotesRef.current = wikiNotes ?? []; }, [wikiNotes]);
   const onWikiNavigateRef = useRef(onWikiNavigate);
@@ -58,6 +61,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     let crepe: Crepe | null = null;
 
     crepe = new Crepe({ root: host.current, defaultValue: initial });
+    crepeRef.current = crepe;
     // Register the wikilink decoration plugin before create() so it's
     // part of the editor's plugin set. (SPIKE: verify Crepe applies a
     // plugin added via editor.use() before create.)
@@ -100,6 +104,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       cancelled = true;
       crepe?.destroy();
       crepe = null;
+      crepeRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -173,6 +178,22 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     const root = host.current;
     if (!root) return;
 
+    // Insert markdown as real nodes via Milkdown's parser at the current
+    // selection. execCommand("insertText") only drops literal text that
+    // Crepe never turns into an image node — so the upload appeared to do
+    // nothing. This parses `![](url)` into an actual image node.
+    function insertMarkdown(md: string) {
+      const crepe = crepeRef.current;
+      if (!crepe) return;
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const doc = ctx.get(parserCtx)(md);
+        if (!doc) return;
+        view.dispatch(view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView());
+        view.focus();
+      });
+    }
+
     async function handleImageFiles(files: File[]): Promise<boolean> {
       const upload = onImageUploadRef.current;
       if (!upload) return false;
@@ -181,7 +202,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       for (const file of images) {
         try {
           const url = await upload(file);
-          document.execCommand("insertText", false, `![](${url})`);
+          insertMarkdown(`![](${url})`);
         } catch (err) {
           console.error("image upload failed:", err);
         }
