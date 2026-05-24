@@ -1230,6 +1230,32 @@ input, textarea, select { outline: none; box-shadow: none; }
 .sb-folder-item:hover { background: var(--bg-elev); color: var(--ink); }
 .sb-folder-item.checked { color: var(--ink); font-weight: 500; }
 
+/* Reorder / remove controls on a Notable Folder row — overlay the right
+   edge on hover. */
+.sb-folder-li { position: relative; }
+.sb-folder-controls {
+  position: absolute;
+  top: 50%; right: 4px;
+  transform: translateY(-50%);
+  display: flex; gap: 1px;
+  padding: 1px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out);
+}
+.sb-folder-li:hover .sb-folder-controls { opacity: 1; }
+.sb-folder-ctl {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-faint);
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.sb-folder-ctl:hover:not(:disabled) { color: var(--royal); background: var(--royal-soft); }
+.sb-folder-ctl-remove:hover:not(:disabled) { color: var(--coral); background: var(--coral-soft); }
+.sb-folder-ctl:disabled { opacity: 0.3; cursor: default; }
+
 .sb-folder-icon {
   display: inline-flex;
   align-items: center;
@@ -1377,6 +1403,27 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .box-wrapper:hover > .box-remove { opacity: 1; }
 .box-wrapper > .box-remove:hover { color: var(--coral); background: var(--coral-soft); }
+
+/* Reorder arrows on Area / Category tiles — bottom-left, hover-revealed. */
+.box-reorder {
+  position: absolute;
+  left: 4px; bottom: 4px;
+  display: flex; gap: 2px;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 0.12s var(--ease-out);
+}
+.box-wrapper:hover .box-reorder { opacity: 1; }
+.box-move {
+  width: 15px; height: 15px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-faint);
+  background: var(--bg-elev);
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.box-move:hover:not(:disabled) { color: var(--royal); background: var(--royal-soft); }
+.box-move:disabled { opacity: 0.3; cursor: default; }
 
 .box.empty {
   background: transparent;
@@ -1814,14 +1861,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   background: transparent;
-  border: none;
-  border-radius: 4px;
-  opacity: 0.6;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  opacity: 1;
+  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
 }
-.settings-fab:hover { opacity: 1; color: var(--ink); background: var(--bg-elev); }
+.settings-fab:hover { color: var(--royal); border-color: var(--royal); background: var(--royal-soft); }
 .settings-fab:active { transform: scale(0.92); }
 
 /* Zoom (overall text size) — bottom-left, stacked above the settings

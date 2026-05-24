@@ -606,15 +606,30 @@ export function CardGrid() {
       const body = `# ${trimmedArea}\n`;
       await writeVault(areaPath, joinFrontmatter({ list: "cards" }, body));
     }
+    // Create the Category note nested under the Area's directory so the
+    // on-disk layout mirrors Area → Category → Notable Folder. If a note
+    // with this name already exists, reuse it. The bullet ref tracks the
+    // on-disk filename so the chain resolver finds it.
+    let catRef = trimmed;
+    if (!notePathByRef(trimmed)) {
+      const areaDir = areaPath.slice(0, areaPath.lastIndexOf("/"));
+      const safeCat = (trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim()) || trimmed;
+      const catContent = joinFrontmatter(
+        { list: "cards", ...(safeCat !== trimmed ? { title: trimmed } : {}) },
+        `# ${trimmed}\n`,
+      );
+      const catPath = await uniqueWrite(await join(areaDir, safeCat), `${safeCat}.md`, catContent);
+      catRef = (catPath.split("/").pop() ?? `${safeCat}.md`).replace(/\.md$/i, "");
+    }
     // Append category bullet to the Area file.
     const ok = await mutateBullets(
       areaPath,
       (p) => readVault(p),
       (p, c) => writeVault(p, c),
       (items) => {
-        if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
+        if (items.some((i) => i.ref.toLowerCase() === catRef.toLowerCase())) return items;
         if (items.length >= 10) { flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return null; }
-        return [...items, { ref: trimmed }];
+        return [...items, { ref: catRef }];
       },
     );
     if (ok) await reloadNotes();
@@ -629,6 +644,64 @@ export function CardGrid() {
       (p, c) => writeVault(p, c),
       (items) => items.filter((i) => i.ref.toLowerCase() !== _name.toLowerCase()),
     );
+    await reloadNotes();
+  }, [reloadNotes]);
+
+  // Reorder a bullet within its list file by one slot (up = earlier).
+  // Returns silently if the item is missing or already at the edge.
+  const reorderIn = useCallback(async (path: string | null, ref: string, dir: "up" | "down") => {
+    if (!path) return;
+    const ok = await mutateBullets(
+      path,
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
+      (items) => {
+        const i = items.findIndex((it) => it.ref.toLowerCase() === ref.toLowerCase());
+        if (i < 0) return null;
+        const j = dir === "up" ? i - 1 : i + 1;
+        if (j < 0 || j >= items.length) return null;
+        const next = [...items];
+        [next[i], next[j]] = [next[j], next[i]];
+        return next;
+      },
+    );
+    if (ok) await reloadNotes();
+  }, [reloadNotes]);
+
+  const handleReorderArea = useCallback(async (name: string, dir: "up" | "down") => {
+    await reorderIn(await join(await cardsSubdir(), AREAS_FILENAME), name, dir);
+  }, [reorderIn, cardsSubdir]);
+
+  const handleReorderCategory = useCallback(async (name: string, areaName: string, dir: "up" | "down") => {
+    await reorderIn(notePathByRef(areaName), name, dir);
+  }, [reorderIn]);
+
+  const handleReorderFolder = useCallback(async (name: string, _areaName: string, categoryName: string, dir: "up" | "down") => {
+    await reorderIn(notePathByRef(categoryName), name, dir);
+  }, [reorderIn]);
+
+  // Remove a Notable Folder from a Category: drop its bullet AND clear the
+  // note's area/category YAML so it leaves the chain (the note itself is
+  // kept — non-destructive, matching area/category removal).
+  const handleRemoveFolder = useCallback(async (name: string, _areaName: string, categoryName: string) => {
+    const catPath = notePathByRef(categoryName);
+    if (catPath) {
+      await mutateBullets(
+        catPath,
+        (p) => readVault(p),
+        (p, c) => writeVault(p, c),
+        (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
+      );
+    }
+    const nfPath = notePathByRef(name);
+    if (nfPath) {
+      const raw = await readVault(nfPath);
+      const { frontmatter, body } = splitFrontmatter(raw);
+      const next: Frontmatter = { ...frontmatter };
+      delete next.category;
+      delete next.area;
+      await writeVault(nfPath, joinFrontmatter(next, body));
+    }
     await reloadNotes();
   }, [reloadNotes]);
 
@@ -1506,6 +1579,11 @@ export function CardGrid() {
           onRemoveArea={handleRemoveArea}
           onAddCategory={handleAddCategory}
           onRemoveCategory={handleRemoveCategory}
+          onReorderArea={handleReorderArea}
+          onReorderCategory={handleReorderCategory}
+          onReorderFolder={handleReorderFolder}
+          onRemoveFolder={handleRemoveFolder}
+          order={vaultTaxonomy.areas}
           focusSearchSignal={searchFocusSignal}
         />
       )}

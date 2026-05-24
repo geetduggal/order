@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Check, ChevronLeft, Search, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { Frontmatter } from "../lib/frontmatter";
 
@@ -64,6 +64,17 @@ interface Props {
   onRemoveArea: (name: string) => void;
   onAddCategory: (name: string, area: string) => void;
   onRemoveCategory: (name: string, area: string) => void;
+  /** Reorder handlers (optional — when absent, e.g. the read-only viewer,
+   *  no reorder/remove controls are shown). `dir` is "up" (earlier) or
+   *  "down" (later) in the list. */
+  onReorderArea?: (name: string, dir: "up" | "down") => void;
+  onReorderCategory?: (name: string, area: string, dir: "up" | "down") => void;
+  onReorderFolder?: (name: string, area: string, category: string, dir: "up" | "down") => void;
+  /** Remove a Notable Folder from its Category (keeps the note). */
+  onRemoveFolder?: (name: string, area: string, category: string) => void;
+  /** Chain order (Areas → Categories → folder refs) so the lists render
+   *  in the on-disk bullet order rather than alphabetically. */
+  order?: { ref: string; categories: { ref: string; folders: string[] }[] }[];
   /** Monotonically increasing counter: each change focuses + selects
    *  the search input. Lets Cmd+O drop focus into the sidebar without
    *  the parent needing a ref into our internals. */
@@ -84,6 +95,7 @@ function buildTaxonomy(
   folders: NotableFolder[],
   storedAreas: string[],
   storedCategories: { area: string; name: string }[],
+  order?: { ref: string; categories: { ref: string; folders: string[] }[] }[],
 ): Taxonomy {
   const areaSet = new Set<string>([...storedAreas]);
   for (const f of folders) if (f.area) areaSet.add(f.area);
@@ -111,16 +123,38 @@ function buildTaxonomy(
     foldersByCategory.set(key, list);
   }
 
+  // Folder order from the chain (order prop): catRef → folderRef → index.
+  // Used to render folders in their on-disk bullet order; anything not in
+  // the chain falls back to alphabetical after the ordered ones.
+  const folderRank = new Map<string, Map<string, number>>();
+  if (order) {
+    for (const a of order) {
+      for (const c of a.categories) {
+        const m = new Map<string, number>();
+        c.folders.forEach((f, i) => m.set(f.toLowerCase(), i));
+        folderRank.set(c.ref.toLowerCase(), m);
+      }
+    }
+  }
+
   return {
-    areaNames: [...areaSet].sort(),
+    // Insertion order (stored/chain first, then YAML-derived) — NOT sorted,
+    // so reordering in the chain files is reflected here.
+    areaNames: [...areaSet],
     categoriesByArea: new Map(
-      [...categoriesByArea].map(([a, set]) => [a, [...set].sort()]),
+      [...categoriesByArea].map(([a, set]) => [a, [...set]]),
     ),
     foldersByCategory: new Map(
-      [...foldersByCategory].map(([k, list]) => [
-        k,
-        list.sort((x, y) => x.name.localeCompare(y.name)),
-      ]),
+      [...foldersByCategory].map(([k, list]) => {
+        const catRef = (k.split("::")[1] ?? "").toLowerCase();
+        const rank = folderRank.get(catRef);
+        const sorted = [...list].sort((x, y) => {
+          const rx = rank?.get(x.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+          const ry = rank?.get(y.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+          return rx !== ry ? rx - ry : x.name.localeCompare(y.name);
+        });
+        return [k, sorted];
+      }),
     ),
     isAreaStored: (name) => storedAreas.some((a) => eqi(a, name)),
     isCategoryStored: (area, name) =>
@@ -142,6 +176,11 @@ export function Sidebar({
   onRemoveArea,
   onAddCategory,
   onRemoveCategory,
+  onReorderArea,
+  onReorderCategory,
+  onReorderFolder,
+  onRemoveFolder,
+  order,
   focusSearchSignal,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
@@ -157,8 +196,8 @@ export function Sidebar({
   }, [focusSearchSignal]);
 
   const taxonomy = useMemo(
-    () => buildTaxonomy(folders, storedAreas, storedCategories),
-    [folders, storedAreas, storedCategories],
+    () => buildTaxonomy(folders, storedAreas, storedCategories, order),
+    [folders, storedAreas, storedCategories, order],
   );
 
   // Sanity: if a drilled-into entity disappears (rare), pop back.
@@ -252,6 +291,10 @@ export function Sidebar({
             onRemoveArea={onRemoveArea}
             onAddCategory={onAddCategory}
             onRemoveCategory={onRemoveCategory}
+            onReorderArea={onReorderArea}
+            onReorderCategory={onReorderCategory}
+            onReorderFolder={onReorderFolder}
+            onRemoveFolder={onRemoveFolder}
           />
         )}
       </section>
@@ -262,6 +305,7 @@ export function Sidebar({
 function DrillView({
   drill, setDrill, taxonomy, selected, onToggle, onCreateFolder,
   onAddArea, onRemoveArea, onAddCategory, onRemoveCategory,
+  onReorderArea, onReorderCategory, onReorderFolder, onRemoveFolder,
 }: {
   drill: DrillState;
   setDrill: (s: DrillState) => void;
@@ -273,6 +317,10 @@ function DrillView({
   onRemoveArea: (name: string) => void;
   onAddCategory: (name: string, area: string) => void;
   onRemoveCategory: (name: string, area: string) => void;
+  onReorderArea?: (name: string, dir: "up" | "down") => void;
+  onReorderCategory?: (name: string, area: string, dir: "up" | "down") => void;
+  onReorderFolder?: (name: string, area: string, category: string, dir: "up" | "down") => void;
+  onRemoveFolder?: (name: string, area: string, category: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const draftActive = draft !== null;
@@ -305,6 +353,8 @@ function DrillView({
                   ? () => onRemoveArea(a)
                   : undefined
               }
+              onMoveEarlier={onReorderArea && i > 0 ? () => onReorderArea(a, "up") : undefined}
+              onMoveLater={onReorderArea && i < taxonomy.areaNames.length - 1 ? () => onReorderArea(a, "down") : undefined}
             />
           ))}
           {draftActive && (
@@ -343,6 +393,8 @@ function DrillView({
                   ? () => onRemoveCategory(c, drill.areaName)
                   : undefined
               }
+              onMoveEarlier={onReorderCategory && i > 0 ? () => onReorderCategory(c, drill.areaName, "up") : undefined}
+              onMoveLater={onReorderCategory && i < cats.length - 1 ? () => onReorderCategory(c, drill.areaName, "down") : undefined}
             />
           ))}
           {draftActive && (
@@ -372,12 +424,15 @@ function DrillView({
       />
       <SectionTitle label="Notable Folders" count={folders.length} />
       <ul className="sb-folder-list">
-        {folders.map((f) => (
+        {folders.map((f, i) => (
           <FolderRow
             key={f.path}
             folder={f}
             checked={selected.has(f.name)}
             onToggle={() => onToggle(f.name)}
+            onMoveUp={onReorderFolder && i > 0 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "up") : undefined}
+            onMoveDown={onReorderFolder && i < folders.length - 1 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "down") : undefined}
+            onRemove={onRemoveFolder ? () => onRemoveFolder(f.name, drill.areaName, drill.categoryName) : undefined}
           />
         ))}
       </ul>
@@ -449,17 +504,19 @@ function BoxGrid({ children }: { children: React.ReactNode }) {
   return <div className="box-grid">{children}</div>;
 }
 
-function AreaTile({ label, coral, onClick, onRemove }: {
+function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater }: {
   label: string;
   coral: boolean;
   onClick: () => void;
   onRemove?: () => void;
+  onMoveEarlier?: () => void;
+  onMoveLater?: () => void;
 }) {
   const Icon: LucideIcon = folderIcon(label);
   const color = folderColor(label);
-  // The remove × is a sibling of the open-tile button rather than a
-  // child — buttons can't nest in HTML. .box-wrapper carries the
-  // aspect-ratio so both children can size themselves freely.
+  // The remove × and reorder arrows are siblings of the open-tile button
+  // rather than children — buttons can't nest in HTML. .box-wrapper
+  // carries the aspect-ratio so the children size themselves freely.
   return (
     <div className="box-wrapper">
       <button
@@ -473,6 +530,30 @@ function AreaTile({ label, coral, onClick, onRemove }: {
         </span>
         <span className="box-label">{label}</span>
       </button>
+      {(onMoveEarlier || onMoveLater) && (
+        <div className="box-reorder">
+          <button
+            type="button"
+            className="box-move"
+            disabled={!onMoveEarlier}
+            onClick={onMoveEarlier}
+            title="Move earlier"
+            aria-label="Move earlier"
+          >
+            <ChevronLeft size={11} strokeWidth={2.5} />
+          </button>
+          <button
+            type="button"
+            className="box-move"
+            disabled={!onMoveLater}
+            onClick={onMoveLater}
+            title="Move later"
+            aria-label="Move later"
+          >
+            <ChevronRight size={11} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
       {onRemove && (
         <button
           type="button"
@@ -543,17 +624,21 @@ function hasFolderInCategory(taxonomy: Taxonomy, area: string, category: string)
   return (taxonomy.foldersByCategory.get(`${area}::${category}`)?.length ?? 0) > 0;
 }
 
-function FolderRow({ folder, checked, onToggle }: {
+function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove }: {
   folder: NotableFolder;
   checked: boolean;
   onToggle: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onRemove?: () => void;
 }) {
   const Icon: LucideIcon = folderIcon(folder.name, folder.frontmatter.icon);
   const color = folderColor(folder.name, folder.frontmatter.color);
   const titleFm = folder.frontmatter.title;
   const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
+  const hasControls = !!(onMoveUp || onMoveDown || onRemove);
   return (
-    <li>
+    <li className="sb-folder-li">
       <button
         type="button"
         className={"sb-folder-item" + (checked ? " checked" : "")}
@@ -572,6 +657,21 @@ function FolderRow({ folder, checked, onToggle }: {
           </span>
         )}
       </button>
+      {hasControls && (
+        <span className="sb-folder-controls">
+          <button type="button" className="sb-folder-ctl" disabled={!onMoveUp} onClick={onMoveUp} title="Move up" aria-label="Move up">
+            <ChevronUp size={11} strokeWidth={2.5} />
+          </button>
+          <button type="button" className="sb-folder-ctl" disabled={!onMoveDown} onClick={onMoveDown} title="Move down" aria-label="Move down">
+            <ChevronDown size={11} strokeWidth={2.5} />
+          </button>
+          {onRemove && (
+            <button type="button" className="sb-folder-ctl sb-folder-ctl-remove" onClick={onRemove} title="Remove from category" aria-label="Remove from category">
+              <X size={11} strokeWidth={2.5} />
+            </button>
+          )}
+        </span>
+      )}
     </li>
   );
 }

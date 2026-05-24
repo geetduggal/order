@@ -438,6 +438,7 @@ export function ViewerApp(
           onRemoveArea={() => { /* no-op */ }}
           onAddCategory={() => { /* no-op */ }}
           onRemoveCategory={() => { /* no-op */ }}
+          order={data.taxonomy.areas}
         />
       )}
 
