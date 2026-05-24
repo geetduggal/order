@@ -5,6 +5,7 @@
 // views stay in sync.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { dirname, join } from "@tauri-apps/api/path";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
@@ -880,7 +881,10 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
         }}
         placeholder="Assign folder…"
       />
-      {matches.length > 0 && menuPos && (
+      {matches.length > 0 && menuPos && createPortal(
+        // Rendered into <body> so NO card ancestor (transform / overflow /
+        // stacking context) can clip or trap it — fixed coords come from
+        // the input's on-screen rect.
         <ul
           className="order-card-folder-options"
           style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
@@ -897,7 +901,8 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
               </button>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </span>
   );
