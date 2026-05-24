@@ -74,22 +74,45 @@ export function vaultDir(relPath: string): string {
   return i === -1 ? "" : relPath.slice(0, i);
 }
 
-// `![[file.png]]` or `![[file.png|alias-or-size]]` — embed syntax.
-const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|[^\]\n]*)?\]\]/g;
+// `![[file.png]]` or `![[file.png|640]]` — embed syntax. The optional size
+// token (Obsidian pixel width: "640" or "640x480") is captured so a resize
+// survives the round-trip.
+const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|\s*([^\]\n]*?)\s*)?\]\]/g;
+
+// Crepe stores image size as a container-relative `ratio` (in the image's
+// alt); Obsidian stores an absolute pixel width. We bridge with
+// width = round(ratio * REF) on save and ratio = width / REF on load. The
+// ratio round-trips exactly for any REF, so REF only sets the px number
+// written for Obsidian — pick ~a content column so it reads sanely.
+const EMBED_REF_WIDTH = 720;
+
+/** Leading positive integer of an Obsidian size token ("640", "640x480"),
+ *  else null. */
+function parseEmbedWidth(token: string | undefined): number | null {
+  const m = token?.match(/^\d+/);
+  if (!m) return null;
+  const n = parseInt(m[0], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 /** `![[file.png]]` → `![](vaultasset://…/<noteDir>/file.png)` for image
  *  embeds, resolving the file in the note's own folder (`noteDir`,
- *  vault-relative, "" for root). Non-image embeds are left untouched. */
+ *  vault-relative, "" for root). A `|width` token is re-encoded as Crepe's
+ *  size ratio (in the alt) so the resize is restored. Non-image embeds are
+ *  left untouched. */
 export function inflateImageEmbeds(body: string, noteDir: string): string {
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
-  return body.replace(IMG_EMBED_RE, (full, name: string) => {
+  return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
     if (!isImagePath(target)) return full;
-    return `![](${assetUrl(`${dir}${target}`)})`;
+    const url = assetUrl(`${dir}${target}`);
+    const width = parseEmbedWidth(size);
+    if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
+    return `![](${url})`;
   });
 }
 
-const VAULTASSET_IMG_RE = /!\[[^\]]*\]\((vaultasset:\/\/localhost\/[^)\s]+)\)/g;
+const VAULTASSET_IMG_RE = /!\[([^\]]*)\]\((vaultasset:\/\/localhost\/[^)\s]+)\)/g;
 
 /** Reverse of inflate, covering BOTH conventions in one pass over the
  *  body's vaultasset image URLs:
@@ -104,13 +127,18 @@ export function deflateImageEmbeds(body: string, noteDir: string): string {
     // stray Crepe paste artifact). Also consume trailing blank space so
     // we don't leave a dangling empty paragraph.
     .replace(/!\[[^\]]*\]\(blob:[^)\s]+\)[ \t]*\n?/g, "")
-    .replace(VAULTASSET_IMG_RE, (_full, url: string) => {
+    .replace(VAULTASSET_IMG_RE, (_full, alt: string, url: string) => {
     const rest = url.slice(VAULTASSET_BASE.length);
     let rel = rest;
     try { rel = decodeURI(rest); } catch { /* keep raw */ }
     if (rel.startsWith(`${ATTACHMENTS_DIRNAME}/`)) return `![](${rel})`;
-    if (dir && rel.startsWith(dir)) return `![[${rel.slice(dir.length)}]]`;
-    if (!dir && !rel.includes("/")) return `![[${rel}]]`;
+    // Preserve a Crepe resize (ratio in the alt) as an Obsidian pixel
+    // width; an unresized image (ratio ~1) stays a clean embed.
+    const ratio = parseFloat(alt);
+    const sized = Number.isFinite(ratio) && Math.abs(ratio - 1) > 0.02;
+    const w = sized ? `|${Math.round(ratio * EMBED_REF_WIDTH)}` : "";
+    if (dir && rel.startsWith(dir)) return `![[${rel.slice(dir.length)}${w}]]`;
+    if (!dir && !rel.includes("/")) return `![[${rel}${w}]]`;
     return `![](${rel})`;
   });
 }
