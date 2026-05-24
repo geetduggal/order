@@ -4,7 +4,7 @@
 // Full Calendar convention) and the parent is notified so calendar
 // views stay in sync.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dirname, join } from "@tauri-apps/api/path";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
@@ -812,6 +812,19 @@ interface FolderPickerProps {
 }
 
 function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign }: FolderPickerProps) {
+  // The dropdown is position:fixed (positioned from the input's rect) so it
+  // escapes the card grid's overflow clipping / stacking and never sits
+  // behind sibling cards.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setMenuPos(null); return; }
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 4, left: r.left });
+  }, [open, query]);
+
   const matches = query.trim()
     ? available.filter((f) => f.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
     : available.slice(0, 6);
@@ -856,6 +869,7 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
   return (
     <span className="order-card-folder-picker">
       <input
+        ref={inputRef}
         autoFocus
         className="order-card-folder-input"
         value={query}
@@ -866,8 +880,11 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
         }}
         placeholder="Assign folder…"
       />
-      {matches.length > 0 && (
-        <ul className="order-card-folder-options">
+      {matches.length > 0 && menuPos && (
+        <ul
+          className="order-card-folder-options"
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+        >
           {matches.map((f) => (
             <li key={f.name}>
               <button

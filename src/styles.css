@@ -363,16 +363,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   cursor: pointer;
 }
 .order-card-folder-chip-btn:hover .order-card-folder-name { text-decoration: underline; }
-.order-card-folder-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-ghost);
-  padding: 2px;
-  border-radius: 50%;
-  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
-}
-.order-card-folder-clear:hover { color: var(--coral); background: var(--coral-soft); }
 
 .order-card-folder-picker {
   position: relative;
