@@ -210,26 +210,35 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       return true;
     }
 
-    async function onPaste(e: ClipboardEvent) {
+    // NOTE: suppression MUST be synchronous. Crepe's own paste/drop
+    // handler runs in the SAME tick, before any `await` resolves — so a
+    // deferred preventDefault is too late and Crepe also inserts the image
+    // as a stray `![](blob:…)`. We detect image files, stop the event dead
+    // here, then kick off the (async) upload separately.
+    function onPaste(e: ClipboardEvent) {
       const items = e.clipboardData?.items;
       if (!items) return;
       const files: File[] = [];
       for (const item of items) {
         if (item.kind === "file") {
           const f = item.getAsFile();
-          if (f) files.push(f);
+          if (f && f.type.startsWith("image/")) files.push(f);
         }
       }
       if (files.length === 0) return;
-      const handled = await handleImageFiles(files);
-      if (handled) e.preventDefault();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void handleImageFiles(files);
     }
 
-    async function onDrop(e: DragEvent) {
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
-      const handled = await handleImageFiles(Array.from(files));
-      if (handled) e.preventDefault();
+    function onDrop(e: DragEvent) {
+      const dropped = e.dataTransfer?.files;
+      if (!dropped || dropped.length === 0) return;
+      const images = Array.from(dropped).filter((f) => f.type.startsWith("image/"));
+      if (images.length === 0) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void handleImageFiles(images);
     }
 
     root.addEventListener("paste", onPaste, true);

@@ -99,7 +99,12 @@ const VAULTASSET_IMG_RE = /!\[[^\]]*\]\((vaultasset:\/\/localhost\/[^)\s]+)\)/g;
  *  Supersedes deflateAttachmentUrls. */
 export function deflateImageEmbeds(body: string, noteDir: string): string {
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
-  return body.replace(VAULTASSET_IMG_RE, (_full, url: string) => {
+  return body
+    // Drop ephemeral blob: images — they can never resolve on disk (a
+    // stray Crepe paste artifact). Also consume trailing blank space so
+    // we don't leave a dangling empty paragraph.
+    .replace(/!\[[^\]]*\]\(blob:[^)\s]+\)[ \t]*\n?/g, "")
+    .replace(VAULTASSET_IMG_RE, (_full, url: string) => {
     const rest = url.slice(VAULTASSET_BASE.length);
     let rel = rest;
     try { rel = decodeURI(rest); } catch { /* keep raw */ }
