@@ -8,9 +8,12 @@
 import { Search as SearchIcon, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { Filter } from "../lib/filters";
+import { useTileDrag } from "../lib/use-tile-drag";
+
+const keyOf = (f: Filter) => `${f.kind}:${f.ref}`;
 
 export function FilterPillStack({
-  filters, onRemove, onJump, onSearch,
+  filters, onRemove, onJump, onSearch, onReorder,
 }: {
   filters: Filter[];
   onRemove: (f: Filter) => void;
@@ -18,10 +21,18 @@ export function FilterPillStack({
   /** Open the folder search dialog (the Cmd+K command palette). When
    *  set, a search icon renders just above the pills. */
   onSearch?: () => void;
+  /** Drag-reorder the pills (optional). */
+  onReorder?: (next: Filter[]) => void;
 }) {
+  const byKey = new Map(filters.map((f) => [keyOf(f), f]));
+  const { gridRef, dragRef, onTilePointerDown } = useTileDrag(
+    filters.map(keyOf),
+    onReorder ? (order) => onReorder(order.map((k) => byKey.get(k)).filter((f): f is Filter => !!f)) : undefined,
+    { vertical: true, exclude: ".filter-pill-x, .filter-search" },
+  );
   if (filters.length === 0 && !onSearch) return null;
   return (
-    <div className="filter-pills" role="list" aria-label="Active filters">
+    <div className="filter-pills" role="list" aria-label="Active filters" ref={gridRef}>
       {onSearch && (
         <button
           type="button"
@@ -41,8 +52,10 @@ export function FilterPillStack({
           <div
             key={`${f.kind}:${f.ref}`}
             role="listitem"
-            className={"filter-pill" + (isExclude ? " is-exclude" : "")}
+            className={"filter-pill" + (isExclude ? " is-exclude" : "") + (onReorder ? " draggable" : "") + (dragRef === keyOf(f) ? " dragging" : "")}
             style={{ ["--pill-color" as string]: color }}
+            data-tile-ref={keyOf(f)}
+            onPointerDown={onReorder ? (e) => onTilePointerDown(e, keyOf(f)) : undefined}
           >
             <button
               type="button"

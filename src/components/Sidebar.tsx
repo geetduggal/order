@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
+import { useTileDrag } from "../lib/use-tile-drag";
 import type { Frontmatter } from "../lib/frontmatter";
 
 export type View = "stream" | "week" | "month" | "year";
@@ -70,6 +71,11 @@ interface Props {
   onReorderArea?: (name: string, dir: "up" | "down") => void;
   onReorderCategory?: (name: string, area: string, dir: "up" | "down") => void;
   onReorderFolder?: (name: string, area: string, category: string, dir: "up" | "down") => void;
+  /** Drag-reorder: rewrite the whole order (areas, or categories in an
+   *  area) to the given ref sequence. */
+  onReorderAreas?: (order: string[]) => void;
+  onReorderCategories?: (area: string, order: string[]) => void;
+  onReorderFolders?: (area: string, category: string, order: string[]) => void;
   /** Remove a Notable Folder from its Category (keeps the note). */
   onRemoveFolder?: (name: string, area: string, category: string) => void;
   /** Chain order (Areas → Categories → folder refs) so the lists render
@@ -179,6 +185,9 @@ export function Sidebar({
   onReorderArea,
   onReorderCategory,
   onReorderFolder,
+  onReorderAreas,
+  onReorderCategories,
+  onReorderFolders,
   onRemoveFolder,
   order,
   focusSearchSignal,
@@ -294,6 +303,9 @@ export function Sidebar({
             onReorderArea={onReorderArea}
             onReorderCategory={onReorderCategory}
             onReorderFolder={onReorderFolder}
+            onReorderAreas={onReorderAreas}
+            onReorderCategories={onReorderCategories}
+            onReorderFolders={onReorderFolders}
             onRemoveFolder={onRemoveFolder}
           />
         )}
@@ -302,10 +314,12 @@ export function Sidebar({
   );
 }
 
+
 function DrillView({
   drill, setDrill, taxonomy, selected, onToggle, onCreateFolder,
   onAddArea, onRemoveArea, onAddCategory, onRemoveCategory,
-  onReorderArea, onReorderCategory, onReorderFolder, onRemoveFolder,
+  onReorderArea, onReorderCategory, onReorderFolder,
+  onReorderAreas, onReorderCategories, onReorderFolders, onRemoveFolder,
 }: {
   drill: DrillState;
   setDrill: (s: DrillState) => void;
@@ -320,6 +334,9 @@ function DrillView({
   onReorderArea?: (name: string, dir: "up" | "down") => void;
   onReorderCategory?: (name: string, area: string, dir: "up" | "down") => void;
   onReorderFolder?: (name: string, area: string, category: string, dir: "up" | "down") => void;
+  onReorderAreas?: (order: string[]) => void;
+  onReorderCategories?: (area: string, order: string[]) => void;
+  onReorderFolders?: (area: string, category: string, order: string[]) => void;
   onRemoveFolder?: (name: string, area: string, category: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -336,12 +353,39 @@ function DrillView({
     setDraft(null);
   }
 
+  // Drag-reorder for the current grid (Areas tiles, or an Area's Categories).
+  // Hooks run unconditionally, so compute the active list + handler first.
+  let dragRefs: string[] = [];
+  let dragHandler: ((order: string[]) => void) | undefined;
+  if (drill.kind === "areas") {
+    dragRefs = taxonomy.areaNames;
+    dragHandler = onReorderAreas;
+  } else if (drill.kind === "categories") {
+    const areaName = drill.areaName;
+    const reorderCats = onReorderCategories;
+    dragRefs = taxonomy.categoriesByArea.get(areaName) ?? [];
+    dragHandler = reorderCats ? (order) => reorderCats(areaName, order) : undefined;
+  }
+  const { gridRef, dragRef: draggingRef, onTilePointerDown } = useTileDrag(dragRefs, dragHandler, { exclude: ".box-remove, .box-move, .sb-folder-ctl, input" });
+
+  // Drag-reorder for the Notable Folder list (vertical).
+  let folderDragRefs: string[] = [];
+  let folderReorder: ((order: string[]) => void) | undefined;
+  if (drill.kind === "folders") {
+    const a = drill.areaName;
+    const c = drill.categoryName;
+    const h = onReorderFolders;
+    folderDragRefs = (taxonomy.foldersByCategory.get(`${a}::${c}`) ?? []).map((f) => f.name);
+    folderReorder = h ? (order) => h(a, c, order) : undefined;
+  }
+  const folderDrag = useTileDrag(folderDragRefs, folderReorder, { vertical: true, exclude: ".box-remove, .box-move, .sb-folder-ctl, input" });
+
   if (drill.kind === "areas") {
     const empties = Math.max(0, MAX_SLOTS - taxonomy.areaNames.length - (draftActive ? 1 : 0));
     return (
       <>
         <SectionTitle label="Areas" count={taxonomy.areaNames.length} max={MAX_SLOTS} />
-        <BoxGrid>
+        <BoxGrid gridRef={gridRef}>
           {taxonomy.areaNames.map((a, i) => (
             <AreaTile
               key={a}
@@ -355,6 +399,9 @@ function DrillView({
               }
               onMoveEarlier={onReorderArea && i > 0 ? () => onReorderArea(a, "up") : undefined}
               onMoveLater={onReorderArea && i < taxonomy.areaNames.length - 1 ? () => onReorderArea(a, "down") : undefined}
+              tileRef={a}
+              dragging={draggingRef === a}
+              onTilePointerDown={onReorderAreas ? (e) => onTilePointerDown(e, a) : undefined}
             />
           ))}
           {draftActive && (
@@ -381,7 +428,7 @@ function DrillView({
       <>
         <BackBar label={drill.areaName} onBack={() => setDrill({ kind: "areas" })} />
         <SectionTitle label="Categories" count={cats.length} max={MAX_SLOTS} />
-        <BoxGrid>
+        <BoxGrid gridRef={gridRef}>
           {cats.map((c, i) => (
             <AreaTile
               key={c}
@@ -395,6 +442,9 @@ function DrillView({
               }
               onMoveEarlier={onReorderCategory && i > 0 ? () => onReorderCategory(c, drill.areaName, "up") : undefined}
               onMoveLater={onReorderCategory && i < cats.length - 1 ? () => onReorderCategory(c, drill.areaName, "down") : undefined}
+              tileRef={c}
+              dragging={draggingRef === c}
+              onTilePointerDown={onReorderCategories ? (e) => onTilePointerDown(e, c) : undefined}
             />
           ))}
           {draftActive && (
@@ -423,7 +473,7 @@ function DrillView({
         onBack={() => setDrill({ kind: "categories", areaName: drill.areaName })}
       />
       <SectionTitle label="Notable Folders" count={folders.length} />
-      <ul className="sb-folder-list">
+      <ul className="sb-folder-list" ref={folderDrag.gridRef}>
         {folders.map((f, i) => (
           <FolderRow
             key={f.path}
@@ -433,6 +483,8 @@ function DrillView({
             onMoveUp={onReorderFolder && i > 0 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "up") : undefined}
             onMoveDown={onReorderFolder && i < folders.length - 1 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "down") : undefined}
             onRemove={onRemoveFolder ? () => onRemoveFolder(f.name, drill.areaName, drill.categoryName) : undefined}
+            dragging={folderDrag.dragRef === f.name}
+            onTilePointerDown={onReorderFolders ? (e) => folderDrag.onTilePointerDown(e, f.name) : undefined}
           />
         ))}
       </ul>
@@ -500,25 +552,33 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
   );
 }
 
-function BoxGrid({ children }: { children: React.ReactNode }) {
-  return <div className="box-grid">{children}</div>;
+function BoxGrid({ children, gridRef }: { children: React.ReactNode; gridRef?: React.Ref<HTMLDivElement> }) {
+  return <div className="box-grid" ref={gridRef}>{children}</div>;
 }
 
-function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater }: {
+function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater, tileRef, dragging, onTilePointerDown }: {
   label: string;
   coral: boolean;
   onClick: () => void;
   onRemove?: () => void;
   onMoveEarlier?: () => void;
   onMoveLater?: () => void;
+  tileRef?: string;
+  dragging?: boolean;
+  onTilePointerDown?: (e: React.PointerEvent) => void;
 }) {
   const Icon: LucideIcon = folderIcon(label);
   const color = folderColor(label);
   // The remove × and reorder arrows are siblings of the open-tile button
   // rather than children — buttons can't nest in HTML. .box-wrapper
-  // carries the aspect-ratio so the children size themselves freely.
+  // carries the aspect-ratio so the children size themselves freely, and
+  // is the drag surface (data-tile-ref) for pointer reordering.
   return (
-    <div className="box-wrapper">
+    <div
+      className={"box-wrapper" + (dragging ? " dragging" : "") + (onTilePointerDown ? " draggable" : "")}
+      data-tile-ref={tileRef}
+      onPointerDown={onTilePointerDown}
+    >
       <button
         type="button"
         className={"box no-image" + (coral ? " coral" : "")}
@@ -624,13 +684,15 @@ function hasFolderInCategory(taxonomy: Taxonomy, area: string, category: string)
   return (taxonomy.foldersByCategory.get(`${area}::${category}`)?.length ?? 0) > 0;
 }
 
-function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove }: {
+function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, dragging, onTilePointerDown }: {
   folder: NotableFolder;
   checked: boolean;
   onToggle: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onRemove?: () => void;
+  dragging?: boolean;
+  onTilePointerDown?: (e: React.PointerEvent) => void;
 }) {
   const Icon: LucideIcon = folderIcon(folder.name, folder.frontmatter.icon);
   const color = folderColor(folder.name, folder.frontmatter.color);
@@ -638,7 +700,11 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove }
   const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
   const hasControls = !!(onMoveUp || onMoveDown || onRemove);
   return (
-    <li className="sb-folder-li">
+    <li
+      className={"sb-folder-li" + (dragging ? " dragging" : "") + (onTilePointerDown ? " draggable" : "")}
+      data-tile-ref={folder.name}
+      onPointerDown={onTilePointerDown}
+    >
       <button
         type="button"
         className={"sb-folder-item" + (checked ? " checked" : "")}

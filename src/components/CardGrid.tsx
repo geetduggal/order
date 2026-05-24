@@ -705,6 +705,42 @@ export function CardGrid() {
     await reloadNotes();
   }, [reloadNotes]);
 
+  // Rewrite a list file's bullets into the given ref order (drag-reorder).
+  // Refs not present are appended in their original order; no-op if the
+  // order is unchanged.
+  const reorderToIn = useCallback(async (path: string | null, names: string[]) => {
+    if (!path) return;
+    const ok = await mutateBullets(
+      path,
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
+      (items) => {
+        const byRef = new Map(items.map((it) => [it.ref.toLowerCase(), it]));
+        const out: ListItem[] = [];
+        for (const n of names) {
+          const it = byRef.get(n.toLowerCase());
+          if (it) { out.push(it); byRef.delete(n.toLowerCase()); }
+        }
+        for (const it of byRef.values()) out.push(it);
+        const same = out.length === items.length && out.every((it, i) => it === items[i]);
+        return same ? null : out;
+      },
+    );
+    if (ok) await reloadNotes();
+  }, [reloadNotes]);
+
+  const handleReorderAreasTo = useCallback(async (names: string[]) => {
+    await reorderToIn(await join(await cardsSubdir(), AREAS_FILENAME), names);
+  }, [reorderToIn, cardsSubdir]);
+
+  const handleReorderCategoriesTo = useCallback(async (areaName: string, names: string[]) => {
+    await reorderToIn(notePathByRef(areaName), names);
+  }, [reorderToIn]);
+
+  const handleReorderFoldersTo = useCallback(async (_areaName: string, categoryName: string, names: string[]) => {
+    await reorderToIn(notePathByRef(categoryName), names);
+  }, [reorderToIn]);
+
   // Shape Sidebar's existing API expects.
   const storedAreas = vaultTaxonomy.areas.map((a) => a.ref);
   const storedCategories = vaultTaxonomy.areas.flatMap((a) =>
@@ -1496,6 +1532,7 @@ export function CardGrid() {
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}
+        onReorder={setFilters}
         onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           // Focus this folder: pin its Main Document to the top of the
@@ -1584,6 +1621,9 @@ export function CardGrid() {
           onReorderArea={handleReorderArea}
           onReorderCategory={handleReorderCategory}
           onReorderFolder={handleReorderFolder}
+          onReorderAreas={handleReorderAreasTo}
+          onReorderCategories={handleReorderCategoriesTo}
+          onReorderFolders={handleReorderFoldersTo}
           onRemoveFolder={handleRemoveFolder}
           order={vaultTaxonomy.areas}
           focusSearchSignal={searchFocusSignal}

@@ -366,6 +366,7 @@ export function ViewerApp(
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}
+        onReorder={commitFilters}
         onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           setView("stream");
