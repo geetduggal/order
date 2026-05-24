@@ -45,3 +45,67 @@ export function deflateAttachmentUrls(body: string, assetPrefix: string): string
     return full;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Obsidian-style image embeds: `![[file.png]]`, with the file living in the
+// SAME folder as the note (Obsidian's attachmentFolderPath: "./", wikilink
+// embeds). On disk we keep the `![[…]]` form; in the editor we swap to a
+// vaultasset:// URL so the webview can load the bytes. Legacy global
+// `![](Attachments/…)` images keep working (coexistence).
+// ---------------------------------------------------------------------------
+
+const VAULTASSET_BASE = "vaultasset://localhost/";
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp|tiff?|heic|heif)$/i;
+
+/** True if `name` looks like an image file (by extension). */
+export function isImagePath(name: string): boolean {
+  return IMAGE_EXT_RE.test(name.trim());
+}
+
+/** Build the vaultasset:// URL for a vault-relative path. encodeURI keeps
+ *  slashes (nested folders) but escapes spaces / unicode. */
+export function assetUrl(vaultRelPath: string): string {
+  return `${VAULTASSET_BASE}${encodeURI(vaultRelPath)}`;
+}
+
+/** Vault-relative directory of a path ("" for a root-level note). */
+export function vaultDir(relPath: string): string {
+  const i = relPath.lastIndexOf("/");
+  return i === -1 ? "" : relPath.slice(0, i);
+}
+
+// `![[file.png]]` or `![[file.png|alias-or-size]]` — embed syntax.
+const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|[^\]\n]*)?\]\]/g;
+
+/** `![[file.png]]` → `![](vaultasset://…/<noteDir>/file.png)` for image
+ *  embeds, resolving the file in the note's own folder (`noteDir`,
+ *  vault-relative, "" for root). Non-image embeds are left untouched. */
+export function inflateImageEmbeds(body: string, noteDir: string): string {
+  const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
+  return body.replace(IMG_EMBED_RE, (full, name: string) => {
+    const target = name.trim();
+    if (!isImagePath(target)) return full;
+    return `![](${assetUrl(`${dir}${target}`)})`;
+  });
+}
+
+const VAULTASSET_IMG_RE = /!\[[^\]]*\]\((vaultasset:\/\/localhost\/[^)\s]+)\)/g;
+
+/** Reverse of inflate, covering BOTH conventions in one pass over the
+ *  body's vaultasset image URLs:
+ *   - inside the note's own folder   → Obsidian embed `![[file.png]]`
+ *   - inside the legacy Attachments/  → markdown `![](Attachments/file.png)`
+ *   - anywhere else in the vault      → markdown `![](vault/rel/path.png)`
+ *  Supersedes deflateAttachmentUrls. */
+export function deflateImageEmbeds(body: string, noteDir: string): string {
+  const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
+  return body.replace(VAULTASSET_IMG_RE, (_full, url: string) => {
+    const rest = url.slice(VAULTASSET_BASE.length);
+    let rel = rest;
+    try { rel = decodeURI(rest); } catch { /* keep raw */ }
+    if (rel.startsWith(`${ATTACHMENTS_DIRNAME}/`)) return `![](${rel})`;
+    if (dir && rel.startsWith(dir)) return `![[${rel.slice(dir.length)}]]`;
+    if (!dir && !rel.includes("/")) return `![[${rel}]]`;
+    return `![](${rel})`;
+  });
+}

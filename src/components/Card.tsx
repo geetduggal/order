@@ -32,10 +32,12 @@ import { ListView } from "./ListView";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
 import { resolveWikilink } from "../lib/wikilink";
 import {
-  ATTACHMENTS_DIRNAME,
   attachmentAssetPrefix,
-  deflateAttachmentUrls,
+  assetUrl,
+  deflateImageEmbeds,
   inflateAttachmentUrls,
+  inflateImageEmbeds,
+  vaultDir,
 } from "../lib/attachments";
 import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
 
@@ -261,9 +263,13 @@ export function Card(props: Props) {
           frontmatter = split.frontmatter;
           body = split.body;
         }
+        const noteDir = vaultDir(toVaultRel(initialPath));
         const displayBody = initialBody !== undefined
           ? body
-          : inflateAttachmentUrls(body, attachmentAssetPrefix(await vaultRoot()));
+          : inflateImageEmbeds(
+              inflateAttachmentUrls(body, attachmentAssetPrefix(await vaultRoot())),
+              noteDir,
+            );
         // List folders come in two flavors:
         //   - manual: bullet list of wikilinks in the body. We strip
         //     them on load so the editor only sees prose; the items
@@ -347,10 +353,11 @@ export function Card(props: Props) {
         }
       }
 
-      // Collapse runtime asset:// URLs back to vault-relative paths so
-      // the file on disk is portable / Obsidian-friendly.
-      const vault = await vaultRoot();
-      const persistedBody = deflateAttachmentUrls(outBody, attachmentAssetPrefix(vault));
+      // Collapse runtime asset:// URLs back to on-disk form so the file
+      // is portable / Obsidian-friendly: same-folder images → `![[file]]`,
+      // legacy Attachments/ images → `![](Attachments/file)`.
+      const noteDir = vaultDir(toVaultRel(path));
+      const persistedBody = deflateImageEmbeds(outBody, noteDir);
       const content = joinFrontmatter(outFrontmatter, persistedBody);
       await vaultFs.writeText(toVaultRel(path), content);
 
@@ -472,14 +479,16 @@ export function Card(props: Props) {
   }, [vaultNotes, onNavigate, onAddFilter]);
 
   const handleImageUpload = useCallback(async (file: File): Promise<string> => {
-    // Save under <vault>/Attachments/ (relative — works regardless of
-    // where the card itself lives) and return the vaultasset:// URL the
-    // custom protocol serves, so the just-uploaded image renders live.
+    // Obsidian-style: store the image in the note's OWN folder (matching
+    // attachmentFolderPath: "./") and embed it as `![[file]]` (the deflate
+    // on save does the conversion). Returns the vaultasset:// URL the
+    // custom protocol serves, so the just-pasted image renders live.
     const filename = attachmentName(file);
-    const rel = `${ATTACHMENTS_DIRNAME}/${filename}`;
+    const noteDir = vaultDir(toVaultRel(pathRef.current));
+    const rel = noteDir ? `${noteDir}/${filename}` : filename;
     const bytes = new Uint8Array(await file.arrayBuffer());
     await vaultFs.writeBinary(rel, Array.from(bytes));
-    return `${attachmentAssetPrefix()}${encodeURI(filename)}`;
+    return assetUrl(rel);
   }, []);
 
   useEffect(() => { return () => { void flushNow(); }; }, [flushNow]);
