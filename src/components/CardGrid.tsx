@@ -41,8 +41,9 @@ import type { ListItem, ListNoteRef } from "../lib/list-folder";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
-  // Closed by default — only opens after the user explicitly toggles it.
-  try { return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1"; } catch { return false; }
+  // The sidebar always starts CLOSED — it's never open by default. The
+  // toggle (›/‹ or Cmd+;) controls it per session.
+  return false;
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
