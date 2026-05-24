@@ -5,7 +5,8 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronsDown, ChevronsUp } from "lucide-react";
+import { ChevronsDown, ChevronsUp, Moon, Sun } from "lucide-react";
+import { useTheme, toggleTheme } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
@@ -93,6 +94,8 @@ export function ViewerApp(
   const [view, setView] = useState<View>("stream");
   // Bumped by resetToDefault to collapse Show-more expansions.
   const [collapseNonce, setCollapseNonce] = useState(0);
+  // Light/dark theme — rail moon/sun button toggles it.
+  const theme = useTheme();
 
   // Default view = the home Notable Folder focused (single include),
   // exactly like the desktop app's first-launch default. A deep-link
@@ -378,6 +381,18 @@ export function ViewerApp(
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
       >
         {sidebarOpen ? "›" : "‹"}
+      </button>
+
+      <button
+        type="button"
+        className="theme-fab"
+        onClick={() => toggleTheme()}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {theme === "dark"
+          ? <Sun size={14} strokeWidth={2.1} />
+          : <Moon size={14} strokeWidth={2.1} />}
       </button>
 
       <main className="pane-main">
