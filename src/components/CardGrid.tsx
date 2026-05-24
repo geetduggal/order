@@ -1087,6 +1087,12 @@ export function CardGrid() {
     color: folderColor(f.name, f.frontmatter.color),
   }));
 
+  // Notes can only live in Notable Folders, so the new-note folder picker
+  // (and the single-filter auto-assign) only offers notable include
+  // filters — areas/categories/other includes are not valid targets.
+  const notableNames = new Set(notableFolders.map((f) => f.name));
+  const notableIncludes = [...includeSet].filter((name) => notableNames.has(name));
+
   // Minimal vault index for resolving `- [[Name]]` bullets and
   // evaluating `base` blocks. `folder` is the dirname's last segment
   // so file.folder.contains("X") works against the literal directory
@@ -1272,7 +1278,7 @@ export function CardGrid() {
           // like the default-home one don't imply a capture target).
           // 1 include → auto-assign; 0 → plain note (lands in home);
           // 2+ → picker.
-          const sel = [...includeSet];
+          const sel = notableIncludes;
           if (sel.length === 1) {
             void createNote({
               date: isoDate(), startTime: isoTime(), allDay: false,
@@ -1348,7 +1354,7 @@ export function CardGrid() {
 
       {creatorOpen && (
         <div className="new-note-picker" role="menu">
-          {[...includeSet].map((name) => {
+          {notableIncludes.map((name) => {
             const color = folderColor(name);
             return (
               <button

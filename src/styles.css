@@ -2038,7 +2038,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   position: fixed;
   top: 40px;
   left: 10px;
-  z-index: 60;
+  /* Above note cards (which become their own stacking contexts during
+     the mount-animation transform) so the dropdown isn't occluded. */
+  z-index: 250;
   min-width: 180px;
   max-width: 260px;
   padding: 4px;
@@ -3067,6 +3069,7 @@ input, textarea, select { outline: none; box-shadow: none; }
    viewport-fit=cover (set in index.html). Placed last so they win on
    source order over the base rail rules. */
 .new-note-fab { top: calc(10px + env(safe-area-inset-top)); }
+.new-note-picker { top: calc(40px + env(safe-area-inset-top)); }
 .publish-fab { top: calc(38px + env(safe-area-inset-top)); }
 .first-note-fab { top: calc(66px + env(safe-area-inset-top)); }
 .filter-pills {
