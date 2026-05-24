@@ -91,6 +91,11 @@ input, textarea, select { outline: none; box-shadow: none; }
      height regardless of the row-span the layout effect assigns. */
   align-self: start;
   min-width: 0;
+  /* When a note is jumped to (scrollIntoView), leave room above so it
+     lands below the fixed top rail / iOS notch instead of flush against
+     the viewport edge. The inset is 0 on desktop, so this is just a
+     small breathing gap there. */
+  scroll-margin-top: calc(env(safe-area-inset-top) + 16px);
   transition: box-shadow 500ms var(--ease-out);
   /* IMPORTANT: no transform/animation/will-change on this element.
      Any of those create a containing block, which captures the
@@ -2977,9 +2982,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   .nf-divider { margin: 32px 4px; }
 
   /* Full-bleed prose at a comfortable mobile size. */
-  .milkdown-host .ProseMirror { font-size: 16px; }
+  .milkdown-host .ProseMirror { font-size: 18px; }
   .order-card.is-fullscreen { padding: calc(44px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)) 18px; }
-  .order-card.is-fullscreen .milkdown-host .ProseMirror { font-size: 17px; }
+  .order-card.is-fullscreen .milkdown-host .ProseMirror { font-size: 19px; }
 
   /* Section headings scale down so they don't dominate a small card. */
   .list-line-section > .list-line .lr-title { font-size: 21px; }
