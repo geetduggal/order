@@ -1255,8 +1255,15 @@ input, textarea, select { outline: none; box-shadow: none; }
 .sb-folder-ctl:hover:not(:disabled) { color: var(--royal); background: var(--royal-soft); }
 .sb-folder-ctl-remove:hover:not(:disabled) { color: var(--coral); background: var(--coral-soft); }
 .sb-folder-ctl:disabled { opacity: 0.3; cursor: default; }
+.sb-folder-li.draggable { touch-action: none; }
 .sb-folder-li.draggable .sb-folder-item { cursor: grab; }
-.sb-folder-li.dragging { opacity: 0.45; }
+.sb-folder-li.dragging {
+  opacity: 0.95;
+  border-radius: 6px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
 .sb-folder-li.dragging .sb-folder-item { cursor: grabbing; }
 
 .sb-folder-icon {
@@ -1428,9 +1435,16 @@ input, textarea, select { outline: none; box-shadow: none; }
 .box-move:hover:not(:disabled) { color: var(--royal); background: var(--royal-soft); }
 .box-move:disabled { opacity: 0.3; cursor: default; }
 
-/* Drag-reorder feedback for Area / Category tiles. */
+/* Drag-reorder feedback for Area / Category tiles — the grabbed tile lifts,
+   gains a shadow, and follows the cursor (transform set in JS). */
+.box-wrapper.draggable { touch-action: none; }
 .box-wrapper.draggable .box { cursor: grab; }
-.box-wrapper.dragging { opacity: 0.45; }
+.box-wrapper.dragging {
+  opacity: 0.92;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
 .box-wrapper.dragging .box { cursor: grabbing; }
 
 .box.empty {
@@ -2073,9 +2087,18 @@ input, textarea, select { outline: none; box-shadow: none; }
 .filter-pill:hover {
   max-width: 240px;
 }
-/* Drag-reorder feedback (the pill body is the drag surface; × is excluded). */
+/* Drag-reorder feedback (the pill body is the drag surface; × is excluded).
+   The grabbed pill expands (so you can read it), lifts, and follows the
+   cursor (transform set in JS). */
+.filter-pill.draggable { touch-action: none; }
 .filter-pill.draggable .filter-pill-jump { cursor: grab; }
-.filter-pill.dragging { opacity: 0.45; cursor: grabbing; }
+.filter-pill.dragging {
+  opacity: 0.95;
+  max-width: 240px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  cursor: grabbing;
+}
 /* Exclude pills read as "muted / negated" — dashed ring, no fill. */
 .filter-pill.is-exclude {
   border-style: dashed;

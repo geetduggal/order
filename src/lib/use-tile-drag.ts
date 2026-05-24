@@ -24,7 +24,7 @@ export function useTileDrag(
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
-  const drag = useRef<{ ref: string; x: number; y: number; started: boolean } | null>(null);
+  const drag = useRef<{ ref: string; x: number; y: number; started: boolean; el?: HTMLElement } | null>(null);
   const refsRef = useRef(refs);
   refsRef.current = refs;
 
@@ -38,12 +38,27 @@ export function useTileDrag(
         if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 6) return;
         d.started = true;
         setDragRef(d.ref);
+        d.el = gridRef.current
+          ? (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])
+              .find((x) => x.dataset.tileRef === d.ref)
+          : undefined;
       }
+      // Make the drag obvious: the grabbed item lifts and follows the cursor.
+      if (d.el) {
+        d.el.style.transform = `translate(${e.clientX - d.x}px, ${e.clientY - d.y}px) scale(1.04)`;
+        d.el.style.zIndex = "500";
+      }
+    }
+    function resetEl(el?: HTMLElement) {
+      if (!el) return;
+      el.style.transform = "";
+      el.style.zIndex = "";
     }
     function up(e: PointerEvent) {
       const d = drag.current;
       drag.current = null;
       setDragRef(null);
+      resetEl(d?.el);
       if (!d?.started || !gridRef.current) return;
       // Swallow the click that fires right after the drag.
       const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
