@@ -28,6 +28,18 @@ pub struct PublishInput {
     /// Prerendered static pages (one per public note + folder). Each is
     /// wrapped in the bundle shell and written at its permalink.
     pub pages: Vec<Page>,
+    /// Same-folder note images to copy next to their published page.
+    #[serde(default)]
+    pub assets: Vec<AssetCopy>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetCopy {
+    /// Vault-relative source path.
+    pub from: String,
+    /// Destination relative to the publish target dir (e.g. "salmon/x.png").
+    pub to: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -227,6 +239,22 @@ fn publish_site_inner(
     if attach.is_dir() {
         copy_dir_recursive(&attach, &target_dir.join("Attachments"))
             .map_err(|e| format!("copy Attachments: {}", e))?;
+    }
+
+    // Same-folder note images: copy each from the vault to its slot next
+    // to the note's published page (so /<sub>/<slug>/img.png resolves and
+    // a direct image permalink works). Missing sources are skipped so one
+    // stale reference can't fail the whole publish.
+    for asset in &input.assets {
+        let src = PathBuf::from(&input.vault_path).join(&asset.from);
+        if !src.is_file() {
+            continue;
+        }
+        let dest = target_dir.join(&asset.to);
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::copy(&src, &dest).map_err(|e| format!("copy asset {}: {}", asset.from, e))?;
     }
 
     // Prerendered permalink pages. The bundle's index.html is the shell;

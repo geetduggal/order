@@ -104,6 +104,13 @@ export function ViewerApp(
         ? [{ kind: "include", ref: deeplink.include }]
         : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
+  // Single-note permalink mode: a note's permalink renders only that note.
+  // Set on arrival (a note page, with no ?f= override); cleared on any
+  // filter change so exploring (folder chip, links, pills) returns to the
+  // normal stream.
+  const [singleNoteRef, setSingleNoteRef] = useState<string | null>(
+    deeplink && deeplink.scroll && fromSearch.length === 0 ? deeplink.scroll : null,
+  );
   // The folder whose Main Document is pinned to the top of the Stream.
   // Set by clicking a pill or picking one in the palette. Cleared only
   // when it's no longer an active include, so adding it doesn't wipe
@@ -131,6 +138,7 @@ export function ViewerApp(
   // address bar always matches the pills and is shareable / back-able.
   // Pills still ACCUMULATE — this only adds URL sync, it never replaces.
   function commitFilters(next: Filter[]) {
+    setSingleNoteRef(null); // any filter change leaves single-note mode
     setFilters(next);
     if (typeof history !== "undefined") history.pushState({}, "", filtersToUrl(next));
   }
@@ -170,7 +178,7 @@ export function ViewerApp(
   useEffect(() => {
     function onPop() {
       const next = filtersFromSearch(location.search);
-      if (next.length > 0) { setFilters(next); return; }
+      if (next.length > 0) { setSingleNoteRef(null); setFilters(next); return; }
       const rest = location.pathname.startsWith(basePath)
         ? location.pathname.slice(basePath.length)
         : location.pathname.replace(/^\//, "");
@@ -178,9 +186,12 @@ export function ViewerApp(
       const ref = slug ? data.slugMap[slug] : null;
       if (ref) {
         const note = data.notes.find((n) => n.ref === ref);
-        const inc = note && !note.category && note.folder ? note.folder : ref;
+        const isNotePage = !!note && !note.category;
+        setSingleNoteRef(isNotePage ? ref : null);
+        const inc = isNotePage && note!.folder ? note!.folder : ref;
         setFilters([{ kind: "include", ref: inc }]);
       } else {
+        setSingleNoteRef(null);
         setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
       }
     }
@@ -380,6 +391,7 @@ export function ViewerApp(
             collapseSignal={collapseNonce}
             onNavigate={navigate}
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
+            soloRef={singleNoteRef}
           />
         )}
         {view === "week" && (
@@ -432,7 +444,7 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function StreamView({
-  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
@@ -444,6 +456,8 @@ function StreamView({
   collapseSignal: number;
   onNavigate: (ref: string) => void;
   onRemoveInclude: (ref: string) => void;
+  /** When set, render ONLY this note (a single-note permalink). */
+  soloRef?: string | null;
 }) {
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
@@ -487,6 +501,23 @@ function StreamView({
       />
     );
   };
+
+  // Single-note permalink: render only that note (a note's permalink
+  // shows the note itself and nothing else), full-width and uncapped.
+  if (soloRef) {
+    const solo = data.notes.find((n) => n.ref === soloRef);
+    if (solo) {
+      return (
+        <div className="nf-sections">
+          <div className="card-grid">
+            <div className="card-grid-cell is-full-width" data-path={solo.ref}>
+              {cardNode(solo)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
 
   // Newspaper mode: one section per included Notable Folder. A single
   // section (home page / one folder) shows its Main Doc uncapped;

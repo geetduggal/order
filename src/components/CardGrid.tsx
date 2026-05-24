@@ -24,6 +24,7 @@ import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folde
 import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
+import { vaultDir } from "../lib/attachments";
 import { FilterPillStack } from "./FilterPillStack";
 import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
@@ -495,12 +496,18 @@ export function CardGrid() {
       n.frontmatter.slug = slug; // reflect into the fresh copy collect reads
     }
 
-    const site = collectPublishedSite({
-      vaultNotes: fresh.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+    const sub = home.target.split("/").slice(2).join("/");
+    const { site, assets } = collectPublishedSite({
+      vaultNotes: fresh.map((n) => ({
+        filename: n.filename,
+        dir: vaultDir(toVaultRel(n.path)),
+        frontmatter: n.frontmatter,
+        body: n.body,
+      })),
       home,
+      sub,
     });
     const dataJson = JSON.stringify(site);
-    const sub = home.target.split("/").slice(2).join("/");
     const pages = prerenderPages(site, sub);
     const vault = await vaultRoot();
     return invoke<PublishOutcome>("publish_site", {
@@ -512,6 +519,8 @@ export function CardGrid() {
         viewer_bundle_path: "",
         data_json: dataJson,
         pages,
+        // Same-folder images to copy next to each note's published page.
+        assets,
       },
     });
   }, [notes]);

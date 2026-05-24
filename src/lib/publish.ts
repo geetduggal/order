@@ -10,12 +10,23 @@ import { splitBodyAndBullets } from "./list-folder";
 import { extractBaseBlock, parseBase } from "./list-base";
 import { smartMerge } from "./list-merge";
 import type { ListNoteRef } from "./list-folder";
+import { rewritePublishedImages, type AssetCopy } from "./publish-images";
 
 export interface CollectInput {
-  /** Every note in the vault, with bodies. */
-  vaultNotes: { filename: string; frontmatter: Frontmatter; body: string }[];
+  /** Every note in the vault, with bodies. `dir` is the note's vault-
+   *  relative directory ("" for root), used to resolve same-folder images. */
+  vaultNotes: { filename: string; dir: string; frontmatter: Frontmatter; body: string }[];
   /** The home Notable Folder selected for this publish. */
   home: { name: string; title: string; target: string };
+  /** Publish subpath (e.g. "order-home") for root-absolute image URLs. */
+  sub: string;
+}
+
+/** Output of collectPublishedSite: the viewer payload plus the list of
+ *  same-folder image files to copy next to their note's published page. */
+export interface CollectResult {
+  site: PublishedSite;
+  assets: AssetCopy[];
 }
 
 export interface PublishedNote {
@@ -75,8 +86,8 @@ function bulletsOf(body: string): string[] {
   return splitBodyAndBullets(body).items.map((i) => i.ref);
 }
 
-export function collectPublishedSite(input: CollectInput): PublishedSite {
-  const { vaultNotes, home } = input;
+export function collectPublishedSite(input: CollectInput): CollectResult {
+  const { vaultNotes, home, sub } = input;
   const byRef = new Map(vaultNotes.map((n) => [refOf(n.filename), n]));
 
   const noteRefs: ListNoteRef[] = vaultNotes.map((n) => ({
@@ -86,6 +97,7 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
   }));
 
   const publics = vaultNotes.filter((n) => n.frontmatter.public === true);
+  const assets: AssetCopy[] = [];
   const notes: PublishedNote[] = publics.map((n) => {
     const lr = listRenderOf(n.frontmatter);
     let items: { ref: string; meta?: string }[] | null = null;
@@ -104,11 +116,14 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
         items = splitBodyAndBullets(n.body).items;
       }
     }
+    const slug = typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "";
+    const rewritten = rewritePublishedImages(n.body, slug, n.dir, sub);
+    assets.push(...rewritten.assets);
     return {
       ref: refOf(n.filename),
       title: pickTitle(n),
-      slug: typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "",
-      body: n.body,
+      slug,
+      body: rewritten.body,
       folder: parseRef(n.frontmatter.folder),
       category: parseRef(n.frontmatter.category),
       listRender: lr,
@@ -147,7 +162,7 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
   const slugMap: Record<string, string> = {};
   for (const n of notes) if (n.slug) slugMap[n.slug] = n.ref;
 
-  return {
+  const site: PublishedSite = {
     home,
     notes,
     taxonomy: { areas },
@@ -155,4 +170,5 @@ export function collectPublishedSite(input: CollectInput): PublishedSite {
     slugMap,
     generatedAt: new Date().toISOString(),
   };
+  return { site, assets };
 }
