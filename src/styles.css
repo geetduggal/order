@@ -91,6 +91,11 @@ input, textarea, select { outline: none; box-shadow: none; }
      height regardless of the row-span the layout effect assigns. */
   align-self: start;
   min-width: 0;
+  /* When a note is jumped to (scrollIntoView), leave room above so it
+     lands below the fixed top rail / iOS notch instead of flush against
+     the viewport edge. The inset is 0 on desktop, so this is just a
+     small breathing gap there. */
+  scroll-margin-top: calc(env(safe-area-inset-top) + 16px);
   transition: box-shadow 500ms var(--ease-out);
   /* IMPORTANT: no transform/animation/will-change on this element.
      Any of those create a containing block, which captures the
@@ -132,6 +137,40 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 8px;
 }
 
+/* iOS first-run: choose a vault folder (no $HOME on iOS). */
+.vault-pick {
+  max-width: 420px;
+  margin: 22vh auto 0;
+  padding: 0 24px;
+  text-align: center;
+  font-family: var(--sans);
+}
+.vault-pick h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.vault-pick p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+}
+.vault-pick-btn {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--royal);
+  background: var(--royal);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vault-pick-btn:active { transform: scale(0.97); }
+
 .card-grid-empty {
   text-align: center;
   margin: 80px auto;
@@ -167,7 +206,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 0;
   box-shadow: none;
   background: var(--bg);
-  padding: clamp(40px, 6vh, 80px) clamp(40px, 10vw, 120px);
+  padding: calc(env(safe-area-inset-top) + clamp(40px, 6vh, 80px)) clamp(40px, 10vw, 120px) calc(env(safe-area-inset-bottom) + clamp(40px, 6vh, 80px));
   overflow: auto;
   max-width: none;
   /* "Settle into place" entrance: starts slightly oversized and
@@ -421,6 +460,13 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card:hover .order-card-controls { opacity: 0.7; }
 .order-card-controls:hover,
 .order-card-controls:focus-within { opacity: 1; }
+/* Fullscreen card is fixed at the viewport top, so its top-right controls
+   land under the status bar / notch — offset them by the safe-area inset
+   (no-op on desktop). */
+.order-card.is-fullscreen .order-card-controls {
+  top: calc(6px + env(safe-area-inset-top));
+  right: calc(6px + env(safe-area-inset-right));
+}
 
 .order-card-fullscreen,
 .order-card-delete {
@@ -797,7 +843,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .shell.sidebar-open { grid-template-columns: 1fr 280px; }
 
-.pane-main { min-width: 0; overflow-x: hidden; }
+.pane-main { min-width: 0; overflow-x: hidden; padding-top: env(safe-area-inset-top); }
 
 .pane-right {
   overflow: hidden auto;
@@ -2956,7 +3002,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 
   /* Full-bleed prose at a comfortable mobile size. */
   .milkdown-host .ProseMirror { font-size: 16px; }
-  .order-card.is-fullscreen { padding: 32px 18px; }
+  .order-card.is-fullscreen { padding: calc(44px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)) 18px; }
   .order-card.is-fullscreen .milkdown-host .ProseMirror { font-size: 17px; }
 
   /* Section headings scale down so they don't dominate a small card. */
@@ -2966,4 +3012,25 @@ input, textarea, select { outline: none; box-shadow: none; }
      screen. */
   .filter-pill:hover { max-width: min(72vw, 240px); }
   .filter-pill:hover .filter-pill-name { max-width: min(60vw, 175px); }
+}
+
+/* ---------- iOS safe area ---------- */
+/* Offset the fixed left/right rails below the status bar / notch (and the
+   settings gear above the home indicator). env(safe-area-inset-*) is 0 on
+   desktop and non-notched contexts, so these are no-ops there. Requires
+   viewport-fit=cover (set in index.html). Placed last so they win on
+   source order over the base rail rules. */
+.new-note-fab { top: calc(10px + env(safe-area-inset-top)); }
+.publish-fab { top: calc(38px + env(safe-area-inset-top)); }
+.first-note-fab { top: calc(66px + env(safe-area-inset-top)); }
+.filter-pills {
+  top: calc(98px + env(safe-area-inset-top));
+  max-height: calc(100vh - 114px - env(safe-area-inset-top));
+}
+.sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
+.settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
+.viewer-shell .first-note-fab { top: calc(10px + env(safe-area-inset-top)); }
+.viewer-shell .filter-pills {
+  top: calc(42px + env(safe-area-inset-top));
+  max-height: calc(100vh - 58px - env(safe-area-inset-top));
 }

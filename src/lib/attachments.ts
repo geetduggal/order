@@ -1,21 +1,17 @@
 // Attachments live in <vault>/Attachments/ (Obsidian convention).
 // On disk we store paths relative to the vault root so notes are
-// portable; in the editor we display absolute asset:// URLs so the
-// webview can actually load the bytes.
-
-import { convertFileSrc } from "@tauri-apps/api/core";
+// portable; in the editor we display vaultasset:// URLs so the webview
+// can load the bytes through the custom URI-scheme handler.
 
 export const ATTACHMENTS_DIRNAME = "Attachments";
 
-/** A markdown vault root path → the asset-URL prefix that resolves to
- *  `<vaultRoot>/Attachments/`. Computed by asking convertFileSrc to
- *  encode a probe path and slicing off the probe segment. The probe
- *  uses only unreserved URL chars so it survives percent-encoding. */
-export function attachmentAssetPrefix(vaultRoot: string): string {
-  const probe = "PROBESENTINEL";
-  const sample = convertFileSrc(`${vaultRoot}/${ATTACHMENTS_DIRNAME}/${probe}`);
-  const idx = sample.lastIndexOf(probe);
-  return idx === -1 ? sample : sample.slice(0, idx);
+/** The runtime URL prefix that resolves to the vault's `Attachments/`
+ *  dir, served by the custom `vaultasset` URI-scheme handler (lib.rs).
+ *  Vault-relative, so it no longer depends on the absolute root — the
+ *  Rust side resolves it against the bookmarked / absolute vault. The
+ *  `vaultRoot` arg is retained for call-site compatibility but unused. */
+export function attachmentAssetPrefix(_vaultRoot?: string): string {
+  return `vaultasset://localhost/${ATTACHMENTS_DIRNAME}/`;
 }
 
 const MD_IMG_RE = /(!\[[^\]]*\]\()([^)\s]+)(\))/g;

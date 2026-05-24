@@ -8,7 +8,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
-import { vaultRoot, walkVaultMarkdown, setVaultOverride } from "../lib/vault";
+import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
+import { vaultFs } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
 import { CalendarView, type NoteMeta } from "./CalendarView";
@@ -86,6 +87,12 @@ import {
 /** Try writing the seed at `<dir>/<basename>`; if a file already exists
  *  at that name, append ` 2`, ` 3`, … to the stem until we find an
  *  unused slot. Returns the resolved path. */
+// All file ops route through the vault-relative bridge. These wrap an
+// (absolute on desktop, relative on iOS) path with toVaultRel so callers
+// don't care which form they hold.
+const readVault = (p: string) => vaultFs.readText(toVaultRel(p));
+const writeVault = (p: string, content: string) => vaultFs.writeText(toVaultRel(p), content);
+
 async function uniqueWrite(dir: string, basename: string, content: string): Promise<string> {
   const dot = basename.lastIndexOf(".");
   const stem = dot > 0 ? basename.slice(0, dot) : basename;
@@ -97,13 +104,13 @@ async function uniqueWrite(dir: string, basename: string, content: string): Prom
   for (let i = 0; i < 999; i++) {
     const path = await join(dir, candidate);
     try {
-      await invoke<string>("read_text", { path });
+      await readVault(path);
       // File exists — bump and retry.
       candidate = `${stem} ${n}${ext}`;
       n++;
     } catch {
       // Read failed → assume the file doesn't exist; safe to write.
-      await invoke("write_text", { path, content });
+      await writeVault(path, content);
       return path;
     }
   }
@@ -163,10 +170,10 @@ function deriveTitle(body: string, fallback: string): string {
 async function loadOne(path: string, filename: string, seed?: string): Promise<LoadedNote> {
   let raw: string;
   try {
-    raw = await invoke<string>("read_text", { path });
+    raw = await readVault(path);
   } catch {
     if (seed === undefined) throw new Error(`read failed and no seed for ${path}`);
-    await invoke("write_text", { path, content: seed });
+    await writeVault(path, seed);
     raw = seed;
   }
   let { frontmatter, body } = splitFrontmatter(raw);
@@ -175,7 +182,7 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
     frontmatter = { ...frontmatter, ...patch };
     const next = joinFrontmatter(frontmatter, body);
     try {
-      await invoke("write_text", { path, content: next });
+      await writeVault(path, next);
     } catch (err) {
       console.warn("Failed to inject calendar metadata for", path, err);
     }
@@ -345,14 +352,41 @@ export function CardGrid() {
     return i >= 0 ? p.slice(0, i) : null;
   }
 
+  // iOS only: true when no vault folder has been picked yet (no stored
+  // bookmark), so the UI prompts to choose one instead of showing empty.
+  const [iosNeedsVault, setIosNeedsVault] = useState(false);
+
   const reloadNotes = useCallback(async () => {
     try {
+      // On iOS an empty root means no vault bookmark yet — prompt a pick
+      // rather than rendering an empty vault.
+      const root = await syncVaultRoot();
+      if (!root && (await isIos())) {
+        setIosNeedsVault(true);
+        setNotes([]);
+        return;
+      }
+      setIosNeedsVault(false);
       const fresh = await loadAndNormalizeAll();
       setNotes(fresh);
     } catch (err) {
       console.error("reload failed:", err);
     }
   }, []);
+
+  /** iOS: present the native folder picker; on selection the bookmark is
+   *  persisted, so a reload restores + opens it for the session. */
+  const pickVaultIos = useCallback(async () => {
+    try {
+      const v = await vaultFs.pickFolder();
+      if (v.path) {
+        setIosNeedsVault(false);
+        await reloadNotes();
+      }
+    } catch (err) {
+      console.error("pick vault failed:", err);
+    }
+  }, [reloadNotes]);
 
   const [capWarning, setCapWarning] = useState<string | null>(null);
 
@@ -394,11 +428,21 @@ export function CardGrid() {
   // After the first run, the persisted set wins and the user is free
   // to add/remove pills.
   const seededDefault = useRef<boolean>(readStoredFilters() !== null);
+  // iOS: always open on the home folder as the only filter (ignore the
+  // persisted set), once per launch. Desktop: seed home only on a first
+  // launch with no persisted pills.
+  const homeForcedIos = useRef(false);
   useLayoutEffect(() => {
-    if (seededDefault.current) return;
     if (!notes) return;
     const home = homeFolders[0]?.name;
     if (!home) return;
+    if (isIosSync()) {
+      if (homeForcedIos.current) return;
+      homeForcedIos.current = true;
+      setFilters([{ kind: "include", ref: home }]);
+      return;
+    }
+    if (seededDefault.current) return;
     seededDefault.current = true;
     setFilters([{ kind: "include", ref: home }]);
   }, [notes, homeFolders]);
@@ -439,10 +483,10 @@ export function CardGrid() {
         ? n.frontmatter.title : n.filename.replace(/\.md$/i, "");
       const slug = dedupeSlug(slugify(title), taken);
       taken.add(slug);
-      const raw = await invoke<string>("read_text", { path: n.path });
+      const raw = await readVault(n.path);
       const { frontmatter, body } = splitFrontmatter(raw);
       frontmatter.slug = slug;
-      await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, body) });
+      await writeVault(n.path, joinFrontmatter(frontmatter, body));
       n.frontmatter.slug = slug; // reflect into the fresh copy collect reads
     }
 
@@ -494,8 +538,8 @@ export function CardGrid() {
     const path = await join(subdir, AREAS_FILENAME);
     const ok = await mutateBullets(
       path,
-      (p) => invoke<string>("read_text", { path: p }),
-      (p, c) => invoke("write_text", { path: p, content: c }),
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
       (items) => {
         if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
         if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
@@ -510,8 +554,8 @@ export function CardGrid() {
     const path = await join(subdir, AREAS_FILENAME);
     await mutateBullets(
       path,
-      (p) => invoke<string>("read_text", { path: p }),
-      (p, c) => invoke("write_text", { path: p, content: c }),
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
       (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
     );
     await reloadNotes();
@@ -529,8 +573,8 @@ export function CardGrid() {
     // Ensure Area is in Areas.md
     await mutateBullets(
       await join(subdir, AREAS_FILENAME),
-      (p) => invoke<string>("read_text", { path: p }),
-      (p, c) => invoke("write_text", { path: p, content: c }),
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
       (items) => {
         if (items.some((i) => i.ref.toLowerCase() === trimmedArea.toLowerCase())) return items;
         if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
@@ -543,13 +587,13 @@ export function CardGrid() {
     if (!areaPath) {
       areaPath = await join(subdir, trimmedArea, `${trimmedArea}.md`);
       const body = `# ${trimmedArea}\n`;
-      await invoke("write_text", { path: areaPath, content: joinFrontmatter({ list: "cards" }, body) });
+      await writeVault(areaPath, joinFrontmatter({ list: "cards" }, body));
     }
     // Append category bullet to the Area file.
     const ok = await mutateBullets(
       areaPath,
-      (p) => invoke<string>("read_text", { path: p }),
-      (p, c) => invoke("write_text", { path: p, content: c }),
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
       (items) => {
         if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
         if (items.length >= 10) { flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return null; }
@@ -564,8 +608,8 @@ export function CardGrid() {
     if (!areaPath) return;
     await mutateBullets(
       areaPath,
-      (p) => invoke<string>("read_text", { path: p }),
-      (p, c) => invoke("write_text", { path: p, content: c }),
+      (p) => readVault(p),
+      (p, c) => writeVault(p, c),
       (items) => items.filter((i) => i.ref.toLowerCase() !== _name.toLowerCase()),
     );
     await reloadNotes();
@@ -657,6 +701,17 @@ export function CardGrid() {
     let cancelled = false;
     (async () => {
       try {
+        // iOS with no vault bookmark yet → prompt a pick instead of
+        // loading (and skip migration, which would write to a bogus
+        // desktop path). setNotes([]) so we leave the "Preparing…" state.
+        const root = await syncVaultRoot();
+        if (!root && (await isIos())) {
+          if (cancelled) return;
+          setIosNeedsVault(true);
+          setNotes([]);
+          return;
+        }
+
         let loaded = await loadAndNormalizeAll();
         if (cancelled) return;
 
@@ -668,19 +723,20 @@ export function CardGrid() {
           // Re-read bodies for migration planning — loaded notes only
           // carry frontmatter.
           const withBody = await Promise.all(loaded.map(async (n) => {
-            const raw = await invoke<string>("read_text", { path: n.path });
+            const raw = await readVault(n.path);
             const { body } = splitFrontmatter(raw);
             return { filename: n.filename, path: n.path, body, frontmatter: n.frontmatter };
           }));
           const stored = readStoredTaxonomy();
           const plan = planMigration(withBody, stored);
-          const subdir = await vaultRoot();
+          // Vault-relative writes (writeVault resolves against the root),
+          // so this works on desktop and iOS without joining an absolute
+          // root that doesn't exist on iOS.
           for (const f of plan.newFiles) {
-            const p = await join(subdir, f.filename);
-            await invoke("write_text", { path: p, content: f.content });
+            await writeVault(f.filename, f.content);
           }
           for (const r of plan.rewrites) {
-            await invoke("write_text", { path: r.path, content: r.content });
+            await writeVault(r.path, r.content);
           }
           loaded = await loadAndNormalizeAll();
           if (cancelled) return;
@@ -815,13 +871,13 @@ export function CardGrid() {
     for (const n of list) {
       if (n.filename.replace(/\.md$/i, "") === newName) continue; // the renamed file itself
       try {
-        const raw = await invoke<string>("read_text", { path: n.path });
+        const raw = await readVault(n.path);
         const { frontmatter, body } = splitFrontmatter(raw);
         // Cheap filter before the rewrite pass.
         if (!body.toLowerCase().includes(target)) continue;
         const nextBody = rewriteWikilinksForRename(body, oldName, newName);
         if (nextBody === body) continue;
-        await invoke("write_text", { path: n.path, content: joinFrontmatter(frontmatter, nextBody) });
+        await writeVault(n.path, joinFrontmatter(frontmatter, nextBody));
         setNotes((prev) => prev?.map((x) => (x.id === n.id ? { ...x, body: nextBody } : x)) ?? null);
       } catch (err) {
         console.warn("inbound wikilink rewrite skipped for", n.path, err);
@@ -852,7 +908,7 @@ export function CardGrid() {
 
   const handleCardDelete = useCallback(async (id: string, path: string) => {
     try {
-      await invoke("delete_file", { path });
+      await vaultFs.remove(toVaultRel(path));
     } catch (err) {
       console.error("delete_file failed:", err);
       throw err;
@@ -866,7 +922,7 @@ export function CardGrid() {
    *  YAML (mirrors where createNote places new notes). Clearing a
    *  folder just rewrites YAML and leaves the file where it is. */
   const handleAssignFolder = useCallback(async (path: string, folderName: string | null) => {
-    const raw = await invoke<string>("read_text", { path });
+    const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
     if (folderName) next.folder = `[[${folderName}]]`;
@@ -881,7 +937,7 @@ export function CardGrid() {
     if (targetDir && targetDir !== curDir) {
       const filename = path.split("/").pop() ?? "note.md";
       const newPath = await uniqueWrite(targetDir, filename, content);
-      await invoke("delete_file", { path });
+      await vaultFs.remove(toVaultRel(path));
       setNotes((prev) => prev?.map((n) =>
         n.path === path
           ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }
@@ -889,7 +945,7 @@ export function CardGrid() {
       return;
     }
 
-    await invoke("write_text", { path, content });
+    await writeVault(path, content);
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 
@@ -898,12 +954,12 @@ export function CardGrid() {
    *  field means private; we strip the key on toggle-off so YAML
    *  stays clean. */
   const handleTogglePublic = useCallback(async (path: string, makePublic: boolean) => {
-    const raw = await invoke<string>("read_text", { path });
+    const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
     if (makePublic) next.public = true;
     else delete next.public;
-    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 
@@ -946,8 +1002,8 @@ export function CardGrid() {
     if (catPath) {
       await mutateBullets(
         catPath,
-        (p) => invoke<string>("read_text", { path: p }),
-        (p, c) => invoke("write_text", { path: p, content: c }),
+        (p) => readVault(p),
+        (p, c) => writeVault(p, c),
         (items) => items.some((i) => i.ref.toLowerCase() === bulletRef.toLowerCase())
           ? items
           : [...items, { ref: bulletRef }],
@@ -960,7 +1016,7 @@ export function CardGrid() {
   }, [flashCap]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
-    const raw = await invoke<string>("read_text", { path });
+    const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
     // Patch protocol: `undefined` removes a key, anything else assigns.
@@ -970,9 +1026,21 @@ export function CardGrid() {
       if (v === undefined) delete next[k];
       else next[k] = v;
     }
-    await invoke("write_text", { path, content: joinFrontmatter(next, body) });
+    await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
+
+  if (iosNeedsVault) {
+    return (
+      <div className="vault-pick">
+        <h1>Choose your vault</h1>
+        <p>Pick the folder that holds your notes (e.g. your Dropbox or iCloud vault). Order remembers it.</p>
+        <button type="button" className="vault-pick-btn" onClick={() => { void pickVaultIos(); }}>
+          Choose folder
+        </button>
+      </div>
+    );
+  }
 
   if (notes === null) {
     return <div className="card-grid-empty">Preparing cards…</div>;
