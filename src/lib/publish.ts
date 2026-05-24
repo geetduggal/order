@@ -6,7 +6,7 @@
 // writes data.json into the target GitHub repo path.
 
 import type { Frontmatter } from "./frontmatter";
-import { splitBodyAndBullets } from "./list-folder";
+import { splitBodyAndBullets, tightenListSpacing } from "./list-folder";
 import { extractBaseBlock, parseBase } from "./list-base";
 import { smartMerge } from "./list-merge";
 import type { ListNoteRef } from "./list-folder";
@@ -117,7 +117,7 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
       }
     }
     const slug = typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "";
-    const rewritten = rewritePublishedImages(n.body, slug, n.dir, sub);
+    const rewritten = rewritePublishedImages(tightenListSpacing(n.body), slug, n.dir, sub);
     assets.push(...rewritten.assets);
     return {
       ref: refOf(n.filename),

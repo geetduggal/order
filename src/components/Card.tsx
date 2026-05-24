@@ -24,6 +24,7 @@ import {
   listRender,
   serializeListItems,
   splitBodyAndBullets,
+  tightenListSpacing,
   type ListItem,
   type ListNoteRef,
 } from "../lib/list-folder";
@@ -358,7 +359,9 @@ export function Card(props: Props) {
       // is portable / Obsidian-friendly: same-folder images → `![[file]]`,
       // legacy Attachments/ images → `![](Attachments/file)`.
       const noteDir = vaultDir(toVaultRel(path));
-      const persistedBody = deflateImageEmbeds(outBody, noteDir);
+      // tightenListSpacing: Milkdown serializes loose lists (blank line
+      // between every item); write them back tight.
+      const persistedBody = tightenListSpacing(deflateImageEmbeds(outBody, noteDir));
       const content = joinFrontmatter(outFrontmatter, persistedBody);
       await vaultFs.writeText(toVaultRel(path), content);
 

@@ -1080,10 +1080,12 @@ export function CardGrid() {
     // by filename); the full original goes to `title:` so the card
     // label and list rows can render the pretty form.
     const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+    // A Notable Folder is a plain main document (a `category` makes it an
+    // NF) — NOT a list folder, so no `list:` key here. The directory is
+    // created by writing the main doc inside it below.
     const frontmatter: Frontmatter = {
       category: categoryName,
       area: areaName,
-      list: "cards",
       ...(safe !== trimmed ? { title: trimmed } : {}),
     };
     const body = `# ${trimmed}\n`;

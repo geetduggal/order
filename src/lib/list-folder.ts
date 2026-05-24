@@ -105,3 +105,24 @@ export function serializeListItems(items: ListItem[]): string {
     .map((item) => `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`)
     .join("\n");
 }
+
+/** Collapse blank lines between consecutive list / task items. Milkdown's
+ *  serializer emits "loose" lists (a blank line between every item); this
+ *  rewrites them tight. A blank line is removed ONLY when it sits between
+ *  two list-item lines (bullet, ordered, or task items), so blank lines
+ *  around a list or within prose are preserved. */
+export function tightenListSpacing(md: string): string {
+  const isItem = (s: string) => /^[ \t]*(?:[-*+]|\d+\.)\s/.test(s);
+  const lines = md.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      const prev = out.length ? out[out.length - 1] : "";
+      const next = lines[i + 1] ?? "";
+      if (isItem(prev) && isItem(next)) continue; // drop blank between items
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
