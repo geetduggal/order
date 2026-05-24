@@ -248,7 +248,13 @@ export function CardGrid() {
   // survives relaunch; the rail +/- buttons step it.
   const [zoom, setZoom] = useState<number>(readZoom);
   useEffect(() => {
-    document.documentElement.style.zoom = String(zoom);
+    const el = document.documentElement;
+    // Page zoom scales everything it reaches. But WebKit's `zoom` does
+    // NOT scale position:fixed subtrees, and the fullscreen reading view
+    // is fixed — so we also expose the factor as --ui-zoom for CSS to
+    // scale the fullscreen prose font-size off the same value.
+    el.style.zoom = String(zoom);
+    el.style.setProperty("--ui-zoom", String(zoom));
     try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch { /* non-fatal */ }
   }, [zoom]);
   // Active filter pills. `null` until hydrated so the first-load
