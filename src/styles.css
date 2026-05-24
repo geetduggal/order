@@ -3123,3 +3123,17 @@ input, textarea, select { outline: none; box-shadow: none; }
 .viewer-shell .milkdown-image-block.selected > .image-edit::before {
   background: transparent !important;
 }
+
+/* Card / preview view (not fullscreen): crop a large image to a clean
+   banner so an image note isn't dominated by whitespace. Fullscreen still
+   shows the whole image (object-fit: contain, above). Tune the aspect to
+   taste. Applies in both the app and the published stream. */
+.order-card:not(.is-fullscreen) .milkdown-image-block > .image-wrapper {
+  width: 100%;
+  display: block;
+}
+.order-card:not(.is-fullscreen) .milkdown-image-block > .image-wrapper img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
