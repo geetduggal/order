@@ -26,6 +26,56 @@
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* ---------- Dark theme ----------
+   Toggled by the rail moon/sun button (sets data-theme on <html>; see
+   theme.ts). Just flips the design tokens — most surfaces use the vars
+   so they follow automatically; a few hardcoded colors are themed below
+   and Crepe's own --crepe-color-* vars are overridden too. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #17171a;
+  --bg-elev:   #232329;
+  --ink:       #ededeb;
+  --ink-soft:  #f6f6f4;
+  --ink-faint: #9a9a95;
+  --ink-ghost: #56565b;
+  --rule:      #34343b;
+  --rule-soft: #28282d;
+
+  --royal:      #7d97ec;
+  --royal-soft: #232f54;
+  --coral:      #ff8a63;
+  --coral-soft: #3b2419;
+}
+
+:root[data-theme="dark"] .milkdown {
+  --crepe-color-background: #17171a;
+  --crepe-color-on-background: #ededeb;
+  --crepe-color-surface: #232329;
+  --crepe-color-surface-low: #1e1e22;
+  --crepe-color-on-surface: #e8e8e6;
+  --crepe-color-on-surface-variant: #9a9a95;
+  --crepe-color-outline: #56565b;
+  --crepe-color-primary: #7d97ec;
+  --crepe-color-secondary: #34343b;
+  --crepe-color-on-secondary: #ededeb;
+  --crepe-color-inverse: #ededeb;
+  --crepe-color-on-inverse: #17171a;
+  --crepe-color-inline-code: #ff8a63;
+  --crepe-color-inline-area: #2a2a31;
+  --crepe-color-error: #ff6b6b;
+  --crepe-color-hover: #2a2a31;
+  --crepe-color-selected: #2f3a5a;
+}
+
+/* Cover tiles use a light→white gradient; swap to dark surfaces. */
+:root[data-theme="dark"] .box.no-image {
+  background: linear-gradient(155deg, var(--royal-soft) 0%, #20232b 70%, var(--bg-elev) 100%);
+}
+:root[data-theme="dark"] .box.no-image.coral {
+  background: linear-gradient(155deg, var(--coral-soft) 0%, #2a221f 70%, var(--bg-elev) 100%);
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {
@@ -1774,7 +1824,8 @@ input, textarea, select { outline: none; box-shadow: none; }
 /* Zoom (overall text size) — bottom-left, stacked above the settings
    gear. Steps page-level zoom applied to <html> (like browser zoom). */
 .zoom-in-fab,
-.zoom-out-fab {
+.zoom-out-fab,
+.theme-fab {
   position: fixed;
   left: 10px;
   z-index: 50;
@@ -1792,14 +1843,17 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .zoom-in-fab { bottom: 68px; }
 .zoom-out-fab { bottom: 40px; }
+.theme-fab { bottom: 96px; }
 .zoom-in-fab:hover,
-.zoom-out-fab:hover {
+.zoom-out-fab:hover,
+.theme-fab:hover {
   color: var(--royal);
   border-color: var(--royal);
   background: var(--royal-soft);
 }
 .zoom-in-fab:active,
-.zoom-out-fab:active { transform: scale(0.92); }
+.zoom-out-fab:active,
+.theme-fab:active { transform: scale(0.92); }
 .zoom-in-fab:disabled,
 .zoom-out-fab:disabled { opacity: 0.35; cursor: default; }
 .zoom-in-fab:disabled:hover,
@@ -2466,13 +2520,13 @@ input, textarea, select { outline: none; box-shadow: none; }
   font-size: calc(26px * var(--text-scale, 1));
   font-weight: 900;
   letter-spacing: -0.015em;
-  color: #000;
+  color: var(--ink);
   line-height: 1.2;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 .list-line-section > .list-line .lr-title.is-link {
-  color: #000;
+  color: var(--ink);
 }
 .list-line-section > .list-line .lr-title.is-link:hover {
   color: var(--royal, #4169e1);
@@ -3072,6 +3126,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 .settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
 .zoom-out-fab { bottom: calc(40px + env(safe-area-inset-bottom)); }
 .zoom-in-fab { bottom: calc(68px + env(safe-area-inset-bottom)); }
+.theme-fab { bottom: calc(96px + env(safe-area-inset-bottom)); }
 .viewer-shell .first-note-fab { top: calc(10px + env(safe-area-inset-top)); }
 .viewer-shell .filter-pills {
   top: calc(42px + env(safe-area-inset-top));

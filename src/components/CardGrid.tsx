@@ -5,8 +5,9 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut, Moon, Sun } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
+import { useTheme, toggleTheme } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
@@ -233,6 +234,8 @@ export function CardGrid() {
   // text-scale module (font-size scaling, not page zoom, so the editor
   // caret stays aligned). The rail +/- buttons step it.
   const textScale = useTextScale();
+  // Light/dark theme — rail moon/sun button toggles it.
+  const theme = useTheme();
   // Active filter pills. `null` until hydrated so the first-load
   // default-home-exclude effect can tell "never set" from "user
   // cleared everything".
@@ -1356,6 +1359,18 @@ export function CardGrid() {
         aria-label="Smaller text"
       >
         <ZoomOut size={14} strokeWidth={2.1} />
+      </button>
+
+      <button
+        type="button"
+        className="theme-fab"
+        onClick={() => toggleTheme()}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {theme === "dark"
+          ? <Sun size={14} strokeWidth={2.1} />
+          : <Moon size={14} strokeWidth={2.1} />}
       </button>
 
       <button
