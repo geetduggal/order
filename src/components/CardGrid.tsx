@@ -24,7 +24,7 @@ import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folde
 import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
-import { vaultDir } from "../lib/attachments";
+import { vaultDir, embeddedImageFiles } from "../lib/attachments";
 import { FilterPillStack } from "./FilterPillStack";
 import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
@@ -952,6 +952,13 @@ export function CardGrid() {
       const filename = path.split("/").pop() ?? "note.md";
       const newPath = await uniqueWrite(targetDir, filename, content);
       await vaultFs.remove(toVaultRel(path));
+      // Move the note's same-folder images along with it so the ![[…]]
+      // embeds keep resolving from the new folder.
+      for (const file of embeddedImageFiles(body)) {
+        try {
+          await vaultFs.rename(toVaultRel(`${curDir}/${file}`), toVaultRel(`${targetDir}/${file}`));
+        } catch { /* missing or already present — skip */ }
+      }
       setNotes((prev) => prev?.map((n) =>
         n.path === path
           ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }

@@ -6,7 +6,7 @@
 import { marked } from "marked";
 import type { PublishedSite } from "./publish";
 import { resolveWikilink, type WikiRef } from "./wikilink";
-import { ATTACHMENTS_DIRNAME } from "./attachments";
+import { ATTACHMENTS_DIRNAME, EMBED_REF_WIDTH } from "./attachments";
 
 export interface PrerenderedPage {
   path: string;
@@ -56,6 +56,14 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
       html = html.replace(
         /(<img\b[^>]*\bsrc=")(?:\.\/)?Attachments\//g,
         `$1${attachPrefix}`,
+      );
+      // A set image size rides in the alt as Crepe's size ratio (so the
+      // viewer renders it). For the static HTML, convert that to an
+      // explicit pixel width and drop the numeric alt.
+      html = html.replace(
+        /<img\b([^>]*?)\salt="(\d+(?:\.\d+)?)"([^>]*?)>/g,
+        (_m, pre: string, ratio: string, post: string) =>
+          `<img${pre}${post} style="width:${Math.round(parseFloat(ratio) * EMBED_REF_WIDTH)}px;max-width:100%">`,
       );
       // The home note lives at the site root (index.html), but it also
       // has a slug — links/permalinks point at /<slug>/ — so emit it at

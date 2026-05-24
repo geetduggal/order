@@ -84,11 +84,11 @@ const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|\s*([^\]\n]*?)\s*)?\]\]/g;
 // width = round(ratio * REF) on save and ratio = width / REF on load. The
 // ratio round-trips exactly for any REF, so REF only sets the px number
 // written for Obsidian — pick ~a content column so it reads sanely.
-const EMBED_REF_WIDTH = 720;
+export const EMBED_REF_WIDTH = 720;
 
 /** Leading positive integer of an Obsidian size token ("640", "640x480"),
  *  else null. */
-function parseEmbedWidth(token: string | undefined): number | null {
+export function parseEmbedWidth(token: string | undefined): number | null {
   const m = token?.match(/^\d+/);
   if (!m) return null;
   const n = parseInt(m[0], 10);
@@ -110,6 +110,18 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
     if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
     return `![](${url})`;
   });
+}
+
+/** Image filenames referenced by `![[file]]` embeds (same-folder images),
+ *  e.g. to move them alongside a relocated note. Legacy `![](Attachments/…)`
+ *  images live in the shared dir and are intentionally excluded. */
+export function embeddedImageFiles(body: string): string[] {
+  const out: string[] = [];
+  for (const m of body.matchAll(IMG_EMBED_RE)) {
+    const file = m[1]?.trim();
+    if (file && isImagePath(file)) out.push(file);
+  }
+  return out;
 }
 
 const VAULTASSET_IMG_RE = /!\[([^\]]*)\]\((vaultasset:\/\/localhost\/[^)\s]+)\)/g;

@@ -404,7 +404,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   list-style: none;
   margin: 0;
   padding: 4px;
-  z-index: 5;
+  /* Above sibling cards (which can form stacking contexts during their
+     mount animation); below the fullscreen card (200). */
+  z-index: 150;
 }
 .order-card-folder-option {
   display: flex;
@@ -3136,4 +3138,17 @@ input, textarea, select { outline: none; box-shadow: none; }
   width: 100%;
   aspect-ratio: 3 / 2;
   object-fit: cover;
+}
+
+/* Single-note permalink page: honor the image's set size (Crepe's ratio)
+   instead of the preview banner crop. Higher specificity wins over the
+   crop rule above. */
+.solo-note .order-card:not(.is-fullscreen) .milkdown-image-block > .image-wrapper {
+  width: auto;
+}
+.solo-note .order-card:not(.is-fullscreen) .milkdown-image-block > .image-wrapper img {
+  width: auto;
+  aspect-ratio: auto;
+  object-fit: contain;
+  max-width: 100%;
 }

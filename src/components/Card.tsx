@@ -828,8 +828,8 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
     return (
       <span className="order-card-folder-chip" style={color ? { color, borderColor: color + "55" } : undefined} title={current}>
         {available.length > 0 ? (
-          // Default action: open the picker to move this note to another
-          // folder (same affordance as "+ folder" when unassigned).
+          // Click the chip to move this note to another Notable Folder.
+          // (No remove affordance — a note always lives in a folder.)
           <button
             type="button"
             className="order-card-folder-chip-btn"
@@ -841,15 +841,6 @@ function FolderPicker({ current, available, open, query, onOpen, onClose, onQuer
         ) : (
           label
         )}
-        <button
-          type="button"
-          className="order-card-folder-clear"
-          onClick={() => { void onAssign(null); }}
-          title="Remove from folder"
-          aria-label="Remove from folder"
-        >
-          <XIcon size={10} strokeWidth={2.5} />
-        </button>
       </span>
     );
   }

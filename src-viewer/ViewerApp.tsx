@@ -508,7 +508,7 @@ function StreamView({
     const solo = data.notes.find((n) => n.ref === soloRef);
     if (solo) {
       return (
-        <div className="nf-sections">
+        <div className="nf-sections solo-note">
           <div className="card-grid">
             <div className="card-grid-cell is-full-width" data-path={solo.ref}>
               {cardNode(solo)}

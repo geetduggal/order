@@ -6,7 +6,7 @@
 // `/<sub>/<slug>/`), and the same-folder files must be copied to sit
 // next to that page so a direct image URL works.
 
-import { isImagePath } from "./attachments";
+import { isImagePath, parseEmbedWidth, EMBED_REF_WIDTH } from "./attachments";
 
 /** A file to copy at publish time: `from` is vault-relative, `to` is
  *  relative to the publish target dir. */
@@ -15,7 +15,7 @@ export interface AssetCopy {
   to: string;
 }
 
-const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|[^\]\n]*)?\]\]/g;
+const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|\s*([^\]\n]*?)\s*)?\]\]/g;
 const MD_ATTACH_RE = /(!\[[^\]]*\]\()(?:\.\/)?Attachments\/([^)\s]+)(\))/g;
 
 /** Rewrite a note's image refs to published absolute URLs and collect the
@@ -40,11 +40,17 @@ export function rewritePublishedImages(
   if (!slug) return { body, assets };
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
 
-  let out = body.replace(IMG_EMBED_RE, (full, name: string) => {
+  let out = body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const file = name.trim();
     if (!isImagePath(file)) return full; // non-image embed: leave it
     assets.push({ from: `${dir}${file}`, to: `${slug}/${file}` });
-    return `![](/${sub}/${slug}/${encodeURI(file)})`;
+    const url = `/${sub}/${slug}/${encodeURI(file)}`;
+    // Carry a set width through as Crepe's size ratio (in the alt) so the
+    // viewer renders it; the static prerender converts the ratio to an
+    // explicit width. Unsized images stay a plain markdown image.
+    const width = parseEmbedWidth(size);
+    if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
+    return `![](${url})`;
   });
 
   out = out.replace(MD_ATTACH_RE, (_full, open: string, rest: string, close: string) =>
