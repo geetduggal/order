@@ -1773,6 +1773,44 @@ input, textarea, select { outline: none; box-shadow: none; }
 .settings-fab:hover { opacity: 1; color: var(--ink); background: var(--bg-elev); }
 .settings-fab:active { transform: scale(0.92); }
 
+/* Zoom (overall text size) — bottom-left, stacked above the settings
+   gear. Steps page-level zoom applied to <html> (like browser zoom). */
+.zoom-in-fab,
+.zoom-out-fab {
+  position: fixed;
+  left: 10px;
+  z-index: 50;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  opacity: 1;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.zoom-in-fab { bottom: 68px; }
+.zoom-out-fab { bottom: 40px; }
+.zoom-in-fab:hover,
+.zoom-out-fab:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.zoom-in-fab:active,
+.zoom-out-fab:active { transform: scale(0.92); }
+.zoom-in-fab:disabled,
+.zoom-out-fab:disabled { opacity: 0.35; cursor: default; }
+.zoom-in-fab:disabled:hover,
+.zoom-out-fab:disabled:hover {
+  color: var(--ink-soft);
+  border-color: var(--rule);
+  background: transparent;
+}
+
 /* ---------- Settings panel ---------- */
 .settings-overlay {
   position: fixed;
@@ -3029,6 +3067,8 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
 .settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
+.zoom-out-fab { bottom: calc(40px + env(safe-area-inset-bottom)); }
+.zoom-in-fab { bottom: calc(68px + env(safe-area-inset-bottom)); }
 .viewer-shell .first-note-fab { top: calc(10px + env(safe-area-inset-top)); }
 .viewer-shell .filter-pills {
   top: calc(42px + env(safe-area-inset-top));

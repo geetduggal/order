@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
@@ -43,6 +43,23 @@ function readSidebarOpen(): boolean {
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
+}
+
+// Overall page zoom (text size). Stored as a multiplier and applied to
+// <html> like browser zoom, so the whole UI scales uniformly.
+const ZOOM_KEY = "order.zoom";
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2.0;
+const ZOOM_STEP = 0.1;
+function clampZoom(z: number): number {
+  // Round to one decimal so repeated steps don't drift (0.1+0.2…).
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
+}
+function readZoom(): number {
+  try {
+    const raw = parseFloat(localStorage.getItem(ZOOM_KEY) ?? "");
+    return Number.isFinite(raw) ? clampZoom(raw) : 1;
+  } catch { return 1; }
 }
 
 // Filter model (`Filter`, pill stack) is shared with the web viewer
@@ -227,6 +244,13 @@ export function CardGrid() {
    *  effect that handles the highlight pulse. */
   const [focusPath, setFocusPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
+  // Overall zoom (text size). Applied to <html> and persisted so it
+  // survives relaunch; the rail +/- buttons step it.
+  const [zoom, setZoom] = useState<number>(readZoom);
+  useEffect(() => {
+    document.documentElement.style.zoom = String(zoom);
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch { /* non-fatal */ }
+  }, [zoom]);
   // Active filter pills. `null` until hydrated so the first-load
   // default-home-exclude effect can tell "never set" from "user
   // cleared everything".
@@ -1307,6 +1331,28 @@ export function CardGrid() {
         {coralPath
           ? <ChevronsUp size={14} strokeWidth={2.1} />
           : <ChevronsDown size={14} strokeWidth={2.1} />}
+      </button>
+
+      <button
+        type="button"
+        className="zoom-in-fab"
+        onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+        disabled={zoom >= ZOOM_MAX}
+        title={`Zoom in (${Math.round(zoom * 100)}%)`}
+        aria-label="Zoom in"
+      >
+        <ZoomIn size={14} strokeWidth={2.1} />
+      </button>
+
+      <button
+        type="button"
+        className="zoom-out-fab"
+        onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+        disabled={zoom <= ZOOM_MIN}
+        title={`Zoom out (${Math.round(zoom * 100)}%)`}
+        aria-label="Zoom out"
+      >
+        <ZoomOut size={14} strokeWidth={2.1} />
       </button>
 
       <button
