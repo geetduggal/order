@@ -3085,3 +3085,41 @@ input, textarea, select { outline: none; box-shadow: none; }
   top: calc(42px + env(safe-area-inset-top));
   max-height: calc(100vh - 58px - env(safe-area-inset-top));
 }
+
+/* ===================================================================
+   Phase C: clean image rendering (self-contained — `git revert` this
+   commit to restore Crepe's default image UI).
+
+   Crepe's image-block ships a caption/operation bubble, a caption input,
+   and a resize handle — the "grey box" chrome. We don't want captions,
+   and the edit chrome has no place in the read-only published view.
+   =================================================================== */
+
+/* No captions: drop the caption/operation bubble + caption field
+   everywhere (editor + published). */
+.milkdown-host .milkdown-image-block .image-wrapper .operation,
+.milkdown-host .milkdown-image-block > .caption-input {
+  display: none !important;
+}
+
+/* Natural, clean image rendering: no forced crop or min-height, gentle
+   rounding, full available width up to the image's own size. A lone image
+   in a note then fills the card and reads as the whole note. */
+.milkdown-host .milkdown-image-block { margin: 8px 0; }
+.milkdown-host .milkdown-image-block > .image-wrapper { min-width: 0; }
+.milkdown-host .milkdown-image-block > .image-wrapper img {
+  min-height: 0;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+/* Published view: strip ALL remaining edit chrome so a published image is
+   just the image — no resize handle, no grey selection overlay. */
+.viewer-shell .milkdown-image-block > .image-wrapper > .image-resize-handle {
+  display: none !important;
+}
+.viewer-shell .milkdown-image-block.selected > .image-wrapper::before,
+.viewer-shell .milkdown-image-block.selected > .image-edit::before {
+  background: transparent !important;
+}
