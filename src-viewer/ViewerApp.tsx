@@ -434,10 +434,6 @@ export function ViewerApp(
           onClear={resetToDefault}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
-          onAddArea={() => { /* no-op */ }}
-          onRemoveArea={() => { /* no-op */ }}
-          onAddCategory={() => { /* no-op */ }}
-          onRemoveCategory={() => { /* no-op */ }}
           order={data.taxonomy.areas}
         />
       )}

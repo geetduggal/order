@@ -61,10 +61,12 @@ interface Props {
    *  the × remove button shows on a tile. */
   storedAreas: string[];
   storedCategories: { area: string; name: string }[];
-  onAddArea: (name: string) => void;
-  onRemoveArea: (name: string) => void;
-  onAddCategory: (name: string, area: string) => void;
-  onRemoveCategory: (name: string, area: string) => void;
+  /** Add/remove handlers — optional so the read-only viewer can omit them
+   *  (then no add slots / remove × render). */
+  onAddArea?: (name: string) => void;
+  onRemoveArea?: (name: string) => void;
+  onAddCategory?: (name: string, area: string) => void;
+  onRemoveCategory?: (name: string, area: string) => void;
   /** Reorder handlers (optional — when absent, e.g. the read-only viewer,
    *  no reorder/remove controls are shown). `dir` is "up" (earlier) or
    *  "down" (later) in the list. */
@@ -327,10 +329,10 @@ function DrillView({
   selected: Set<string>;
   onToggle: (name: string) => void;
   onCreateFolder?: (name: string, area: string, category: string) => Promise<void>;
-  onAddArea: (name: string) => void;
-  onRemoveArea: (name: string) => void;
-  onAddCategory: (name: string, area: string) => void;
-  onRemoveCategory: (name: string, area: string) => void;
+  onAddArea?: (name: string) => void;
+  onRemoveArea?: (name: string) => void;
+  onAddCategory?: (name: string, area: string) => void;
+  onRemoveCategory?: (name: string, area: string) => void;
   onReorderArea?: (name: string, dir: "up" | "down") => void;
   onReorderCategory?: (name: string, area: string, dir: "up" | "down") => void;
   onReorderFolder?: (name: string, area: string, category: string, dir: "up" | "down") => void;
@@ -347,8 +349,8 @@ function DrillView({
   function commitDraft(area: string | null) {
     const trimmed = (draft ?? "").trim();
     if (trimmed) {
-      if (area === null) onAddArea(trimmed);
-      else onAddCategory(trimmed, area);
+      if (area === null) onAddArea?.(trimmed);
+      else onAddCategory?.(trimmed, area);
     }
     setDraft(null);
   }
@@ -393,7 +395,7 @@ function DrillView({
               coral={i % 2 === 1}
               onClick={() => setDrill({ kind: "categories", areaName: a })}
               onRemove={
-                taxonomy.isAreaStored(a) && !hasNotableFolderInArea(taxonomy, a)
+                onRemoveArea && taxonomy.isAreaStored(a) && !hasNotableFolderInArea(taxonomy, a)
                   ? () => onRemoveArea(a)
                   : undefined
               }
@@ -404,7 +406,7 @@ function DrillView({
               onTilePointerDown={onReorderAreas ? (e) => onTilePointerDown(e, a) : undefined}
             />
           ))}
-          {draftActive && (
+          {onAddArea && draftActive && (
             <DraftTile
               value={draft ?? ""}
               onChange={setDraft}
@@ -413,7 +415,7 @@ function DrillView({
               placeholder="Area name"
             />
           )}
-          {Array.from({ length: empties }).map((_, i) => (
+          {onAddArea && Array.from({ length: empties }).map((_, i) => (
             <EmptySlot key={`e-${i}`} onClick={!draftActive ? startDraft : undefined} />
           ))}
         </BoxGrid>
@@ -436,7 +438,7 @@ function DrillView({
               coral={i % 2 === 1}
               onClick={() => setDrill({ kind: "folders", areaName: drill.areaName, categoryName: c })}
               onRemove={
-                taxonomy.isCategoryStored(drill.areaName, c) && !hasFolderInCategory(taxonomy, drill.areaName, c)
+                onRemoveCategory && taxonomy.isCategoryStored(drill.areaName, c) && !hasFolderInCategory(taxonomy, drill.areaName, c)
                   ? () => onRemoveCategory(c, drill.areaName)
                   : undefined
               }
@@ -447,7 +449,7 @@ function DrillView({
               onTilePointerDown={onReorderCategories ? (e) => onTilePointerDown(e, c) : undefined}
             />
           ))}
-          {draftActive && (
+          {onAddCategory && draftActive && (
             <DraftTile
               value={draft ?? ""}
               onChange={setDraft}
@@ -456,7 +458,7 @@ function DrillView({
               placeholder="Category name"
             />
           )}
-          {Array.from({ length: empties }).map((_, i) => (
+          {onAddCategory && Array.from({ length: empties }).map((_, i) => (
             <EmptySlot key={`e-${i}`} onClick={!draftActive ? startDraft : undefined} />
           ))}
         </BoxGrid>
