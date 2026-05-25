@@ -5,8 +5,8 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronsDown, ChevronsUp, Moon, Sun } from "lucide-react";
-import { useTheme, toggleTheme } from "../src/lib/theme";
+import { ChevronsDown, ChevronsUp, Moon, MoonStar, Sun } from "lucide-react";
+import { useTheme, toggleTheme, nextTheme } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
@@ -387,12 +387,14 @@ export function ViewerApp(
         type="button"
         className="theme-fab"
         onClick={() => toggleTheme()}
-        title={theme === "dark" ? "Light mode" : "Dark mode"}
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={`${nextTheme(theme)[0].toUpperCase()}${nextTheme(theme).slice(1)} mode`}
+        aria-label={`Switch to ${nextTheme(theme)} mode`}
       >
-        {theme === "dark"
-          ? <Sun size={14} strokeWidth={2.1} />
-          : <Moon size={14} strokeWidth={2.1} />}
+        {theme === "light"
+          ? <Moon size={14} strokeWidth={2.1} />
+          : theme === "dark"
+            ? <MoonStar size={14} strokeWidth={2.1} />
+            : <Sun size={14} strokeWidth={2.1} />}
       </button>
 
       <main className="pane-main">

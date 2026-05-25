@@ -31,7 +31,8 @@
    theme.ts). Just flips the design tokens — most surfaces use the vars
    so they follow automatically; a few hardcoded colors are themed below
    and Crepe's own --crepe-color-* vars are overridden too. */
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+:root[data-theme="black"] {
   color-scheme: dark;
   --bg:        #17171a;
   --bg-elev:   #232329;
@@ -48,7 +49,18 @@
   --coral-soft: #3b2419;
 }
 
-:root[data-theme="dark"] .milkdown {
+/* Black (OLED): same palette as dark, but pitch-black backgrounds and
+   dimmer surfaces/rules so true-black pixels dominate. */
+:root[data-theme="black"] {
+  --bg:        #000000;
+  --bg-elev:   #0c0c0e;
+  --ink-ghost: #4a4a4f;
+  --rule:      #232327;
+  --rule-soft: #161618;
+}
+
+:root[data-theme="dark"] .milkdown,
+:root[data-theme="black"] .milkdown {
   --crepe-color-background: #17171a;
   --crepe-color-on-background: #ededeb;
   --crepe-color-surface: #232329;
@@ -68,12 +80,33 @@
   --crepe-color-selected: #2f3a5a;
 }
 
+/* OLED black: drop the editor surfaces to true black. */
+:root[data-theme="black"] .milkdown {
+  --crepe-color-background: #000000;
+  --crepe-color-surface: #0c0c0e;
+  --crepe-color-surface-low: #050506;
+  --crepe-color-secondary: #232327;
+  --crepe-color-on-inverse: #000000;
+  --crepe-color-inline-area: #161618;
+  --crepe-color-hover: #161618;
+}
+
 /* Cover tiles use a light→white gradient; swap to dark surfaces. */
-:root[data-theme="dark"] .box.no-image {
+:root[data-theme="dark"] .box.no-image,
+:root[data-theme="black"] .box.no-image {
   background: linear-gradient(155deg, var(--royal-soft) 0%, #20232b 70%, var(--bg-elev) 100%);
 }
-:root[data-theme="dark"] .box.no-image.coral {
+:root[data-theme="dark"] .box.no-image.coral,
+:root[data-theme="black"] .box.no-image.coral {
   background: linear-gradient(155deg, var(--coral-soft) 0%, #2a221f 70%, var(--bg-elev) 100%);
+}
+/* In OLED black, push the cover gradients to true black so the cards
+   melt into the background. */
+:root[data-theme="black"] .box.no-image {
+  background: linear-gradient(155deg, var(--royal-soft) 0%, #0a0c12 70%, #000 100%);
+}
+:root[data-theme="black"] .box.no-image.coral {
+  background: linear-gradient(155deg, var(--coral-soft) 0%, #120a08 70%, #000 100%);
 }
 
 * { box-sizing: border-box; }

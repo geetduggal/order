@@ -5,9 +5,14 @@
 
 import { useEffect, useState } from "react";
 
-export type Theme = "light" | "dark";
+// Three modes cycled by the rail button: light → dark → black (OLED,
+// pitch-black background) → light.
+export type Theme = "light" | "dark" | "black";
 const KEY = "order.theme";
 const EVENT = "order:theme";
+
+/** Cycle order for the toggle. */
+export const THEME_CYCLE: Theme[] = ["light", "dark", "black"];
 
 function systemTheme(): Theme {
   try {
@@ -20,9 +25,15 @@ function systemTheme(): Theme {
 export function getTheme(): Theme {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === "light" || v === "dark") return v;
+    if (v === "light" || v === "dark" || v === "black") return v;
   } catch { /* ignore */ }
   return systemTheme();
+}
+
+/** The mode the toggle will switch to next (light → dark → black → …). */
+export function nextTheme(t: Theme = getTheme()): Theme {
+  const i = THEME_CYCLE.indexOf(t);
+  return THEME_CYCLE[(i + 1) % THEME_CYCLE.length];
 }
 
 /** Apply a theme to <html>, persist it, and notify listeners. */
@@ -34,7 +45,7 @@ export function applyTheme(t: Theme): Theme {
 }
 
 export function toggleTheme(): Theme {
-  return applyTheme(getTheme() === "dark" ? "light" : "dark");
+  return applyTheme(nextTheme());
 }
 
 /** React hook: current theme, kept in sync across the toggle and any

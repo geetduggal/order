@@ -5,9 +5,9 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut, Moon, Sun } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut, Moon, MoonStar, Sun } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
-import { useTheme, toggleTheme } from "../lib/theme";
+import { useTheme, toggleTheme, nextTheme } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
@@ -1487,12 +1487,14 @@ export function CardGrid() {
         type="button"
         className="theme-fab"
         onClick={() => toggleTheme()}
-        title={theme === "dark" ? "Light mode" : "Dark mode"}
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={`${nextTheme(theme)[0].toUpperCase()}${nextTheme(theme).slice(1)} mode`}
+        aria-label={`Switch to ${nextTheme(theme)} mode`}
       >
-        {theme === "dark"
-          ? <Sun size={14} strokeWidth={2.1} />
-          : <Moon size={14} strokeWidth={2.1} />}
+        {theme === "light"
+          ? <Moon size={14} strokeWidth={2.1} />
+          : theme === "dark"
+            ? <MoonStar size={14} strokeWidth={2.1} />
+            : <Sun size={14} strokeWidth={2.1} />}
       </button>
 
       <button

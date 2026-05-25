@@ -9,7 +9,7 @@
       // with no saved choice get their OS preference.
       try {
         var t = localStorage.getItem("order.theme");
-        if (t !== "light" && t !== "dark")
+        if (t !== "light" && t !== "dark" && t !== "black")
           t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.dataset.theme = t;
       } catch (e) {}
