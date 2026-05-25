@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { Files, FileText, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
+import { Files, FileText, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
@@ -370,7 +370,7 @@ export function ViewerApp(
         aria-label={`Theme ${themeLabel(theme)}, switch to ${themeLabel(nextTheme(theme))}`}
       >
         {(() => {
-          const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine }[theme];
+          const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
           return <Icon size={14} strokeWidth={2.1} />;
         })()}
       </button>

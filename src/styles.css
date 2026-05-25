@@ -133,17 +133,17 @@
   --coral-soft: #3a3a8a;
 }
 
-/* America: loud. Pure #0000ff blue + #ff0000 red juxtaposed on white,
+/* America: pure #0000ff blue + #ff0000 red on white, black body text,
    clean sans throughout (override the serif reading font too). */
 :root[data-theme="america"] {
   color-scheme: light;
   --serif: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --bg:        #ffffff;  /* the white */
   --bg-elev:   #dbe4ff;  /* bright blue surface */
-  --ink:       #0000a8;  /* blue text */
-  --ink-soft:  #000080;
-  --ink-faint: #d00000;  /* red secondary text — obnoxious on purpose */
-  --ink-ghost: #6f86ff;
+  --ink:       #000000;  /* black text */
+  --ink-soft:  #000000;
+  --ink-faint: #555555;  /* neutral grey secondary */
+  --ink-ghost: #9aa6c8;
   --rule:      #0000ff;  /* pure blue rules */
   --rule-soft: #aebcff;
 
@@ -171,10 +171,32 @@
   --coral-soft: #0a4423;
 }
 
+/* LCARS (Star Trek): black panels, amber text, orange + lilac accents,
+   condensed sans. */
+:root[data-theme="lcars"] {
+  color-scheme: dark;
+  --serif: "Antonio", "Oswald", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --sans:  "Antonio", "Oswald", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --bg:        #000000;
+  --bg-elev:   #16161c;
+  --ink:       #ffcc99;  /* amber */
+  --ink-soft:  #ffffff;
+  --ink-faint: #cc99cc;  /* lilac */
+  --ink-ghost: #8a6a4a;
+  --rule:      #ff9900;  /* LCARS orange */
+  --rule-soft: #3a2300;
+
+  --royal:      #ff9900; /* orange primary */
+  --royal-soft: #3a2300;
+  --coral:      #cc88ff; /* lilac secondary */
+  --coral-soft: #2a1a3a;
+}
+
 /* Map Crepe editor colors onto the active theme's tokens. */
 :root[data-theme="wordperfect"] .milkdown,
 :root[data-theme="america"] .milkdown,
-:root[data-theme="christmas"] .milkdown {
+:root[data-theme="christmas"] .milkdown,
+:root[data-theme="lcars"] .milkdown {
   --crepe-color-background: var(--bg);
   --crepe-color-on-background: var(--ink);
   --crepe-color-surface: var(--bg-elev);
@@ -205,37 +227,28 @@
    is a light theme, so it falls through to the default light gradients
    built from its own --royal-soft / --coral-soft.) */
 :root[data-theme="wordperfect"] .box.no-image,
-:root[data-theme="christmas"] .box.no-image {
+:root[data-theme="christmas"] .box.no-image,
+:root[data-theme="lcars"] .box.no-image {
   background: linear-gradient(155deg, var(--royal-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
 }
 :root[data-theme="wordperfect"] .box.no-image.coral,
-:root[data-theme="christmas"] .box.no-image.coral {
+:root[data-theme="christmas"] .box.no-image.coral,
+:root[data-theme="lcars"] .box.no-image.coral {
   background: linear-gradient(155deg, var(--coral-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
 }
 
-/* America cover tiles: literal red/white/blue diagonals. The white middle
-   band sits under the centered label so it stays readable. */
+/* America cover tiles: soft red→white→blue diagonal (toned down). */
 :root[data-theme="america"] .box.no-image {
-  background: linear-gradient(135deg, #ff0000 0%, #ffffff 50%, #0000ff 100%);
+  background: linear-gradient(135deg, #ffe0e0 0%, #ffffff 50%, #e0e6ff 100%);
 }
 :root[data-theme="america"] .box.no-image.coral {
-  background: linear-gradient(135deg, #0000ff 0%, #ffffff 50%, #ff0000 100%);
+  background: linear-gradient(135deg, #e0e6ff 0%, #ffffff 50%, #ffe0e0 100%);
 }
 
-/* America extras: markdown links stay blue (--royal); wiki links and the
-   internal note-ref titles go red. Plus thick, fully red card borders —
-   !important to beat the per-card inline folder-color border. */
-:root[data-theme="america"] .milkdown-host .ProseMirror .wikilink,
-:root[data-theme="america"] .lr-title.is-link,
-:root[data-theme="america"] .basecard-title.is-link,
-:root[data-theme="america"] .lr-sublist-title.is-link {
-  color: #ff0000;
-}
-:root[data-theme="america"] .milkdown-host .ProseMirror .wikilink:hover {
-  background: var(--coral-soft);
-}
+/* America: thin, fully red card borders — !important to beat the
+   per-card inline folder-color border. (Links stay blue via --royal.) */
 :root[data-theme="america"] .order-card:not(.is-fullscreen) {
-  border: 2px solid #ff0000 !important;
+  border: 1px solid #ff0000 !important;
 }
 
 /* Menlo runs large — pull the WordPerfect editor body in a notch so the

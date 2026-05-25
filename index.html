@@ -11,9 +11,10 @@
     <script>
       // Set the theme before first paint to avoid a light flash.
       try {
+        // Apply whatever theme was saved (the app only writes valid
+        // values); fall back to the OS preference when none is set.
         var t = localStorage.getItem("order.theme");
-        if (t !== "light" && t !== "dark" && t !== "black")
-          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.dataset.theme = t;
       } catch (e) {}
     </script>
