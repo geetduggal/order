@@ -17,6 +17,11 @@ interface Options {
   /** CSS selector for interactive controls inside a tile that should NOT
    *  start a drag (remove ×, reorder arrows, inputs). */
   exclude?: string;
+  /** When set, a drag only starts if pointerdown landed inside this
+   *  selector (a drag handle). Lets the rest of the row stay tappable /
+   *  scrollable on touch — touch the handle to drag, anywhere else to
+   *  scroll. Takes precedence over `exclude`. */
+  handle?: string;
 }
 
 interface Cell {
@@ -30,7 +35,7 @@ export function useTileDrag(
   onReorder?: (order: string[]) => void,
   opts: Options = {},
 ) {
-  const { exclude = "" } = opts;
+  const { exclude = "", handle = "" } = opts;
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
@@ -207,7 +212,9 @@ export function useTileDrag(
 
   function onTilePointerDown(e: ReactPointerEvent, ref: string) {
     if (!onReorder || e.button !== 0) return;
-    if (exclude && (e.target as HTMLElement).closest(exclude)) return;
+    const target = e.target as HTMLElement;
+    if (handle) { if (!target.closest(handle)) return; }
+    else if (exclude && target.closest(exclude)) return;
     drag.current = { ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, started: false };
     // Capture the pointer so move/up keep firing through the whole drag —
     // essential on touch (iOS), where otherwise pointerup may never reach

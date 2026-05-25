@@ -2502,9 +2502,16 @@ input, textarea, select { outline: none; box-shadow: none; }
   cursor: grab;
   opacity: 0;
   transition: opacity 0.12s var(--ease-out);
+  /* Drag only — keep the touch from scrolling the list while the rest
+     of the row stays free to scroll/tap. */
+  touch-action: none;
 }
 .list-line:hover .lr-handle { opacity: 1; }
 .lr-handle:active { cursor: grabbing; }
+/* Touch has no hover, so reveal the grip permanently there. */
+@media (hover: none) {
+  .lr-handle { opacity: 0.6; }
+}
 .lr-title, .lr-title-input {
   flex: 0 1 auto;
   min-width: 0;
@@ -2713,12 +2720,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   margin: 16px 0 4px;
 }
 .basecard {
-  /* The article element is now a transform/positioning wrapper.
-     FLIP animates its transform; visual styling lives on
-     .basecard-frame so a "lift" scale during drag doesn't
-     compete with the FLIP translate. */
+  /* The article element is a transform/positioning wrapper — the drag
+     hook translates it; visual styling lives on .basecard-frame. */
   position: relative;
-  cursor: grab;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2726,7 +2730,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   user-select: text;
   -webkit-user-select: text;
 }
-.basecard:active { cursor: grabbing; }
+/* Only interactive (app) cards drag; published/read-only ones don't. */
+.basecard.draggable { cursor: grab; touch-action: none; }
+.basecard.draggable:active { cursor: grabbing; }
 
 .basecard-frame {
   position: relative;

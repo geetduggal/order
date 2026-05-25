@@ -1,35 +1,30 @@
 // Interactive card grid for `type: list` Notable Folders.
 //
-// Drag model:
-// - pointerdown seeds a candidate drag.
-// - At the 5px threshold we snapshot every card's screen rect. This
-//   snapshot is the source of truth for cursor → slot mapping for
-//   the rest of the drag. Reading live DOM positions instead would
-//   feed the FLIP animation back into the slot calculation and the
-//   layout would oscillate.
-// - The "insertion point" is { beforeRef: string | null } — insert
-//   the dragged item before this specific ref, or at the end. Stable
-//   under reorder, no index arithmetic.
-// - A preview items array (dragged item moved to the insertion slot)
-//   drives rendering. A FLIP useLayoutEffect captures before/after
-//   positions every render and slides displaced cards smoothly.
-// - On pointerup, preview becomes the real items via onChange.
+// Drag-reorder runs through the shared useTileDrag hook: pointerdown on
+// a card seeds a drag (everywhere except the title/meta/delete controls,
+// via `exclude`), the grabbed card lifts and follows, a drop indicator
+// shows where it will land, and pointerup persists the new order. The
+// hook uses setPointerCapture + touch-action:none so it works on iOS.
 //
-// HTML5 drag-drop is unusable here — Tauri's webview intercepts it
-// at the OS level, so drop events never reach in-page handlers.
+// HTML5 drag-drop is unusable here — Tauri's webview intercepts it at
+// the OS level, so drop events never reach in-page handlers.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveNoteRef } from "../lib/wikilink";
+import { useTileDrag } from "../lib/use-tile-drag";
 export type { ListNoteRef };
 
 interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
-  /** Hide add tile + per-item delete/inline-edit. Drag still works. */
+  /** Fully static — no drag, no add, no delete, no inline edit.
+   *  Used by the published viewer and display-only sub-lists. */
+  readOnly?: boolean;
+  /** Hide add tile + per-item delete/inline-edit, but KEEP drag-reorder. */
   readOnlyMembership?: boolean;
   /** Click-on-title navigation. When omitted, title click falls back
    *  to inline rename. */
@@ -38,12 +33,6 @@ interface Props {
    *  Folder so a click accumulates filter chips. */
   onAddFilter?: (ref: string) => void;
 }
-
-interface InsertPoint {
-  /** null = insert at end of list */
-  beforeRef: string | null;
-}
-
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
   if (item.meta) return item.meta;
@@ -54,99 +43,20 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-const DRAG_THRESHOLD_PX = 5;
-const FLIP_DURATION_MS = 280;
-const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
-
-export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onNavigate, onAddFilter }: Props) {
-  const [draggedRef, setDraggedRef] = useState<string | null>(null);
-  const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
+export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter }: Props) {
   const [adding, setAdding] = useState(false);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const hideControls = !!readOnly || !!readOnlyMembership;
 
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-
-  const draggedRefRef = useRef<string | null>(null);
-  draggedRefRef.current = draggedRef;
-  const insertPointRef = useRef<InsertPoint | null>(null);
-  insertPointRef.current = insertPoint;
-
-  const dragRef = useRef<{
-    ref: string; startX: number; startY: number; started: boolean;
-  } | null>(null);
-  // Snapshot of card rects at drag start. Used for cursor → slot
-  // mapping for the duration of the drag, so FLIP animations don't
-  // change what "nearest card" means under the cursor.
-  const snapshotRef = useRef<Map<string, DOMRect> | null>(null);
-
-  const previewItems = useMemo(() => {
-    if (!draggedRef || !insertPoint) return items;
-    const dragged = items.find((i) => i.ref === draggedRef);
-    if (!dragged) return items;
-    const arr = items.filter((i) => i.ref !== draggedRef);
-    if (insertPoint.beforeRef === null) return [...arr, dragged];
-    const at = arr.findIndex((i) => i.ref === insertPoint.beforeRef);
-    if (at < 0) return [...arr, dragged];
-    arr.splice(at, 0, dragged);
-    return arr;
-  }, [items, draggedRef, insertPoint]);
-
-  // FLIP: capture screen positions after every render. If a card's
-  // current rect differs from the previous one, animate the inverse
-  // displacement back to zero so the user sees a smooth slide.
-  const prevRects = useRef<Map<string, DOMRect>>(new Map());
-  useLayoutEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const cards = grid.querySelectorAll<HTMLElement>("[data-flip-key]");
-    const seen = new Set<string>();
-    cards.forEach((card) => {
-      const key = card.dataset.flipKey!;
-      seen.add(key);
-      // Cancel anything in-flight first so getBoundingClientRect
-      // returns the natural (untransformed) position, not the
-      // current visual position.
-      card.getAnimations().forEach((a) => a.cancel());
-      const curr = card.getBoundingClientRect();
-      const prev = prevRects.current.get(key);
-      if (prev) {
-        const dx = prev.left - curr.left;
-        const dy = prev.top - curr.top;
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-          card.animate(
-            [
-              { transform: `translate(${dx}px, ${dy}px)` },
-              { transform: "translate(0, 0)" },
-            ],
-            { duration: FLIP_DURATION_MS, easing: FLIP_EASING, fill: "none" },
-          );
-        }
-      }
-      prevRects.current.set(key, curr);
-    });
-    for (const key of Array.from(prevRects.current.keys())) {
-      if (!seen.has(key)) prevRects.current.delete(key);
-    }
-  });
-
-  function commitReorder(fromRef: string, ip: InsertPoint) {
-    const current = itemsRef.current;
-    const fromIdx = current.findIndex((i) => i.ref === fromRef);
-    if (fromIdx < 0) return;
-    const arr = current.filter((i) => i.ref !== fromRef);
-    const picked = current[fromIdx];
-    if (ip.beforeRef === null) {
-      onChange([...arr, picked]);
-      return;
-    }
-    const at = arr.findIndex((i) => i.ref === ip.beforeRef);
-    if (at < 0) return;
-    arr.splice(at, 0, picked);
-    // No-op detection: if the resulting array equals current, skip.
-    if (arr.every((it, i) => it.ref === current[i].ref)) return;
-    onChange(arr);
+  function reorder(order: string[]) {
+    const byRef = new Map(items.map((i) => [i.ref, i]));
+    const next = order.map((r) => byRef.get(r)).filter((i): i is ListItem => !!i);
+    if (next.length === items.length) onChange(next);
   }
+  const { gridRef, dragRef: draggingRef, onTilePointerDown } = useTileDrag(
+    items.map((i) => i.ref),
+    readOnly ? undefined : reorder,
+    { exclude: "input, button, .basecard-meta" },
+  );
 
   function remove(index: number) {
     const next = items.slice();
@@ -178,101 +88,8 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
     onChange(next);
   }
 
-  function onPointerDown(e: React.PointerEvent, ref: string) {
-    const t = e.target as HTMLElement;
-    if (t.closest("input, button, .basecard-meta")) return;
-    if (e.button !== 0) return;
-    dragRef.current = {
-      ref, startX: e.clientX, startY: e.clientY, started: false,
-    };
-  }
-
-  useEffect(() => {
-    function captureSnapshot() {
-      const grid = gridRef.current;
-      if (!grid) return;
-      const m = new Map<string, DOMRect>();
-      grid.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((c) => {
-        m.set(c.dataset.flipKey!, c.getBoundingClientRect());
-      });
-      snapshotRef.current = m;
-    }
-
-    function findInsertPoint(x: number, y: number): InsertPoint | null {
-      const snap = snapshotRef.current;
-      const draggedR = draggedRefRef.current;
-      if (!snap || !draggedR) return null;
-      // Nearest non-dragged card by squared distance to center.
-      let bestRef: string | null = null;
-      let bestRect: DOMRect | null = null;
-      let bestDist = Infinity;
-      snap.forEach((rect, ref) => {
-        if (ref === draggedR) return;
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-        if (d < bestDist) { bestDist = d; bestRef = ref; bestRect = rect; }
-      });
-      if (bestRef === null || !bestRect) return null;
-      const r = bestRect as DOMRect;
-      const midX = r.left + r.width / 2;
-      if (x < midX) return { beforeRef: bestRef };
-      // Insert AFTER bestRef → before the next item in items order
-      // that isn't the dragged item.
-      const list = itemsRef.current;
-      const bi = list.findIndex((it) => it.ref === bestRef);
-      if (bi < 0) return { beforeRef: null };
-      for (let i = bi + 1; i < list.length; i++) {
-        if (list[i].ref !== draggedR) return { beforeRef: list[i].ref };
-      }
-      return { beforeRef: null };
-    }
-
-    function samePoint(a: InsertPoint | null, b: InsertPoint | null): boolean {
-      if (a === b) return true;
-      if (!a || !b) return false;
-      return a.beforeRef === b.beforeRef;
-    }
-
-    function onMove(e: PointerEvent) {
-      const d = dragRef.current;
-      if (!d) return;
-      if (!d.started) {
-        const moved = Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY);
-        if (moved < DRAG_THRESHOLD_PX) return;
-        d.started = true;
-        captureSnapshot();
-        setDraggedRef(d.ref);
-      }
-      const next = findInsertPoint(e.clientX, e.clientY);
-      if (!samePoint(next, insertPointRef.current)) setInsertPoint(next);
-    }
-
-    function commit() {
-      const d = dragRef.current;
-      dragRef.current = null;
-      if (d?.started) {
-        const ip = insertPointRef.current;
-        if (ip) commitReorder(d.ref, ip);
-      }
-      snapshotRef.current = null;
-      setDraggedRef(null);
-      setInsertPoint(null);
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", commit);
-    window.addEventListener("pointercancel", commit);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", commit);
-      window.removeEventListener("pointercancel", commit);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   if (items.length === 0 && !adding) {
-    if (readOnlyMembership) {
+    if (hideControls) {
       return <div className="basecard-grid"><div className="basecard-empty">No items match.</div></div>;
     }
     return (
@@ -284,15 +101,14 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
 
   return (
     <div ref={gridRef} className="basecard-grid">
-      {previewItems.map((item) => {
+      {items.map((item, originalIdx) => {
         const note = resolveNoteRef(item.ref, vaultNotes);
         const image = note && typeof note.frontmatter.image === "string"
           ? note.frontmatter.image as string
           : undefined;
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
-        const originalIdx = items.findIndex((i) => i.ref === item.ref);
         const tintCls = originalIdx % 2 === 0 ? "is-royal" : "is-coral";
-        const dragging = item.ref === draggedRef;
+        const dragging = item.ref === draggingRef;
         return (
           <BaseCard
             key={item.ref}
@@ -303,7 +119,8 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
             displayTitle={displayTitleFor(item, note)}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
-            readOnly={!!readOnlyMembership}
+            draggable={!readOnly}
+            readOnly={hideControls}
             onNavigate={(() => {
               if (!note) return undefined;
               const isNF = isNotableFolder(note.frontmatter);
@@ -311,14 +128,14 @@ export function ListCards({ items, vaultNotes, onChange, readOnlyMembership, onN
               if (onNavigate) return () => onNavigate(item.ref);
               return undefined;
             })()}
-            onPointerDown={onPointerDown}
+            onTilePointerDown={onTilePointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
             onRefChange={(r) => updateRef(originalIdx, r)}
           />
         );
       })}
-      {!readOnlyMembership && (
+      {!hideControls && (
         <AddTile
           startOpen={adding}
           onAdd={(name) => { add(name); setAdding(false); }}
@@ -341,9 +158,10 @@ interface BaseCardProps {
   displayTitle: string;
   metaSuggestion: string;
   dragging: boolean;
+  draggable: boolean;
   readOnly: boolean;
   onNavigate?: () => void;
-  onPointerDown: (e: React.PointerEvent, ref: string) => void;
+  onTilePointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
   onRefChange: (ref: string) => void;
@@ -351,8 +169,8 @@ interface BaseCardProps {
 
 function BaseCard({
   item, Icon, image, tintCls, displayTitle, metaSuggestion,
-  dragging, readOnly, onNavigate,
-  onPointerDown, onDelete, onMetaChange, onRefChange,
+  dragging, draggable, readOnly, onNavigate,
+  onTilePointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [draft, setDraft] = useState("");
@@ -393,13 +211,12 @@ function BaseCard({
 
   return (
     <article
-      className={"basecard" + (dragging ? " is-dragging" : "")}
-      data-flip-key={item.ref}
-      onPointerDown={(e) => onPointerDown(e, item.ref)}
+      className={"basecard" + (dragging ? " is-dragging" : "") + (draggable ? " draggable" : "")}
+      data-tile-ref={item.ref}
+      onPointerDown={draggable ? (e) => onTilePointerDown(e, item.ref) : undefined}
     >
       {/* basecard-frame holds all visuals so a "lift" scale during drag
-          can live here, leaving the article free for FLIP's translate
-          transform without the two fighting each other. */}
+          can live here. */}
       <div className="basecard-frame">
         {image ? (
           <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />

@@ -724,6 +724,7 @@ export function Card(props: Props) {
               items={itemsForView}
               vaultNotes={vaultNotes ?? []}
               onChange={handleListChange}
+              readOnly={readOnly}
               readOnlyMembership={!!parsedBase}
               expandSublists={isListOfLists}
               onNavigate={onNavigate ? (ref) => { if (fullscreen) setFullscreen(false); onNavigate(ref); } : undefined}

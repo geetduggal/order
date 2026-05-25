@@ -1,17 +1,19 @@
 // "lines" render for a list folder. Dense one-per-row layout with the
-// same operations the cards render supports: drag-reorder (snapshot
-// + insertion-by-row-midY + FLIP slide), inline title/meta edit,
-// hover-× delete, "+ New" row at the end.
+// same operations the cards render supports: drag-reorder (via the
+// shared useTileDrag hook — handle-only so the rest of the row stays
+// tappable/scrollable on touch), inline title/meta edit, hover-×
+// delete, "+ New" row at the end.
 //
 // Mirrors ListCards.tsx semantics so the dispatcher can swap freely.
 
 import type React from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
+import { useTileDrag } from "../lib/use-tile-drag";
 import { ListCards } from "./ListCards";
 export type { ListNoteRef };
 
@@ -19,7 +21,12 @@ interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
-  /** Hide add row + per-item delete/inline-edit. Drag still works. */
+  /** Fully static — no drag, no add, no delete, no inline edit.
+   *  Used by the published viewer and display-only sub-lists. */
+  readOnly?: boolean;
+  /** Hide add row + per-item delete/inline-edit, but KEEP drag-reorder.
+   *  Used for base-driven lists where membership is controlled by the
+   *  base block. */
   readOnlyMembership?: boolean;
   /** When true, any row whose linked target is itself a list folder
    *  renders its items as a small indented sub-list beneath the row.
@@ -33,12 +40,6 @@ interface Props {
    *  replacing the set. */
   onAddFilter?: (ref: string) => void;
 }
-
-interface InsertPoint { beforeRef: string | null }
-
-const DRAG_THRESHOLD_PX = 5;
-const FLIP_DURATION_MS = 220;
-const FLIP_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
   if (item.meta) return item.meta;
@@ -66,76 +67,21 @@ function splitDatedMeta(meta: string): { pinned: string; secondary: string } | n
   return null;
 }
 
-export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
-  const [draggedRef, setDraggedRef] = useState<string | null>(null);
-  const [insertPoint, setInsertPoint] = useState<InsertPoint | null>(null);
+export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
   const [adding, setAdding] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
+  const hideControls = !!readOnly || !!readOnlyMembership;
 
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-  const draggedRefRef = useRef<string | null>(null);
-  draggedRefRef.current = draggedRef;
-  const insertPointRef = useRef<InsertPoint | null>(null);
-  insertPointRef.current = insertPoint;
-  const dragRef = useRef<{
-    ref: string; startX: number; startY: number; started: boolean;
-  } | null>(null);
-  const snapshotRef = useRef<Map<string, DOMRect> | null>(null);
-
-  const previewItems = useMemo(() => {
-    if (!draggedRef || !insertPoint) return items;
-    const dragged = items.find((i) => i.ref === draggedRef);
-    if (!dragged) return items;
-    const arr = items.filter((i) => i.ref !== draggedRef);
-    if (insertPoint.beforeRef === null) return [...arr, dragged];
-    const at = arr.findIndex((i) => i.ref === insertPoint.beforeRef);
-    if (at < 0) return [...arr, dragged];
-    arr.splice(at, 0, dragged);
-    return arr;
-  }, [items, draggedRef, insertPoint]);
-
-  const prevRects = useRef<Map<string, DOMRect>>(new Map());
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const rows = list.querySelectorAll<HTMLElement>("[data-flip-key]");
-    const seen = new Set<string>();
-    rows.forEach((row) => {
-      const key = row.dataset.flipKey!;
-      seen.add(key);
-      row.getAnimations().forEach((a) => a.cancel());
-      const curr = row.getBoundingClientRect();
-      const prev = prevRects.current.get(key);
-      if (prev) {
-        const dy = prev.top - curr.top;
-        if (Math.abs(dy) > 0.5) {
-          row.animate(
-            [{ transform: `translateY(${dy}px)` }, { transform: "translateY(0)" }],
-            { duration: FLIP_DURATION_MS, easing: FLIP_EASING, fill: "none" },
-          );
-        }
-      }
-      prevRects.current.set(key, curr);
-    });
-    for (const key of Array.from(prevRects.current.keys())) {
-      if (!seen.has(key)) prevRects.current.delete(key);
-    }
-  });
-
-  function commitReorder(fromRef: string, ip: InsertPoint) {
-    const cur = itemsRef.current;
-    const fromIdx = cur.findIndex((i) => i.ref === fromRef);
-    if (fromIdx < 0) return;
-    const arr = cur.filter((i) => i.ref !== fromRef);
-    const picked = cur[fromIdx];
-    if (ip.beforeRef === null) { onChange([...arr, picked]); return; }
-    const at = arr.findIndex((i) => i.ref === ip.beforeRef);
-    if (at < 0) return;
-    arr.splice(at, 0, picked);
-    if (arr.every((it, i) => it.ref === cur[i].ref)) return;
-    onChange(arr);
+  // Map a reordered ref list back to items, then persist.
+  function reorder(order: string[]) {
+    const byRef = new Map(items.map((i) => [i.ref, i]));
+    const next = order.map((r) => byRef.get(r)).filter((i): i is ListItem => !!i);
+    if (next.length === items.length) onChange(next);
   }
+  const { gridRef, dragRef: draggingRef, onTilePointerDown } = useTileDrag(
+    items.map((i) => i.ref),
+    readOnly ? undefined : reorder,
+    { handle: ".lr-handle" },
+  );
 
   function remove(index: number) {
     const next = items.slice();
@@ -163,94 +109,8 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
     onChange(next);
   }
 
-  function onPointerDown(e: React.PointerEvent, ref: string) {
-    const t = e.target as HTMLElement;
-    // Drag only from the handle. Title/meta clicks edit instead.
-    if (!t.closest(".lr-handle")) return;
-    if (e.button !== 0) return;
-    dragRef.current = { ref, startX: e.clientX, startY: e.clientY, started: false };
-  }
-
-  useEffect(() => {
-    function captureSnapshot() {
-      const list = listRef.current;
-      if (!list) return;
-      const m = new Map<string, DOMRect>();
-      list.querySelectorAll<HTMLElement>("[data-flip-key]").forEach((row) => {
-        m.set(row.dataset.flipKey!, row.getBoundingClientRect());
-      });
-      snapshotRef.current = m;
-    }
-
-    function findInsertPoint(_x: number, y: number): InsertPoint | null {
-      const snap = snapshotRef.current;
-      const draggedR = draggedRefRef.current;
-      if (!snap || !draggedR) return null;
-      let bestRef: string | null = null;
-      let bestRect: DOMRect | null = null;
-      let bestDist = Infinity;
-      snap.forEach((rect, ref) => {
-        if (ref === draggedR) return;
-        const cy = rect.top + rect.height / 2;
-        const d = Math.abs(y - cy);
-        if (d < bestDist) { bestDist = d; bestRef = ref; bestRect = rect; }
-      });
-      if (bestRef === null || !bestRect) return null;
-      const r = bestRect as DOMRect;
-      const midY = r.top + r.height / 2;
-      if (y < midY) return { beforeRef: bestRef };
-      const list = itemsRef.current;
-      const bi = list.findIndex((it) => it.ref === bestRef);
-      if (bi < 0) return { beforeRef: null };
-      for (let i = bi + 1; i < list.length; i++) {
-        if (list[i].ref !== draggedR) return { beforeRef: list[i].ref };
-      }
-      return { beforeRef: null };
-    }
-
-    function samePoint(a: InsertPoint | null, b: InsertPoint | null) {
-      if (a === b) return true;
-      if (!a || !b) return false;
-      return a.beforeRef === b.beforeRef;
-    }
-
-    function onMove(e: PointerEvent) {
-      const d = dragRef.current;
-      if (!d) return;
-      if (!d.started) {
-        const moved = Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY);
-        if (moved < DRAG_THRESHOLD_PX) return;
-        d.started = true;
-        captureSnapshot();
-        setDraggedRef(d.ref);
-      }
-      const next = findInsertPoint(e.clientX, e.clientY);
-      if (!samePoint(next, insertPointRef.current)) setInsertPoint(next);
-    }
-    function commit() {
-      const d = dragRef.current;
-      dragRef.current = null;
-      if (d?.started) {
-        const ip = insertPointRef.current;
-        if (ip) commitReorder(d.ref, ip);
-      }
-      snapshotRef.current = null;
-      setDraggedRef(null);
-      setInsertPoint(null);
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", commit);
-    window.addEventListener("pointercancel", commit);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", commit);
-      window.removeEventListener("pointercancel", commit);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   if (items.length === 0 && !adding) {
-    if (readOnlyMembership) {
+    if (hideControls) {
       return <div className="list-lines"><div className="list-line list-line-empty">No items match.</div></div>;
     }
     return (
@@ -261,13 +121,12 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
   }
 
   return (
-    <div ref={listRef} className="list-lines">
-      {previewItems.map((item) => {
+    <div ref={gridRef} className="list-lines">
+      {items.map((item, originalIdx) => {
         const note = resolveNoteRef(item.ref, vaultNotes);
-        const originalIdx = items.findIndex((i) => i.ref === item.ref);
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
-        const dragging = item.ref === draggedRef;
+        const dragging = item.ref === draggingRef;
         // Click semantics: an NF target accumulates into the active
         // filter set (so multi-folder views build up by drilling);
         // any other resolved note replaces with a single-ref filter.
@@ -303,7 +162,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
                     items={subItems}
                     vaultNotes={vaultNotes}
                     onChange={() => { /* sub-list edits are read-only here */ }}
-                    readOnlyMembership
+                    readOnly
                     onNavigate={onNavigate}
                     onAddFilter={onAddFilter}
                   />
@@ -368,17 +227,18 @@ export function ListLines({ items, vaultNotes, onChange, readOnlyMembership, exp
             displayTitle={displayTitleFor(item, note)}
             metaSuggestion={pickMeta(item, note)}
             dragging={dragging}
-            readOnly={!!readOnlyMembership}
+            draggable={!readOnly}
+            readOnly={hideControls}
             expansion={expansion}
             onNavigate={titleHandler}
-            onPointerDown={onPointerDown}
+            onTilePointerDown={onTilePointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
             onRefChange={(r) => updateRef(originalIdx, r)}
           />
         );
       })}
-      {!readOnlyMembership && (
+      {!hideControls && (
         <AddRow
           startOpen={adding}
           onAdd={(name) => { add(name); setAdding(false); }}
@@ -399,6 +259,7 @@ interface LineRowProps {
   displayTitle: string;
   metaSuggestion: string;
   dragging: boolean;
+  draggable: boolean;
   readOnly: boolean;
   /** Pre-rendered sub-list to show below the row (cards grid or
    *  bullet list). Caller decides what to render based on the
@@ -406,15 +267,15 @@ interface LineRowProps {
   expansion?: React.ReactNode;
   /** When provided, title click navigates instead of entering rename. */
   onNavigate?: () => void;
-  onPointerDown: (e: React.PointerEvent, ref: string) => void;
+  onTilePointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
   onRefChange: (ref: string) => void;
 }
 
 function LineRow({
-  item, color, Icon, displayTitle, metaSuggestion, dragging, readOnly, expansion, onNavigate,
-  onPointerDown, onDelete, onMetaChange, onRefChange,
+  item, color, Icon, displayTitle, metaSuggestion, dragging, draggable, readOnly, expansion, onNavigate,
+  onTilePointerDown, onDelete, onMetaChange, onRefChange,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState("");
@@ -450,22 +311,21 @@ function LineRow({
   }
 
   // When an expansion is present, wrap header row + expansion in a
-  // section so FLIP tracks the whole section as one unit and the
-  // expansion animates with its parent.
+  // section so the whole unit is the drag cell and the expansion
+  // travels with its parent.
   const Wrapper = expansion ? "section" : "div";
   return (
     <Wrapper
-      className={(expansion ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "")}
-      data-flip-key={item.ref}
-      onPointerDown={expansion ? undefined : (e) => onPointerDown(e, item.ref)}
+      className={(expansion ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "") + (draggable ? " draggable" : "")}
+      data-tile-ref={item.ref}
+      onPointerDown={draggable ? (e) => onTilePointerDown(e, item.ref) : undefined}
     >
-    <div
-      className={"list-line" + (dragging && !expansion ? " is-dragging" : "")}
-      onPointerDown={expansion ? (e) => onPointerDown(e, item.ref) : undefined}
-    >
-      <span className="lr-handle" title="Drag to reorder">
-        <GripVertical size={14} strokeWidth={1.6} />
-      </span>
+    <div className={"list-line" + (dragging && !expansion ? " is-dragging" : "")}>
+      {draggable && (
+        <span className="lr-handle" title="Drag to reorder">
+          <GripVertical size={14} strokeWidth={1.6} />
+        </span>
+      )}
       <Icon size={14} strokeWidth={1.7} style={{ color, flexShrink: 0 }} />
       {editingTitle ? (
         <input

@@ -11,6 +11,9 @@ interface Props {
   items: ListItem[];
   vaultNotes: ListNoteRef[];
   onChange: (next: ListItem[]) => void;
+  /** Fully static — no drag, no add, no delete, no inline edit.
+   *  Used by the published viewer. */
+  readOnly?: boolean;
   /** When true, the render hides add-row and per-item delete /
    *  inline edit affordances. Drag-reorder stays available. Used
    *  for base-driven lists where membership is controlled by the
@@ -28,13 +31,14 @@ interface Props {
   onAddFilter?: (ref: string) => void;
 }
 
-export function ListView({ render, items, vaultNotes, onChange, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
+export function ListView({ render, items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
   if (render === "lines") {
     return (
       <ListLines
         items={items}
         vaultNotes={vaultNotes}
         onChange={onChange}
+        readOnly={readOnly}
         readOnlyMembership={readOnlyMembership}
         expandSublists={expandSublists}
         onNavigate={onNavigate}
@@ -47,6 +51,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnlyMembersh
       items={items}
       vaultNotes={vaultNotes}
       onChange={onChange}
+      readOnly={readOnly}
       readOnlyMembership={readOnlyMembership}
       onNavigate={onNavigate}
       onAddFilter={onAddFilter}
