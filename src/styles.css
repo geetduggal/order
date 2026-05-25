@@ -114,10 +114,10 @@
    shared .milkdown / .box.no-image blocks below map Crepe + cover tiles
    onto whatever tokens the active theme defines. */
 
-/* WordPerfect 5.1 / Doogie Howser: solid DOS blue, white monospace. */
+/* WordPerfect 5.1 / Doogie Howser: solid DOS blue, all-monospace (Menlo). */
 :root[data-theme="wordperfect"] {
   color-scheme: dark;
-  --sans: "Courier New", "Courier", ui-monospace, monospace;
+  --sans: "Menlo", "Monaco", "Consolas", ui-monospace, monospace;
   --bg:        #0000aa;
   --bg-elev:   #0000cc;
   --ink:       #ffffff;
@@ -133,40 +133,41 @@
   --coral-soft: #3a3a8a;
 }
 
-/* America: clean white field, Old Glory blue + red. */
+/* America: white field, unmistakable Old Glory blue + red. Saturated
+   accents, blue-washed surfaces, red today/selection shading. */
 :root[data-theme="america"] {
   color-scheme: light;
   --bg:        #ffffff;
-  --bg-elev:   #eef2fb;
-  --ink:       #0a1733;
-  --ink-soft:  #050d22;
-  --ink-faint: #5a6b8c;
-  --ink-ghost: #9fb0cf;
-  --rule:      #ccd6ec;
-  --rule-soft: #e3eafc;
+  --bg-elev:   #e4ecff;
+  --ink:       #08163a;
+  --ink-soft:  #030c26;
+  --ink-faint: #3a55a0;
+  --ink-ghost: #8aa0d8;
+  --rule:      #7fa0e6;
+  --rule-soft: #cfdcfb;
 
-  --royal:      #1f3a93; /* flag blue */
-  --royal-soft: #dbe3f7;
-  --coral:      #bf0a30; /* flag red */
-  --coral-soft: #f7dbdf;
+  --royal:      #0a2fd6; /* vivid flag blue */
+  --royal-soft: #b9caf9;
+  --coral:      #e00026; /* vivid flag red */
+  --coral-soft: #ffccd2;
 }
 
-/* Christmas: deep pine field, festive red + green. */
+/* Christmas: rich green field, vivid candy-cane red + bright green. */
 :root[data-theme="christmas"] {
   color-scheme: dark;
-  --bg:        #0d2818;
-  --bg-elev:   #143524;
-  --ink:       #f3f4ef;
+  --bg:        #0a4d27;
+  --bg-elev:   #0c5e2f;
+  --ink:       #fdfff8;
   --ink-soft:  #ffffff;
-  --ink-faint: #9bbfa6;
-  --ink-ghost: #5d7d68;
-  --rule:      #2a5a3c;
-  --rule-soft: #1c3f2a;
+  --ink-faint: #b4e6c3;
+  --ink-ghost: #5fa276;
+  --rule:      #2f8f50;
+  --rule-soft: #1b6c39;
 
-  --royal:      #e63946; /* christmas red */
-  --royal-soft: #3a1e22;
-  --coral:      #34c759; /* bright green */
-  --coral-soft: #14331f;
+  --royal:      #ff2436; /* vivid christmas red */
+  --royal-soft: #6e0f17;
+  --coral:      #20d65e; /* vivid bright green */
+  --coral-soft: #0a4423;
 }
 
 /* Map Crepe editor colors onto the active theme's tokens. */
@@ -190,6 +191,13 @@
   --crepe-color-error: #ff6b6b;
   --crepe-color-hover: var(--bg-elev);
   --crepe-color-selected: var(--royal-soft);
+}
+
+/* WordPerfect goes all-in on monospace — the editor body too, not just
+   the app chrome. Force every editor node onto the mono stack. */
+:root[data-theme="wordperfect"] .milkdown,
+:root[data-theme="wordperfect"] .milkdown * {
+  font-family: var(--sans) !important;
 }
 
 /* Cover tiles: tint from the theme's accents into its surfaces. */
