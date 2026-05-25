@@ -4,8 +4,8 @@
 
 A specialized, local-first note app. One screen for thinking, browsing, and
 publishing. Markdown files with YAML frontmatter as the single source of truth,
-an Obsidian-compatible vault, built on Tauri v2 — the same codebase ships desktop
-today and iOS next.
+an Obsidian-compatible vault, built on Tauri v2 — one codebase ships both
+desktop and iOS.
 
 ![Order — a Notable Folder rendered as a newspaper section: the Main Document as a wide centerpiece with recent notes orbiting around it](img/order-home.png)
 
@@ -50,10 +50,13 @@ today and iOS next.
    reader sees — there's no separate "article view." This is a small act of
    honesty: no draft mode hiding behind a rendered mode, no translation layer
    between authoring and publishing.
-6. **Subtle UI.** Two accents only — royal blue `#4169E1` and coral `#FF7F50`.
-   Sans-serif for chrome, serif for prose. Whitespace and hairlines do the work of
-   borders. The aim is *sehaj* — an intuitive equipoise where the layout asks
-   nothing of you; you don't navigate it, you inhabit it.
+6. **Subtle UI.** The default palette is just two accents — royal blue `#4169E1`
+   and coral `#FF7F50` — with sans-serif for chrome, serif for prose, and
+   whitespace and hairlines doing the work of borders. The aim is *sehaj* — an
+   intuitive equipoise where the layout asks nothing of you; you don't navigate
+   it, you inhabit it. A theme switcher layers on top (light, dark, OLED black,
+   and a few deliberately loud ones) without disturbing that resting calm, and
+   note text scales with `Cmd ±`.
 7. **Speed matters.** Startup, scan, filter, edit, save — all optimized for flow.
 
 ---
@@ -66,9 +69,11 @@ today and iOS next.
   Holds a Main Document (long-form prose, a curated list, or an auto-grid) plus
   any number of regular notes that link to it via `folder: "[[Folder Name]]"`.
 
-Areas and Categories are derived from the Notable Folders themselves (no separate
-storage). Names you've explicitly added are persisted in `localStorage` under
-`order.taxonomy` so empty Areas / Categories survive a vault scan.
+Areas and Categories live on disk as the chain files themselves — `Areas.md`
+lists the Areas, each Area file lists its Categories, each Category file lists its
+Notable Folders — so the hierarchy (including empty Areas / Categories you've
+added) survives any vault scan with no separate database. A legacy `localStorage`
+taxonomy (`order.taxonomy`) is still read once, during the first-launch migration.
 
 Why "Notable" and not "Project"? Most PKM systems organize around projects
 (PARA's *Projects, Areas, Resources, Archives*), but projects come and go while
@@ -111,8 +116,10 @@ only the single best thing from each.
 
 ### Stack
 
-- **Tauri v2** — Rust shell, system webview. Native window, native file IO, ships
-  desktop today (`pnpm tauri:dev`) and iOS from the same codebase.
+- **Tauri v2** — Rust shell, system webview. Native window, native file IO; ships
+  both desktop and iOS from one codebase (`pnpm tauri:dev` for the desktop dev
+  window). On iOS a custom `vaultasset://` URI-scheme handler and a
+  security-scoped folder bookmark stand in for direct filesystem access.
 - **React 19 + TypeScript** — single-page app rendered into the webview.
 - **Vite** — dev server with HMR on `localhost:1420`.
 - **[Milkdown Crepe](https://milkdown.dev/)** — ProseMirror-based WYSIWYG markdown
@@ -139,7 +146,7 @@ its Area, all rooted at the vault.
 ```
 ~/Documents/Dropbox/Home/               (vault root)
 ├── Areas.md                            list: cards, role: areas
-├── Attachments/                        pasted / dropped images
+├── Attachments/                        legacy global image dir (still read)
 ├── Creative/
 │   ├── Creative.md                     list: cards (the Area file)
 │   ├── Creative Spaces/                Category dir
@@ -159,12 +166,16 @@ its Area, all rooted at the vault.
 
 Every level of the chain is a directory on disk — Areas, Categories, and
 Notable Folders each get their own folder, with a Main Document inside
-named after the folder. Image uploads write to `Attachments/`. The
-markdown on disk stores **relative** paths (`Attachments/foo.png`) for
-portability; at edit time those paths are inflated to absolute `asset://`
-URLs so the webview can render them, and deflated back on save. PDF and
-other non-image attachment links go through the OS opener (Tauri
-`open_path`) so they launch in the user's default app.
+named after the folder. Pasted / dropped images write into the **note's own
+directory** and are stored as Obsidian-style `![[image.png]]` embeds (matching
+Obsidian's `attachmentFolderPath: "./"`), so an image travels with its note when
+the note moves. At edit time the embeds are inflated to `vaultasset://` URLs —
+served by a custom URI-scheme handler on the Rust side (`lib.rs`) that resolves
+them against the vault root, including the iOS security-scoped bookmark — and
+deflated back to `![[…]]` on save; a Crepe resize is preserved as an Obsidian
+pixel width. Legacy global `![](Attachments/…)` images at the vault root keep
+working. PDF and other non-image attachment links go through the OS opener
+(Tauri `open_path`) so they launch in the user's default app.
 
 ### State
 
@@ -221,11 +232,17 @@ without migration.
 
 ![List folder — Books rendered as a basecard grid below the editor](img/list-folder-grid.png)
 
-Both renders share the same operations: drag-reorder with insertion-point
-preview + FLIP-animated nudge, click-to-edit title and meta inline, hover-×
-to delete, "+ New" tile/row to append. Pointer events end-to-end — Tauri's
-webview intercepts HTML5 drag-drop at the OS layer so `drop` never reaches
-in-page handlers.
+Both renders share the same operations: drag-reorder, click-to-edit title and
+meta inline, hover-× to delete, "+ New" tile/row to append. Reorder runs through
+one shared pointer-drag hook (`use-tile-drag.ts`) — the grabbed item lifts and a
+drop-indicator bar shows exactly where it'll land (vertical between grid cells,
+horizontal between rows); lines drag from a grip handle so the rest of the row
+stays scrollable on touch, cards drag from the body. The same hook powers
+reordering of the sidebar Areas / Categories / Notable Folders and the filter
+pills. Pointer events end-to-end — Tauri's webview intercepts HTML5 drag-drop at
+the OS layer so `drop` never reaches in-page handlers — with `setPointerCapture`
+(deferred until a drag actually begins, so a tap stays a click) keeping touch
+drags alive on iOS.
 
 #### Areas, Categories, Notable Folders — also list folders
 
@@ -377,25 +394,54 @@ temporal Stream. `NotebookSection` is shared by the app and the web viewer so th
 
 ### Chrome
 
-A thin left rail of icon buttons sits in the top-left:
+A thin left rail of round icon buttons sits in the top-left:
 
 - `+` — new note (auto-folder if the filter has exactly one chip; opens a
   picker for two or more; plain capture when the filter is empty).
-- `home` — reset the filter to the home Notable Folder.
-- `⇊ / ⇈` — jump past pinned NF Main Documents to the first regular note;
-  flips to `⇈` after one press and scrolls back to top.
 - `↑` — open the Publish panel.
+- **notes-only toggle** — switch the Stream between *notes + Notable Folders*
+  and *just notes* (hides Notable-Folder cards). Persists across sessions.
+- `+ / −` — grow / shrink note text (font-size scaling; see Keyboard).
+- **theme** — cycle the theme; the icon reflects the current one (see Theming).
+- **settings** — vault-folder picker and app settings.
 
-The right edge holds a `›/‹` sidebar toggle only. Each card carries its own
-top-right controls (fullscreen ⤢, filter-remove ×, trash 🗑) and a subtle
-footer status bar (public pill, breadcrumb / folder chip, filename) that
-fades up on hover.
+Just below the rail is the **filter-pill stack**: a search icon (same as
+`Cmd K`), the active filter chips (drag to reorder, × to remove, click to focus
+a folder), and a clear-all icon beneath them whenever a filter is active.
+
+The right edge holds a `›/‹` sidebar toggle (the sidebar starts closed). The
+sidebar *is* the taxonomy: drill Areas → Categories → Notable Folders, and
+**add / remove / reorder** at each level — drag a tile, or use its per-tile
+arrows. In the published viewer the same sidebar is read-only.
+
+Each card carries its own top-right controls (fullscreen ⤢, copy-permalink 🔗,
+filter-remove ×, trash 🗑) and a subtle footer status bar (public pill,
+breadcrumb / folder chip, filename) that fades up on hover.
+
+### Theming
+
+A single rail button cycles the theme; the choice persists (applied before first
+paint to avoid a flash) and carries into the published viewer:
+
+- **Light / Dark / OLED black** — the everyday set; black takes every surface to
+  true `#000` for OLED screens.
+- **WordPerfect 5.1** — DOS-blue field, all-Menlo monospace (editor included).
+- **America** — white field, pure blue + red accents, red card borders.
+- **Christmas** — pine-green field, candy-cane red + bright green.
+- **LCARS** — *Star Trek* console: pitch-black panels, amber text, orange + lilac
+  accents, all-caps condensed sans.
+
+Each theme is just a set of CSS custom properties (`--bg`, `--ink`, `--royal`,
+`--coral`, …) on `:root[data-theme="…"]`; surfaces follow automatically, so
+adding one is a dozen lines.
 
 ### Keyboard
 
-- `Cmd +/-/0` — webview zoom (uses Tauri's native setZoom, not CSS, so caret
-  hit-testing stays correct).
-- `Cmd O` — open the right sidebar and focus the folder search.
+- `Cmd +/−/0` — grow / shrink / reset note text. Scales via a `--text-scale`
+  font-size variable — deliberately *not* CSS `zoom` or native webview zoom,
+  which throw ProseMirror's click-to-caret hit-testing off (and the native path
+  isn't available on iOS). The size persists.
+- `Cmd O` — open the right sidebar.
 - `Cmd K` — open the centered command palette to toggle folder filters.
 - `Cmd ;` — toggle the right sidebar.
 - `Cmd P` — open the Publish panel.
@@ -419,11 +465,17 @@ the target, and Order:
 
 1. Walks the vault, collects every note flagged `public: true`, and emits a
    `data.json` snapshot (notes + frontmatter + bodies + chain taxonomy).
-2. Hands `data.json` + a pre-built React bundle (`dist-viewer/`) to the
-   Rust side (`publish_site`), which clones — or pulls — the target GitHub
-   repo, wipes the chosen path, copies the bundle + the vault's
-   `Attachments/`, and `git commit && git push origin <branch>`. Auth uses
-   the local git credential helper or SSH key; no new login flow.
+2. Prerenders a static permalink page for every public note
+   (`/<slug>/index.html`) — wikilinks rewritten to permalink anchors, images to
+   root-absolute URLs — so a direct link (or a `curl`) returns just that note's
+   content rather than an empty JS shell, then boots the SPA seeded to that note.
+3. Hands `data.json`, the prerendered pages, and a pre-built React bundle
+   (`dist-viewer/`) to the Rust side (`publish_site`), which clones — or pulls —
+   the target GitHub repo, wipes the chosen path, copies the bundle, the legacy
+   `Attachments/` dir, and each public note's same-folder images (placed next to
+   that note's page so direct image URLs resolve), then
+   `git commit && git push origin <branch>`. Auth uses the local git credential
+   helper or SSH key; no new login flow.
 
 ### The web viewer
 
@@ -447,9 +499,15 @@ the WYSIWYG promise kept all the way to the published artifact:
   StreamView. One source of truth for the masonry.
 - All hash routes (`#/note/X`, `#/folder/X`, `#/stream?folders=…`)
   resolve to a single stream view with the appropriate filter set —
-  the published site has exactly one screen, same as the app.
+  the published site has exactly one screen, same as the app. Each public
+  note additionally has a prerendered permalink page at `/<slug>/` that
+  serves static HTML of just that note (real content for `curl` and link
+  unfurlers) and then hydrates into the SPA focused on it.
 - `Cmd+K` palette, Week / Month / Year calendar views, and the right
   sidebar all work; calendar move/create handlers are wired to no-ops.
+- The theme switcher and the notes-only filter work in the viewer too;
+  everything that would mutate the vault — editing, add / remove, and
+  drag-reorder — is disabled, so the published page is fully read-only.
 
 Build the viewer bundle once with `pnpm build:viewer` before the first
 publish; subsequent publishes reuse it.
@@ -477,14 +535,15 @@ pnpm tauri:ios:dev    # opens iOS Simulator
 pnpm tauri:ios:build  # device build
 ```
 
-First launch reads `~/Documents/Dropbox/Home/` (the vault root) and walks
-**every** `.md` file recursively — depth is arbitrary, since the chain
-encodes the hierarchy. Areas.md and the per-level directories (with their
-Main Docs) are written on first run if absent; otherwise a one-shot
-migration generates the Areas / Categories / Notable Folder files from
-any notes with `category:` set and the legacy `order.taxonomy`
-localStorage key. Any other `.md` files you drop into a Notable Folder
-show up on the next scan.
+On desktop, first launch reads `~/Documents/Dropbox/Home/` (the vault root); on
+iOS — where there's no `$HOME` — it prompts you to pick the vault folder once and
+keeps a security-scoped bookmark to it. From there Order walks **every** `.md`
+file recursively — depth is arbitrary, since the chain encodes the hierarchy.
+Areas.md and the per-level directories (with their Main Docs) are written on
+first run if absent; otherwise a one-shot migration generates the Areas /
+Categories / Notable Folder files from any notes with `category:` set and the
+legacy `order.taxonomy` localStorage key. Any other `.md` files you drop into a
+Notable Folder show up on the next scan.
 
 ---
 
