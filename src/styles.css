@@ -222,15 +222,20 @@
   background: linear-gradient(135deg, #0000ff 0%, #ffffff 50%, #ff0000 100%);
 }
 
-/* America extras: red links and thick red card borders. */
-:root[data-theme="america"] .milkdown-host .ProseMirror a,
+/* America extras: markdown links stay blue (--royal); wiki links and the
+   internal note-ref titles go red. Plus thick, fully red card borders —
+   !important to beat the per-card inline folder-color border. */
+:root[data-theme="america"] .milkdown-host .ProseMirror .wikilink,
 :root[data-theme="america"] .lr-title.is-link,
 :root[data-theme="america"] .basecard-title.is-link,
 :root[data-theme="america"] .lr-sublist-title.is-link {
   color: #ff0000;
 }
+:root[data-theme="america"] .milkdown-host .ProseMirror .wikilink:hover {
+  background: var(--coral-soft);
+}
 :root[data-theme="america"] .order-card:not(.is-fullscreen) {
-  border: 2px solid #ff0000;
+  border: 2px solid #ff0000 !important;
 }
 
 /* Menlo runs large — pull the WordPerfect editor body in a notch so the
