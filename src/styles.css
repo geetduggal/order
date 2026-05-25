@@ -133,23 +133,22 @@
   --coral-soft: #3a3a8a;
 }
 
-/* America: white field with prominent flag blue + red atop. Navy text,
-   vivid blue primary, vivid red secondary, lightly tinted surfaces. */
+/* America: loud. Pure #0000ff blue + #ff0000 red juxtaposed on white. */
 :root[data-theme="america"] {
   color-scheme: light;
   --bg:        #ffffff;  /* the white */
-  --bg-elev:   #e9f0ff;  /* light blue surface */
-  --ink:       #08193f;  /* navy text */
-  --ink-soft:  #02102e;
-  --ink-faint: #2c4a96;  /* blue-leaning secondary text */
-  --ink-ghost: #93a8da;
-  --rule:      #6f93e6;  /* prominent blue rules */
-  --rule-soft: #d4e0fb;
+  --bg-elev:   #dbe4ff;  /* bright blue surface */
+  --ink:       #0000a8;  /* blue text */
+  --ink-soft:  #000080;
+  --ink-faint: #d00000;  /* red secondary text — obnoxious on purpose */
+  --ink-ghost: #6f86ff;
+  --rule:      #0000ff;  /* pure blue rules */
+  --rule-soft: #aebcff;
 
-  --royal:      #0a2fd6; /* vivid flag blue */
-  --royal-soft: #cdddff; /* light blue chip/cover */
-  --coral:      #e00026; /* vivid flag red */
-  --coral-soft: #ffd2d8; /* light red chip/cover/today */
+  --royal:      #0000ff; /* actual blue */
+  --royal-soft: #b3c0ff; /* light blue chip/cover */
+  --coral:      #ff0000; /* actual red */
+  --coral-soft: #ffbdbd; /* light red chip/cover/today */
 }
 
 /* Christmas: rich green field, vivid candy-cane red + bright green. */
@@ -210,6 +209,15 @@
 :root[data-theme="wordperfect"] .box.no-image.coral,
 :root[data-theme="christmas"] .box.no-image.coral {
   background: linear-gradient(155deg, var(--coral-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
+}
+
+/* America cover tiles: literal red/white/blue diagonals. The white middle
+   band sits under the centered label so it stays readable. */
+:root[data-theme="america"] .box.no-image {
+  background: linear-gradient(135deg, #ff0000 0%, #ffffff 50%, #0000ff 100%);
+}
+:root[data-theme="america"] .box.no-image.coral {
+  background: linear-gradient(135deg, #0000ff 0%, #ffffff 50%, #ff0000 100%);
 }
 
 /* Menlo runs large — pull the WordPerfect editor body in a notch so the
