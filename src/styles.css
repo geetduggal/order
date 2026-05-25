@@ -261,10 +261,19 @@
 }
 
 /* LCARS: all-caps everywhere (the look), with code + editable inputs left
-   alone. Display-only — the stored text keeps its real case. The reading
-   font is bumped a touch since caps + condensed read small. */
-:root[data-theme="lcars"] body { text-transform: uppercase; }
+   alone. Display-only — the stored text keeps its real case. Buttons are
+   listed explicitly because they don't inherit text-transform (so list /
+   card titles, which are <button>s, would otherwise stay mixed-case). */
+:root[data-theme="lcars"] body,
+:root[data-theme="lcars"] button { text-transform: uppercase; }
 :root[data-theme="lcars"] :is(input, textarea, code, pre) { text-transform: none; }
+/* Crepe's reset pins the editor heading font + case directly on the
+   element, beating inheritance — force them onto the theme font + caps. */
+:root[data-theme="lcars"] .milkdown-host .ProseMirror :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--serif) !important;
+  text-transform: uppercase !important;
+}
+/* The reading font is bumped a touch since caps + condensed read small. */
 :root[data-theme="lcars"] .milkdown-host .ProseMirror {
   font-size: calc(17.5px * var(--text-scale, 1));
 }
