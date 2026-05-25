@@ -95,26 +95,33 @@ export function useTileDrag(
       indicator.current = null;
     }
 
-    // Paint the drop bar in the gap at `at`. A grid gets a vertical bar in
-    // the gap; a single column gets a horizontal bar between rows.
-    function paintIndicator(at: number, cells: Cell[], multiCol: boolean) {
+    // Paint the drop bar at insertion index `at`. `before`/`after` are the
+    // tiles flanking the slot in reading order. A grid gets a vertical bar
+    // in the column gutter; a single column gets a horizontal bar between
+    // rows. At a row boundary the same index can mean "end of this row" or
+    // "start of the next" — disambiguate by the cursor's row so the bar
+    // lands next to where the finger/cursor actually is.
+    function paintIndicator(px: number, py: number, at: number, cells: Cell[], multiCol: boolean) {
       if (cells.length === 0) { removeIndicator(); return; }
       const before = cells[at - 1]?.r;
       const after = cells[at]?.r;
       const el = ensureIndicator();
-      const sameRow = before && after && Math.abs(before.top - after.top) < 4;
-      if (multiCol && (sameRow || (before && after))) {
-        // Vertical bar in the gap between two tiles on the same row.
-        const x = sameRow ? (before!.right + after!.left) / 2 : after ? after.left - 4 : before!.right + 2;
-        const top = (after ?? before)!.top;
-        const h = (after ?? before)!.height;
+      if (multiCol) {
+        const sameRow = before && after && Math.abs(before.top - after.top) < 4;
+        let x: number, top: number, h: number;
+        if (sameRow) {
+          // Centered in the gutter between two tiles on the same row.
+          x = (before!.right + after!.left) / 2; top = before!.top; h = before!.height;
+        } else {
+          // Pick the flanking tile in the cursor's row, draw on its near side.
+          const dB = before ? Math.abs(py - (before.top + before.height / 2)) : Infinity;
+          const dA = after ? Math.abs(py - (after.top + after.height / 2)) : Infinity;
+          if (after && dA <= dB) { x = after.left - 3; top = after.top; h = after.height; }
+          else if (before) { x = before.right + 3; top = before.top; h = before.height; }
+          else if (after) { x = after.left - 3; top = after.top; h = after.height; }
+          else { removeIndicator(); return; }
+        }
         Object.assign(el.style, { left: `${x - 1.5}px`, top: `${top}px`, width: "3px", height: `${h}px` });
-      } else if (multiCol && after) {
-        const x = after.left - 4;
-        Object.assign(el.style, { left: `${x - 1.5}px`, top: `${after.top}px`, width: "3px", height: `${after.height}px` });
-      } else if (multiCol && before) {
-        const x = before.right + 2;
-        Object.assign(el.style, { left: `${x - 1.5}px`, top: `${before.top}px`, width: "3px", height: `${before.height}px` });
       } else if (after) {
         // Horizontal bar above the next stacked row.
         const y = before ? (before.bottom + after.top) / 2 : after.top - 2;
@@ -150,7 +157,7 @@ export function useTileDrag(
       // Show where it will land.
       const cells = cellsNow();
       const multiCol = isMultiCol(cells);
-      paintIndicator(insertIndex(e.clientX, e.clientY, cells, multiCol), cells, multiCol);
+      paintIndicator(e.clientX, e.clientY, insertIndex(e.clientX, e.clientY, cells, multiCol), cells, multiCol);
     }
     function resetEl(el?: HTMLElement) {
       if (!el) return;
