@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronsDown, ChevronsUp, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
+import { Files, FileText, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
@@ -127,10 +127,11 @@ export function ViewerApp(
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
   // the scroll fires. Seeded from a note-page deep-link.
   const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
-  // Ref of the card the "jump to first note" toggle points at — its
-  // border stays coral while jumped. Any filter change exits the state.
-  const [coralRef, setCoralRef] = useState<string | null>(null);
-  useEffect(() => { setCoralRef(null); }, [filters]);
+  // "Notes only" toggle: hide Notable-Folder cards, show ordinary notes
+  // only. Persisted across visits (shared key with the app).
+  const [notesOnly, setNotesOnly] = useState<boolean>(() => {
+    try { return localStorage.getItem("order.notesOnly") === "1"; } catch { return false; }
+  });
 
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
@@ -249,6 +250,8 @@ export function ViewerApp(
       if (hidden.has(n.ref.toLowerCase())) return false;
       if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
+      // "Notes only": drop Notable-Folder cards (those carry a category).
+      if (notesOnly && !!n.category) return false;
       return true;
     });
     // Single-folder mode pins that folder's Main Doc to the top (its
@@ -267,22 +270,7 @@ export function ViewerApp(
       return dateKey(b).localeCompare(dateKey(a));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.notes, hidden, filters, focusedFolder]);
-
-  // "Jump to first note" toggle: scroll between the folder cover (its
-  // Main Doc) and its first ordinary entry, marking that entry coral.
-  const firstEntry = visible.find((n) => !n.category) ?? null;
-  const folderTop = visible.find((n) => !!n.category) ?? null;
-  function toggleFirstEntry() {
-    if (coralRef) {
-      if (folderTop) setScrollTarget(folderTop.ref);
-      setCoralRef(null);
-      return;
-    }
-    if (!firstEntry) return;
-    setScrollTarget(firstEntry.ref);
-    setCoralRef(firstEntry.ref);
-  }
+  }, [data.notes, hidden, filters, focusedFolder, notesOnly]);
 
   // Calendar projection from the same filtered set.
   const calendarNotes: NoteMeta[] = useMemo(
@@ -321,18 +309,6 @@ export function ViewerApp(
     return () => clearTimeout(timer);
   }, [view, scrollTarget, filters]);
 
-  // Persistent coral border on the card the "jump to first note" toggle
-  // points at (works in both the newspaper and flat-grid renders).
-  useEffect(() => {
-    document.querySelectorAll(".card-grid-cell.is-coral-pinned")
-      .forEach((el) => el.classList.remove("is-coral-pinned"));
-    if (!coralRef) return;
-    const target = coralRef.toLowerCase();
-    Array.from(document.querySelectorAll<HTMLElement>(".card-grid-cell"))
-      .find((c) => (c.dataset.path ?? "").toLowerCase() === target)
-      ?.classList.add("is-coral-pinned");
-  }, [coralRef, view, filters]);
-
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -351,16 +327,19 @@ export function ViewerApp(
     <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
       <button
         type="button"
-        className={"first-note-fab" + (coralRef ? " is-on" : "")}
-        onClick={toggleFirstEntry}
-        disabled={!coralRef && !firstEntry}
-        title={coralRef ? "Back to folder" : "Jump to first note"}
-        aria-label={coralRef ? "Back to folder" : "Jump to first note"}
-        aria-pressed={!!coralRef}
+        className={"notes-only-fab" + (notesOnly ? " is-on" : "")}
+        onClick={() => setNotesOnly((v) => {
+          const next = !v;
+          try { localStorage.setItem("order.notesOnly", next ? "1" : "0"); } catch { /* non-fatal */ }
+          return next;
+        })}
+        title={notesOnly ? "Notes only — click to include notable folders" : "Notes + notable folders — click for notes only"}
+        aria-label={notesOnly ? "Showing notes only" : "Showing notes and notable folders"}
+        aria-pressed={notesOnly}
       >
-        {coralRef
-          ? <ChevronsUp size={14} strokeWidth={2.1} />
-          : <ChevronsDown size={14} strokeWidth={2.1} />}
+        {notesOnly
+          ? <FileText size={14} strokeWidth={2.1} />
+          : <Files size={14} strokeWidth={2.1} />}
       </button>
 
       <FilterPillStack

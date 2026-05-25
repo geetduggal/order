@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, ChevronsDown, ChevronsUp, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -47,6 +47,16 @@ function readSidebarOpen(): boolean {
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
+}
+
+// "Notes only" filter: when on, the Stream hides Notable-Folder cards and
+// shows ordinary notes only. Persists across sessions.
+const NOTES_ONLY_KEY = "order.notesOnly";
+function readNotesOnly(): boolean {
+  try { return localStorage.getItem(NOTES_ONLY_KEY) === "1"; } catch { return false; }
+}
+function writeNotesOnly(on: boolean): void {
+  try { localStorage.setItem(NOTES_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
 // Filter model (`Filter`, pill stack) is shared with the web viewer
@@ -255,12 +265,9 @@ export function CardGrid() {
       cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
     );
   }, [filters]);
-  // Path of the card the "jump to first note" toggle points at. Non-null
-  // === we've scrolled to the folder's first ordinary note (its border is
-  // coral); the next click scrolls back to the folder cover. Any manual
-  // filter change exits the jumped state.
-  const [coralPath, setCoralPath] = useState<string | null>(null);
-  useEffect(() => { setCoralPath(null); }, [filters]);
+  // "Notes only" toggle: hide Notable-Folder cards from the Stream and
+  // show ordinary notes only. Persisted; survives filter changes.
+  const [notesOnly, setNotesOnly] = useState<boolean>(readNotesOnly);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -945,18 +952,6 @@ export function CardGrid() {
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
-  // Persistent coral border on the card the "jump to first note" toggle
-  // points at. Applied document-wide so it works in both the flat grid
-  // and the per-section newspaper render.
-  useEffect(() => {
-    document.querySelectorAll(".card-grid-cell.is-coral-pinned")
-      .forEach((el) => el.classList.remove("is-coral-pinned"));
-    if (!coralPath) return;
-    document
-      .querySelector(`.card-grid-cell[data-path="${CSS.escape(coralPath)}"]`)
-      ?.classList.add("is-coral-pinned");
-  }, [coralPath, view, notes]);
-
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
     const root = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
@@ -1275,9 +1270,11 @@ export function CardGrid() {
     return true;
   };
 
-  const filteredNotes = (includeRefs.length > 0 || excludeRefs.length > 0)
+  const filteredNotes = ((includeRefs.length > 0 || excludeRefs.length > 0)
     ? streamCandidates.filter(filterMatches)
-    : streamCandidates;
+    : streamCandidates)
+    // "Notes only": drop Notable-Folder cards (covers + folder tiles).
+    .filter((n) => !notesOnly || !isNotableFolder(n.frontmatter));
 
   // Single-folder mode = exactly one include filter. In this mode the
   // folder reads like a "page": its Main Document gets the full-width
@@ -1309,22 +1306,6 @@ export function CardGrid() {
     if (am !== bm) return am ? -1 : 1;
     return sortKey(b).localeCompare(sortKey(a));
   });
-
-  // The "jump to first note" toggle scrolls between the folder cover (its
-  // Notable-Folder Main Doc) and its first ordinary entry, marking that
-  // entry with a coral border. Pure scroll — no filter/view change.
-  const firstEntry = sortedNotes.find((n) => !isNotableFolder(n.frontmatter)) ?? null;
-  const folderTop = sortedNotes.find((n) => isNotableFolder(n.frontmatter)) ?? null;
-  const toggleFirstEntry = () => {
-    if (coralPath) {
-      if (folderTop) setScrollTargetPath(folderTop.path);
-      setCoralPath(null);
-      return;
-    }
-    if (!firstEntry) return;
-    setScrollTargetPath(firstEntry.path);
-    setCoralPath(firstEntry.path);
-  };
 
   // Render one note as a <Card>. Shared by the temporal flat grid and
   // the newspaper sections; capHeight is only set in newspaper mode.
@@ -1449,16 +1430,15 @@ export function CardGrid() {
 
       <button
         type="button"
-        className={"first-note-fab" + (coralPath ? " is-on" : "")}
-        onClick={toggleFirstEntry}
-        disabled={!coralPath && !firstEntry}
-        title={coralPath ? "Back to folder" : "Jump to first note"}
-        aria-label={coralPath ? "Back to folder" : "Jump to first note"}
-        aria-pressed={!!coralPath}
+        className={"notes-only-fab" + (notesOnly ? " is-on" : "")}
+        onClick={() => setNotesOnly((v) => { writeNotesOnly(!v); return !v; })}
+        title={notesOnly ? "Notes only — click to include notable folders" : "Notes + notable folders — click for notes only"}
+        aria-label={notesOnly ? "Showing notes only" : "Showing notes and notable folders"}
+        aria-pressed={notesOnly}
       >
-        {coralPath
-          ? <ChevronsUp size={14} strokeWidth={2.1} />
-          : <ChevronsDown size={14} strokeWidth={2.1} />}
+        {notesOnly
+          ? <FileText size={14} strokeWidth={2.1} />
+          : <Files size={14} strokeWidth={2.1} />}
       </button>
 
       <button
