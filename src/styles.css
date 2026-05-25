@@ -171,20 +171,20 @@
   --coral-soft: #0a4423;
 }
 
-/* LCARS (Star Trek): black panels, amber text, orange + lilac accents,
-   condensed sans. */
+/* LCARS (Star Trek): pitch-black panels, amber text, orange + lilac
+   accents, all-caps semi-condensed sans (see the uppercase rule below). */
 :root[data-theme="lcars"] {
   color-scheme: dark;
-  --serif: "Antonio", "Oswald", "Arial Narrow", "Helvetica Neue", sans-serif;
-  --sans:  "Antonio", "Oswald", "Arial Narrow", "Helvetica Neue", sans-serif;
-  --bg:        #000000;
-  --bg-elev:   #16161c;
+  --serif: "Avenir Next Condensed", "Antonio", "Helvetica Neue", Arial, sans-serif;
+  --sans:  "Avenir Next Condensed", "Antonio", "Helvetica Neue", Arial, sans-serif;
+  --bg:        #000000;  /* pitch black */
+  --bg-elev:   #0a0a0c;
   --ink:       #ffcc99;  /* amber */
   --ink-soft:  #ffffff;
   --ink-faint: #cc99cc;  /* lilac */
   --ink-ghost: #8a6a4a;
   --rule:      #ff9900;  /* LCARS orange */
-  --rule-soft: #3a2300;
+  --rule-soft: #2a1c00;
 
   --royal:      #ff9900; /* orange primary */
   --royal-soft: #3a2300;
@@ -258,6 +258,18 @@
 }
 :root[data-theme="wordperfect"] .order-card.is-fullscreen .milkdown-host .ProseMirror {
   font-size: calc(15px * var(--text-scale, 1));
+}
+
+/* LCARS: all-caps everywhere (the look), with code + editable inputs left
+   alone. Display-only — the stored text keeps its real case. The reading
+   font is bumped a touch since caps + condensed read small. */
+:root[data-theme="lcars"] body { text-transform: uppercase; }
+:root[data-theme="lcars"] :is(input, textarea, code, pre) { text-transform: none; }
+:root[data-theme="lcars"] .milkdown-host .ProseMirror {
+  font-size: calc(17.5px * var(--text-scale, 1));
+}
+:root[data-theme="lcars"] .order-card.is-fullscreen .milkdown-host .ProseMirror {
+  font-size: calc(18.5px * var(--text-scale, 1));
 }
 
 * { box-sizing: border-box; }
