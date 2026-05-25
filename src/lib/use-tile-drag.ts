@@ -24,7 +24,7 @@ export function useTileDrag(
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
-  const drag = useRef<{ ref: string; x: number; y: number; started: boolean; el?: HTMLElement } | null>(null);
+  const drag = useRef<{ ref: string; x: number; y: number; lastX: number; lastY: number; started: boolean; el?: HTMLElement } | null>(null);
   const refsRef = useRef(refs);
   refsRef.current = refs;
 
@@ -43,6 +43,11 @@ export function useTileDrag(
               .find((x) => x.dataset.tileRef === d.ref)
           : undefined;
       }
+      // Track the live position — pointerup on touch can report the
+      // original touch point (or fire pointercancel), so we drop using the
+      // last move position, not the up event's coordinates.
+      d.lastX = e.clientX;
+      d.lastY = e.clientY;
       // Make the drag obvious: the grabbed item lifts and follows the cursor.
       if (d.el) {
         d.el.style.transform = `translate(${e.clientX - d.x}px, ${e.clientY - d.y}px) scale(1.04)`;
@@ -54,12 +59,14 @@ export function useTileDrag(
       el.style.transform = "";
       el.style.zIndex = "";
     }
-    function up(e: PointerEvent) {
+    function up() {
       const d = drag.current;
       drag.current = null;
       setDragRef(null);
       resetEl(d?.el);
       if (!d?.started || !gridRef.current) return;
+      const px = d.lastX;
+      const py = d.lastY;
       // Swallow the click that fires right after the drag.
       const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
       window.addEventListener("click", swallow, { capture: true, once: true });
@@ -87,9 +94,9 @@ export function useTileDrag(
       for (const c of cells) {
         const tol = c.h * 0.5;
         let past: boolean;
-        if (e.clientY > c.cy + tol) past = true;
-        else if (e.clientY < c.cy - tol) past = false;
-        else past = multiCol ? e.clientX > c.cx : e.clientY > c.cy;
+        if (py > c.cy + tol) past = true;
+        else if (py < c.cy - tol) past = false;
+        else past = multiCol ? px > c.cx : py > c.cy;
         if (past) insertAt++;
       }
       const order = refsRef.current.filter((r) => r !== d.ref);
@@ -110,7 +117,7 @@ export function useTileDrag(
   function onTilePointerDown(e: ReactPointerEvent, ref: string) {
     if (!onReorder || e.button !== 0) return;
     if (exclude && (e.target as HTMLElement).closest(exclude)) return;
-    drag.current = { ref, x: e.clientX, y: e.clientY, started: false };
+    drag.current = { ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, started: false };
   }
 
   return { gridRef, dragRef, onTilePointerDown };
