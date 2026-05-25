@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- maximum-scale + user-scalable disable iOS auto-zoom (e.g. on input
+         focus), which otherwise shifts the visual viewport and throws off
+         pointer-based drag/drop. In-app zoom uses --text-scale (font-size),
+         not viewport scale, so it is unaffected. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Order</title>
     <script>
       // Set the theme before first paint to avoid a light flash.

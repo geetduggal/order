@@ -1031,17 +1031,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink-ghost);
   letter-spacing: 0;
 }
-.sb-clear-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--ink-ghost);
-  padding: 2px;
-  border-radius: 3px;
-  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
-}
-.sb-clear-inline:hover { color: var(--coral); background: var(--coral-soft); }
 
 /* Back chevron between drill levels. Stays subtle but tappable. */
 .sb-back {
@@ -1123,50 +1112,24 @@ input, textarea, select { outline: none; box-shadow: none; }
   cursor: default;
 }
 
-.sb-search {
-  position: relative;
-  display: flex;
+.sb-clear-all {
+  display: inline-flex;
   align-items: center;
-  background: var(--bg-elev);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 5px 8px 5px 26px;
+  gap: 5px;
   margin-bottom: 12px;
-  transition: border-color 0.12s var(--ease-out);
-}
-.sb-search:focus-within { border-color: var(--royal-soft); }
-.sb-search-icon {
-  position: absolute;
-  left: 8px;
-  color: var(--ink-ghost);
-  pointer-events: none;
-}
-.sb-search-input {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
+  padding: 4px 10px 4px 8px;
   font-family: var(--sans);
   font-size: 12px;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  outline: none;
-  padding: 0;
-}
-.sb-search-input::placeholder { color: var(--ink-ghost); }
-
-.sb-search-results {
-  margin: 0 0 14px;
-  padding: 4px;
-  border: 1px solid var(--royal-soft);
-  background: var(--bg);
-  border-radius: 4px;
-}
-.sb-empty-small {
-  margin: -4px 0 12px;
-  font-size: 11px;
   color: var(--ink-faint);
-  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.sb-clear-all:hover {
+  color: var(--coral);
+  border-color: var(--coral);
 }
 
 .sb-area { margin-bottom: 10px; }

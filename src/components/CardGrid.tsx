@@ -784,10 +784,7 @@ export function CardGrid() {
     });
   }, []);
 
-  // Sidebar search focus (Cmd+O) and centered command palette (Cmd+K).
-  // The signal is a bumped counter so the Sidebar effect re-fires even
-  // when the sidebar was already open.
-  const [searchFocusSignal, setSearchFocusSignal] = useState(0);
+  // Cmd+O opens the sidebar; Cmd+K opens the centered command palette.
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -810,7 +807,6 @@ export function CardGrid() {
           setSidebarOpen(true);
           writeSidebarOpen(true);
         }
-        setSearchFocusSignal((n) => n + 1);
         return;
       }
       if (e.key === "k" || e.key === "K") {
@@ -1641,7 +1637,6 @@ export function CardGrid() {
           onReorderFolders={handleReorderFoldersTo}
           onRemoveFolder={handleRemoveFolder}
           order={vaultTaxonomy.areas}
-          focusSearchSignal={searchFocusSignal}
         />
       )}
 

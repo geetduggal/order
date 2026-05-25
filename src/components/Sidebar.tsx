@@ -12,9 +12,9 @@
 // appears in the grids. No separate storage — the YAML is the source
 // of truth.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import { useTileDrag } from "../lib/use-tile-drag";
 import type { Frontmatter } from "../lib/frontmatter";
@@ -83,10 +83,6 @@ interface Props {
   /** Chain order (Areas → Categories → folder refs) so the lists render
    *  in the on-disk bullet order rather than alphabetically. */
   order?: { ref: string; categories: { ref: string; folders: string[] }[] }[];
-  /** Monotonically increasing counter: each change focuses + selects
-   *  the search input. Lets Cmd+O drop focus into the sidebar without
-   *  the parent needing a ref into our internals. */
-  focusSearchSignal?: number;
 }
 
 interface Taxonomy {
@@ -192,19 +188,8 @@ export function Sidebar({
   onReorderFolders,
   onRemoveFolder,
   order,
-  focusSearchSignal,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
-  const [query, setQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (focusSearchSignal === undefined) return;
-    const el = searchInputRef.current;
-    if (!el) return;
-    el.focus();
-    el.select();
-  }, [focusSearchSignal]);
 
   const taxonomy = useMemo(
     () => buildTaxonomy(folders, storedAreas, storedCategories, order),
@@ -221,16 +206,6 @@ export function Sidebar({
       queueMicrotask(() => setDrill({ kind: "categories", areaName: drill.areaName }));
     }
   }
-
-  const searchMatches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return folders.filter((f) => {
-      const t = f.frontmatter.title;
-      const haystack = (f.name + " " + (typeof t === "string" ? t : "")).toLowerCase();
-      return haystack.includes(q);
-    }).slice(0, 8);
-  }, [folders, query]);
 
   return (
     <aside className="pane-right">
@@ -251,66 +226,37 @@ export function Sidebar({
       </section>
 
       <section className="sb-section sb-filters">
-        <div className="sb-search">
-          <Search size={12} strokeWidth={2} className="sb-search-icon" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search folders…"
-            className="sb-search-input"
-          />
-          {selected.size > 0 && (
-            <button
-              type="button"
-              className="sb-clear-inline"
-              onClick={onClear}
-              title="Clear filters"
-              aria-label="Clear filters"
-            >
-              <X size={11} strokeWidth={2} />
-            </button>
-          )}
-        </div>
-
-        {query && searchMatches.length === 0 && (
-          <p className="sb-empty-small">No folders match.</p>
-        )}
-        {query && searchMatches.length > 0 && (
-          <ul className="sb-folder-list sb-search-results">
-            {searchMatches.map((f) => (
-              <FolderRow
-                key={f.path}
-                folder={f}
-                checked={selected.has(f.name)}
-                onToggle={() => { onToggle(f.name); setQuery(""); }}
-              />
-            ))}
-          </ul>
+        {selected.size > 0 && (
+          <button
+            type="button"
+            className="sb-clear-all"
+            onClick={onClear}
+            title="Clear filters"
+          >
+            <X size={12} strokeWidth={2.2} />
+            Clear filters
+          </button>
         )}
 
-        {!query && (
-          <DrillView
-            drill={drill}
-            setDrill={setDrill}
-            taxonomy={taxonomy}
-            selected={selected}
-            onToggle={onToggle}
-            onCreateFolder={onCreateFolder}
-            onAddArea={onAddArea}
-            onRemoveArea={onRemoveArea}
-            onAddCategory={onAddCategory}
-            onRemoveCategory={onRemoveCategory}
-            onReorderArea={onReorderArea}
-            onReorderCategory={onReorderCategory}
-            onReorderFolder={onReorderFolder}
-            onReorderAreas={onReorderAreas}
-            onReorderCategories={onReorderCategories}
-            onReorderFolders={onReorderFolders}
-            onRemoveFolder={onRemoveFolder}
-          />
-        )}
+        <DrillView
+          drill={drill}
+          setDrill={setDrill}
+          taxonomy={taxonomy}
+          selected={selected}
+          onToggle={onToggle}
+          onCreateFolder={onCreateFolder}
+          onAddArea={onAddArea}
+          onRemoveArea={onRemoveArea}
+          onAddCategory={onAddCategory}
+          onRemoveCategory={onRemoveCategory}
+          onReorderArea={onReorderArea}
+          onReorderCategory={onReorderCategory}
+          onReorderFolder={onReorderFolder}
+          onReorderAreas={onReorderAreas}
+          onReorderCategories={onReorderCategories}
+          onReorderFolders={onReorderFolders}
+          onRemoveFolder={onRemoveFolder}
+        />
       </section>
     </aside>
   );
