@@ -362,6 +362,20 @@ export function CardGrid() {
     return i >= 0 ? p.slice(0, i) : null;
   }
 
+  /** Absolute path of the loaded Areas note. Prefer the path the note was
+   *  loaded from (always under the active vault root, including the iOS
+   *  security-scoped bookmark) over reconstructing it from vaultRoot(),
+   *  which on iOS resolves to the wrong default home-dir path and makes
+   *  area writes silently miss. Returns null only when no Areas note
+   *  exists yet (a fresh vault), in which case callers fall back. */
+  function areasNotePath(): string | null {
+    const list = notesRef.current ?? [];
+    const found =
+      list.find((n) => n.frontmatter?.role === "areas") ??
+      list.find((n) => n.filename === AREAS_FILENAME);
+    return found?.path ?? null;
+  }
+
   // iOS only: true when no vault folder has been picked yet (no stored
   // bookmark), so the UI prompts to choose one instead of showing empty.
   const [iosNeedsVault, setIosNeedsVault] = useState(false);
@@ -553,7 +567,7 @@ export function CardGrid() {
     const trimmed = name.trim();
     if (!trimmed) return;
     const subdir = await cardsSubdir();
-    const path = await join(subdir, AREAS_FILENAME);
+    const path = areasNotePath() ?? (await join(subdir, AREAS_FILENAME));
     const ok = await mutateBullets(
       path,
       (p) => readVault(p),
@@ -569,7 +583,7 @@ export function CardGrid() {
 
   const handleRemoveArea = useCallback(async (name: string) => {
     const subdir = await cardsSubdir();
-    const path = await join(subdir, AREAS_FILENAME);
+    const path = areasNotePath() ?? (await join(subdir, AREAS_FILENAME));
     await mutateBullets(
       path,
       (p) => readVault(p),
@@ -590,7 +604,7 @@ export function CardGrid() {
     const subdir = await cardsSubdir();
     // Ensure Area is in Areas.md
     await mutateBullets(
-      await join(subdir, AREAS_FILENAME),
+      areasNotePath() ?? (await join(subdir, AREAS_FILENAME)),
       (p) => readVault(p),
       (p, c) => writeVault(p, c),
       (items) => {
@@ -670,7 +684,7 @@ export function CardGrid() {
   }, [reloadNotes]);
 
   const handleReorderArea = useCallback(async (name: string, dir: "up" | "down") => {
-    await reorderIn(await join(await cardsSubdir(), AREAS_FILENAME), name, dir);
+    await reorderIn(areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)), name, dir);
   }, [reorderIn, cardsSubdir]);
 
   const handleReorderCategory = useCallback(async (name: string, areaName: string, dir: "up" | "down") => {
@@ -731,7 +745,7 @@ export function CardGrid() {
   }, [reloadNotes]);
 
   const handleReorderAreasTo = useCallback(async (names: string[]) => {
-    await reorderToIn(await join(await cardsSubdir(), AREAS_FILENAME), names);
+    await reorderToIn(areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)), names);
   }, [reorderToIn, cardsSubdir]);
 
   const handleReorderCategoriesTo = useCallback(async (areaName: string, names: string[]) => {

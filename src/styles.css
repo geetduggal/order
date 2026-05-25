@@ -1445,6 +1445,18 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .box-wrapper.dragging .box { cursor: grabbing; }
 
+/* Drop indicator — a bar painted in the gap where the dragged tile/row
+   will land. Positioned with fixed coords by use-tile-drag, so it floats
+   above everything while a drag is in progress. */
+.tile-drop-indicator {
+  position: fixed;
+  z-index: 600;
+  pointer-events: none;
+  background: var(--royal);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--bg, #fff), 0 0 8px var(--royal);
+}
+
 /* Touch devices have no hover, so the hover-revealed reorder/remove
    controls would never appear. Show them always so there's a reliable,
    tap-able way to reorder on mobile (in addition to drag). */
