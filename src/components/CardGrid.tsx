@@ -1525,6 +1525,7 @@ export function CardGrid() {
         filters={filters}
         onRemove={removeFilter}
         onReorder={setFilters}
+        onClear={resetToDefault}
         onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           // Focus this folder: pin its Main Document to the top of the
@@ -1602,7 +1603,6 @@ export function CardGrid() {
           // visual checkmark for orientation. Clear resets to default.
           selected={includeSet}
           onToggle={addInclude}
-          onClear={resetToDefault}
           onCreateFolder={handleCreateFolder}
           storedAreas={storedAreas}
           storedCategories={storedCategories}

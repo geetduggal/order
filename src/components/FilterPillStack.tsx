@@ -5,7 +5,7 @@
 // focuses that folder (pins its Main Document to the top of the
 // Stream); clicking × removes the pill. Shared by app + web viewer.
 
-import { Search as SearchIcon, X as XIcon } from "lucide-react";
+import { Search as SearchIcon, X as XIcon, FilterX } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { Filter } from "../lib/filters";
 import { useTileDrag } from "../lib/use-tile-drag";
@@ -13,7 +13,7 @@ import { useTileDrag } from "../lib/use-tile-drag";
 const keyOf = (f: Filter) => `${f.kind}:${f.ref}`;
 
 export function FilterPillStack({
-  filters, onRemove, onJump, onSearch, onReorder,
+  filters, onRemove, onJump, onSearch, onReorder, onClear,
 }: {
   filters: Filter[];
   onRemove: (f: Filter) => void;
@@ -23,6 +23,9 @@ export function FilterPillStack({
   onSearch?: () => void;
   /** Drag-reorder the pills (optional). */
   onReorder?: (next: Filter[]) => void;
+  /** Clear/reset all active filters. When set, a clear icon renders
+   *  below the pills (only while there are filters). */
+  onClear?: () => void;
 }) {
   const byKey = new Map(filters.map((f) => [keyOf(f), f]));
   const { gridRef, dragRef, onTilePointerDown } = useTileDrag(
@@ -80,6 +83,17 @@ export function FilterPillStack({
           </div>
         );
       })}
+      {onClear && filters.length > 0 && (
+        <button
+          type="button"
+          className="filter-clear"
+          onClick={onClear}
+          title="Clear filters"
+          aria-label="Clear filters"
+        >
+          <FilterX size={15} strokeWidth={2.2} />
+        </button>
+      )}
     </div>
   );
 }

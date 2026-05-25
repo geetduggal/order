@@ -1310,25 +1310,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   cursor: default;
 }
 
-.sb-clear-all {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 12px;
-  padding: 4px 10px 4px 8px;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--ink-faint);
-  background: var(--bg-elev);
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
-}
-.sb-clear-all:hover {
-  color: var(--coral);
-  border-color: var(--coral);
-}
 
 .sb-area { margin-bottom: 10px; }
 .sb-area-header {
@@ -2254,6 +2235,27 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--bg-elev);
 }
 .filter-search:active { transform: scale(0.92); }
+
+/* Clear-all sits below the pills — same circular rail style, red on hover. */
+.filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.filter-clear:hover {
+  color: var(--coral);
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+.filter-clear:active { transform: scale(0.92); }
 .filter-pill {
   display: flex;
   align-items: center;

@@ -51,7 +51,6 @@ interface Props {
   folders: NotableFolder[];
   selected: Set<string>;
   onToggle: (folderName: string) => void;
-  onClear: () => void;
   /** Create a new Notable Folder Main Document under the drilled
    *  (area, category). The sidebar surfaces this as a "+ New folder"
    *  row at the bottom of the folders drill view. */
@@ -172,7 +171,6 @@ export function Sidebar({
   folders,
   selected,
   onToggle,
-  onClear,
   onCreateFolder,
   storedAreas,
   storedCategories,
@@ -226,18 +224,6 @@ export function Sidebar({
       </section>
 
       <section className="sb-section sb-filters">
-        {selected.size > 0 && (
-          <button
-            type="button"
-            className="sb-clear-all"
-            onClick={onClear}
-            title="Clear filters"
-          >
-            <X size={12} strokeWidth={2.2} />
-            Clear filters
-          </button>
-        )}
-
         <DrillView
           drill={drill}
           setDrill={setDrill}

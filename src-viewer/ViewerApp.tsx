@@ -345,6 +345,7 @@ export function ViewerApp(
       <FilterPillStack
         filters={filters}
         onRemove={removeFilter}
+        onClear={resetToDefault}
         onSearch={() => setPaletteOpen(true)}
         onJump={(ref) => {
           setView("stream");
@@ -411,7 +412,6 @@ export function ViewerApp(
           // Pure navigation: clicking a folder ADDS an include pill.
           selected={includeSet}
           onToggle={addInclude}
-          onClear={resetToDefault}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
           order={data.taxonomy.areas}
