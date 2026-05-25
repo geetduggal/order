@@ -133,23 +133,23 @@
   --coral-soft: #3a3a8a;
 }
 
-/* America: white field, unmistakable Old Glory blue + red. Saturated
-   accents, blue-washed surfaces, red today/selection shading. */
+/* America: bold flag-blue field, white text, vivid red accents — actual
+   red/white/blue. (Accents stay red so nothing renders white-on-white.) */
 :root[data-theme="america"] {
-  color-scheme: light;
-  --bg:        #ffffff;
-  --bg-elev:   #e4ecff;
-  --ink:       #08163a;
-  --ink-soft:  #030c26;
-  --ink-faint: #3a55a0;
-  --ink-ghost: #8aa0d8;
-  --rule:      #7fa0e6;
-  --rule-soft: #cfdcfb;
+  color-scheme: dark;
+  --bg:        #0a268f;  /* Old Glory blue field */
+  --bg-elev:   #11329f;
+  --ink:       #ffffff;  /* the white */
+  --ink-soft:  #ffffff;
+  --ink-faint: #bcc8ff;
+  --ink-ghost: #6f86d6;
+  --rule:      #3a52c4;
+  --rule-soft: #21379e;
 
-  --royal:      #0a2fd6; /* vivid flag blue */
-  --royal-soft: #b9caf9;
-  --coral:      #e00026; /* vivid flag red */
-  --coral-soft: #ffccd2;
+  --royal:      #ee1c33; /* vivid red primary */
+  --royal-soft: #58111a; /* deep red wash (chips/events on blue) */
+  --coral:      #ff4d5e; /* lighter red secondary */
+  --coral-soft: #6e1018; /* red wash (today/selection) */
 }
 
 /* Christmas: rich green field, vivid candy-cane red + bright green. */
@@ -210,6 +210,24 @@
 :root[data-theme="america"] .box.no-image.coral,
 :root[data-theme="christmas"] .box.no-image.coral {
   background: linear-gradient(155deg, var(--coral-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
+}
+
+/* America cover tiles: red↔blue diagonals (white text stays readable on
+   both ends — the "white" is the label itself). */
+:root[data-theme="america"] .box.no-image {
+  background: linear-gradient(135deg, #e8112d 0%, #0a268f 100%);
+}
+:root[data-theme="america"] .box.no-image.coral {
+  background: linear-gradient(135deg, #0a268f 0%, #e8112d 100%);
+}
+
+/* Menlo runs large — pull the WordPerfect editor body in a notch so the
+   default note text isn't oversized. */
+:root[data-theme="wordperfect"] .milkdown-host .ProseMirror {
+  font-size: calc(14px * var(--text-scale, 1));
+}
+:root[data-theme="wordperfect"] .order-card.is-fullscreen .milkdown-host .ProseMirror {
+  font-size: calc(15px * var(--text-scale, 1));
 }
 
 * { box-sizing: border-box; }
