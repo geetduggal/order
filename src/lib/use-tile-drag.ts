@@ -39,7 +39,7 @@ export function useTileDrag(
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
-  const drag = useRef<{ ref: string; x: number; y: number; lastX: number; lastY: number; started: boolean; el?: HTMLElement } | null>(null);
+  const drag = useRef<{ ref: string; x: number; y: number; lastX: number; lastY: number; started: boolean; el?: HTMLElement; pointerId: number; captureEl: HTMLElement } | null>(null);
   const indicator = useRef<HTMLDivElement | null>(null);
   const refsRef = useRef(refs);
   refsRef.current = refs;
@@ -148,6 +148,11 @@ export function useTileDrag(
           ? (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])
               .find((x) => x.dataset.tileRef === d.ref)
           : undefined;
+        // Capture the pointer ONLY now that a real drag has begun, so
+        // move/up keep firing through the drag (essential on touch). Doing
+        // this on pointerdown instead would swallow the click on a plain
+        // tap, breaking tap-to-drill-in.
+        try { d.captureEl.setPointerCapture(d.pointerId); } catch { /* unsupported */ }
       }
       // Track the live position — pointerup on touch can report the
       // original touch point (or fire pointercancel), so we drop using the
@@ -215,11 +220,12 @@ export function useTileDrag(
     const target = e.target as HTMLElement;
     if (handle) { if (!target.closest(handle)) return; }
     else if (exclude && target.closest(exclude)) return;
-    drag.current = { ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, started: false };
-    // Capture the pointer so move/up keep firing through the whole drag —
-    // essential on touch (iOS), where otherwise pointerup may never reach
-    // our window listener once the finger moves.
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* unsupported */ }
+    // Seed a candidate drag. Pointer capture is deferred until movement
+    // crosses the threshold (see move()), so a tap remains a clean click.
+    drag.current = {
+      ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY,
+      started: false, pointerId: e.pointerId, captureEl: e.currentTarget as HTMLElement,
+    };
   }
 
   return { gridRef, dragRef, onTilePointerDown };
