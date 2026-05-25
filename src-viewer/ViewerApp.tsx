@@ -5,8 +5,8 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronsDown, ChevronsUp, Moon, MoonStar, Sun } from "lucide-react";
-import { useTheme, toggleTheme, nextTheme } from "../src/lib/theme";
+import { ChevronsDown, ChevronsUp, Moon, MoonStar, Sun, Monitor, Flag, TreePine } from "lucide-react";
+import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
@@ -387,14 +387,13 @@ export function ViewerApp(
         type="button"
         className="theme-fab"
         onClick={() => toggleTheme()}
-        title={`${nextTheme(theme)[0].toUpperCase()}${nextTheme(theme).slice(1)} mode`}
-        aria-label={`Switch to ${nextTheme(theme)} mode`}
+        title={`Theme: ${themeLabel(theme)} — next: ${themeLabel(nextTheme(theme))}`}
+        aria-label={`Theme ${themeLabel(theme)}, switch to ${themeLabel(nextTheme(theme))}`}
       >
-        {theme === "light"
-          ? <Moon size={14} strokeWidth={2.1} />
-          : theme === "dark"
-            ? <MoonStar size={14} strokeWidth={2.1} />
-            : <Sun size={14} strokeWidth={2.1} />}
+        {(() => {
+          const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine }[theme];
+          return <Icon size={14} strokeWidth={2.1} />;
+        })()}
       </button>
 
       <main className="pane-main">

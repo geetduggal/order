@@ -59,8 +59,12 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       : null;
 
     const title = note.title || note.filename;
+    // Tint the background with the folder color and keep its border, but
+    // let the title inherit --fc-event-text-color (var(--ink)) so it stays
+    // readable in every theme. A hardcoded dark textColor here used to
+    // vanish on the dark/black backgrounds.
     const colorProps = note.color
-      ? { backgroundColor: note.color + "29", borderColor: note.color, textColor: "#1a1a1a" }
+      ? { backgroundColor: note.color + "29", borderColor: note.color }
       : {};
 
     if (allDay || !startTime) {

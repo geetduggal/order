@@ -5,14 +5,25 @@
 
 import { useEffect, useState } from "react";
 
-// Three modes cycled by the rail button: light → dark → black (OLED,
-// pitch-black background) → light.
-export type Theme = "light" | "dark" | "black";
+// Themes cycled by the rail button, in this order:
+//   light → dark → black (OLED) → wordperfect (DOS blue) →
+//   america (red/white/blue) → christmas (red/green) → light.
+export type Theme = "light" | "dark" | "black" | "wordperfect" | "america" | "christmas";
 const KEY = "order.theme";
 const EVENT = "order:theme";
 
 /** Cycle order for the toggle. */
-export const THEME_CYCLE: Theme[] = ["light", "dark", "black"];
+export const THEME_CYCLE: Theme[] = ["light", "dark", "black", "wordperfect", "america", "christmas"];
+
+/** Human label for tooltips. */
+export function themeLabel(t: Theme): string {
+  switch (t) {
+    case "wordperfect": return "WordPerfect";
+    case "america": return "America";
+    case "christmas": return "Christmas";
+    default: return t[0].toUpperCase() + t.slice(1);
+  }
+}
 
 function systemTheme(): Theme {
   try {
@@ -25,7 +36,7 @@ function systemTheme(): Theme {
 export function getTheme(): Theme {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === "light" || v === "dark" || v === "black") return v;
+    if (v && (THEME_CYCLE as string[]).includes(v)) return v as Theme;
   } catch { /* ignore */ }
   return systemTheme();
 }
