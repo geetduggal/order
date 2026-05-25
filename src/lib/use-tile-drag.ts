@@ -20,7 +20,7 @@ export function useTileDrag(
   onReorder?: (order: string[]) => void,
   opts: Options = {},
 ) {
-  const { vertical = false, exclude = "" } = opts;
+  const { exclude = "" } = opts;
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
@@ -65,28 +65,36 @@ export function useTileDrag(
       window.addEventListener("click", swallow, { capture: true, once: true });
       setTimeout(() => window.removeEventListener("click", swallow, true), 50);
 
-      const tiles = Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[];
-      let best: string | null = null;
-      let bestRect: DOMRect | null = null;
-      let bestDist = Infinity;
-      for (const el of tiles) {
-        const ref = el.dataset.tileRef;
-        if (!ref || ref === d.ref) continue;
-        const r = el.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        const dist = (e.clientX - cx) ** 2 + (e.clientY - cy) ** 2;
-        if (dist < bestDist) { bestDist = dist; best = ref; bestRect = r; }
+      const cells = (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])
+        .filter((el) => el.dataset.tileRef && el.dataset.tileRef !== d.ref)
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, h: r.height };
+        });
+      if (cells.length === 0) return;
+      // Detect a multi-column layout (any two cells sharing a row). In a
+      // single column we decide before/after by Y; in a grid row by X.
+      const minH = Math.min(...cells.map((c) => c.h), 24);
+      let multiCol = false;
+      for (let i = 0; i < cells.length && !multiCol; i++) {
+        for (let j = i + 1; j < cells.length; j++) {
+          if (Math.abs(cells[i].cy - cells[j].cy) < minH * 0.5) { multiCol = true; break; }
+        }
       }
-      if (!best || !bestRect) return;
+      // Insertion index = how many cells the cursor is "past" in reading
+      // order (top→bottom, then left→right within a row).
+      let insertAt = 0;
+      for (const c of cells) {
+        const tol = c.h * 0.5;
+        let past: boolean;
+        if (e.clientY > c.cy + tol) past = true;
+        else if (e.clientY < c.cy - tol) past = false;
+        else past = multiCol ? e.clientX > c.cx : e.clientY > c.cy;
+        if (past) insertAt++;
+      }
       const order = refsRef.current.filter((r) => r !== d.ref);
-      let at = order.indexOf(best);
-      if (at < 0) return;
-      const after = vertical
-        ? e.clientY > bestRect.top + bestRect.height / 2
-        : e.clientX > bestRect.left + bestRect.width / 2;
-      if (after) at += 1;
-      order.splice(at, 0, d.ref);
+      insertAt = Math.max(0, Math.min(insertAt, order.length));
+      order.splice(insertAt, 0, d.ref);
       if (order.join(" ") !== refsRef.current.join(" ")) reorder(order);
     }
     window.addEventListener("pointermove", move);
@@ -97,7 +105,7 @@ export function useTileDrag(
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onReorder, vertical]);
+  }, [onReorder]);
 
   function onTilePointerDown(e: ReactPointerEvent, ref: string) {
     if (!onReorder || e.button !== 0) return;
