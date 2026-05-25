@@ -118,6 +118,10 @@ export function useTileDrag(
     if (!onReorder || e.button !== 0) return;
     if (exclude && (e.target as HTMLElement).closest(exclude)) return;
     drag.current = { ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, started: false };
+    // Capture the pointer so move/up keep firing through the whole drag —
+    // essential on touch (iOS), where otherwise pointerup may never reach
+    // our window listener once the finger moves.
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* unsupported */ }
   }
 
   return { gridRef, dragRef, onTilePointerDown };

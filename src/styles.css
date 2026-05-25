@@ -1262,7 +1262,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   background: var(--bg-elev);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
 }
 .sb-folder-li.dragging .sb-folder-item { cursor: grabbing; }
 
@@ -1443,7 +1442,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   opacity: 0.92;
   border-radius: 8px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
 }
 .box-wrapper.dragging .box { cursor: grabbing; }
 
@@ -2096,7 +2094,6 @@ input, textarea, select { outline: none; box-shadow: none; }
   opacity: 0.95;
   max-width: 240px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
   cursor: grabbing;
 }
 /* Exclude pills read as "muted / negated" — dashed ring, no fill. */
