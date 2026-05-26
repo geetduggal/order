@@ -1729,7 +1729,12 @@ input, textarea, select { outline: none; box-shadow: none; }
   line-height: 1.3;
   padding: 1px 5px;
   cursor: grab;
+  /* Hard-clip anything that doesn't fit so a long title can't paint
+     outside the event's column-bounded box. The ellipsis on the title
+     handles the visible truncation. */
+  overflow: hidden;
 }
+.fc-shell .fc-event .fc-event-main { overflow: hidden; min-width: 0; }
 .fc-shell .fc-event:active { cursor: grabbing; }
 .fc-shell .fc-event-title {
   font-weight: 600;
