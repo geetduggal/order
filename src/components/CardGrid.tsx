@@ -837,6 +837,9 @@ export function CardGrid() {
     setFocusedFolder(null);
     await reloadNotes();
   }, [reloadNotes]);
+  // Forward-ref to createNote so Cmd+N can invoke it from the keyboard
+  // useEffect above the declaration site without a TS forward-ref error.
+  const createNoteRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -860,7 +863,7 @@ export function CardGrid() {
       }
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
-        void createNote({ date: isoDate(), startTime: isoTime(), allDay: false });
+        void createNoteRef.current?.({ date: isoDate(), startTime: isoTime(), allDay: false });
         return;
       }
       if (e.key === "w" || e.key === "W") {
@@ -885,7 +888,7 @@ export function CardGrid() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen, toggleSidebar, createNote]);
+  }, [sidebarOpen, toggleSidebar]);
 
   // One-shot migration to the unified list model. Generates Areas.md
   // + per-Area + per-Category files from the legacy localStorage
@@ -1076,6 +1079,9 @@ export function CardGrid() {
     // re-render with the new event at its date/time; Stream sorts it
     // into place by date+startTime.
   }, []);
+  // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
+  // sits earlier in this component, can invoke the latest createNote.
+  useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
