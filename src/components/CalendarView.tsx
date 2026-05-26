@@ -274,11 +274,12 @@ export function CalendarView(props: Props) {
         slotDuration="00:30:00"
         snapDuration="00:30:00"
         // Event content is rendered manually (see renderEventContent) so
-        // FC's range formatter can't sneak a trailing separator in. The
-        // eventTimeFormat below only affects "+more" popovers and the
-        // all-day strip header.
+        // FC's range formatter can't sneak a trailing separator in.
+        // displayEventTime: false fully silences FC's default time
+        // element — without it, the default time was still being added
+        // beside our custom one and overflow-clipped to "10 —".
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
-        displayEventEnd={false}
+        displayEventTime={false}
         eventContent={renderEventContent}
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
         // Month view: collapse overflow into a "+N more" popover (Full
