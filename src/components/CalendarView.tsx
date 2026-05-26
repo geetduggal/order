@@ -245,8 +245,9 @@ export function CalendarView(props: Props) {
         // a half-hour boundary.
         slotDuration="00:30:00"
         snapDuration="00:30:00"
-        // Show 24h time labels by default — easy to flip via setting later.
-        eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
+        // Show 24h time labels; drop `:00` so "10:00 — 10:30" reads as
+        // "10 — 10:30" (Google Calendar–style compactness).
+        eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
         // Month view: collapse overflow into a "+N more" popover (Full
         // Calendar Plus convention).
