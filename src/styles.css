@@ -1755,26 +1755,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 .fc-shell .fc-timegrid-event .fc-event-main-frame {
   display: flex;
   /* Force a single-row title-left / time-right layout for every timegrid
-     event — FC defaults to flex-direction: column for tall events (time
-     above title), which is inconsistent with the short-event row layout.
-     With row everywhere, both short and long events read the same way:
-     bold title on the left, dim time pinned to the top-right. !important
-     beats FC's `.fc-v-event .fc-event-main-frame { flex-direction: column }`. */
+     event — FC defaults to flex-direction: column for tall events. Row
+     everywhere makes short and long events read the same way. */
   flex-direction: row !important;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   min-width: 0;
-  height: auto !important;
-  padding-top: 3px;
 }
 /* FC pins .fc-event-title with `top: 0; bottom: 0` for its native sticky
-   scrolling, which in our row layout pushed the title to the box bottom.
-   Anchor it normally so it sits at the top with our padding. */
+   scrolling, which in our row layout shifted the title around. Anchor it
+   normally so it flows with the flex parent. */
 .fc-shell .fc-timegrid-event .fc-event-title {
   position: static !important;
   top: auto;
   bottom: auto;
 }
+/* Give 30-minute slots enough vertical room that title descenders and
+   the time can both sit comfortably inside the event box. FC's default
+   slot height (1.5em ≈ 21px) is too tight for 12px text. */
+.fc-shell .fc-timegrid-slot { height: 2.4em; }
 .fc-shell .fc-timegrid-event .fc-event-title-container {
   order: 1;
   flex: 1 1 auto;
