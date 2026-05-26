@@ -866,6 +866,11 @@ export function CardGrid() {
         void createNoteRef.current?.({ date: isoDate(), startTime: isoTime(), allDay: false });
         return;
       }
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        setView("stream");
+        return;
+      }
       if (e.key === "w" || e.key === "W") {
         e.preventDefault();
         setView("week");
