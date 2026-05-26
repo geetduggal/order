@@ -8,7 +8,7 @@
 // them. Year view is deferred — Full Calendar Plus uses a custom
 // LinearView plugin we haven't ported yet.
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -128,6 +128,26 @@ function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | n
 export function CalendarView(props: Props) {
   const { notes, initialView, onMoveEvent } = props;
   const apiRef = useRef<FullCalendar | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // FullCalendar recomputes on window resize, but a sidebar toggle (or any
+  // layout change that only resizes our pane) doesn't fire one. Observe
+  // the shell and nudge the calendar so events / time-grid columns refit
+  // to whatever width is now available.
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let last = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w !== last) {
+        last = w;
+        apiRef.current?.getApi()?.updateSize();
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const events = useMemo(() => notesToEvents(notes), [notes]);
 
   async function handleEventDrop(arg: EventDropArg) {
@@ -200,7 +220,7 @@ export function CalendarView(props: Props) {
   }
 
   return (
-    <div className="fc-shell">
+    <div className="fc-shell" ref={shellRef}>
       <FullCalendar
         ref={(instance) => {
           apiRef.current = instance;
