@@ -1779,6 +1779,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* FC's stylesheet appends `\00a0-\00a0` after the time element on short
+   timegrid events so its inline default "10 - James" reads naturally —
+   but our custom renderer already separates title and time, so the
+   appended dash just turns "10" into "10 —". Strip it. */
+.fc-shell .fc-timegrid-event .fc-event-time::after { content: none !important; }
 
 /* Day grid (month) cells */
 .fc-shell .fc-daygrid-day-number {
