@@ -170,15 +170,47 @@ interface LoadedNote {
 let nextNoteId = 0;
 function newNoteId(): string { return `n${nextNoteId++}`; }
 
+/** Strip the markdown syntax most likely to appear in a note's first line
+ *  so the derived title reads as plain text — leading list markers and
+ *  task checkboxes, wikilinks (including Milkdown's backslash-escaped
+ *  form), markdown links, inline code, emphasis, and backslash escapes
+ *  of markdown specials. Conservative: pure text passes through. */
+function stripMarkdownInline(s: string): string {
+  let t = s;
+  // Leading list marker: `-`, `*`, `+`, or `N.`
+  t = t.replace(/^([-*+]|\d+\.)\s+/, "");
+  // Leading task checkbox: `[ ]`, `[x]`, `[X]`
+  t = t.replace(/^\[[\sxX]\]\s+/, "");
+  // Wikilinks: `[[Page]]` → Page, `[[Page|Alias]]` → Alias. Allow optional
+  // backslash escapes around the brackets (Milkdown emits `\[\[…\]\]`).
+  t = t.replace(/\\?\[\\?\[\s*([^\]|]+?)(?:\s*\|\s*([^\]]+?))?\s*\\?\]\\?\]/g,
+    (_m, page, alias) => (alias ?? page).trim());
+  // Markdown links: `[text](url)` → text
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+  // Inline code
+  t = t.replace(/`([^`]+)`/g, "$1");
+  // Emphasis (display-grade — good enough for a one-line title)
+  t = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1");
+  t = t.replace(/__([^_]+)__/g, "$1").replace(/_([^_]+)_/g, "$1");
+  // Strip remaining backslash escapes of markdown specials
+  t = t.replace(/\\([\[\]()*_`#~|<>!])/g, "$1");
+  return t.trim();
+}
+
 function deriveTitle(body: string, fallback: string): string {
   const lines = body.split(/\r?\n/);
   for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
-    if (t.startsWith("#")) return t.replace(/^#+\s*/, "");
-    return t.length > 60 ? t.slice(0, 57) + "…" : t;
+    const raw = t.startsWith("#") ? t.replace(/^#+\s*/, "") : t;
+    const cleaned = stripMarkdownInline(raw);
+    if (!cleaned) continue; // a heading that was pure syntax — try next line
+    return cleaned.length > 60 ? cleaned.slice(0, 57) + "…" : cleaned;
   }
-  return fallback;
+  // No usable H1: fall back to the filename, stripping any
+  // `YYYY-MM-DD ` / `YYYY-MM-DD - ` date prefix so calendar / card titles
+  // read as "Untitled" rather than "2026-05-26 Untitled".
+  return fallback.replace(/^\d{4}-\d{2}-\d{2}\s*-?\s*/, "") || fallback;
 }
 
 async function loadOne(path: string, filename: string, seed?: string): Promise<LoadedNote> {
@@ -992,7 +1024,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: seedBody },
+      { id: newNoteId(), path, filename, frontmatter, title: title || "Untitled", body: seedBody },
     ]);
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
