@@ -18,6 +18,7 @@ import type {
   CalendarApi,
   DateSelectArg,
   EventClickArg,
+  EventContentArg,
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
@@ -98,6 +99,33 @@ function roundToHalfHour(d: Date): Date {
   out.setSeconds(0, 0);
   out.setMinutes(Math.round(out.getMinutes() / 30) * 30);
   return out;
+}
+
+/** Compact 24h start time, dropping `:00` so 10:00 → "10" and 10:30 →
+ *  "10:30". Used by the custom event renderer to show just the start
+ *  (Google Calendar–style); FC's eventTimeFormat still emits a range
+ *  separator even with displayEventEnd: false, hence the manual render. */
+function formatCompactStart(d: Date | null): string {
+  if (!d) return "";
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = d.getMinutes();
+  return m === 0 ? h : `${h}:${String(m).padStart(2, "0")}`;
+}
+
+/** Custom event content: bold title first, dim compact start-time after.
+ *  Reuses FC's class names so the existing .fc-event-* CSS continues to
+ *  apply (truncation, colors, layout). */
+function renderEventContent(arg: EventContentArg) {
+  const title = arg.event.title || "Untitled";
+  const start = arg.event.allDay ? null : formatCompactStart(arg.event.start);
+  return (
+    <div className="fc-event-main-frame">
+      <div className="fc-event-title-container">
+        <div className="fc-event-title fc-sticky">{title}</div>
+      </div>
+      {start && <div className="fc-event-time">{start}</div>}
+    </div>
+  );
 }
 
 function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | null {
@@ -245,12 +273,13 @@ export function CalendarView(props: Props) {
         // a half-hour boundary.
         slotDuration="00:30:00"
         snapDuration="00:30:00"
-        // Show 24h time labels; drop `:00` so 10:00 reads as "10". Only
-        // the start time is shown (Google Calendar–style, simple) — the
-        // range was producing a trailing-separator artifact and crowding
-        // the title for no real gain. Click into the note for the end.
+        // Event content is rendered manually (see renderEventContent) so
+        // FC's range formatter can't sneak a trailing separator in. The
+        // eventTimeFormat below only affects "+more" popovers and the
+        // all-day strip header.
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
         displayEventEnd={false}
+        eventContent={renderEventContent}
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
         // Month view: collapse overflow into a "+N more" popover (Full
         // Calendar Plus convention).
