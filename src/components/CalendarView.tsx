@@ -113,17 +113,16 @@ function formatCompactStart(d: Date | null): string {
 }
 
 /** Custom event content: bold title first, dim compact start-time after.
- *  Reuses FC's class names so the existing .fc-event-* CSS continues to
- *  apply (truncation, colors, layout). */
+ *  Uses our OWN class names rather than FC's `.fc-event-*` so FC's
+ *  built-in stylesheet (sticky-title pinning, range-dash ::after,
+ *  flex-direction switches, etc.) can't interfere with the layout. */
 function renderEventContent(arg: EventContentArg) {
   const title = arg.event.title || "Untitled";
   const start = arg.event.allDay ? null : formatCompactStart(arg.event.start);
   return (
-    <div className="fc-event-main-frame">
-      <div className="fc-event-title-container">
-        <div className="fc-event-title">{title}</div>
-      </div>
-      {start && <div className="fc-event-time">{start}</div>}
+    <div className="order-event-row">
+      <span className="order-event-title">{title}</span>
+      {start && <span className="order-event-time">{start}</span>}
     </div>
   );
 }

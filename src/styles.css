@@ -1727,7 +1727,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 3px;
   font-size: 11.5px;
   line-height: 1.3;
-  padding: 1px 5px;
+  /* Padding lives on .order-event-row inside, so we don't double-pad
+     against FC's default time/title elements (used by the all-day strip
+     etc., where renderEventContent doesn't apply). */
+  padding: 0;
   cursor: grab;
   /* Hard-clip anything that doesn't fit so a long title can't paint
      outside the event's column-bounded box. The ellipsis on the title
@@ -1752,43 +1755,28 @@ input, textarea, select { outline: none; box-shadow: none; }
    bold, with the time as a small dim suffix after it. Both on one line
    so a 30-minute slot still fits; the title truncates with an ellipsis
    if there isn't room, but the title (not the time) wins the space. */
-.fc-shell .fc-timegrid-event .fc-event-main-frame {
+/* Custom event content (renderEventContent) uses .order-event-* classes
+   instead of FC's .fc-event-* so none of FC's stylesheet (sticky-title
+   pinning, range-dash ::after, column/row flex switches) can affect the
+   inner layout. The result: Google-Calendar-style title top-left with
+   the time pinned top-right, anchored to the top of the box, identical
+   on every event size. */
+.fc-shell .fc-timegrid-event .fc-event-main {
+  height: auto !important;
+  display: block;
+}
+.fc-shell .order-event-row {
   display: flex;
-  /* Force a single-row title-left / time-right layout for every timegrid
-     event — FC defaults to flex-direction: column for tall events. Row
-     everywhere makes short and long events read the same way. */
-  flex-direction: row !important;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   min-width: 0;
+  width: 100%;
+  padding: 3px 6px 4px;
+  box-sizing: border-box;
 }
-/* FC pins .fc-event-title with `top: 0; bottom: 0` for its native sticky
-   scrolling, which in our row layout shifted the title around. Anchor it
-   normally so it flows with the flex parent. */
-.fc-shell .fc-timegrid-event .fc-event-title {
-  position: static !important;
-  top: auto;
-  bottom: auto;
-}
-/* Give 30-minute slots enough vertical room that title descenders and
-   the time can both sit comfortably inside the event box. FC's default
-   slot height (1.5em ≈ 21px) is too tight for 12px text. */
-.fc-shell .fc-timegrid-slot { height: 2.4em; }
-.fc-shell .fc-timegrid-event .fc-event-title-container {
-  order: 1;
+.fc-shell .order-event-title {
   flex: 1 1 auto;
   min-width: 0;
-}
-.fc-shell .fc-timegrid-event .fc-event-time {
-  order: 2;
-  flex: 0 1 auto;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-faint);
-  line-height: 1.2;
-}
-.fc-shell .fc-timegrid-event .fc-event-title {
   font-weight: 600;
   font-size: 11.5px;
   line-height: 1.2;
@@ -1796,11 +1784,17 @@ input, textarea, select { outline: none; box-shadow: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* FC's stylesheet appends `\00a0-\00a0` after the time element on short
-   timegrid events so its inline default "10 - James" reads naturally —
-   but our custom renderer already separates title and time, so the
-   appended dash just turns "10" into "10 —". Strip it. */
-.fc-shell .fc-timegrid-event .fc-event-time::after { content: none !important; }
+.fc-shell .order-event-time {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* Give 30-minute slots enough vertical room so the row above fits with
+   real space below for descenders. (FC default 1.5em ≈ 21px is too tight.) */
+.fc-shell .fc-timegrid-slot { height: 2.4em; }
 
 /* Day grid (month) cells */
 .fc-shell .fc-daygrid-day-number {
