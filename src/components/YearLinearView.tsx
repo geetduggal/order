@@ -40,7 +40,9 @@ interface Props {
   notes: NoteMeta[];
   onMoveEvent: (path: string, patch: Frontmatter) => Promise<void>;
   onCreate?: (patch: Frontmatter) => Promise<void>;
-  onEventClick?: (path: string) => void;
+  /** Pointer x/y forwarded so the parent can anchor an action menu at
+   *  the click instead of jumping straight into the note. */
+  onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
 }
 
 interface PositionedEvent {
@@ -324,7 +326,7 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
                     // Stop mousedown bubbling so clicking an event bar
                     // doesn't start a cell drag-to-create selection.
                     onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); onEventClick?.(note.path); }}
+                    onClick={(e) => { e.stopPropagation(); onEventClick?.(note.path, { x: e.clientX, y: e.clientY }); }}
                     title={note.title}
                   >
                     <span className="year-event-title">{note.title}</span>

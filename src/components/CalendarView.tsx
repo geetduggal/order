@@ -41,7 +41,9 @@ interface Props {
   notes: NoteMeta[];
   initialView: CalendarRange;
   onMoveEvent: (path: string, patch: Frontmatter) => Promise<void>;
-  onEventClick?: (path: string) => void;
+  /** Pointer x/y are forwarded so the parent can anchor an action menu
+   *  next to the click instead of jumping straight into the note. */
+  onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
   onCreate?: (patch: Frontmatter) => Promise<void>;
 }
 
@@ -203,7 +205,9 @@ export function CalendarView(props: Props) {
 
   function handleEventClick(arg: EventClickArg) {
     // Click without drag (FullCalendar fires eventDrop instead for drags).
-    if (arg.event.id) props.onEventClick?.(arg.event.id);
+    if (!arg.event.id) return;
+    const e = arg.jsEvent as MouseEvent;
+    props.onEventClick?.(arg.event.id, { x: e.clientX, y: e.clientY });
   }
 
   async function handleSelect(arg: DateSelectArg) {

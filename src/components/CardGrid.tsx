@@ -858,6 +858,26 @@ export function CardGrid() {
         setPublishOpen((open) => !open);
         return;
       }
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        void createNote({ date: isoDate(), startTime: isoTime(), allDay: false });
+        return;
+      }
+      if (e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        setView("week");
+        return;
+      }
+      if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        setView("month");
+        return;
+      }
+      if (e.key === "y" || e.key === "Y") {
+        e.preventDefault();
+        setView("year");
+        return;
+      }
       if (e.key === ";") {
         e.preventDefault();
         toggleSidebar();
@@ -865,7 +885,7 @@ export function CardGrid() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen, toggleSidebar]);
+  }, [sidebarOpen, toggleSidebar, createNote]);
 
   // One-shot migration to the unified list model. Generates Areas.md
   // + per-Area + per-Category files from the legacy localStorage
@@ -950,9 +970,30 @@ export function CardGrid() {
     return () => timeouts.forEach(clearTimeout);
   }, [gridEl, notes, filters, view]);
 
-  const handleEventClick = useCallback((path: string) => {
+  // Calendar event click opens a small popup at the cursor (Open / Delete)
+  // instead of jumping straight to the note. Open keeps the original
+  // behaviour (switch to Stream + scroll to the note); Delete removes the
+  // underlying file.
+  const [eventMenu, setEventMenu] = useState<
+    { path: string; title: string; x: number; y: number } | null
+  >(null);
+  const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
+    const note = notesRef.current?.find((n) => n.path === path);
+    setEventMenu({
+      path,
+      title: note?.title ?? "Untitled",
+      x: coords?.x ?? window.innerWidth / 2,
+      y: coords?.y ?? window.innerHeight / 2,
+    });
+  }, []);
+  const openEventNote = useCallback((path: string) => {
     setView("stream");
     setScrollTargetPath(path);
+  }, []);
+  const deleteEventNote = useCallback(async (path: string) => {
+    const note = notesRef.current?.find((n) => n.path === path);
+    if (!note) return;
+    await handleCardDelete(note.id, path);
   }, []);
 
   // After switching to Stream with a target set, scroll the matching
@@ -1707,6 +1748,52 @@ export function CardGrid() {
           onCancel={() => setTitlePrompt(null)}
         />
       )}
+
+      {eventMenu && (
+        <EventActionMenu
+          title={eventMenu.title}
+          x={eventMenu.x}
+          y={eventMenu.y}
+          onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
+          onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
+          onCancel={() => setEventMenu(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Small popup at the cursor for a clicked calendar event. Open switches
+ *  to Stream and scrolls to the note; Delete removes the file. Backdrop
+ *  click or Esc dismisses. */
+function EventActionMenu({ title, x, y, onOpen, onDelete, onCancel }: {
+  title: string;
+  x: number;
+  y: number;
+  onOpen: () => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const left = Math.min(Math.max(x, 8), window.innerWidth - 200);
+  const top = Math.min(Math.max(y, 8), window.innerHeight - 120);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div className="event-action-overlay" onMouseDown={onCancel}>
+      <div
+        className="event-action-menu"
+        style={{ left: `${left}px`, top: `${top}px` }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="event-action-menu-title">{title}</div>
+        <button type="button" className="event-action-btn" onClick={onOpen}>Open</button>
+        <button type="button" className="event-action-btn is-delete" onClick={onDelete}>Delete</button>
+      </div>
     </div>
   );
 }
