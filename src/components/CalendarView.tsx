@@ -121,7 +121,7 @@ function renderEventContent(arg: EventContentArg) {
   return (
     <div className="fc-event-main-frame">
       <div className="fc-event-title-container">
-        <div className="fc-event-title fc-sticky">{title}</div>
+        <div className="fc-event-title">{title}</div>
       </div>
       {start && <div className="fc-event-time">{start}</div>}
     </div>

@@ -1761,12 +1761,19 @@ input, textarea, select { outline: none; box-shadow: none; }
      bold title on the left, dim time pinned to the top-right. !important
      beats FC's `.fc-v-event .fc-event-main-frame { flex-direction: column }`. */
   flex-direction: row !important;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
-  /* A hair of top padding so descenders in the title (y, g, p) sit
-     comfortably above the slot's bottom border on 30-min events. */
-  padding-top: 2px;
+  height: auto !important;
+  padding-top: 3px;
+}
+/* FC pins .fc-event-title with `top: 0; bottom: 0` for its native sticky
+   scrolling, which in our row layout pushed the title to the box bottom.
+   Anchor it normally so it sits at the top with our padding. */
+.fc-shell .fc-timegrid-event .fc-event-title {
+  position: static !important;
+  top: auto;
+  bottom: auto;
 }
 .fc-shell .fc-timegrid-event .fc-event-title-container {
   order: 1;
