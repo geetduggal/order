@@ -2631,6 +2631,39 @@ input, textarea, select { outline: none; box-shadow: none; }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* Calendar quick-create: a tiny centered title prompt that follows a
+   slot/range select. Backdrop dismisses, Enter creates, Esc cancels. */
+.event-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 410;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: rgba(20, 20, 20, 0.18);
+  animation: cap-fade 140ms var(--ease-out);
+}
+.event-prompt {
+  width: min(440px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(20, 20, 20, 0.22);
+  padding: 8px;
+}
+.event-prompt-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.event-prompt-input::placeholder { color: var(--ink-faint); }
+
 /* ---------- List Notable Folder: base controls strip ---------- */
 .order-card-list-controls {
   display: flex;

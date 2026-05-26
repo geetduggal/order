@@ -952,6 +952,17 @@ export function CardGrid() {
     return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
+  // Calendar-create title prompt. The calendar views call promptCreate
+  // (instead of createNote directly) so the user can name the event in a
+  // tiny popup without having to open the note. Enter creates with the
+  // typed title (becomes both the filename and the body's H1); Enter on
+  // an empty input still creates (untitled) so it stays a fast capture;
+  // Esc cancels.
+  const [titlePrompt, setTitlePrompt] = useState<{ patch: Frontmatter } | null>(null);
+  const promptCreate = useCallback(async (patch: Frontmatter): Promise<void> => {
+    setTitlePrompt({ patch });
+  }, []);
+
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
     const root = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
@@ -969,15 +980,19 @@ export function CardGrid() {
     // fall back to vault root.
     const folderRef = parseRef(frontmatter.folder);
     const writeDir = folderRef && noteDirByRef(folderRef) || root;
-    const content = joinFrontmatter(frontmatter, "");
-    const title = typeof patch.title === "string" ? patch.title : "Untitled";
+    const title = typeof patch.title === "string" ? patch.title.trim() : "";
+    // Seed the body with an H1 when a title was supplied (calendar create
+    // popups send one). Empty title = blank body, as before.
+    const seedBody = title ? `# ${title}\n` : "";
+    const content = joinFrontmatter(frontmatter, seedBody);
+    const titleForName = title || "Untitled";
     const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
-    const basename = basenameForEvent(date, title);
+    const basename = basenameForEvent(date, titleForName);
     const path = await uniqueWrite(writeDir, basename, content);
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: "" },
+      { id: newNoteId(), path, filename, frontmatter, title: filename.replace(/\.md$/, ""), body: seedBody },
     ]);
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
@@ -1569,7 +1584,7 @@ export function CardGrid() {
             initialView="timeGridWeek"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={createNote}
+            onCreate={promptCreate}
           />
         )}
         {view === "month" && (
@@ -1579,7 +1594,7 @@ export function CardGrid() {
             initialView="dayGridMonth"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={createNote}
+            onCreate={promptCreate}
           />
         )}
         {view === "year" && (
@@ -1588,7 +1603,7 @@ export function CardGrid() {
             notes={calendarNotes}
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={createNote}
+            onCreate={promptCreate}
           />
         )}
       </main>
@@ -1649,6 +1664,47 @@ export function CardGrid() {
       {capWarning && (
         <div className="cap-warning" role="status">{capWarning}</div>
       )}
+
+      {titlePrompt && (
+        <CreateEventPrompt
+          onSubmit={async (title) => {
+            const patch = titlePrompt.patch;
+            setTitlePrompt(null);
+            await createNote(title ? { ...patch, title } : patch);
+          }}
+          onCancel={() => setTitlePrompt(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Centered title prompt shown after picking a calendar slot/range. Enter
+ *  commits (even on an empty title, so it stays a fast capture); Esc and
+ *  clicking the backdrop cancel. */
+function CreateEventPrompt({ onSubmit, onCancel }: {
+  onSubmit: (title: string) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  return (
+    <div className="event-prompt-overlay" onMouseDown={onCancel}>
+      <div className="event-prompt" onMouseDown={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          type="text"
+          className="event-prompt-input"
+          value={title}
+          placeholder="Event title (Enter to create, Esc to cancel)"
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); void onSubmit(title.trim()); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+          }}
+        />
+      </div>
     </div>
   );
 }
