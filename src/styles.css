@@ -2093,15 +2093,46 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .notes-only-fab:active { transform: scale(0.92); }
 
+/* Public-only sits right under the notes-only toggle — same rail style. */
+.public-only-fab {
+  position: fixed;
+  top: 94px;
+  left: 10px;
+  z-index: 50;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  opacity: 1;
+  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.public-only-fab:hover {
+  color: var(--coral);
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+.public-only-fab.is-on {
+  color: #fff;
+  border-color: var(--coral);
+  background: var(--coral);
+}
+.public-only-fab:active { transform: scale(0.92); }
+
 /* Published viewer has no +/Publish FABs, so its left-rail nav cluster
    (jump toggle + filter stack) sits at the very top instead. */
 .viewer-shell .notes-only-fab { top: 10px; }
+.viewer-shell .public-only-fab { top: 38px; }
 /* The viewer has no zoom/settings cluster, so its theme toggle sits at
    the bottom-left corner instead of above the (absent) zoom buttons. */
 .viewer-shell .theme-fab { bottom: 12px; }
 .viewer-shell .filter-pills {
-  top: 42px;
-  max-height: calc(100vh - 58px);
+  top: 70px;
+  max-height: calc(100vh - 86px);
 }
 
 /* Settings gear — pinned to the bottom-left so it stays out of the
@@ -2272,10 +2303,10 @@ input, textarea, select { outline: none; box-shadow: none; }
    and Publish buttons. */
 .filter-pills {
   /* left: 8px centers the 26px circles on the same x-axis as the 22px
-     + / publish / first-note FABs above (left: 10px → center 21px).
-     top: 98px clears those three stacked FABs (last ends ~88px). */
+     + / publish / notes-only / public-only FABs above (left: 10px →
+     center 21px). top clears those four stacked FABs (last ends ~116px). */
   position: fixed;
-  top: 98px;
+  top: 126px;
   left: 8px;
   z-index: 50;
   display: flex;
@@ -3541,9 +3572,10 @@ input, textarea, select { outline: none; box-shadow: none; }
 .new-note-picker { top: calc(40px + env(safe-area-inset-top)); }
 .publish-fab { top: calc(38px + env(safe-area-inset-top)); }
 .notes-only-fab { top: calc(66px + env(safe-area-inset-top)); }
+.public-only-fab { top: calc(94px + env(safe-area-inset-top)); }
 .filter-pills {
-  top: calc(98px + env(safe-area-inset-top));
-  max-height: calc(100vh - 114px - env(safe-area-inset-top));
+  top: calc(126px + env(safe-area-inset-top));
+  max-height: calc(100vh - 142px - env(safe-area-inset-top));
 }
 .sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
 .settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
@@ -3551,10 +3583,11 @@ input, textarea, select { outline: none; box-shadow: none; }
 .zoom-in-fab { bottom: calc(68px + env(safe-area-inset-bottom)); }
 .theme-fab { bottom: calc(96px + env(safe-area-inset-bottom)); }
 .viewer-shell .notes-only-fab { top: calc(10px + env(safe-area-inset-top)); }
+.viewer-shell .public-only-fab { top: calc(38px + env(safe-area-inset-top)); }
 .viewer-shell .theme-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
 .viewer-shell .filter-pills {
-  top: calc(42px + env(safe-area-inset-top));
-  max-height: calc(100vh - 58px - env(safe-area-inset-top));
+  top: calc(70px + env(safe-area-inset-top));
+  max-height: calc(100vh - 86px - env(safe-area-inset-top));
 }
 
 /* ===================================================================

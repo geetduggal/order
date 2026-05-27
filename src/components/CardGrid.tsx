@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -57,6 +57,16 @@ function readNotesOnly(): boolean {
 }
 function writeNotesOnly(on: boolean): void {
   try { localStorage.setItem(NOTES_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
+}
+
+// "Public only" filter: when on, the Stream shows only notes flagged
+// `public: true`. Off (default) shows public + private together.
+const PUBLIC_ONLY_KEY = "order.publicOnly";
+function readPublicOnly(): boolean {
+  try { return localStorage.getItem(PUBLIC_ONLY_KEY) === "1"; } catch { return false; }
+}
+function writePublicOnly(on: boolean): void {
+  try { localStorage.setItem(PUBLIC_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
 // Filter model (`Filter`, pill stack) is shared with the web viewer
@@ -300,6 +310,9 @@ export function CardGrid() {
   // "Notes only" toggle: hide Notable-Folder cards from the Stream and
   // show ordinary notes only. Persisted; survives filter changes.
   const [notesOnly, setNotesOnly] = useState<boolean>(readNotesOnly);
+  // "Public only" toggle: show only `public: true` notes in the Stream
+  // (off = public + private together). Persisted; survives filter changes.
+  const [publicOnly, setPublicOnly] = useState<boolean>(readPublicOnly);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -1373,7 +1386,9 @@ export function CardGrid() {
     ? streamCandidates.filter(filterMatches)
     : streamCandidates)
     // "Notes only": drop Notable-Folder cards (covers + folder tiles).
-    .filter((n) => !notesOnly || !isNotableFolder(n.frontmatter));
+    .filter((n) => !notesOnly || !isNotableFolder(n.frontmatter))
+    // "Public only": drop notes without `public: true` in YAML.
+    .filter((n) => !publicOnly || n.frontmatter.public === true);
 
   // Single-folder mode = exactly one include filter. In this mode the
   // folder reads like a "page": its Main Document gets the full-width
@@ -1538,6 +1553,19 @@ export function CardGrid() {
         {notesOnly
           ? <FileText size={14} strokeWidth={2.1} />
           : <Files size={14} strokeWidth={2.1} />}
+      </button>
+
+      <button
+        type="button"
+        className={"public-only-fab" + (publicOnly ? " is-on" : "")}
+        onClick={() => setPublicOnly((v) => { writePublicOnly(!v); return !v; })}
+        title={publicOnly ? "Public only — click to include private notes" : "Public + private — click for public only"}
+        aria-label={publicOnly ? "Showing public notes only" : "Showing public and private notes"}
+        aria-pressed={publicOnly}
+      >
+        {publicOnly
+          ? <Globe size={14} strokeWidth={2.1} />
+          : <Lock size={14} strokeWidth={2.1} />}
       </button>
 
       <button
