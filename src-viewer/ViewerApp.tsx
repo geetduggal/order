@@ -20,7 +20,7 @@ import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
 import { folderColor } from "../src/lib/folders";
 
-type View = "stream" | "week" | "month" | "year";
+type View = "stream" | "day" | "week" | "month" | "year";
 
 export function ViewerApp(
   { data, initialSlug, basePath = "/" }:
@@ -389,6 +389,10 @@ export function ViewerApp(
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
             soloRef={singleNoteRef}
           />
+        )}
+        {view === "day" && (
+          <CalendarView key="day" notes={calendarNotes} initialView="timeGridDay"
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
         )}
         {view === "week" && (
           <CalendarView key="week" notes={calendarNotes} initialView="timeGridWeek"
