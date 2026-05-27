@@ -159,7 +159,7 @@ function publicBaseUrl(target: string): string | null {
 
 const GRID_ROW_PX = 8;
 
-type View = "stream" | "week" | "month" | "year";
+type View = "stream" | "day" | "week" | "month" | "year";
 
 interface LoadedNote {
   /** Stable id across renames — used as React key so the Card never
@@ -882,6 +882,11 @@ export function CardGrid() {
       if (e.key === "s" || e.key === "S") {
         e.preventDefault();
         setView("stream");
+        return;
+      }
+      if (e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        setView("day");
         return;
       }
       if (e.key === "w" || e.key === "W") {
@@ -1688,6 +1693,16 @@ export function CardGrid() {
               ))}
             </div>
           )
+        )}
+        {view === "day" && (
+          <CalendarView
+            key="day"
+            notes={calendarNotes}
+            initialView="timeGridDay"
+            onMoveEvent={updateNoteFrontmatter}
+            onEventClick={handleEventClick}
+            onCreate={promptCreate}
+          />
         )}
         {view === "week" && (
           <CalendarView

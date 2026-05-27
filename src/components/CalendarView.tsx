@@ -26,7 +26,7 @@ import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime } from "../lib/frontmatter";
 
-export type CalendarRange = "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
+export type CalendarRange = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
 export interface NoteMeta {
   path: string;

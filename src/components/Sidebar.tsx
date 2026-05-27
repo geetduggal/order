@@ -19,10 +19,11 @@ import { folderColor, folderIcon } from "../lib/folders";
 import { useTileDrag } from "../lib/use-tile-drag";
 import type { Frontmatter } from "../lib/frontmatter";
 
-export type View = "stream" | "week" | "month" | "year";
+export type View = "stream" | "day" | "week" | "month" | "year";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "stream", label: "Stream" },
+  { id: "day", label: "Day" },
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
   { id: "year", label: "Year" },
