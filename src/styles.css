@@ -1194,13 +1194,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   box-shadow: none;
 }
 .pane-right .view-switch button {
-  flex: 1;
-  padding: 3px 10px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 3px 4px;
   border-radius: 999px;
   font-family: var(--sans);
   font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-faint);
   background: transparent;
