@@ -858,7 +858,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 .milkdown-host .ProseMirror li > :is(ul, ol) {
   margin: 0.05em 0 0.15em;
   margin-left: 0;
-  padding-left: 0.7em;
+  padding-left: 0.4em;
   border-left: 1px solid var(--rule-soft);
 }
 
