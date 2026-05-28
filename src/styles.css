@@ -347,10 +347,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-self: start;
   min-width: 0;
   /* When a note is jumped to (scrollIntoView), leave room above so it
-     lands below the fixed top rail / iOS notch instead of flush against
-     the viewport edge. The inset is 0 on desktop, so this is just a
-     small breathing gap there. */
-  scroll-margin-top: calc(env(safe-area-inset-top) + 16px);
+     lands below the fixed top rail / iOS notch instead of tucked under
+     the FAB cluster. The rail stacks +/publish/notes-only/public-only
+     (~110px) plus filter pills below, so reserve room for both. */
+  scroll-margin-top: calc(env(safe-area-inset-top) + 120px);
   transition: box-shadow 500ms var(--ease-out);
   /* IMPORTANT: no transform/animation/will-change on this element.
      Any of those create a containing block, which captures the

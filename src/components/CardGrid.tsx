@@ -1087,6 +1087,12 @@ export function CardGrid() {
         setView("week");
         return;
       }
+      // Cmd+T cycles through the theme set.
+      if (e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        toggleTheme();
+        return;
+      }
       if (e.key === "m" || e.key === "M") {
         e.preventDefault();
         setView("month");
