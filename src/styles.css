@@ -877,6 +877,23 @@ input, textarea, select { outline: none; box-shadow: none; }
 .milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper svg { width: 1.05em; height: 1.05em; }
 .milkdown-host .milkdown .milkdown-list-item-block .children p { margin: 0; padding: 0; line-height: 1.5; }
 
+/* Subtle indent for NESTED Crepe lists. In Crepe the nested list lives
+   under .children of its parent .milkdown-list-item-block, so the
+   `.ProseMirror li > ul/ol` rule above never matches. Override the
+   block's own padding here, with a hair-fine guide rule. !important
+   beats Crepe's default ~24px nested indent. */
+.milkdown-host .milkdown .milkdown-list-item-block .milkdown-list-item-block {
+  padding-left: 0.4em !important;
+  margin-left: 0 !important;
+  border-left: 1px solid var(--rule-soft);
+}
+/* The wrapping .children div Crepe inserts between an item and its
+   nested list also carries default padding — flatten it too so the
+   only horizontal offset is the one above. */
+.milkdown-host .milkdown .milkdown-list-item-block > li > .children {
+  padding-left: 0 !important;
+}
+
 /* Block quotes: pulled-in italic with a soft left rule. */
 .milkdown-host .ProseMirror blockquote {
   margin: 1.2em 0;
