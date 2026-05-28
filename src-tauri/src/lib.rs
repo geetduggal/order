@@ -74,6 +74,58 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 win.open_devtools();
             }
+            // Replace the default macOS menu (which binds Cmd+W to
+            // Close Window — and AppKit consumes Cmd+W before WebKit
+            // sees it, so our JS keyboard handler for "go to Week view"
+            // never gets to run). Rebuild a sensible default minus the
+            // Close item; the red traffic-light X still closes the
+            // window, and Cmd+W now reaches our JS handler.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+                let about = AboutMetadataBuilder::new()
+                    .name(Some("Order"))
+                    .build();
+                let app_menu = SubmenuBuilder::new(app, "Order")
+                    .item(&PredefinedMenuItem::about(app, Some("About Order"), Some(about))?)
+                    .separator()
+                    .item(&PredefinedMenuItem::services(app, None)?)
+                    .separator()
+                    .item(&PredefinedMenuItem::hide(app, None)?)
+                    .item(&PredefinedMenuItem::hide_others(app, None)?)
+                    .item(&PredefinedMenuItem::show_all(app, None)?)
+                    .separator()
+                    .item(&PredefinedMenuItem::quit(app, None)?)
+                    .build()?;
+                // File: a generic "New" item (no JS hook — Cmd+N is owned
+                // by the JS keyboard handler in CardGrid) so the user
+                // still has a File menu without the Close Window shortcut.
+                let new_item = MenuItemBuilder::with_id("new", "New Note")
+                    .accelerator("CmdOrCtrl+N")
+                    .build(app)?;
+                let file_menu = SubmenuBuilder::new(app, "File")
+                    .item(&new_item)
+                    .build()?;
+                let edit_menu = SubmenuBuilder::new(app, "Edit")
+                    .item(&PredefinedMenuItem::undo(app, None)?)
+                    .item(&PredefinedMenuItem::redo(app, None)?)
+                    .separator()
+                    .item(&PredefinedMenuItem::cut(app, None)?)
+                    .item(&PredefinedMenuItem::copy(app, None)?)
+                    .item(&PredefinedMenuItem::paste(app, None)?)
+                    .item(&PredefinedMenuItem::select_all(app, None)?)
+                    .build()?;
+                let window_menu = SubmenuBuilder::new(app, "Window")
+                    .item(&PredefinedMenuItem::minimize(app, None)?)
+                    .item(&PredefinedMenuItem::maximize(app, None)?)
+                    .separator()
+                    .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
+                    .build()?;
+                app.set_menu(menu)?;
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

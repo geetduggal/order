@@ -60,23 +60,16 @@ function writeNotesOnly(on: boolean): void {
   try { localStorage.setItem(NOTES_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
-// Persist the active view across sessions, with a viewport-aware default
-// (Day on phones, Week on desktop) on first launch.
-const VIEW_KEY = "order.view";
+// Every launch picks a viewport-aware default — Day on phones (≤640px,
+// the same breakpoint the layout collapses at), Week on desktop. We
+// deliberately do NOT persist the active view: the calendar surface is
+// the home base, and a single accidental Stream / Day / Month switch
+// shouldn't quietly change "what Order opens on" forever.
 function readInitialView(): View {
-  try {
-    const v = localStorage.getItem(VIEW_KEY);
-    if (v === "stream" || v === "day" || v === "week" || v === "month" || v === "year") return v;
-  } catch { /* non-fatal */ }
-  // Touch-sized viewport (≤640px wide) starts in Day; everything else
-  // gets Week — the same breakpoint the layout collapses at.
   try {
     if (window.matchMedia("(max-width: 640px)").matches) return "day";
   } catch { /* non-fatal */ }
   return "week";
-}
-function writeView(v: View): void {
-  try { localStorage.setItem(VIEW_KEY, v); } catch { /* non-fatal */ }
 }
 
 // "Public only" filter: when on, the Stream shows only notes flagged
@@ -350,9 +343,9 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>(readInitialView);
-  // Persist every view change so a relaunch resumes the same calendar/stream
-  // (and so the viewport-default only applies on the very first launch).
-  useEffect(() => { writeView(view); }, [view]);
+  // Wipe any persisted view from earlier builds — Order now always opens
+  // on the viewport-default (Week on desktop, Day on phones).
+  useEffect(() => { try { localStorage.removeItem("order.view"); } catch { /* non-fatal */ } }, []);
   // Imperative handles for Cmd+arrow nav inside the active calendar view.
   // Only one of the two is "live" at a time (the mounted view sets it; the
   // other stays null), so the key handler can blindly call .current.
