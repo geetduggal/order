@@ -3667,13 +3667,15 @@ input, textarea, select { outline: none; box-shadow: none; }
 .nf-grid .is-centerpiece {
   grid-column: 1 / -1;
 }
-/* Desktop: a fixed 3-column grid with a wider centre. The Main
-   Document occupies the centre column; notes orbit into the left and
-   right columns beside it (grid-auto-flow: row dense, inherited from
-   .card-grid, fills the side gaps), then continue below it. */
+/* Desktop: a fixed 3-column grid. The Main Document occupies the centre
+   column; notes orbit into the left and right columns beside it
+   (grid-auto-flow: row dense, inherited from .card-grid, fills the side
+   gaps), then continue below it. The centre column is sized to keep
+   prose readable without monopolising the row — the orbits get real
+   estate enough that two notes fit per side. */
 @media (min-width: 1080px) {
   .nf-grid {
-    grid-template-columns: 1fr 2.8fr 1fr;
+    grid-template-columns: 1fr 1.9fr 1fr;
   }
   .nf-grid .is-centerpiece {
     grid-column: 2;
