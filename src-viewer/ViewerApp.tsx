@@ -97,15 +97,15 @@ export function ViewerApp(
   // Light/dark theme — rail moon/sun button toggles it.
   const theme = useTheme();
 
-  // Default view = the home Notable Folder focused (single include),
-  // exactly like the desktop app's first-launch default. A deep-link
-  // (permalink page) overrides it.
+  // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
+  // an arrival deep-link, else the unfiltered Stream (no home seed —
+  // matches the desktop app's no-default-folder behaviour).
   const [filters, setFilters] = useState<Filter[]>(
     () => fromSearch.length > 0
       ? fromSearch
       : deeplink
         ? [{ kind: "include", ref: deeplink.include }]
-        : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
+        : [],
   );
   // Single-note permalink mode: a note's permalink renders only that note.
   // Set on arrival (a note page, with no ?f= override); cleared on any
@@ -198,8 +198,10 @@ export function ViewerApp(
         const inc = isNotePage && note!.folder ? note!.folder : ref;
         setFilters([{ kind: "include", ref: inc }]);
       } else {
+        // No slug, no ?f= query: match the desktop app — no home seed,
+        // just clear filters and show the unfiltered Stream.
         setSingleNoteRef(null);
-        setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
+        setFilters([]);
       }
     }
     window.addEventListener("popstate", onPop);
@@ -286,9 +288,22 @@ export function ViewerApp(
     })),
     [visible],
   );
+  // Calendar event click — match the desktop app's openEventNote:
+  //   switch to Stream, scroll to the card, leave filters as-is so
+  //   the timeline stays intact (the visitor "hops within" the Stream
+  //   instead of collapsing to a single-note view). Also push the
+  //   note's slug to the URL so the address bar reflects the focused
+  //   note and the link is shareable — without touching pill state,
+  //   which would otherwise filter the Stream to just that ref.
   const onEventClick = (path: string) => {
     const ref = path.replace(/\.md$/i, "").replace(/^.*\//, "");
-    navigate(ref);
+    setView("stream");
+    setSingleNoteRef(null);
+    setScrollTarget(ref);
+    if (typeof history !== "undefined") {
+      const slug = refToSlug.get(ref.toLowerCase());
+      if (slug) history.pushState({}, "", `${basePath}${slug}/`);
+    }
   };
   const noop = async () => { /* read-only */ };
 
