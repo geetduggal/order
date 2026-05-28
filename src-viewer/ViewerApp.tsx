@@ -98,14 +98,17 @@ export function ViewerApp(
   const theme = useTheme();
 
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
-  // an arrival deep-link, else the unfiltered Stream (no home seed —
-  // matches the desktop app's no-default-folder behaviour).
+  // an arrival deep-link, else the home Notable Folder as the default
+  // include. (The desktop app starts with no filters at all, but on the
+  // published page the home folder is the canonical "what this site is
+  // about" view — first-time visitors should land there, not on a flat
+  // recency timeline.)
   const [filters, setFilters] = useState<Filter[]>(
     () => fromSearch.length > 0
       ? fromSearch
       : deeplink
         ? [{ kind: "include", ref: deeplink.include }]
-        : [],
+        : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
   // Single-note permalink mode: a note's permalink renders only that note.
   // Set on arrival (a note page, with no ?f= override); cleared on any
@@ -198,10 +201,10 @@ export function ViewerApp(
         const inc = isNotePage && note!.folder ? note!.folder : ref;
         setFilters([{ kind: "include", ref: inc }]);
       } else {
-        // No slug, no ?f= query: match the desktop app — no home seed,
-        // just clear filters and show the unfiltered Stream.
+        // No slug, no ?f= query: restore the home folder seed — the
+        // viewer's "default" view (see the initial filters useState).
         setSingleNoteRef(null);
-        setFilters([]);
+        setFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
       }
     }
     window.addEventListener("popstate", onPop);
