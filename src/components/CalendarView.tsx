@@ -8,7 +8,7 @@
 // them. Year view is deferred — Full Calendar Plus uses a custom
 // LinearView plugin we haven't ported yet.
 
-import { useEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -154,10 +154,22 @@ function patchFromEvent(arg: EventDropArg | EventResizeDoneArg): Frontmatter | n
   };
 }
 
-export function CalendarView(props: Props) {
+/** Imperative handle exposed to the parent for Cmd+arrow nav. */
+export interface CalendarViewHandle {
+  prev(): void;
+  next(): void;
+  today(): void;
+}
+
+export const CalendarView = forwardRef<CalendarViewHandle, Props>(function CalendarView(props, navRef) {
   const { notes, initialView, onMoveEvent } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  useImperativeHandle(navRef, () => ({
+    prev: () => apiRef.current?.getApi()?.prev(),
+    next: () => apiRef.current?.getApi()?.next(),
+    today: () => apiRef.current?.getApi()?.today(),
+  }), []);
 
   // FullCalendar recomputes on window resize, but a sidebar toggle (or any
   // layout change that only resizes our pane) doesn't fire one. Observe
@@ -307,4 +319,4 @@ export function CalendarView(props: Props) {
       />
     </div>
   );
-}
+});

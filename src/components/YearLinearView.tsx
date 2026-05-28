@@ -12,7 +12,7 @@
 // Drag an event bar → rewrite its `date` (single-day events only for
 // now; multi-day drag preserves the duration, just shifts the start).
 
-import { useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { isoDate, type Frontmatter } from "../lib/frontmatter";
 import { isSameDay, parseIsoDate } from "../lib/calendar";
 
@@ -127,9 +127,23 @@ function packIntoMonth(
   return { events, rowCount: Math.max(MIN_EVENT_ROWS, rows.length) };
 }
 
-export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: Props) {
+export interface YearLinearViewHandle {
+  prev(): void;
+  next(): void;
+  today(): void;
+}
+
+export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function YearLinearView(
+  { notes, onMoveEvent, onCreate, onEventClick },
+  navRef,
+) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
+  useImperativeHandle(navRef, () => ({
+    prev: () => setYear((y) => y - 1),
+    next: () => setYear((y) => y + 1),
+    today: () => setYear(today.getFullYear()),
+  }), [today]);
 
   // Mouse-drag selection state. anchor = mousedown date, hover = the
   // most recent cell the mouse entered. While both are set we render a
@@ -339,5 +353,5 @@ export function YearLinearView({ notes, onMoveEvent, onCreate, onEventClick }: P
       })}
     </div>
   );
-}
+});
 

@@ -15,8 +15,8 @@ import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIo
 import { vaultFs } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
-import { CalendarView, type NoteMeta } from "./CalendarView";
-import { YearLinearView } from "./YearLinearView";
+import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
+import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
@@ -299,6 +299,11 @@ export function CardGrid() {
   // Persist every view change so a relaunch resumes the same calendar/stream
   // (and so the viewport-default only applies on the very first launch).
   useEffect(() => { writeView(view); }, [view]);
+  // Imperative handles for Cmd+arrow nav inside the active calendar view.
+  // Only one of the two is "live" at a time (the mounted view sets it; the
+  // other stays null), so the key handler can blindly call .current.
+  const calendarHandleRef = useRef<CalendarViewHandle | null>(null);
+  const yearHandleRef = useRef<YearLinearViewHandle | null>(null);
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   /** Path of the most recently created note. The matching Card
    *  mounts with `autoFocus` so the cursor lands inside its editor
@@ -570,6 +575,12 @@ export function CardGrid() {
     homeFolderRef.current = homeFolders[0]?.name ?? null;
     homeFoldersRef.current = homeFolders.map((h) => h.name);
   }, [homeFolders]);
+  // Refs the Cmd+arrow keyboard handler reads — it sits in a useEffect
+  // with an empty-ish dep array, so the latest filters / notable-folder
+  // order need to flow in via a mutable ref.
+  const notableFoldersRef = useRef<string[]>([]);
+  const filtersRef = useRef<Filter[]>([]);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
 
   // First-ever launch (no persisted filters) seeds an `include` pill
   // for the home Notable Folder, so Order opens focused on home (its
@@ -967,6 +978,28 @@ export function CardGrid() {
         setView("year");
         return;
       }
+      // Cmd+arrow navigation: forward/back by the active view's unit.
+      // Stream cycles single-folder focus through notableFolders.
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        if (view === "stream") {
+          const list = notableFoldersRef.current;
+          if (list.length === 0) return;
+          e.preventDefault();
+          const cur = filtersRef.current.find((f) => f.kind === "include")?.ref ?? null;
+          const idx = cur ? list.findIndex((n) => n === cur) : -1;
+          const next = list[((idx < 0 ? 0 : idx + dir) + list.length) % list.length];
+          setFilters([{ kind: "include", ref: next }]);
+          return;
+        }
+        e.preventDefault();
+        if (view === "year") {
+          if (dir > 0) yearHandleRef.current?.next(); else yearHandleRef.current?.prev();
+        } else {
+          if (dir > 0) calendarHandleRef.current?.next(); else calendarHandleRef.current?.prev();
+        }
+        return;
+      }
       if (e.key === ";") {
         e.preventDefault();
         toggleSidebar();
@@ -974,7 +1007,7 @@ export function CardGrid() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen, toggleSidebar]);
+  }, [sidebarOpen, toggleSidebar, view]);
 
   // One-shot migration to the unified list model. Generates Areas.md
   // + per-Area + per-Category files from the legacy localStorage
@@ -1411,6 +1444,7 @@ export function CardGrid() {
       frontmatter: n.frontmatter,
       path: n.path,
     }));
+  notableFoldersRef.current = notableFolders.map((f) => f.name);
 
   // Flat list of folder names + their deterministic colors, fed to the
   // folder picker in each non-Notable card's footer.
@@ -1775,6 +1809,7 @@ export function CardGrid() {
         )}
         {view === "day" && (
           <CalendarView
+            ref={calendarHandleRef}
             key="day"
             notes={calendarNotes}
             initialView="timeGridDay"
@@ -1785,6 +1820,7 @@ export function CardGrid() {
         )}
         {view === "week" && (
           <CalendarView
+            ref={calendarHandleRef}
             key="week"
             notes={calendarNotes}
             initialView="timeGridWeek"
@@ -1795,6 +1831,7 @@ export function CardGrid() {
         )}
         {view === "month" && (
           <CalendarView
+            ref={calendarHandleRef}
             key="month"
             notes={calendarNotes}
             initialView="dayGridMonth"
@@ -1805,6 +1842,7 @@ export function CardGrid() {
         )}
         {view === "year" && (
           <YearLinearView
+            ref={yearHandleRef}
             key="year"
             notes={calendarNotes}
             onMoveEvent={updateNoteFrontmatter}

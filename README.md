@@ -484,6 +484,10 @@ adding one is a dozen lines.
 - `Cmd N` — new note. `Cmd S / D / W / M / Y` — switch to Stream / Day / Week /
   Month / Year. The active view persists across launches; first launch defaults
   to **Day on phones** (viewport ≤640px) and **Week on desktop**.
+- `Cmd ← / →` — back / forward by the active view's unit. In **Stream** it
+  cycles the single-folder include filter through `notableFolders`; in
+  **Day / Week / Month** it calls FullCalendar's `prev` / `next`; in **Year**
+  it decrements / increments the year.
 - `Cmd O` — open the right sidebar.
 - `Cmd K` — open the centered command palette to toggle folder filters.
 - `Cmd ;` — toggle the right sidebar.
