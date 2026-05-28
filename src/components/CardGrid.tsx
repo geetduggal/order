@@ -59,6 +59,25 @@ function writeNotesOnly(on: boolean): void {
   try { localStorage.setItem(NOTES_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
+// Persist the active view across sessions, with a viewport-aware default
+// (Day on phones, Week on desktop) on first launch.
+const VIEW_KEY = "order.view";
+function readInitialView(): View {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    if (v === "stream" || v === "day" || v === "week" || v === "month" || v === "year") return v;
+  } catch { /* non-fatal */ }
+  // Touch-sized viewport (≤640px wide) starts in Day; everything else
+  // gets Week — the same breakpoint the layout collapses at.
+  try {
+    if (window.matchMedia("(max-width: 640px)").matches) return "day";
+  } catch { /* non-fatal */ }
+  return "week";
+}
+function writeView(v: View): void {
+  try { localStorage.setItem(VIEW_KEY, v); } catch { /* non-fatal */ }
+}
+
 // "Public only" filter: when on, the Stream shows only notes flagged
 // `public: true`. Off (default) shows public + private together.
 const PUBLIC_ONLY_KEY = "order.publicOnly";
@@ -275,7 +294,10 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
 
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
-  const [view, setView] = useState<View>("stream");
+  const [view, setView] = useState<View>(readInitialView);
+  // Persist every view change so a relaunch resumes the same calendar/stream
+  // (and so the viewport-default only applies on the very first launch).
+  useEffect(() => { writeView(view); }, [view]);
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   /** Path of the most recently created note. The matching Card
    *  mounts with `autoFocus` so the cursor lands inside its editor
@@ -996,20 +1018,23 @@ export function CardGrid() {
     return () => timeouts.forEach(clearTimeout);
   }, [gridEl, notes, filters, view]);
 
-  // Calendar event click opens a small popup at the cursor (Open / Delete)
-  // instead of jumping straight to the note. Open keeps the original
-  // behaviour (switch to Stream + scroll to the note); Delete removes the
-  // underlying file.
+  // Calendar event click opens a small popup at the cursor (Open / Delete /
+  // move-to-day chips) instead of jumping straight to the note. Open keeps
+  // the original behaviour (switch to Stream + scroll to the note); Delete
+  // removes the underlying file; move-day chips rewrite the note's `date:`
+  // while keeping its time-of-day unchanged.
   const [eventMenu, setEventMenu] = useState<
-    { path: string; title: string; x: number; y: number } | null
+    { path: string; title: string; x: number; y: number; date: string | null } | null
   >(null);
   const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
     const note = notesRef.current?.find((n) => n.path === path);
+    const d = note && typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
     setEventMenu({
       path,
       title: note?.title ?? "Untitled",
       x: coords?.x ?? window.innerWidth / 2,
       y: coords?.y ?? window.innerHeight / 2,
+      date: d,
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
@@ -1021,6 +1046,11 @@ export function CardGrid() {
     if (!note) return;
     await handleCardDelete(note.id, path);
   }, []);
+  /** Rewrite a calendar event's date to `newDate` (YYYY-MM-DD), keeping the
+   *  startTime / endTime / allDay flag untouched — "move to same time on
+   *  another day." Forward-ref so the action menu (declared earlier) can
+   *  invoke the latest version once updateNoteFrontmatter is in scope. */
+  const moveEventToDayRef = useRef<((path: string, newDate: string) => Promise<void>) | null>(null);
 
   // After switching to Stream with a target set, scroll the matching
   // card into view and pulse a highlight on it. We wait long enough
@@ -1287,6 +1317,14 @@ export function CardGrid() {
     await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
+  // Bind moveEventToDay (declared earlier via forward-ref) to the live
+  // updateNoteFrontmatter so the event action menu can move an event to
+  // another day without touching its time-of-day fields.
+  useEffect(() => {
+    moveEventToDayRef.current = async (path: string, newDate: string) => {
+      await updateNoteFrontmatter(path, { date: newDate });
+    };
+  }, [updateNoteFrontmatter]);
 
   if (iosNeedsVault) {
     return (
@@ -1808,8 +1846,16 @@ export function CardGrid() {
           title={eventMenu.title}
           x={eventMenu.x}
           y={eventMenu.y}
+          // Show "move to day" chips when we know the event's date and the
+          // view is one where moving to a different day makes sense (Week
+          // primarily, but also Day/Year — Month already exposes drag).
+          eventDate={view === "week" || view === "day" || view === "year" ? eventMenu.date : null}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
           onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
+          onMoveToDay={(iso) => {
+            void moveEventToDayRef.current?.(eventMenu.path, iso);
+            setEventMenu(null);
+          }}
           onCancel={() => setEventMenu(null)}
         />
       )}
@@ -1820,16 +1866,41 @@ export function CardGrid() {
 /** Small popup at the cursor for a clicked calendar event. Open switches
  *  to Stream and scrolls to the note; Delete removes the file. Backdrop
  *  click or Esc dismisses. */
-function EventActionMenu({ title, x, y, onOpen, onDelete, onCancel }: {
+function EventActionMenu({ title, x, y, eventDate, onOpen, onDelete, onMoveToDay, onCancel }: {
   title: string;
   x: number;
   y: number;
+  /** ISO date (YYYY-MM-DD) of the event being acted on. When set, the
+   *  menu renders a row of 7 chips for the event's week so the user can
+   *  tap a day to move the event there (same time-of-day). */
+  eventDate: string | null;
   onOpen: () => void;
   onDelete: () => void;
+  onMoveToDay: (iso: string) => void;
   onCancel: () => void;
 }) {
-  const left = Math.min(Math.max(x, 8), window.innerWidth - 200);
-  const top = Math.min(Math.max(y, 8), window.innerHeight - 120);
+  // Move-day chips: 7 days of the week containing `eventDate`. Compute the
+  // week start as Sunday (firstDay=0, matching CalendarView's firstDay).
+  const weekDays = (() => {
+    if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return [];
+    const [y, m, d] = eventDate.split("-").map((s) => parseInt(s, 10));
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay(); // 0 = Sunday
+    const sunday = new Date(y, m - 1, d - dow);
+    const fmtIso = (x: Date) =>
+      `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    return Array.from({ length: 7 }, (_, i) => {
+      const c = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + i);
+      const iso = fmtIso(c);
+      return { iso, label: labels[i], day: c.getDate(), isToday: iso === eventDate };
+    });
+  })();
+  // Menu is taller when chips are present — keep it inside the viewport.
+  const menuH = weekDays.length > 0 ? 170 : 120;
+  const menuW = weekDays.length > 0 ? 280 : 200;
+  const left = Math.min(Math.max(x, 8), window.innerWidth - menuW);
+  const top = Math.min(Math.max(y, 8), window.innerHeight - menuH);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") { e.preventDefault(); onCancel(); }
@@ -1845,6 +1916,23 @@ function EventActionMenu({ title, x, y, onOpen, onDelete, onCancel }: {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="event-action-menu-title">{title}</div>
+        {weekDays.length > 0 && (
+          <div className="event-action-days" role="group" aria-label="Move to day">
+            {weekDays.map((d) => (
+              <button
+                key={d.iso}
+                type="button"
+                className={"event-action-day" + (d.isToday ? " is-current" : "")}
+                onClick={() => onMoveToDay(d.iso)}
+                title={`Move to ${d.label} (${d.iso})`}
+                aria-label={`Move to ${d.label} ${d.day}`}
+              >
+                <span className="event-action-day-name">{d.label}</span>
+                <span className="event-action-day-num">{d.day}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <button type="button" className="event-action-btn" onClick={onOpen}>Open</button>
         <button type="button" className="event-action-btn is-delete" onClick={onDelete}>Delete</button>
       </div>

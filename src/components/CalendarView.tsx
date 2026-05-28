@@ -267,6 +267,16 @@ export function CalendarView(props: Props) {
         nowIndicator
         firstDay={0}
         height="auto"
+        // Touch-friendly: drop FC's 1000ms long-press to 250ms so dragging
+        // an event or selecting a range with a finger feels responsive.
+        // Mouse drags are unaffected (long-press only applies to touch).
+        longPressDelay={250}
+        eventLongPressDelay={250}
+        selectLongPressDelay={250}
+        // A touch needs to move ~6px to commit (vs FC's default 5) so a
+        // tap-meant-as-click doesn't accidentally start a drag. Keeps the
+        // event-click action menu reliable on mobile.
+        eventDragMinDistance={6}
         headerToolbar={{
           left: "prev,next today",
           center: "title",

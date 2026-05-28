@@ -1810,6 +1810,30 @@ input, textarea, select { outline: none; box-shadow: none; }
    visual noise. */
 :root[data-theme="lcars"] .fc-shell { --fc-border-color: var(--rule-soft); }
 
+/* Touch-friendly drag & resize. After FC's long-press fires, the finger
+   is moving the event — block the page from scrolling underneath so the
+   gesture lands cleanly. Mouse / desktop behaviour is unchanged. */
+.fc-shell .fc-event { touch-action: none; }
+/* Make the bottom resize grip a real finger-sized target on touch, with a
+   subtle visible affordance so users can find it. FC defaults to a 4px
+   invisible strip — fine for mouse, hard to grab on mobile. */
+.fc-shell { --fc-event-resizer-thickness: 8px; }
+@media (hover: none) {
+  .fc-shell .fc-timegrid-event .fc-event-resizer-end::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 1px;
+    width: 24px;
+    height: 3px;
+    margin-left: -12px;
+    border-radius: 2px;
+    background: var(--ink-faint);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
 /* Day grid (month) cells */
 .fc-shell .fc-daygrid-day-number {
   font-family: var(--serif);
@@ -2812,6 +2836,62 @@ input, textarea, select { outline: none; box-shadow: none; }
 .event-action-btn:hover { background: var(--bg-elev); }
 .event-action-btn.is-delete { color: var(--coral); }
 .event-action-btn.is-delete:hover { background: var(--coral-soft); }
+
+/* Move-to-day chips in the event action menu: a 7-column grid of compact
+   day chips (label + date), sized for thumb-tap on mobile and click on
+   desktop. The chip for the event's current day is muted/disabled. */
+.event-action-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  padding: 4px 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.event-action-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 5px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-family: var(--sans);
+  cursor: pointer;
+  color: var(--ink);
+  transition: background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.event-action-day:hover {
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.event-action-day-name {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  line-height: 1;
+}
+.event-action-day-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+.event-action-day.is-current {
+  border-color: var(--royal);
+  color: var(--royal);
+  cursor: default;
+  opacity: 0.55;
+}
+.event-action-day.is-current:hover { background: transparent; }
+/* On touch devices give chips real finger-sized targets. */
+@media (hover: none) {
+  .event-action-day { padding: 9px 0 7px; }
+  .event-action-day-num { font-size: 13px; }
+}
 
 /* ---------- List Notable Folder: base controls strip ---------- */
 .order-card-list-controls {
