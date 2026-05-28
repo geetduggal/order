@@ -1046,6 +1046,7 @@ export function CardGrid() {
   // Forward-ref to createNote so Cmd+N can invoke it from the keyboard
   // useEffect above the declaration site without a TS forward-ref error.
   const createNoteRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
+  const promptCreateRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -1069,7 +1070,13 @@ export function CardGrid() {
       }
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
-        void createNoteRef.current?.({ date: isoDate(), startTime: isoTime(), allDay: false });
+        const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
+        // In a calendar view, present the title prompt first (same UX
+        // as drag-to-create on a slot) so the event lands with a name
+        // without having to open the note. Stream goes straight to the
+        // editor as before.
+        if (view !== "stream") void promptCreateRef.current?.(patch);
+        else void createNoteRef.current?.(patch);
         return;
       }
       if (e.key === "s" || e.key === "S") {
@@ -1334,6 +1341,7 @@ export function CardGrid() {
   // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
   // sits earlier in this component, can invoke the latest createNote.
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
+  useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
@@ -1770,13 +1778,17 @@ export function CardGrid() {
           // 1 include → auto-assign; 0 → plain note (lands in home);
           // 2+ → picker.
           const sel = notableIncludes;
+          // In a calendar view, prompt for a title first (matches the
+          // drag-to-create gesture); Stream still goes straight to a
+          // blank note.
+          const create = view !== "stream" ? promptCreate : createNote;
           if (sel.length === 1) {
-            void createNote({
+            void create({
               date: isoDate(), startTime: isoTime(), allDay: false,
               folder: `[[${sel[0]}]]`,
             });
           } else if (sel.length === 0) {
-            void createNote({ date: isoDate(), startTime: isoTime(), allDay: false });
+            void create({ date: isoDate(), startTime: isoTime(), allDay: false });
           } else {
             setCreatorOpen((prev) => !prev);
           }
@@ -1879,7 +1891,8 @@ export function CardGrid() {
                 className="new-note-picker-item"
                 onClick={() => {
                   setCreatorOpen(false);
-                  void createNote({
+                  const create = view !== "stream" ? promptCreate : createNote;
+                  void create({
                     date: isoDate(), startTime: isoTime(), allDay: false,
                     folder: `[[${name}]]`,
                   });
