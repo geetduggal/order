@@ -1131,9 +1131,11 @@ export function CardGrid() {
         setView("year");
         return;
       }
-      // Cmd+arrow navigation: forward/back by the active view's unit.
-      // Stream cycles single-folder focus through notableFolders.
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      // Cmd+Shift+arrow navigation: forward/back by the active view's
+      // unit. Stream cycles single-folder focus through notableFolders.
+      // Shift is required so plain Cmd+← / → keep their browser-style
+      // text-editing behaviour inside the Milkdown editor.
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.shiftKey) {
         const dir = e.key === "ArrowRight" ? 1 : -1;
         if (view === "stream") {
           const list = notableFoldersRef.current;
@@ -2175,7 +2177,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} W`, label: "Week view" },
     { keys: `${cmd} M`, label: "Month view" },
     { keys: `${cmd} Y`, label: "Year view" },
-    { keys: `${cmd} ←  /  →`, label: "Back / forward (calendar) · cycle folders (Stream)" },
+    { keys: `${cmd} ⇧ ←  /  →`, label: "Back / forward (calendar) · cycle folders (Stream)" },
     { keys: `${cmd} K`, label: "Folder command palette" },
     { keys: `${cmd} O`, label: "Open sidebar" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
