@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
-import { vaultFs } from "../lib/vault-fs";
+import { vaultFs, consumeSelfWrite } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card } from "./Card";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
@@ -491,43 +491,95 @@ export function CardGrid() {
     }
   }, []);
 
+  // Per-path "external change" version counter. Bumped when the watcher
+  // (or the polling fallback) reports a file changed and the change was
+  // NOT one of our own writes (see consumeSelfWrite). Cards include this
+  // counter in their React `key` so a true external edit force-remounts
+  // the Card — Milkdown is uncontrolled after mount, so a state change
+  // alone wouldn't refresh the rendered prose, but a remount will.
+  const [externalChangeVersion, setExternalChangeVersion] = useState<Record<string, number>>({});
+  const bumpExternal = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    setExternalChangeVersion((prev) => {
+      const next = { ...prev };
+      for (const p of paths) next[p] = (next[p] ?? 0) + 1;
+      return next;
+    });
+  }, []);
+
   // Live file watching: start the Rust-side notify watcher once we know
-  // the vault root, then reload on each debounced `vault-changed` event
-  // so external edits (git pull, Obsidian, an editor in another window)
-  // show up without restarting the app. The Rust side already debounces
-  // raw fs events at 500ms; we add a small JS-side coalesce so a burst
-  // of multi-path notifications only triggers one reload.
+  // the vault root, listen for `vault-changed`, filter out paths that
+  // we just wrote ourselves (else autosaves remount the editor mid-key),
+  // and treat what's left as external changes — reload the index AND
+  // bump per-path external counters so any mounted Card whose file
+  // changed remounts with fresh content.
   //
-  // iOS is sandboxed and our vault lives behind a security-scoped
-  // bookmark — notify doesn't reliably observe it from outside the app,
-  // and our own writes go through the bridge which already updates state
-  // optimistically. Watcher is desktop-only.
+  // iOS: notify's reliability under the sandbox + security-scoped
+  // bookmark is mixed, so we ALSO run a mtime poller as a safety net
+  // (also runs on desktop, harmlessly). The poller uses the lightweight
+  // metadata walker so it doesn't pull bodies over the bridge.
   useEffect(() => {
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
-    function scheduleReload() {
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    const lastMtime = new Map<string, number>();
+    function reportExternal(paths: string[]) {
+      // Drop our own writes from the change set; anything remaining is
+      // a genuine external edit and worth a reload + Card remount.
+      const external: string[] = [];
+      for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
+      if (external.length === 0) return;
+      bumpExternal(external);
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
     }
-    async function start() {
-      if (await isIos()) return;
+    async function startWatcher() {
       const root = await syncVaultRoot();
       if (!root || cancelled) return;
       try {
         await invoke("start_watcher", { path: root });
-        unlisten = await listen<string[]>("vault-changed", () => scheduleReload());
+        unlisten = await listen<string[]>("vault-changed", (e) => reportExternal(e.payload ?? []));
       } catch (err) {
-        console.error("watcher start failed:", err);
+        // Non-fatal: poller below still gives us a freshness signal.
+        console.warn("watcher start failed (poller will cover):", err);
       }
+    }
+    async function pollOnce() {
+      try {
+        const meta = await vaultFs.walkMetadata();
+        const changed: string[] = [];
+        const seen = new Set<string>();
+        for (const m of meta) {
+          seen.add(m.path);
+          const prev = lastMtime.get(m.path);
+          // First sighting just seeds the table (no false reports on
+          // startup). Subsequent mtime changes are external candidates.
+          if (prev === undefined) lastMtime.set(m.path, m.mtimeMs);
+          else if (m.mtimeMs !== prev) {
+            lastMtime.set(m.path, m.mtimeMs);
+            changed.push(m.path);
+          }
+        }
+        for (const p of [...lastMtime.keys()]) if (!seen.has(p)) lastMtime.delete(p);
+        if (changed.length > 0) reportExternal(changed);
+      } catch { /* sleep + retry */ }
+      if (!cancelled) pollTimer = setTimeout(pollOnce, 4000);
+    }
+    async function start() {
+      const root = await syncVaultRoot();
+      if (!root || cancelled) return;
+      void startWatcher();
+      void pollOnce();
     }
     void start();
     return () => {
       cancelled = true;
       if (reloadTimer) clearTimeout(reloadTimer);
+      if (pollTimer) clearTimeout(pollTimer);
       if (unlisten) unlisten();
     };
-  }, [reloadNotes]);
+  }, [reloadNotes, bumpExternal]);
 
   /** iOS: present the native folder picker; on selection the bookmark is
    *  persisted, so a reload restores + opens it for the session. */
@@ -1599,11 +1651,13 @@ export function CardGrid() {
         const sectionNotes = filteredNotes
           .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+        const keyFor = (n: LoadedNote) =>
+          `${n.id}:${externalChangeVersion[n.path] ?? 0}`;
         const centerpiece: SectionCell | null = mainNote
-          ? { key: mainNote.id, dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
+          ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
         const noteCells: SectionCell[] = sectionNotes.map((n) => ({
-          key: n.id, dataPath: n.path, node: cardNode(n, NOTE_CAP),
+          key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP),
         }));
         return { ref, centerpiece, noteCells };
       })
@@ -1799,11 +1853,19 @@ export function CardGrid() {
             </div>
           ) : (
             <div className="card-grid" ref={setGridEl}>
-              {sortedNotes.map((n) => (
-                <div className="card-grid-cell" data-path={n.path} key={n.id}>
-                  {cardNode(n)}
-                </div>
-              ))}
+              {sortedNotes.map((n) => {
+                // Per-Card external-change version is folded into the key:
+                // a true external edit (not one of our own writes) bumps it,
+                // remounting the Card with fresh content from disk. Same-id
+                // reloads (chain mutations, our autosaves) keep the same key
+                // and don't remount.
+                const v = externalChangeVersion[n.path] ?? 0;
+                return (
+                  <div className="card-grid-cell" data-path={n.path} key={`${n.id}:${v}`}>
+                    {cardNode(n)}
+                  </div>
+                );
+              })}
             </div>
           )
         )}
