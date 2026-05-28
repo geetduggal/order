@@ -851,13 +851,15 @@ input, textarea, select { outline: none; box-shadow: none; }
 .milkdown-host .ProseMirror ul ul ul { list-style-type: square; }
 .milkdown-host .ProseMirror li::marker { color: var(--ink-faint); }
 
-/* Nested lists: a subtle vertical bar marks each indentation level,
-   and the rows stay tight. */
+/* Nested lists: minimal indent and a faint guide rule. The previous
+   ~1.2em per level made deep outlines drift sharply to the right; trim
+   it so nesting is felt more than seen and the prose stays anchored to
+   the left margin. */
 .milkdown-host .ProseMirror li > :is(ul, ol) {
   margin: 0.05em 0 0.15em;
-  margin-left: 0.15em;
-  padding-left: 1.05em;
-  border-left: 1px solid var(--rule);
+  margin-left: 0;
+  padding-left: 0.7em;
+  border-left: 1px solid var(--rule-soft);
 }
 
 /* Crepe renders each bullet as a flex row: a marker (.label-wrapper with
