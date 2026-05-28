@@ -154,7 +154,10 @@ export function ViewerApp(
     commitFilters(filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref)));
   }
   function resetToDefault() {
-    commitFilters(data.home.name ? [{ kind: "include", ref: data.home.name }] : []);
+    // Match the desktop app: clear all filters outright. (Previously the
+    // viewer restored the home folder as the sole include; the app
+    // dropped that behaviour after the no-default-folder change.)
+    commitFilters([]);
     setCollapseNonce((n) => n + 1);
   }
   // Wikilink / list-row click → accumulate an include + scroll to it.
@@ -290,23 +293,37 @@ export function ViewerApp(
   const noop = async () => { /* read-only */ };
 
   // Smooth-scroll + coral flash to the target card after a filter
-  // change has rendered it.
+  // change has rendered it. Matches the desktop app:
+  // - requestAnimationFrame-polls for the cell to mount (the masonry
+  //   layout effect needs a few frames after a filter change)
+  // - block: "start" with shared .card-grid-cell scroll-margin-top
+  //   in styles.css lands the card below the top rail
+  // - re-toggle .is-target with a forced reflow so a re-jump replays
+  //   the pulse animation.
   useEffect(() => {
     if (view !== "stream" || !scrollTarget) return;
     const target = scrollTarget.toLowerCase();
-    const timer = setTimeout(() => {
-      const cells = document.querySelectorAll<HTMLElement>(".card-grid-cell");
-      const cell = Array.from(cells).find(
-        (c) => (c.dataset.path ?? "").toLowerCase() === target,
-      );
+    let cancelled = false;
+    let attempts = 0;
+    function tryScroll() {
+      if (cancelled) return;
+      const cell = Array.from(document.querySelectorAll<HTMLElement>(".card-grid-cell"))
+        .find((c) => (c.dataset.path ?? "").toLowerCase() === target);
       if (cell) {
         cell.scrollIntoView({ behavior: "smooth", block: "start" });
+        cell.classList.remove("is-target");
+        void cell.offsetWidth; // restart animation
         cell.classList.add("is-target");
         setTimeout(() => cell.classList.remove("is-target"), 1400);
+        setScrollTarget(null);
+        return;
       }
-      setScrollTarget(null);
-    }, 120);
-    return () => clearTimeout(timer);
+      attempts += 1;
+      if (attempts < 30) requestAnimationFrame(tryScroll);
+      else setScrollTarget(null);
+    }
+    const raf = requestAnimationFrame(tryScroll);
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
   }, [view, scrollTarget, filters]);
 
   useEffect(() => {
