@@ -58,6 +58,79 @@ pub fn vault_walk(state: tauri::State<VaultState>) -> Result<Vec<WalkEntry>, Str
     Ok(out)
 }
 
+/// Per-note metadata returned by `vault_walk_metadata`. `frontmatter` is
+/// the raw YAML between the `---` fences (or empty when none), parsed
+/// once in JS via the existing js-yaml splitter. `body_len` is the byte
+/// length of the body — enough to estimate masonry row spans for the
+/// virtualized Stream without ever reading the body across the bridge.
+/// `mtime_ms` is the last-modified time in Unix-epoch milliseconds so
+/// callers can build an on-disk metadata cache keyed on freshness.
+#[derive(serde::Serialize)]
+pub struct MetaEntry {
+    pub path: String,
+    pub name: String,
+    pub frontmatter: String,
+    pub body_len: usize,
+    pub mtime_ms: i64,
+}
+
+/// Frontmatter-only walker. Reads every `.md` file under the vault root
+/// (same traversal as `vault_walk`) but **strips the body before crossing
+/// the JS bridge** — at 10⁴ notes this is roughly the difference between
+/// "few MB of payload" and "hundreds of MB." Bodies are loaded on-demand
+/// per Card via `vault_read_text` once needed.
+#[tauri::command]
+pub fn vault_walk_metadata(state: tauri::State<VaultState>) -> Result<Vec<MetaEntry>, String> {
+    let root = {
+        let guard = state.root.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("vault root not set")?.clone()
+    };
+    let mut entries = Vec::new();
+    walk_dir(&root, &mut entries);
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let p = std::path::PathBuf::from(&entry.path);
+        let raw = match fs::read_to_string(&p) {
+            Ok(s) => s,
+            Err(_) => continue, // permission / vanished file — skip silently
+        };
+        let (frontmatter, body_len) = split_frontmatter_lite(&raw);
+        let mtime_ms = fs::metadata(&p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        out.push(MetaEntry {
+            path: entry.path,
+            name: entry.name,
+            frontmatter,
+            body_len,
+            mtime_ms,
+        });
+    }
+    Ok(out)
+}
+
+/// Lightweight `---` frontmatter splitter — returns (yaml_text, body_byte_len)
+/// without allocating the body itself. Mirrors js-yaml-based splitFrontmatter
+/// in src/lib/frontmatter.ts. A file without an opening `---\n` is treated
+/// as all body.
+fn split_frontmatter_lite(raw: &str) -> (String, usize) {
+    let prefix = "---\n";
+    if let Some(rest) = raw.strip_prefix(prefix) {
+        if let Some(end) = rest.find("\n---") {
+            let yaml = &rest[..end];
+            // Body starts after "\n---" and the next newline (if any).
+            let after = &rest[end + 4..];
+            let body_start = if after.starts_with('\n') { 1 } else { 0 };
+            let body_len = after.len().saturating_sub(body_start);
+            return (yaml.to_string(), body_len);
+        }
+    }
+    (String::new(), raw.len())
+}
+
 fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,

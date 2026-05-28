@@ -11,6 +11,23 @@ export interface VaultDirEntry { name: string; isDir: boolean }
 export interface VaultStat { mtime: number; size: number }
 export interface VaultFolder { path: string | null; name: string | null }
 
+/** Frontmatter-only walk entry (see vault_walk_metadata in vault_fs.rs).
+ *  Bodies are deliberately stripped on the Rust side — the per-note
+ *  payload is just enough to drive filtering, sort, sidebar, taxonomy,
+ *  and masonry size estimation. Bodies are fetched lazily per Card via
+ *  readText once they're actually rendered. */
+export interface VaultMetaEntry {
+  path: string;
+  filename: string;
+  /** Raw YAML between the `---` fences, or "" when none. Parsed once on
+   *  arrival by splitFrontmatter. */
+  frontmatterYaml: string;
+  /** Byte length of the body section — masonry row-span estimate. */
+  bodyLen: number;
+  /** Last-modified time in Unix-epoch ms; cache freshness key. */
+  mtimeMs: number;
+}
+
 export const vaultFs = {
   setRoot: (path: string) => invoke<void>("vault_set_root", { path }),
   isIos: () => invoke<boolean>("vault_is_ios"),
@@ -20,6 +37,21 @@ export const vaultFs = {
   walk: (): Promise<{ path: string; filename: string }[]> =>
     invoke<{ path: string; name: string }[]>("vault_walk").then((es) =>
       es.map((e) => ({ path: e.path, filename: e.name })),
+    ),
+  /** Frontmatter-only walk. Returns one MetaEntry per .md without
+   *  shipping any body bytes across the bridge — the scaling-tier
+   *  fast path for index loading. Use readText for bodies on demand. */
+  walkMetadata: (): Promise<VaultMetaEntry[]> =>
+    invoke<{ path: string; name: string; frontmatter: string; body_len: number; mtime_ms: number }[]>(
+      "vault_walk_metadata",
+    ).then((es) =>
+      es.map((e): VaultMetaEntry => ({
+        path: e.path,
+        filename: e.name,
+        frontmatterYaml: e.frontmatter,
+        bodyLen: e.body_len,
+        mtimeMs: e.mtime_ms,
+      })),
     ),
   /** iOS: present the folder picker, mint + persist a bookmark, return
    *  the resolved path + name (path null if cancelled). */

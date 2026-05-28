@@ -370,8 +370,10 @@ export function CardGrid() {
    *  expansion (via collapseNonce). The home-reset icon and the
    *  sidebar's clear-× both call this. Empty vault → no filters. */
   const resetToDefault = useCallback(() => {
-    const home = homeFoldersRef.current[0];
-    setFilters(home ? [{ kind: "include", ref: home }] : []);
+    // No more home-folder seeding: clearing filters clears them. The
+    // calendar / Stream then show everything in scope (subject to the
+    // notes-only / public-only toggles).
+    setFilters([]);
     setCollapseNonce((n) => n + 1);
   }, []);
   /** Add an include filter AND scroll the stream to it. Bound to
@@ -576,24 +578,13 @@ export function CardGrid() {
   // After the first run, the persisted set wins and the user is free
   // to add/remove pills.
   const seededDefault = useRef<boolean>(readStoredFilters() !== null);
-  // iOS: always open on the home folder as the only filter (ignore the
-  // persisted set), once per launch. Desktop: seed home only on a first
-  // launch with no persisted pills.
-  const homeForcedIos = useRef(false);
-  useLayoutEffect(() => {
-    if (!notes) return;
-    const home = homeFolders[0]?.name;
-    if (!home) return;
-    if (isIosSync()) {
-      if (homeForcedIos.current) return;
-      homeForcedIos.current = true;
-      setFilters([{ kind: "include", ref: home }]);
-      return;
-    }
-    if (seededDefault.current) return;
-    seededDefault.current = true;
-    setFilters([{ kind: "include", ref: home }]);
-  }, [notes, homeFolders]);
+  // Default at app open: no folder filter. The calendar shows everything
+  // dated; the Stream shows the full recency timeline. Used to seed the
+  // home folder as an include on first launch (and force it on every iOS
+  // launch) — that's gone now, in line with letting the calendar be the
+  // default landing surface and lazy-loading bodies. The persisted set
+  // (if any) is still restored below by the storage-bound effect.
+  useLayoutEffect(() => { seededDefault.current = true; }, []);
 
   // Persist pill state across launches. Gated on notes being loaded
   // so the empty initial state can't overwrite a persisted set (or
