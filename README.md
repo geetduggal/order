@@ -124,10 +124,15 @@ only the single best thing from each.
 - **Vite** — dev server with HMR on `localhost:1420`.
 - **[Milkdown Crepe](https://milkdown.dev/)** — ProseMirror-based WYSIWYG markdown
   editor. One instance per Card; uncontrolled after mount.
-- **[FullCalendar v6 React](https://fullcalendar.io/)** — Week and Month calendars.
-  Year is a hand-rolled linear strip (`YearLinearView.tsx`) ported from a fork
-  of `obsidian-full-calendar`.
+- **[FullCalendar v6 React](https://fullcalendar.io/)** — Day, Week, and Month
+  calendars. Year is a hand-rolled linear strip (`YearLinearView.tsx`) ported
+  from a fork of `obsidian-full-calendar`. Touch-friendly: long-press for
+  drag / select is dropped from 1000ms to 250ms; the bottom resize handle
+  paints a visible grip bar under `@media (hover: none)`; `touch-action: none`
+  on `.fc-event` so a drag doesn't fight page scrolling.
 - **js-yaml** — frontmatter parse / dump on the JS side.
+- **notify** (Rust) — debounced filesystem watcher behind the `start_watcher`
+  command; emits `vault-changed` to the frontend on external edits (desktop).
 
 ### Source of truth
 
@@ -370,6 +375,38 @@ three independent sources:
 - **Capturing `input` / `keyup` listener** on the grid — backstop in case MO's
   attribute filter ever misses a frame.
 
+### Calendar interactions
+
+- **Quick-create with title**: drag/click an empty slot, type the event title in
+  the centered popup, hit Enter — the title becomes both the filename
+  (`YYYY-MM-DD Title.md`) and the body's `# Title` H1. Esc cancels. Empty Enter
+  still creates an untitled event so it stays a fast capture.
+- **Event click → action menu** at the cursor: **Open** (switch to Stream + scroll
+  to the note), **Delete** (remove the file), a row of **seven day chips** for
+  that event's week (tap one to move the event to the same time on a different
+  day), and a compact **Notable Folder picker** (chip when assigned, searchable
+  list when opening — mirrors the card-footer FolderPicker).
+- **Custom event rendering**: title-first / time-after, single-line for short
+  slots so 30-minute events stay legible; FC's built-in time element is silenced
+  (`displayEventTime: false`) and its ` - ` `::after` separator is
+  overridden to `content: none` so there's no trailing dash. Drag-to-create
+  range supported. Custom `eventContent` keeps the layout identical across event
+  durations.
+- **Layout refit on container resize**: a `ResizeObserver` on the calendar
+  shell calls `api.updateSize()` whenever the pane width changes, so toggling
+  the sidebar (or any width change that's not a full window resize) rebalances
+  the grid immediately.
+
+### File watching
+
+A Rust-side `notify` watcher (debounced 500ms) observes the vault tree and
+emits a `vault-changed` event on every `.md` change. The frontend listens,
+coalesces with a 250ms timer, and re-runs the walk — so external edits (git
+pull, Obsidian, another editor) reach the UI without a restart. Reloads
+**preserve note ids by path**, so already-mounted Cards (with their Milkdown
+editors, focus, scroll) keep their identity. Desktop only — iOS sandboxes the
+security-scoped vault, so notify can't observe it from outside the app.
+
 ### Notable Folder sections — the newspaper template
 
 The Stream is dynamic on purpose: it's the work surface, where thinking happens
@@ -401,6 +438,8 @@ A thin left rail of round icon buttons sits in the top-left:
 - `↑` — open the Publish panel.
 - **notes-only toggle** — switch the Stream between *notes + Notable Folders*
   and *just notes* (hides Notable-Folder cards). Persists across sessions.
+- **public-only toggle** — Globe/Lock icon; flip between *public + private*
+  (default) and *public only* in the Stream. Stacks with notes-only.
 - `+ / −` — grow / shrink note text (font-size scaling; see Keyboard).
 - **theme** — cycle the theme; the icon reflects the current one (see Theming).
 - **settings** — vault-folder picker and app settings.
@@ -408,6 +447,7 @@ A thin left rail of round icon buttons sits in the top-left:
 Just below the rail is the **filter-pill stack**: a search icon (same as
 `Cmd K`), the active filter chips (drag to reorder, × to remove, click to focus
 a folder), and a clear-all icon beneath them whenever a filter is active.
+The app opens with no folder filter; the persisted set (if any) rehydrates.
 
 The right edge holds a `›/‹` sidebar toggle (the sidebar starts closed). The
 sidebar *is* the taxonomy: drill Areas → Categories → Notable Folders, and
@@ -441,6 +481,9 @@ adding one is a dozen lines.
   font-size variable — deliberately *not* CSS `zoom` or native webview zoom,
   which throw ProseMirror's click-to-caret hit-testing off (and the native path
   isn't available on iOS). The size persists.
+- `Cmd N` — new note. `Cmd S / D / W / M / Y` — switch to Stream / Day / Week /
+  Month / Year. The active view persists across launches; first launch defaults
+  to **Day on phones** (viewport ≤640px) and **Week on desktop**.
 - `Cmd O` — open the right sidebar.
 - `Cmd K` — open the centered command palette to toggle folder filters.
 - `Cmd ;` — toggle the right sidebar.

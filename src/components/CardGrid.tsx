@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -1060,22 +1060,22 @@ export function CardGrid() {
   }, [gridEl, notes, filters, view]);
 
   // Calendar event click opens a small popup at the cursor (Open / Delete /
-  // move-to-day chips) instead of jumping straight to the note. Open keeps
-  // the original behaviour (switch to Stream + scroll to the note); Delete
-  // removes the underlying file; move-day chips rewrite the note's `date:`
-  // while keeping its time-of-day unchanged.
+  // move-to-day chips / change-folder picker) instead of jumping straight
+  // to the note.
   const [eventMenu, setEventMenu] = useState<
-    { path: string; title: string; x: number; y: number; date: string | null } | null
+    { path: string; title: string; x: number; y: number; date: string | null; folder: string | null } | null
   >(null);
   const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
     const note = notesRef.current?.find((n) => n.path === path);
     const d = note && typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
+    const f = note ? noteFolder(note.frontmatter) ?? null : null;
     setEventMenu({
       path,
       title: note?.title ?? "Untitled",
       x: coords?.x ?? window.innerWidth / 2,
       y: coords?.y ?? window.innerHeight / 2,
       date: d,
+      folder: f,
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
@@ -1891,10 +1891,19 @@ export function CardGrid() {
           // view is one where moving to a different day makes sense (Week
           // primarily, but also Day/Year — Month already exposes drag).
           eventDate={view === "week" || view === "day" || view === "year" ? eventMenu.date : null}
+          // Notable Folder picker: current + the same list the card-footer
+          // picker uses, so the gesture is consistent with what's in the
+          // Stream's notes.
+          currentFolder={eventMenu.folder}
+          availableFolders={availableFolderRefs}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
           onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
           onMoveToDay={(iso) => {
             void moveEventToDayRef.current?.(eventMenu.path, iso);
+            setEventMenu(null);
+          }}
+          onAssignFolder={async (name) => {
+            await handleAssignFolder(eventMenu.path, name);
             setEventMenu(null);
           }}
           onCancel={() => setEventMenu(null)}
@@ -1907,7 +1916,10 @@ export function CardGrid() {
 /** Small popup at the cursor for a clicked calendar event. Open switches
  *  to Stream and scrolls to the note; Delete removes the file. Backdrop
  *  click or Esc dismisses. */
-function EventActionMenu({ title, x, y, eventDate, onOpen, onDelete, onMoveToDay, onCancel }: {
+function EventActionMenu({
+  title, x, y, eventDate, currentFolder, availableFolders,
+  onOpen, onDelete, onMoveToDay, onAssignFolder, onCancel,
+}: {
   title: string;
   x: number;
   y: number;
@@ -1915,11 +1927,28 @@ function EventActionMenu({ title, x, y, eventDate, onOpen, onDelete, onMoveToDay
    *  menu renders a row of 7 chips for the event's week so the user can
    *  tap a day to move the event there (same time-of-day). */
   eventDate: string | null;
+  /** Current Notable Folder ref ("[[…]]" stripped), or null. Shown as the
+   *  active chip in the folder picker. */
+  currentFolder: string | null;
+  /** Notable Folder picker options, mirroring the card-footer picker. */
+  availableFolders: { name: string; color: string }[];
   onOpen: () => void;
   onDelete: () => void;
   onMoveToDay: (iso: string) => void;
+  onAssignFolder: (name: string) => Promise<void> | void;
   onCancel: () => void;
 }) {
+  const [folderQuery, setFolderQuery] = useState("");
+  const [folderOpen, setFolderOpen] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (folderOpen) folderInputRef.current?.focus(); }, [folderOpen]);
+  const folderMatches = (folderQuery.trim()
+    ? availableFolders.filter((f) => f.name.toLowerCase().includes(folderQuery.toLowerCase()))
+    : availableFolders
+  ).slice(0, 6);
+  const currentFolderColor = currentFolder
+    ? availableFolders.find((f) => f.name === currentFolder)?.color
+    : undefined;
   // Move-day chips: 7 days of the week containing `eventDate`. Compute the
   // week start as Sunday (firstDay=0, matching CalendarView's firstDay).
   const weekDays = (() => {
@@ -1937,9 +1966,9 @@ function EventActionMenu({ title, x, y, eventDate, onOpen, onDelete, onMoveToDay
       return { iso, label: labels[i], day: c.getDate(), isToday: iso === eventDate };
     });
   })();
-  // Menu is taller when chips are present — keep it inside the viewport.
-  const menuH = weekDays.length > 0 ? 170 : 120;
-  const menuW = weekDays.length > 0 ? 280 : 200;
+  // Menu is taller when chips / folder picker are present.
+  const menuH = (weekDays.length > 0 ? 170 : 120) + (availableFolders.length > 0 ? (folderOpen ? 220 : 56) : 0);
+  const menuW = (weekDays.length > 0 || availableFolders.length > 0) ? 280 : 200;
   const left = Math.min(Math.max(x, 8), window.innerWidth - menuW);
   const top = Math.min(Math.max(y, 8), window.innerHeight - menuH);
   useEffect(() => {
@@ -1972,6 +2001,55 @@ function EventActionMenu({ title, x, y, eventDate, onOpen, onDelete, onMoveToDay
                 <span className="event-action-day-num">{d.day}</span>
               </button>
             ))}
+          </div>
+        )}
+        {availableFolders.length > 0 && (
+          <div className="event-action-folder">
+            {folderOpen ? (
+              <>
+                <input
+                  ref={folderInputRef}
+                  className="event-action-folder-input"
+                  value={folderQuery}
+                  placeholder="Move to folder…"
+                  onChange={(e) => setFolderQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { e.preventDefault(); setFolderOpen(false); setFolderQuery(""); }
+                    if (e.key === "Enter" && folderMatches[0]) {
+                      e.preventDefault();
+                      void onAssignFolder(folderMatches[0].name);
+                    }
+                  }}
+                />
+                {folderMatches.length > 0 && (
+                  <ul className="event-action-folder-list">
+                    {folderMatches.map((f) => (
+                      <li key={f.name}>
+                        <button
+                          type="button"
+                          className={"event-action-folder-option" + (f.name === currentFolder ? " is-current" : "")}
+                          onClick={() => { void onAssignFolder(f.name); }}
+                        >
+                          <span className="event-action-folder-swatch" style={{ background: f.color }} />
+                          {f.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="event-action-folder-chip"
+                style={currentFolderColor ? { color: currentFolderColor, borderColor: currentFolderColor + "55" } : undefined}
+                onClick={() => setFolderOpen(true)}
+                title={currentFolder ? `Change folder — currently ${currentFolder}` : "Assign folder"}
+              >
+                <FolderIcon size={11} strokeWidth={2} />
+                <span className="event-action-folder-name">{currentFolder ?? "Assign folder…"}</span>
+              </button>
+            )}
           </div>
         )}
         <button type="button" className="event-action-btn" onClick={onOpen}>Open</button>

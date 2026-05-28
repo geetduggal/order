@@ -2893,6 +2893,81 @@ input, textarea, select { outline: none; box-shadow: none; }
   .event-action-day-num { font-size: 13px; }
 }
 
+/* Notable Folder picker in the event action menu — same gesture as the
+   card-footer FolderPicker (chip when closed, searchable list when
+   open) but compact and self-contained inside the menu. */
+.event-action-folder {
+  padding: 4px 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.event-action-folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  color: var(--ink);
+  transition: border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.event-action-folder-chip:hover {
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.event-action-folder-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.event-action-folder-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  outline: none;
+}
+.event-action-folder-input:focus { border-color: var(--royal); }
+.event-action-folder-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.event-action-folder-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 7px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease-out);
+}
+.event-action-folder-option:hover { background: var(--bg-elev); }
+.event-action-folder-option.is-current { color: var(--royal); }
+.event-action-folder-swatch {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ---------- List Notable Folder: base controls strip ---------- */
 .order-card-list-controls {
   display: flex;
