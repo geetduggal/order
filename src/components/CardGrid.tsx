@@ -1232,11 +1232,6 @@ export function CardGrid() {
   }, []);
   const openEventNote = useCallback((path: string) => {
     setView("stream");
-    // The user is targeting a specific note; pagination would hide it
-    // if it's beyond the current page. Lift the cap so every card is
-    // rendered for this jump — pagination resets to STREAM_PAGE_SIZE
-    // the next time the filters change.
-    setStreamLimit(null);
     setScrollTargetPath(path);
   }, []);
   const deleteEventNote = useCallback(async (path: string) => {
@@ -1250,54 +1245,33 @@ export function CardGrid() {
    *  invoke the latest version once updateNoteFrontmatter is in scope. */
   const moveEventToDayRef = useRef<((path: string, newDate: string) => Promise<void>) | null>(null);
 
-  // After switching to Stream with a target set, center the matching
-  // card in the viewport and pulse a highlight on it. We poll briefly
-  // for the cell to mount — the masonry layout effect needs time to
-  // compute row spans, and the target might be past the current
-  // streamLimit, in which case we lift the cap so the cell renders.
+  // After switching to Stream with a target set, scroll the matching
+  // card into view and pulse a highlight on it. We wait long enough
+  // for the masonry layout effect to compute row spans (otherwise the
+  // cell's final Y is wrong) and then for the smooth scroll to start.
+  // Clearing scrollTargetPath happens INSIDE the timeout so the effect's
+  // cleanup doesn't cancel the timer mid-flight.
   useEffect(() => {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
-    let cancelled = false;
-    let attempts = 0;
-    function tryScroll() {
-      if (cancelled) return;
+    const timer = setTimeout(() => {
+      // Query the document, not a single grid — newspaper mode renders
+      // many per-section grids, so the flat `gridEl` is null there.
       const cell = document.querySelector<HTMLElement>(
-        // Newspaper mode renders many per-section grids, so query the
-        // whole document rather than a single grid root.
         `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
       );
       if (cell) {
-        // `block: "center"` lands the card mid-viewport instead of
-        // tucked under the top rail / iOS notch (which `start` did,
-        // making the note read as "just off the screen").
-        cell.scrollIntoView({ behavior: "smooth", block: "center" });
-        // Always pulse — visual signal regardless of where the card
-        // started. Remove the class after the animation completes so a
-        // re-target later can replay it.
-        cell.classList.remove("is-target");
-        // Force a reflow so the next add restarts the animation.
-        void cell.offsetWidth;
+        cell.scrollIntoView({ behavior: "smooth", block: "start" });
         cell.classList.add("is-target");
         setTimeout(() => cell.classList.remove("is-target"), 1400);
-        setScrollTargetPath(null);
-        setFocusPath(null);
-        return;
       }
-      // Cell isn't in the DOM yet — likely the masonry layout effect
-      // is still computing row spans; poll a few more frames. The
-      // pagination cap is already lifted by openEventNote.
-      attempts += 1;
-      if (attempts < 30) requestAnimationFrame(tryScroll);
-      else {
-        setScrollTargetPath(null);
-        setFocusPath(null);
-      }
-    }
-    // Start on the next frame so React's commit + the layout effect
-    // get a chance to mount the cell.
-    const raf = requestAnimationFrame(tryScroll);
-    return () => { cancelled = true; cancelAnimationFrame(raf); };
+      setScrollTargetPath(null);
+      // Drop the autoFocus flag once the Card has had time to
+      // consume it; otherwise re-renders far in the future would
+      // still re-fire focus on the same card.
+      setFocusPath(null);
+    }, 120);
+    return () => clearTimeout(timer);
   }, [view, scrollTargetPath]);
 
   // Calendar-create title prompt. The calendar views call promptCreate
