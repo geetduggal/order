@@ -9,6 +9,7 @@ import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
@@ -466,11 +467,60 @@ export function CardGrid() {
       }
       setIosNeedsVault(false);
       const fresh = await loadAndNormalizeAll();
-      setNotes(fresh);
+      // Stable identity across reloads: when a note's path still exists,
+      // reuse its previous id so React keys don't change. This keeps
+      // mounted Cards (with their Milkdown editors, focus, scroll) from
+      // remounting on every chain mutation or watcher-driven reload.
+      // New paths keep their freshly-minted ids; removed paths fall out.
+      const prevById = new Map<string, string>();
+      for (const n of notesRef.current ?? []) prevById.set(n.path, n.id);
+      const stable = fresh.map((n) => {
+        const prevId = prevById.get(n.path);
+        return prevId ? { ...n, id: prevId } : n;
+      });
+      setNotes(stable);
     } catch (err) {
       console.error("reload failed:", err);
     }
   }, []);
+
+  // Live file watching: start the Rust-side notify watcher once we know
+  // the vault root, then reload on each debounced `vault-changed` event
+  // so external edits (git pull, Obsidian, an editor in another window)
+  // show up without restarting the app. The Rust side already debounces
+  // raw fs events at 500ms; we add a small JS-side coalesce so a burst
+  // of multi-path notifications only triggers one reload.
+  //
+  // iOS is sandboxed and our vault lives behind a security-scoped
+  // bookmark — notify doesn't reliably observe it from outside the app,
+  // and our own writes go through the bridge which already updates state
+  // optimistically. Watcher is desktop-only.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: UnlistenFn | null = null;
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    function scheduleReload() {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
+    }
+    async function start() {
+      if (await isIos()) return;
+      const root = await syncVaultRoot();
+      if (!root || cancelled) return;
+      try {
+        await invoke("start_watcher", { path: root });
+        unlisten = await listen<string[]>("vault-changed", () => scheduleReload());
+      } catch (err) {
+        console.error("watcher start failed:", err);
+      }
+    }
+    void start();
+    return () => {
+      cancelled = true;
+      if (reloadTimer) clearTimeout(reloadTimer);
+      if (unlisten) unlisten();
+    };
+  }, [reloadNotes]);
 
   /** iOS: present the native folder picker; on selection the bookmark is
    *  persisted, so a reload restores + opens it for the session. */
