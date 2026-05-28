@@ -488,6 +488,9 @@ adding one is a dozen lines.
   cycles the single-folder include filter through `notableFolders`; in
   **Day / Week / Month** it calls FullCalendar's `prev` / `next`; in **Year**
   it decrements / increments the year.
+- `Cmd T` — cycle theme. `Cmd '` — clear all filters. `?` — toggle the
+  keyboard-shortcut cheat sheet (bare key; suppressed while typing in an
+  input / note).
 - `Cmd O` — open the right sidebar.
 - `Cmd K` — open the centered command palette to toggle folder filters.
 - `Cmd ;` — toggle the right sidebar.

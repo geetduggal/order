@@ -436,6 +436,8 @@ export function CardGrid() {
     setFilters([]);
     setCollapseNonce((n) => n + 1);
   }, []);
+  // Forward-ref binding for Cmd+' (declared earlier in the component).
+  useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);
   /** Add an include filter AND scroll the stream to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
@@ -1047,9 +1049,28 @@ export function CardGrid() {
   // useEffect above the declaration site without a TS forward-ref error.
   const createNoteRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
   const promptCreateRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
+  // Forward-ref so the keyboard handler (declared above resetToDefault)
+  // can invoke the latest version for Cmd+'.
+  const resetToDefaultRef = useRef<(() => void) | null>(null);
+  // Shortcuts overlay — toggled by bare `?` outside text input.
+  const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
+    function isTyping(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return true;
+      return t.isContentEditable; // covers Milkdown / ProseMirror
+    }
     function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey)) return;
+      // Bare-key shortcuts only fire when no input / editor has focus,
+      // so typing "?" inside a note doesn't pop the help overlay.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key === "?" && !isTyping(e.target)) {
+          e.preventDefault();
+          setHelpOpen((o) => !o);
+          return;
+        }
+        return;
+      }
       if (e.key === "o" || e.key === "O") {
         e.preventDefault();
         if (!sidebarOpen) {
@@ -1135,6 +1156,15 @@ export function CardGrid() {
       if (e.key === ";") {
         e.preventDefault();
         toggleSidebar();
+        return;
+      }
+      // Cmd+' clears all active filters (mirrors the rail clear-all
+      // icon). Apostrophe is a key that no system shortcut owns, so
+      // it stays out of the macOS-menu fight zone.
+      if (e.key === "'") {
+        e.preventDefault();
+        resetToDefaultRef.current?.();
+        return;
       }
     }
     window.addEventListener("keydown", onKey);
@@ -2119,6 +2149,59 @@ export function CardGrid() {
           onCancel={() => setEventMenu(null)}
         />
       )}
+
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+    </div>
+  );
+}
+
+/** Keyboard-shortcut cheat sheet. Triggered by bare `?` (outside text
+ *  input). Esc / backdrop / × dismiss. Reads cmdKey from the platform so
+ *  Mac shows ⌘ and other OSes show Ctrl. */
+function ShortcutsHelp({ onClose }: { onClose: () => void }) {
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const cmd = mac ? "⌘" : "Ctrl";
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" || e.key === "?") { e.preventDefault(); onClose(); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const rows: { keys: string; label: string }[] = [
+    { keys: `${cmd} N`, label: "New note (popup with title in calendar views)" },
+    { keys: `${cmd} S`, label: "Stream view" },
+    { keys: `${cmd} D`, label: "Day view" },
+    { keys: `${cmd} W`, label: "Week view" },
+    { keys: `${cmd} M`, label: "Month view" },
+    { keys: `${cmd} Y`, label: "Year view" },
+    { keys: `${cmd} ←  /  →`, label: "Back / forward (calendar) · cycle folders (Stream)" },
+    { keys: `${cmd} K`, label: "Folder command palette" },
+    { keys: `${cmd} O`, label: "Open sidebar" },
+    { keys: `${cmd} ;`, label: "Toggle sidebar" },
+    { keys: `${cmd} P`, label: "Publish panel" },
+    { keys: `${cmd} T`, label: "Cycle theme" },
+    { keys: `${cmd} '`, label: "Clear all filters" },
+    { keys: `${cmd} +  /  −  /  0`, label: "Note text size · grow / shrink / reset" },
+    { keys: "?", label: "Toggle this guide" },
+    { keys: "Esc", label: "Close popup / dialog" },
+  ];
+  return (
+    <div className="shortcuts-help-overlay" onMouseDown={onClose}>
+      <div className="shortcuts-help" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="shortcuts-help-head">
+          <span className="shortcuts-help-title">Keyboard shortcuts</span>
+          <button type="button" className="shortcuts-help-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <dl className="shortcuts-help-list">
+          {rows.map((r) => (
+            <div className="shortcuts-help-row" key={r.keys}>
+              <dt className="shortcuts-help-keys">{r.keys}</dt>
+              <dd className="shortcuts-help-label">{r.label}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </div>
   );
 }
