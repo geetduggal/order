@@ -2736,6 +2736,32 @@ input, textarea, select { outline: none; box-shadow: none; }
 .publish-status.is-err { color: var(--coral, #ff7f50); white-space: pre-wrap; }
 
 /* ---------- Cap-reached toast ---------- */
+/* Stream pagination: a single full-width button beneath the flat grid
+   that loads another page of notes. Shown only when the unfiltered set
+   exceeds STREAM_PAGE_SIZE; vanishes once the cap is lifted. */
+.stream-show-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 64px;
+}
+.stream-show-more {
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.stream-show-more:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+
 .cap-warning {
   position: fixed;
   bottom: 16px;

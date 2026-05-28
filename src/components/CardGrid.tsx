@@ -127,6 +127,7 @@ import {
   suggestCalendarPatch,
   type Frontmatter,
 } from "../lib/frontmatter";
+import yaml from "js-yaml";
 
 /** Try writing the seed at `<dir>/<basename>`; if a file already exists
  *  at that name, append ` 2`, ` 3`, … to the stem until we find an
@@ -273,21 +274,74 @@ async function loadOne(path: string, filename: string, seed?: string): Promise<L
   };
 }
 
+/** Light frontmatter parse from the YAML string the Rust metadata walker
+ *  returns. Mirrors splitFrontmatter's parse step without rebuilding the
+ *  `---\nyaml\n---\n` envelope. Returns {} on parse failure (matches the
+ *  permissive behavior of splitFrontmatter). */
+function parseYaml(yamlText: string): Frontmatter {
+  if (!yamlText) return {};
+  try {
+    const parsed = (yaml as { load: (s: string) => unknown }).load(yamlText);
+    return parsed && typeof parsed === "object" ? (parsed as Frontmatter) : {};
+  } catch { return {}; }
+}
+
+/** Lightweight "is this a chain / list file?" check. Used to decide which
+ *  notes need their body pre-loaded at startup so the sidebar taxonomy can
+ *  parse bullets immediately. Everything else (leaves) loads its body on
+ *  Card mount via vault_read_text. */
+function needsBodyUpfront(fm: Frontmatter): boolean {
+  if (fm.role === "areas") return true;
+  if (typeof fm.category === "string" && fm.category) return true;
+  if (typeof fm.list === "string" && fm.list) return true;
+  return false;
+}
+
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
-  // Walk every .md file under the vault root. Notes can sit at
-  // root or nested in per-Notable-Folder directories; we don't
-  // care about the OS layout — the bullet chain encodes the
-  // hierarchy. SEEDS-based first-run seeding is gone: the vault is
-  // the source of truth, and an empty vault is migrated into
-  // shape by the chain-walk + planMigration in CardGrid's mount
-  // effect.
-  const entries = await walkVaultMarkdown();
+  // Frontmatter-only walk in Rust — bodies stay on disk, so the bridge
+  // payload at 10^4 notes drops from "every body" to "every frontmatter
+  // YAML string." Chain files (Areas / Categories / NF Main Docs / list
+  // folders) need their bodies for the sidebar taxonomy + list bullet
+  // rendering, so we read those up front; leaves keep body="" and Card
+  // fills it via vault_read_text on mount.
+  const meta = await vaultFs.walkMetadata();
   const out: LoadedNote[] = [];
-  for (const { path, filename } of entries) {
+  for (const m of meta) {
     try {
-      out.push(await loadOne(path, filename));
+      let frontmatter = parseYaml(m.frontmatterYaml);
+      let body = "";
+      const filename = m.filename;
+      if (needsBodyUpfront(frontmatter)) {
+        // Chain / list files: full read + splitFrontmatter so any
+        // calendar-frontmatter migration runs (suggestCalendarPatch)
+        // — same behaviour the old loadOne provided.
+        const raw = await readVault(m.path);
+        const split = splitFrontmatter(raw);
+        frontmatter = split.frontmatter;
+        body = split.body;
+        const patch = suggestCalendarPatch(frontmatter, body);
+        if (patch) {
+          frontmatter = { ...frontmatter, ...patch };
+          try { await writeVault(m.path, joinFrontmatter(frontmatter, body)); }
+          catch (err) { console.warn("calendar migration failed:", m.path, err); }
+        }
+      } else {
+        // Leaf: try to migrate calendar frontmatter even without a body
+        // (body stays empty in memory until Card mounts). suggestCalendarPatch
+        // only reads frontmatter for the date/time fields it injects.
+        const patch = suggestCalendarPatch(frontmatter, "");
+        if (patch) frontmatter = { ...frontmatter, ...patch };
+      }
+      out.push({
+        id: newNoteId(),
+        path: m.path,
+        filename,
+        frontmatter,
+        title: deriveTitle(body, filename.replace(/\.md$/, "")),
+        body,
+      });
     } catch (err) {
-      console.warn("Failed to load card", path, err);
+      console.warn("Failed to load metadata entry", m.path, err);
     }
   }
   return out;
@@ -341,6 +395,14 @@ export function CardGrid() {
   // "Public only" toggle: show only `public: true` notes in the Stream
   // (off = public + private together). Persisted; survives filter changes.
   const [publicOnly, setPublicOnly] = useState<boolean>(readPublicOnly);
+  // Stream pagination: cap initial Card mounts when nothing is filtered.
+  // Card mounts ProseMirror per note, so unbounded Streams at 10^4 notes
+  // are dead on arrival. `streamLimit = N` shows the N most-recent notes;
+  // a "Show more" tile bumps it. null = unbounded (e.g., the user clicked
+  // "Show more" enough to get there, or a filter is active).
+  const STREAM_PAGE_SIZE = 60;
+  const [streamLimit, setStreamLimit] = useState<number | null>(STREAM_PAGE_SIZE);
+  useEffect(() => { setStreamLimit(STREAM_PAGE_SIZE); }, [filters]);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -692,6 +754,18 @@ export function CardGrid() {
       n.frontmatter.slug = slug; // reflect into the fresh copy collect reads
     }
 
+    // Bodies for leaves are lazy at load-time (the metadata walker leaves
+    // body="" for non-chain files). Publish needs every public note's
+    // body — warm them by reading the file once each here so collect can
+    // serialize and prerender. Bounded by the count of public notes, not
+    // the whole vault.
+    for (const n of publicNotes) {
+      if (n.body) continue;
+      try {
+        const raw = await readVault(n.path);
+        n.body = splitFrontmatter(raw).body;
+      } catch (err) { console.warn("publish: body read failed", n.path, err); }
+    }
     const sub = home.target.split("/").slice(2).join("/");
     const { site, assets } = collectPublishedSite({
       vaultNotes: fresh.map((n) => ({
@@ -1584,12 +1658,22 @@ export function CardGrid() {
     pinnedRef !== null
     && isNotableFolder(n.frontmatter)
     && n.filename.replace(/\.md$/, "") === pinnedRef;
-  const sortedNotes = [...filteredNotes].sort((a, b) => {
+  const sortedNotesFull = [...filteredNotes].sort((a, b) => {
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
     return sortKey(b).localeCompare(sortKey(a));
   });
+  // Pagination for the Stream's flat grid: with no folder filter active
+  // we'd otherwise mount one Card per note in the vault — at 10^4 notes
+  // each Milkdown editor instance kills the cold open. Cap the visible
+  // set at STREAM_PAGE_SIZE and surface a "Show more" affordance for
+  // when the user wants to scroll further. Filtered views show the full
+  // set (filtering already bounds the count by folder membership).
+  const sortedNotes = streamLimit !== null && filters.length === 0
+    ? sortedNotesFull.slice(0, streamLimit)
+    : sortedNotesFull;
+  const hasMore = sortedNotes.length < sortedNotesFull.length;
 
   // Render one note as a <Card>. Shared by the temporal flat grid and
   // the newspaper sections; capHeight is only set in newspaper mode.
@@ -1852,21 +1936,35 @@ export function CardGrid() {
               ))}
             </div>
           ) : (
-            <div className="card-grid" ref={setGridEl}>
-              {sortedNotes.map((n) => {
-                // Per-Card external-change version is folded into the key:
-                // a true external edit (not one of our own writes) bumps it,
-                // remounting the Card with fresh content from disk. Same-id
-                // reloads (chain mutations, our autosaves) keep the same key
-                // and don't remount.
-                const v = externalChangeVersion[n.path] ?? 0;
-                return (
-                  <div className="card-grid-cell" data-path={n.path} key={`${n.id}:${v}`}>
-                    {cardNode(n)}
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div className="card-grid" ref={setGridEl}>
+                {sortedNotes.map((n) => {
+                  // Per-Card external-change version is folded into the key:
+                  // a true external edit (not one of our own writes) bumps it,
+                  // remounting the Card with fresh content from disk. Same-id
+                  // reloads (chain mutations, our autosaves) keep the same key
+                  // and don't remount.
+                  const v = externalChangeVersion[n.path] ?? 0;
+                  return (
+                    <div className="card-grid-cell" data-path={n.path} key={`${n.id}:${v}`}>
+                      {cardNode(n)}
+                    </div>
+                  );
+                })}
+              </div>
+              {hasMore && (
+                <div className="stream-show-more-wrap">
+                  <button
+                    type="button"
+                    className="stream-show-more"
+                    onClick={() => setStreamLimit((cur) => (cur ?? 0) + STREAM_PAGE_SIZE)}
+                    title={`Showing ${sortedNotes.length} of ${sortedNotesFull.length}`}
+                  >
+                    Show more ({sortedNotesFull.length - sortedNotes.length} left)
+                  </button>
+                </div>
+              )}
+            </>
           )
         )}
         {view === "day" && (
