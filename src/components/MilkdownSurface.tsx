@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
-import { editorViewCtx, parserCtx } from "@milkdown/kit/core";
+import { editorViewCtx, parserCtx, serializerCtx } from "@milkdown/kit/core";
 import { Slice } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
@@ -16,6 +16,18 @@ import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
 import { join } from "@tauri-apps/api/path";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import type { WikiRef } from "../lib/wikilink";
+
+/** Convert CommonMark's default 2-space-per-level list indent to 4
+ *  spaces — matches Obsidian's "indent list with hard tabs" output style
+ *  and stays compatible with strict-CommonMark parsers (which accept
+ *  either). Doubles any leading run of two-space groups that precedes a
+ *  list marker (`- `, `* `, `+ `, `1. `, or a task checkbox), and
+ *  continuation lines indented to the same depth. Anything else passes
+ *  through unchanged. */
+function widenListIndent(md: string): string {
+  if (!md) return md;
+  return md.replace(/^( {2})+(?=([-*+] |\d+\.\s|\[[\sxX]\]))/gm, (m) => " ".repeat(m.length * 2));
+}
 
 type Props = {
   initial: string;
@@ -84,9 +96,38 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
         }
         crepe.on((listener) => {
           listener.markdownUpdated((_ctx, markdown) => {
-            onChangeRef.current(markdown);
+            onChangeRef.current(widenListIndent(markdown));
           });
         });
+        // Replace ProseMirror's default text/plain clipboard serializer
+        // with one that hands out our own markdown for the selection.
+        // The default emits each block separated by a blank line, so a
+        // copied list pastes into a plain-text app with newlines between
+        // every item; markdown puts them on consecutive lines.
+        try {
+          crepe.editor.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            const serialize = ctx.get(serializerCtx);
+            view.setProps({
+              clipboardTextSerializer: (slice) => {
+                try {
+                  // Wrap the selection slice in a doc node so the
+                  // serializer can walk it. doc.type.create with the
+                  // slice's content fragment is sufficient.
+                  const docNode = view.state.doc.type.create(null, slice.content);
+                  const md = serialize(docNode);
+                  return widenListIndent(md);
+                } catch {
+                  // Fall back to the slice's text content with newline-
+                  // joined blocks rather than the default double-newline.
+                  return slice.content.textBetween(0, slice.content.size, "\n", " ");
+                }
+              },
+            });
+          });
+        } catch (err) {
+          console.warn("clipboard serializer override failed:", err);
+        }
         if (autoFocus && host.current) {
           // ProseMirror needs a frame after Crepe wires up its
           // plugins before .focus() lands the caret reliably.
