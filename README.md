@@ -484,11 +484,12 @@ adding one is a dozen lines.
 - `Cmd N` — new note. `Cmd S / D / W / M / Y` — switch to Stream / Day / Week /
   Month / Year. The active view persists across launches; first launch defaults
   to **Day on phones** (viewport ≤640px) and **Week on desktop**.
-- `Cmd Shift ← / →` — back / forward by the active view's unit. In **Stream**
+- `Cmd Ctrl ← / →` — back / forward by the active view's unit. In **Stream**
   it cycles the single-folder include filter through `notableFolders`; in
   **Day / Week / Month** it calls FullCalendar's `prev` / `next`; in **Year**
-  it decrements / increments the year. (Shift is required so plain Cmd+←/→
-  keep their browser-style word-jump behaviour inside the Milkdown editor.)
+  it decrements / increments the year. (Both modifiers are required so plain
+  Cmd+←/→ keep their browser-style word-jump behaviour inside the Milkdown
+  editor.)
 - `Cmd T` — cycle theme. `Cmd '` — clear all filters. `?` — toggle the
   keyboard-shortcut cheat sheet (bare key; suppressed while typing in an
   input / note).
