@@ -163,9 +163,30 @@ export function ViewerApp(
     commitFilters([]);
     setCollapseNonce((n) => n + 1);
   }
-  // Wikilink / list-row click → accumulate an include + scroll to it.
+  // Wikilink / list-row click → open the target's permalink (matches
+  // arriving at /<slug>/ directly). The old "accumulate filter + scroll"
+  // buried regular notes in an empty extra section and never updated the
+  // URL. The Sidebar / Cmd+K palette still use addInclude / focusFolder
+  // for the explicit "build up a multi-folder filter" workflow.
   function navigate(ref: string) {
     setView("stream");
+    const note = data.notes.find((n) => n.ref === ref);
+    if (note && note.slug) {
+      if (note.category) {
+        // NF: filter to this folder's section (its Main Doc + children).
+        setSingleNoteRef(null);
+        setFilters([{ kind: "include", ref: note.ref }]);
+      } else {
+        // Regular note: solo-note view inside the parent folder filter.
+        setSingleNoteRef(ref);
+        setFilters([{ kind: "include", ref: note.folder ?? note.ref }]);
+      }
+      if (typeof history !== "undefined") {
+        history.pushState({}, "", `${basePath}${note.slug}/`);
+      }
+      return;
+    }
+    // Fall back: unresolved or unpublished — accumulate filter + scroll.
     if (!filters.some((f) => f.kind === "include" && f.ref === ref)) {
       commitFilters([...filters, { kind: "include", ref }]);
     }
