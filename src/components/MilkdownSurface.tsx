@@ -15,6 +15,8 @@ import { vaultRoot } from "../lib/vault";
 import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
 import { join } from "@tauri-apps/api/path";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
+import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
+import { youtubeId } from "../lib/youtube";
 import type { WikiRef } from "../lib/wikilink";
 
 /** Convert CommonMark's default 2-space-per-level list indent to 4
@@ -26,7 +28,17 @@ import type { WikiRef } from "../lib/wikilink";
  *  through unchanged. */
 function widenListIndent(md: string): string {
   if (!md) return md;
-  return md.replace(/^( {2})+(?=([-*+] |\d+\.\s|\[[\sxX]\]))/gm, (m) => " ".repeat(m.length * 2));
+  const lines = md.split("\n");
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    lines[i] = lines[i].replace(
+      /^( {2})+(?=([-*+] |\d+\.\s|\[[\sxX]\]))/,
+      (m) => " ".repeat(m.length * 2),
+    );
+  }
+  return lines.join("\n");
 }
 
 type Props = {
@@ -86,6 +98,11 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     } catch (err) {
       console.warn("wikilink plugin registration failed:", err);
     }
+    try {
+      crepe.editor.use(youtubeEmbedPlugin());
+    } catch (err) {
+      console.warn("youtube embed plugin registration failed:", err);
+    }
 
     crepe
       .create()
@@ -108,6 +125,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
           crepe.editor.action((ctx) => {
             const view = ctx.get(editorViewCtx);
             const serialize = ctx.get(serializerCtx);
+            const parser = ctx.get(parserCtx);
             view.setProps({
               clipboardTextSerializer: (slice) => {
                 try {
@@ -122,6 +140,26 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
                   // joined blocks rather than the default double-newline.
                   return slice.content.textBetween(0, slice.content.size, "\n", " ");
                 }
+              },
+              // Paste of a bare YouTube URL → drop in `![](url)`
+              // (Obsidian's YouTube embed syntax). The MutationObserver
+              // in milkdown-youtube swaps the resulting image-block for
+              // an iframe. Returning true tells ProseMirror we've
+              // handled the paste so Crepe's autolinker doesn't also
+              // insert a plain link.
+              handlePaste: (_view, event) => {
+                const cd = (event as ClipboardEvent).clipboardData;
+                if (!cd) return false;
+                const text = cd.getData("text/plain")?.trim();
+                if (!text || /\s/.test(text)) return false;
+                if (!youtubeId(text)) return false;
+                const md = `![](${text})\n`;
+                const doc = parser(md);
+                if (!doc) return false;
+                _view.dispatch(
+                  _view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView(),
+                );
+                return true;
               },
             });
           });
@@ -257,6 +295,17 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     // as a stray `![](blob:…)`. We detect image files, stop the event dead
     // here, then kick off the (async) upload separately.
     function onPaste(e: ClipboardEvent) {
+      // 1) Plain-text YouTube URL → drop in `![](url)` (Obsidian's
+      //    YouTube embed syntax). The MutationObserver in
+      //    milkdown-youtube swaps the image-block for an iframe.
+      const text = e.clipboardData?.getData("text/plain")?.trim();
+      if (text && !/\s/.test(text) && youtubeId(text)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        insertMarkdown(`![](${text})\n`);
+        return;
+      }
+      // 2) Pasted image file → existing upload flow.
       const items = e.clipboardData?.items;
       if (!items) return;
       const files: File[] = [];

@@ -7,6 +7,7 @@ import { marked } from "marked";
 import type { PublishedSite } from "./publish";
 import { resolveWikilink, type WikiRef } from "./wikilink";
 import { ATTACHMENTS_DIRNAME, EMBED_REF_WIDTH } from "./attachments";
+import { youtubeId } from "./youtube";
 
 export interface PrerenderedPage {
   path: string;
@@ -64,6 +65,39 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
         /<img\b([^>]*?)\salt="(\d+(?:\.\d+)?)"([^>]*?)>/g,
         (_m, pre: string, ratio: string, post: string) =>
           `<img${pre}${post} style="width:${Math.round(parseFloat(ratio) * EMBED_REF_WIDTH)}px;max-width:100%">`,
+      );
+      // Obsidian YouTube embeds (image syntax): marked emits
+      // <img src="youtube_url"> for `![](youtube_url)`, which loads
+      // nothing. Swap it for a real iframe so the player works statically.
+      const iframeFor = (id: string) =>
+        `<iframe class="order-youtube-embed" src="https://www.youtube.com/embed/${id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      html = html.replace(
+        /<img\b[^>]*\bsrc="(https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^"]*|youtu\.be\/[^"]+))"[^>]*>/g,
+        (full: string, url: string) => {
+          const id = youtubeId(url);
+          return id ? iframeFor(id) : full;
+        },
+      );
+      // Obsidian YouTube embeds (```embed YAML form, e.g. Auto Card
+      // Link). marked emits the fence as <pre><code class="language-embed">
+      // YAML </code></pre>; swap it for an iframe whenever the YAML has
+      // a YouTube `url:` line. The captured class may be `language-embed`
+      // or absent — match on the content's URL line either way.
+      html = html.replace(
+        /<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g,
+        (full: string, body: string) => {
+          // Decode HTML entities marked may have inserted for &, " etc.
+          const decoded = body
+            .replace(/&amp;/g, "&")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">");
+          const m = decoded.match(/url\s*:\s*['"]?(https?:\/\/[^\s'"<>]+)/);
+          if (!m) return full;
+          const id = youtubeId(m[1]);
+          return id ? iframeFor(id) : full;
+        },
       );
       // The home note lives at the site root (index.html), but it also
       // has a slug — links/permalinks point at /<slug>/ — so emit it at

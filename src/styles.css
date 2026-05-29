@@ -904,11 +904,65 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .milkdown-host .ProseMirror blockquote p { margin: 0.4em 0; }
 
+/* Obsidian-style YouTube embeds. Pasting a YouTube URL inserts
+   `![](url)` (Obsidian's syntax); the milkdown-youtube
+   MutationObserver finds the resulting image-block (or any code-block
+   carrying a YouTube `url:` line) and inserts an iframe sibling,
+   hiding the original source via `.is-yt-source`. */
+.milkdown-host .ProseMirror .milkdown-image-block.is-yt-source,
+.milkdown-host .ProseMirror .milkdown-code-block.is-yt-source,
+.milkdown-host .ProseMirror p.is-yt-source,
+.milkdown-host .ProseMirror figure.is-yt-source,
+.milkdown-host .ProseMirror div.is-yt-source {
+  display: none !important;
+}
+.milkdown-host .ProseMirror .order-youtube-embed-wrap {
+  margin: 1em 0;
+}
+.milkdown-host .ProseMirror iframe.order-youtube-embed {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: black;
+}
+/* Crepe shows an "upload or paste link" placeholder UI (the gray box
+   with a question-mark icon and a "Please enter…" caption) for any
+   image node without a src. Empty image-blocks turn up from accidental
+   slash-menu invocations or stray paste edge cases — and look like a
+   broken image. We don't use that UI: image pasting routes through the
+   existing onPaste file uploader, and YouTube URLs route through the
+   ```embed flow. Hide the empty placeholder so the question mark never
+   appears. */
+.milkdown-host .ProseMirror .milkdown-image-block:has(.placeholder),
+.milkdown-host .ProseMirror .milkdown-image-block:not(:has(.image-preview img[src]:not([src=""]))) {
+  display: none !important;
+}
+/* Same for any image-block whose src is a YouTube URL — Crepe's <img>
+   would render as a broken image otherwise. */
+.milkdown-host .ProseMirror .milkdown-image-block:has(img[src*="youtube.com"]),
+.milkdown-host .ProseMirror .milkdown-image-block:has(img[src*="youtu.be"]) {
+  display: none !important;
+}
+/* Static published pages — same iframe shape, neutral border. */
+iframe.order-youtube-embed {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  margin: 1em 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: black;
+}
+
 /* Inline code + code fences: monospace at a comfortable size,
    tinted background, no jarring line height. */
 .milkdown-host .ProseMirror code {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.92em;
+  font-size: 0.85em;
   padding: 0.1em 0.35em;
   border-radius: 3px;
   background: var(--bg-elev, rgba(0,0,0,0.05));
@@ -919,13 +973,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   background: var(--bg-elev, rgba(0,0,0,0.04));
   overflow-x: auto;
-  font-size: 0.92em;
-  line-height: 1.55;
+  font-size: 0.78em;
+  line-height: 1.5;
 }
 .milkdown-host .ProseMirror pre code {
   padding: 0;
   background: transparent;
   font-size: inherit;
+}
+/* Crepe wraps fenced code in a CodeMirror widget whose .cm-editor is
+   hard-coded to 14px — which floats above any body scaling. Override
+   it (and the gutter) so code shrinks alongside body text. */
+.milkdown-host .milkdown-code-block .cm-editor,
+.milkdown-host .milkdown-code-block .cm-gutters {
+  font-size: 0.78em;
+  line-height: 1.5;
 }
 
 /* Hairline horizontal rules — quieter than the default 2px outset. */
@@ -3518,6 +3580,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   background-position: center;
   background-color: var(--bg-sunken, var(--bg-elev));
 }
+.basecard-cover.is-link { cursor: pointer; }
 /* Inner img/svg shouldn't intercept drag — but the cover itself
    still receives events so dragenter/dragover register normally. */
 .basecard-cover img,
@@ -3543,9 +3606,18 @@ input, textarea, select { outline: none; box-shadow: none; }
       var(--bg) 75%);
   color: var(--coral, #ff7f50);
 }
-.basecard-body { padding: 8px 10px 10px; }
+/* Body sits below the fixed-ratio cover. Use a min-height equal to
+   "2 lines title + 1 line meta + padding" so every card lands on the
+   same vertical extent regardless of how long the title is. */
+.basecard-body {
+  padding: 8px 10px 10px;
+  min-height: calc(2 * (12px * 1.3) + (10px * 1.4) + 8px + 10px + 3px);
+}
 .basecard-title {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   width: 100%;
   padding: 0;
   margin: 0;
@@ -3580,6 +3652,16 @@ input, textarea, select { outline: none; box-shadow: none; }
   font-size: 10px;
   color: var(--ink-faint);
   margin-top: 3px;
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  line-height: 1.4;
 }
 
 /* ---------- Command palette (Cmd+K) ---------- */

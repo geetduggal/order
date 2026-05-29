@@ -28,7 +28,7 @@ import {
   type ListItem,
   type ListNoteRef,
 } from "../lib/list-folder";
-import { extractBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
+import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
 import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
@@ -225,6 +225,13 @@ export function Card(props: Props) {
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const manualOrderRef = useRef<string[]>([]);
   useEffect(() => { manualOrderRef.current = manualOrder; }, [manualOrder]);
+  /** The raw ```base ... ``` fence text stripped from the editor view
+   *  so the user sees just prose + rendered cards. Reattached verbatim
+   *  on save so the on-disk body stays intact. Null when this note has
+   *  no base block. */
+  const [baseBlockRaw, setBaseBlockRaw] = useState<string | null>(null);
+  const baseBlockRawRef = useRef<string | null>(null);
+  useEffect(() => { baseBlockRawRef.current = baseBlockRaw; }, [baseBlockRaw]);
   const editorBodyRef = useRef<string>("");
   useEffect(() => { editorBodyRef.current = editorBody; }, [editorBody]);
   /** Set on any user edit (text or list item). flushNow no-ops without
@@ -282,8 +289,14 @@ export function Card(props: Props) {
         let editorInitial = displayBody;
         let initialItems: ListItem[] = [];
         let initialManualOrder: string[] = [];
+        let initialBaseBlockRaw: string | null = null;
         if (isListFolder(frontmatter)) {
-          if (extractBaseBlock(displayBody)) {
+          const rawBlock = extractRawBaseBlock(displayBody);
+          if (rawBlock) {
+            initialBaseBlockRaw = rawBlock;
+            // Hide the base fence from the WYSIWYG editor — the cards
+            // render below already. Reattached verbatim on save.
+            editorInitial = displayBody.replace(rawBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
             const fmOrder = frontmatter.manual_order;
             initialManualOrder = Array.isArray(fmOrder)
               ? fmOrder.filter((x): x is string => typeof x === "string")
@@ -299,8 +312,10 @@ export function Card(props: Props) {
         setEditorBody(editorInitial);
         setListItems(initialItems);
         setManualOrder(initialManualOrder);
+        setBaseBlockRaw(initialBaseBlockRaw);
         listItemsRef.current = initialItems;
         manualOrderRef.current = initialManualOrder;
+        baseBlockRawRef.current = initialBaseBlockRaw;
         editorBodyRef.current = editorInitial;
       } catch (err) {
         if (cancelled) return;
@@ -333,15 +348,18 @@ export function Card(props: Props) {
       const { frontmatter } = splitFrontmatter(current);
 
       // Three save shapes:
-      //   - base-driven list folder: body unchanged (contains base
-      //     block); frontmatter.manual_order updated.
+      //   - base-driven list folder: editor body holds prose only; the
+      //     hidden base fence is reattached at the bottom, manual_order
+      //     captured in frontmatter.
       //   - manual list folder: body = prose + serialized bullets.
       //   - any other note: body unchanged.
-      const isBaseDriven = isListFolder(frontmatter) && extractBaseBlock(body) !== null;
+      const storedBase = baseBlockRawRef.current;
+      const isBaseDriven = isListFolder(frontmatter) && storedBase !== null;
       let outBody = body;
       let outFrontmatter: Frontmatter = frontmatter;
 
       if (isBaseDriven) {
+        outBody = `${body.replace(/\n+$/, "")}\n\n${storedBase}\n`;
         outFrontmatter = { ...frontmatter, manual_order: manualOrderRef.current };
         // If manual_order is empty, drop the key so the YAML stays clean.
         if (manualOrderRef.current.length === 0) {
@@ -422,12 +440,11 @@ export function Card(props: Props) {
   }, [scheduleSave]);
 
   const handleListChange = useCallback((next: ListItem[]) => {
-    // In base mode the body holds the base block, not bullets; the
-    // user's ordering lives in frontmatter.manual_order. In manual
-    // mode the bullets ARE the order. Detect by re-checking the
-    // editor body at change time so the right branch wins even if
-    // the user just typed/removed the base block.
-    if (extractBaseBlock(editorBodyRef.current)) {
+    // In base mode the body holds the base block (now hidden from the
+    // editor and tracked in baseBlockRawRef instead) and the user's
+    // ordering lives in frontmatter.manual_order. In manual mode the
+    // bullets ARE the order.
+    if (baseBlockRawRef.current !== null) {
       const order = next.map((i) => i.ref);
       manualOrderRef.current = order;
       setManualOrder(order);
@@ -444,12 +461,14 @@ export function Card(props: Props) {
     scheduleSave();
   }, [scheduleSave]);
 
-  /** Detect base block in the editor body. Re-derived on every body
-   *  change so toggling the block in the editor switches modes live. */
+  /** Parse the hidden base block we stashed at load (see baseBlockRaw).
+   *  The editor view never holds the fence anymore, so we derive from
+   *  the stashed raw text. */
   const parsedBase: ParsedBase | null = useMemo(() => {
-    const block = extractBaseBlock(editorBody);
-    return block ? parseBase(block) : null;
-  }, [editorBody]);
+    if (!baseBlockRaw) return null;
+    const inner = extractBaseBlock(baseBlockRaw);
+    return inner ? parseBase(inner) : null;
+  }, [baseBlockRaw]);
 
   /** What the renderer shows: smart-merged base results in base mode,
    *  manual bullets otherwise. */
