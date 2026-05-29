@@ -219,9 +219,22 @@ function BaseCard({
           can live here. */}
       <div className="basecard-frame">
         {image ? (
-          <div className="basecard-cover" style={{ backgroundImage: `url(${image})` }} />
+          <div
+            className={"basecard-cover" + (onNavigate ? " is-link" : "")}
+            style={{ backgroundImage: `url(${image})` }}
+            onClick={onNavigate ? (e) => { e.stopPropagation(); onNavigate(); } : undefined}
+            role={onNavigate ? "link" : undefined}
+            aria-label={onNavigate ? `Open ${displayTitle}` : undefined}
+            title={onNavigate ? `Open ${displayTitle}` : undefined}
+          />
         ) : (
-          <div className={`basecard-cover is-fallback ${tintCls}`}>
+          <div
+            className={`basecard-cover is-fallback ${tintCls}` + (onNavigate ? " is-link" : "")}
+            onClick={onNavigate ? (e) => { e.stopPropagation(); onNavigate(); } : undefined}
+            role={onNavigate ? "link" : undefined}
+            aria-label={onNavigate ? `Open ${displayTitle}` : undefined}
+            title={onNavigate ? `Open ${displayTitle}` : undefined}
+          >
             <Icon size={44} strokeWidth={1.3} />
           </div>
         )}

@@ -30,6 +30,14 @@ export function extractBaseBlock(body: string): string | null {
   return m ? m[1] : null;
 }
 
+/** Returns the full ```base ... ``` fence (including delimiters) so a
+ *  caller can strip it from a prose-only editor view and reattach it
+ *  verbatim on save. */
+export function extractRawBaseBlock(body: string): string | null {
+  const m = body.match(FENCE_RE);
+  return m ? m[0] : null;
+}
+
 function parsePredicate(s: unknown, ignored: string[]): Predicate | null {
   if (typeof s !== "string") {
     ignored.push(`non-string predicate: ${JSON.stringify(s)}`);

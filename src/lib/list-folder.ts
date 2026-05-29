@@ -21,7 +21,14 @@ export interface ListItem {
 export interface ListNoteRef {
   filename: string;
   frontmatter: Frontmatter;
+  /** Last dirname segment — used by wikilink folder qualifiers
+   *  (`[[Folder/Note]]`). */
   folder?: string;
+  /** Full relative directory path (e.g.
+   *  `Home/Stewardship/Stewardship Spaces/Readwise/Books`) — used by
+   *  base-block `file.folder.contains(...)` so a filter against a
+   *  grandparent name matches, matching Obsidian Bases semantics. */
+  dir?: string;
   ctime?: number;
   mtime?: number;
   body?: string;

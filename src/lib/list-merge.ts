@@ -12,7 +12,7 @@ export type NoteRef = ListNoteRef;
 function getProp(note: NoteRef, prop: string): unknown {
   switch (prop) {
     case "file.name": return note.filename.replace(/\.md$/i, "");
-    case "file.folder": return note.folder;
+    case "file.folder": return note.dir ?? note.folder;
     case "file.ctime": return note.ctime;
     case "file.mtime": return note.mtime;
     default: return note.frontmatter[prop];
