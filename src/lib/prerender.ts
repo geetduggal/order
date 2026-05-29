@@ -23,14 +23,27 @@ function rewriteWikilinks(
   vault: WikiRef[],
   slugOf: (ref: string) => string | null,
 ): string {
-  return md.replace(WIKI_RE, (_full, _open, inner: string) => {
-    const label = inner.split("|").pop()!.split("/").pop()!.trim();
-    const res = resolveWikilink(`[[${inner}]]`, vault);
-    if (res.kind === "broken") return `<span class="wikilink-broken">${label}</span>`;
-    const slug = slugOf(res.ref.filename.replace(/\.md$/i, ""));
-    if (!slug) return `<span class="wikilink-broken">${label}</span>`;
-    return `<a class="wikilink" href="/${slug}/">${label}</a>`;
-  });
+  const replaceWiki = (text: string): string =>
+    text.replace(WIKI_RE, (_full, _open, inner: string) => {
+      const label = inner.split("|").pop()!.split("/").pop()!.trim();
+      const res = resolveWikilink(`[[${inner}]]`, vault);
+      if (res.kind === "broken") return `<span class="wikilink-broken">${label}</span>`;
+      const slug = slugOf(res.ref.filename.replace(/\.md$/i, ""));
+      if (!slug) return `<span class="wikilink-broken">${label}</span>`;
+      return `<a class="wikilink" href="/${slug}/">${label}</a>`;
+    });
+  // Skip ``` fenced blocks (so a code-block screenshot of the markdown
+  // source survives as literal `[[Name]]`) and inline `…` code spans.
+  const lines = md.split("\n");
+  let inFence = false;
+  return lines.map((line) => {
+    if (/^```/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    return line
+      .split(/(`[^`\n]+`)/g)
+      .map((seg, i) => (i % 2 === 1 ? seg : replaceWiki(seg)))
+      .join("");
+  }).join("\n");
 }
 
 /** Build per-page content HTML (no chrome — Rust wraps it in the bundle

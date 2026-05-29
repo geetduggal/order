@@ -37,7 +37,12 @@ export function wikilinkProsePlugin(getVault: () => WikiRef[]) {
             const vault = getVault();
             const decos: Decoration[] = [];
             state.doc.descendants((node: ProseNode, pos: number) => {
+              // Don't decorate inside fenced code blocks — the source
+              // there is meant to display literally.
+              if (node.type.name === "code_block") return false;
               if (!node.isText || !node.text) return undefined;
+              // Same for inline `code` spans.
+              if (node.marks.some((m) => m.type.name === "code")) return undefined;
               const text = node.text;
               WIKI_RE.lastIndex = 0;
               let m: RegExpExecArray | null;
