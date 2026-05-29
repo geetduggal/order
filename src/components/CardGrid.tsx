@@ -189,6 +189,8 @@ interface LoadedNote {
    *  bullets from this; the Card editor re-reads its own body
    *  separately on mount. */
   body: string;
+  /** Last-modified time (Unix ms). Used by base-block `file.mtime` sort. */
+  mtime: number;
 }
 
 let nextNoteId = 0;
@@ -235,36 +237,6 @@ function deriveTitle(body: string, fallback: string): string {
   // `YYYY-MM-DD ` / `YYYY-MM-DD - ` date prefix so calendar / card titles
   // read as "Untitled" rather than "2026-05-26 Untitled".
   return fallback.replace(/^\d{4}-\d{2}-\d{2}\s*-?\s*/, "") || fallback;
-}
-
-async function loadOne(path: string, filename: string, seed?: string): Promise<LoadedNote> {
-  let raw: string;
-  try {
-    raw = await readVault(path);
-  } catch {
-    if (seed === undefined) throw new Error(`read failed and no seed for ${path}`);
-    await writeVault(path, seed);
-    raw = seed;
-  }
-  let { frontmatter, body } = splitFrontmatter(raw);
-  const patch = suggestCalendarPatch(frontmatter, body);
-  if (patch) {
-    frontmatter = { ...frontmatter, ...patch };
-    const next = joinFrontmatter(frontmatter, body);
-    try {
-      await writeVault(path, next);
-    } catch (err) {
-      console.warn("Failed to inject calendar metadata for", path, err);
-    }
-  }
-  return {
-    id: newNoteId(),
-    path,
-    filename,
-    frontmatter,
-    title: deriveTitle(body, filename.replace(/\.md$/, "")),
-    body,
-  };
 }
 
 /** Light frontmatter parse from the YAML string the Rust metadata walker
@@ -322,8 +294,15 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
         // Leaf: try to migrate calendar frontmatter even without a body
         // (body stays empty in memory until Card mounts). suggestCalendarPatch
         // only reads frontmatter for the date/time fields it injects.
-        const patch = suggestCalendarPatch(frontmatter, "");
-        if (patch) frontmatter = { ...frontmatter, ...patch };
+        // Guard against YAML parse failures (Readwise summaries with bad
+        // indentation, etc.): if the on-disk frontmatter block is non-empty
+        // but parsed to {}, treat the note as having authored frontmatter
+        // and skip the auto-stamp.
+        const hasAuthoredFrontmatter = !!m.frontmatterYaml && m.frontmatterYaml.trim().length > 0;
+        if (!hasAuthoredFrontmatter) {
+          const patch = suggestCalendarPatch(frontmatter, "");
+          if (patch) frontmatter = { ...frontmatter, ...patch };
+        }
       }
       out.push({
         id: newNoteId(),
@@ -332,6 +311,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
         frontmatter,
         title: deriveTitle(body, filename.replace(/\.md$/, "")),
         body,
+        mtime: m.mtimeMs,
       });
     } catch (err) {
       console.warn("Failed to load metadata entry", m.path, err);
@@ -1359,7 +1339,7 @@ export function CardGrid() {
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: title || "Untitled", body: seedBody },
+      { id: newNoteId(), path, filename, frontmatter, title: title || "Untitled", body: seedBody, mtime: Date.now() },
     ]);
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
@@ -1538,7 +1518,7 @@ export function CardGrid() {
     }
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body },
+      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
     ]);
   }, [flashCap]);
 
@@ -1626,15 +1606,21 @@ export function CardGrid() {
 
   // Minimal vault index for resolving `- [[Name]]` bullets and
   // evaluating `base` blocks. `folder` is the dirname's last segment
-  // so file.folder.contains("X") works against the literal directory
-  // name; ctime/mtime are left undefined until we plumb fs.stat
-  // through the load path.
-  const vaultNotesIndex: ListNoteRef[] = notes.map((n) => ({
-    filename: n.filename,
-    frontmatter: n.frontmatter,
-    folder: n.path.split("/").slice(-2, -1)[0] ?? "",
-    body: n.body,
-  }));
+  // (wikilink qualifiers); `dir` is the full relative directory path
+  // so file.folder.contains("X") matches at any depth, matching
+  // Obsidian Bases semantics. `mtime` enables file.mtime sorting; ctime
+  // is left undefined until we plumb birthtime through the load path.
+  const vaultNotesIndex: ListNoteRef[] = notes.map((n) => {
+    const parts = n.path.split("/");
+    return {
+      filename: n.filename,
+      frontmatter: n.frontmatter,
+      folder: parts.slice(-2, -1)[0] ?? "",
+      dir: parts.slice(0, -1).join("/"),
+      mtime: n.mtime,
+      body: n.body,
+    };
+  });
 
   // Hide intermediate Area / Category list files from the Stream.
   // They're navigation infrastructure; the Sidebar drill is the
@@ -1768,9 +1754,15 @@ export function CardGrid() {
   const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
   const sections = newspaperMode
     ? includeRefs.map((ref) => {
-        const mainNote = filteredNotes.find(
-          (n) => isNotableFolder(n.frontmatter) && n.filename.replace(/\.md$/, "") === ref,
-        );
+        // Prefer an NF Main Doc with that filename; fall back to any
+        // note with that filename so plain-note includes (e.g. clicking
+        // a book card whose ref is a leaf .md, not an NF) still render
+        // as that section's centerpiece instead of an empty section.
+        const mainNote =
+          filteredNotes.find(
+            (n) => isNotableFolder(n.frontmatter) && n.filename.replace(/\.md$/, "") === ref,
+          )
+          ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
         const sectionNotes = filteredNotes
           .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));

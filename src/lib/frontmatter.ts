@@ -87,8 +87,11 @@ export function isoTime(d: Date = new Date()): string {
  * Obsidian Full Calendar compatibility: an event is a markdown note whose
  * frontmatter carries `date`, `startTime`, `allDay`. We inject those for
  * notes that don't begin with an h1 (treating "no headline = a log entry")
- * and don't already have a `date` key set. Returns the patch to merge,
- * or null if no injection is needed.
+ * and don't already have a `date` key set. A non-empty `title:` field in
+ * frontmatter counts as a headline too — external-source notes (Readwise,
+ * Reader, etc.) typically put their name there instead of as a body h1
+ * and would otherwise all stamp onto today's calendar. Returns the patch
+ * to merge, or null if no injection is needed.
  */
 export function suggestCalendarPatch(
   frontmatter: Frontmatter,
@@ -96,6 +99,7 @@ export function suggestCalendarPatch(
   now: Date = new Date(),
 ): Frontmatter | null {
   if (bodyHasH1(body)) return null;
+  if (typeof frontmatter.title === "string" && frontmatter.title.trim().length > 0) return null;
   if (typeof frontmatter.date === "string" && frontmatter.date.length > 0) return null;
   return {
     date: isoDate(now),
