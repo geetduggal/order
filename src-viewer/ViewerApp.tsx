@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { Files, FileText, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket } from "lucide-react";
+import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
@@ -130,11 +130,23 @@ export function ViewerApp(
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
   // the scroll fires. Seeded from a note-page deep-link.
   const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
-  // "Notes only" toggle: hide Notable-Folder cards, show ordinary notes
-  // only. Persisted across visits (shared key with the app).
-  const [notesOnly, setNotesOnly] = useState<boolean>(() => {
-    try { return localStorage.getItem("order.notesOnly") === "1"; } catch { return false; }
+  // Stream mode — three states the prominent rail FAB cycles through.
+  // "folders" is the default for the published home so visitors land
+  // on a Notable-Folder card grid first; "notes" hides NF cards;
+  // "all" shows both. Persisted across visits (shared key with the
+  // in-app vault).
+  type StreamMode = "all" | "notes" | "folders";
+  const [streamMode, setStreamMode] = useState<StreamMode>(() => {
+    try {
+      const v = localStorage.getItem("order.streamMode");
+      if (v === "all" || v === "notes" || v === "folders") return v;
+    } catch { /* non-fatal */ }
+    return "folders";
   });
+  const setStreamModePersist = (m: StreamMode) => {
+    setStreamMode(m);
+    try { localStorage.setItem("order.streamMode", m); } catch { /* non-fatal */ }
+  };
 
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
@@ -279,8 +291,11 @@ export function ViewerApp(
       if (hidden.has(n.ref.toLowerCase())) return false;
       if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
-      // "Notes only": drop Notable-Folder cards (those carry a category).
-      if (notesOnly && !!n.category) return false;
+      // Stream mode: "notes" drops NF cards; "folders" drops ordinary
+      // notes (keep only NF main docs, which carry a `category`); "all"
+      // keeps both.
+      if (streamMode === "notes" && !!n.category) return false;
+      if (streamMode === "folders" && !n.category) return false;
       return true;
     });
     // Single-folder mode pins that folder's Main Doc to the top (its
@@ -299,7 +314,7 @@ export function ViewerApp(
       return dateKey(b).localeCompare(dateKey(a));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.notes, hidden, filters, focusedFolder, notesOnly]);
+  }, [data.notes, hidden, filters, focusedFolder, streamMode]);
 
   // Calendar projection from the same filtered set.
   const calendarNotes: NoteMeta[] = useMemo(
@@ -381,21 +396,33 @@ export function ViewerApp(
 
   return (
     <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+      {/* Prominent 3-state stream-mode toggle. Defaults to "folders"
+          for the published home so visitors land on a NF card grid. */}
       <button
         type="button"
-        className={"notes-only-fab" + (notesOnly ? " is-on" : "")}
-        onClick={() => setNotesOnly((v) => {
-          const next = !v;
-          try { localStorage.setItem("order.notesOnly", next ? "1" : "0"); } catch { /* non-fatal */ }
-          return next;
-        })}
-        title={notesOnly ? "Notes only — click to include notable folders" : "Notes + notable folders — click for notes only"}
-        aria-label={notesOnly ? "Showing notes only" : "Showing notes and notable folders"}
-        aria-pressed={notesOnly}
+        className={`stream-mode-fab is-${streamMode}`}
+        onClick={() => setStreamModePersist(
+          streamMode === "all" ? "notes"
+            : streamMode === "notes" ? "folders" : "all",
+        )}
+        title={
+          streamMode === "all"
+            ? "Showing notes + notable folders — click for notes only"
+            : streamMode === "notes"
+              ? "Showing notes only — click for notable folders only"
+              : "Showing notable folders only — click to include all"
+        }
+        aria-label={
+          streamMode === "all" ? "Notes and notable folders"
+            : streamMode === "notes" ? "Notes only"
+              : "Notable folders only"
+        }
       >
-        {notesOnly
-          ? <FileText size={14} strokeWidth={2.1} />
-          : <Files size={14} strokeWidth={2.1} />}
+        {streamMode === "folders"
+          ? <FolderIcon size={20} strokeWidth={2.1} />
+          : streamMode === "notes"
+            ? <FileText size={20} strokeWidth={2.1} />
+            : <Files size={20} strokeWidth={2.1} />}
       </button>
 
       <FilterPillStack

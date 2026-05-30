@@ -12,9 +12,9 @@
 // appears in the grids. No separate storage — the YAML is the source
 // of truth.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import { useTileDrag } from "../lib/use-tile-drag";
 import type { Frontmatter } from "../lib/frontmatter";
@@ -619,6 +619,8 @@ function hasFolderInCategory(taxonomy: Taxonomy, area: string, category: string)
   return (taxonomy.foldersByCategory.get(`${area}::${category}`)?.length ?? 0) > 0;
 }
 
+const REMOVE_CONFIRM_TIMEOUT_MS = 4000;
+
 function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, dragging, onTilePointerDown }: {
   folder: NotableFolder;
   checked: boolean;
@@ -634,6 +636,25 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
   const titleFm = folder.frontmatter.title;
   const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
   const hasControls = !!(onMoveUp || onMoveDown || onRemove);
+  // Two-click confirm for remove. First click arms; second click within
+  // REMOVE_CONFIRM_TIMEOUT_MS fires onRemove. Timer auto-cancels armed
+  // state. Matches the pattern used by Card's delete button.
+  const [confirming, setConfirming] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const onRemoveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onRemove) return;
+    if (confirming) {
+      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+      setConfirming(false);
+      onRemove();
+      return;
+    }
+    setConfirming(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setConfirming(false), REMOVE_CONFIRM_TIMEOUT_MS);
+  };
   return (
     <li
       className={"sb-folder-li" + (dragging ? " dragging" : "") + (onTilePointerDown ? " draggable" : "")}
@@ -667,8 +688,14 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
             <ChevronDown size={11} strokeWidth={2.5} />
           </button>
           {onRemove && (
-            <button type="button" className="sb-folder-ctl sb-folder-ctl-remove" onClick={onRemove} title="Remove from category" aria-label="Remove from category">
-              <X size={11} strokeWidth={2.5} />
+            <button
+              type="button"
+              className={"sb-folder-ctl sb-folder-ctl-remove" + (confirming ? " is-confirming" : "")}
+              onClick={onRemoveClick}
+              title={confirming ? "Click again to remove from category" : "Remove from category"}
+              aria-label={confirming ? "Confirm remove" : "Remove from category"}
+            >
+              {confirming ? <Trash2 size={11} strokeWidth={2.5} /> : <X size={11} strokeWidth={2.5} />}
             </button>
           )}
         </span>

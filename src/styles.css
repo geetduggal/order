@@ -872,8 +872,34 @@ input, textarea, select { outline: none; box-shadow: none; }
    Crepe's own, prefixed with .milkdown-host to win on specificity. */
 .milkdown-host .milkdown .milkdown-list-item-block { margin: 0; }
 .milkdown-host .milkdown .milkdown-list-item-block li { gap: 4px; }
-.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper { height: 1.5em; width: 1.1em; }
-.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper .label { height: 1.5em; padding: 0; }
+/* Crepe renders its own list marker inside .label-wrapper. The
+   outer <ol>/<ul> and inner <li> still carry default list-style;
+   suppress the browser's native marker so it doesn't show alongside
+   Crepe's. */
+.milkdown-host .milkdown ol,
+.milkdown-host .milkdown ul,
+.milkdown-host .milkdown .milkdown-list-item-block li {
+  list-style: none;
+}
+/* Ordered-list labels are rendered as "1.", "2.", … "10." (number +
+   period — see preset-commonmark list_item.parseMarkdown). A fixed
+   1.1em wrapper fit one glyph and wrapped the period / second digit
+   to a second line, producing the stray "." below each number. Auto
+   width with a small floor handles single-digit, double-digit, and
+   the period without wrapping, while keeping bullet markers compact. */
+.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper {
+  height: 1.5em;
+  width: auto;
+  min-width: 1.1em;
+  padding: 0 0.15em 0 0;
+  white-space: nowrap;
+}
+.milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper .label {
+  height: 1.5em;
+  width: auto;
+  padding: 0;
+  white-space: nowrap;
+}
 .milkdown-host .milkdown .milkdown-list-item-block li .label-wrapper svg { width: 1.05em; height: 1.05em; }
 .milkdown-host .milkdown .milkdown-list-item-block .children p { margin: 0; padding: 0; line-height: 1.5; }
 
@@ -936,8 +962,11 @@ input, textarea, select { outline: none; box-shadow: none; }
    existing onPaste file uploader, and YouTube URLs route through the
    ```embed flow. Hide the empty placeholder so the question mark never
    appears. */
-.milkdown-host .ProseMirror .milkdown-image-block:has(.placeholder),
-.milkdown-host .ProseMirror .milkdown-image-block:not(:has(.image-preview img[src]:not([src=""]))) {
+/* `:has(.placeholder)` matched legitimate images too — Crepe keeps a
+   .placeholder element in the DOM even when an image-preview is
+   showing. Hide only image-blocks that have no img with a non-empty
+   src (the actual empty-state). */
+.milkdown-host .ProseMirror .milkdown-image-block:not(:has(img[src]:not([src=""]))) {
   display: none !important;
 }
 /* Same for any image-block whose src is a YouTube URL — Crepe's <img>
@@ -1485,6 +1514,13 @@ iframe.order-youtube-embed {
 }
 .sb-folder-ctl:hover:not(:disabled) { color: var(--royal); background: var(--royal-soft); }
 .sb-folder-ctl-remove:hover:not(:disabled) { color: var(--coral); background: var(--coral-soft); }
+/* Armed-to-confirm state: the X swaps to a trash icon and the button
+   takes coral fill so the second click reads as the destructive one. */
+.sb-folder-ctl-remove.is-confirming {
+  color: white;
+  background: var(--coral);
+}
+.sb-folder-ctl-remove.is-confirming:hover { background: var(--coral); }
 .sb-folder-ctl:disabled { opacity: 0.3; cursor: default; }
 .sb-folder-li.draggable { touch-action: none; }
 .sb-folder-li.draggable .sb-folder-item { cursor: grab; }
@@ -2142,67 +2178,63 @@ iframe.order-youtube-embed {
 }
 .new-note-fab:active { transform: scale(0.92); }
 
-/* Publish action — sits below the + FAB on the left rail. */
-.publish-fab {
+/* Stream-mode toggle — the prominent main-circle FAB. Cycles through
+   three states: notes + folders (all), notes only, folders only.
+   Bigger than the surrounding rail buttons so it reads as THE control
+   on the page. Sits second on the rail, right under the + button. */
+.stream-mode-fab {
   position: fixed;
-  top: 38px;
-  left: 10px;
+  top: 44px;
+  /* Anchor the circle's CENTER on the same vertical axis as the other
+     left-rail buttons so the cluster reads as one column. The 22px
+     small FABs are centered at left:21 (left:10 + 11), so we offset
+     this 34px button by half-width to land on 21 too. */
+  left: 4px;
   z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1.5px solid var(--royal);
   border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: transform 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out);
 }
-.publish-fab:hover {
-  color: var(--royal);
-  border-color: var(--royal);
+.stream-mode-fab:hover {
   background: var(--royal-soft);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
 }
-.publish-fab:active { transform: scale(0.92); }
-
-/* Jump to the folder's first ordinary note ↔ back to the folder cover.
-   Top-left action rail, below Publish. `is-on` = currently jumped (the
-   target note shows a coral border). */
-.notes-only-fab {
-  position: fixed;
-  top: 66px;
-  left: 10px;
-  z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+.stream-mode-fab:active { transform: scale(0.94); }
+/* Fill the icon with the button's current color so it reads as a
+   solid glyph rather than a thin outline — adds visual weight to
+   match the prominent button surface. */
+.stream-mode-fab svg {
+  fill: currentColor;
+  fill-opacity: 0.85;
 }
-.notes-only-fab:hover {
-  color: var(--coral);
-  border-color: var(--coral);
-  background: var(--coral-soft);
-}
-.notes-only-fab.is-on {
+/* Per-state accents so the current mode is unmistakable at a glance. */
+.stream-mode-fab.is-folders {
   color: #fff;
-  border-color: var(--coral);
-  background: var(--coral);
+  background: var(--royal);
+  border-color: var(--royal);
 }
-.notes-only-fab:active { transform: scale(0.92); }
+.stream-mode-fab.is-notes {
+  color: #fff;
+  background: var(--coral);
+  border-color: var(--coral);
+}
+.stream-mode-fab.is-all {
+  color: var(--ink);
+  background: var(--bg);
+  border-color: var(--rule);
+}
 
-/* Public-only sits right under the notes-only toggle — same rail style. */
+/* Public/private (lock) sits below the prominent stream-mode toggle,
+   with breathing room so the big circle doesn't crowd it. */
 .public-only-fab {
   position: fixed;
-  top: 94px;
+  top: 90px;
   left: 10px;
   z-index: 50;
   width: 22px;
@@ -2229,10 +2261,35 @@ iframe.order-youtube-embed {
 }
 .public-only-fab:active { transform: scale(0.92); }
 
-/* Published viewer has no +/Publish FABs, so its left-rail nav cluster
-   (jump toggle + filter stack) sits at the very top instead. */
-.viewer-shell .notes-only-fab { top: 10px; }
-.viewer-shell .public-only-fab { top: 38px; }
+/* Publish — bottom of the top-rail cluster, under the lock. */
+.publish-fab {
+  position: fixed;
+  top: 122px;
+  left: 10px;
+  z-index: 50;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  opacity: 1;
+  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.publish-fab:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.publish-fab:active { transform: scale(0.92); }
+
+/* Published viewer has no +/Publish FABs, so its rail cluster starts
+   at the very top. Stream-mode is still the prominent main circle. */
+.viewer-shell .stream-mode-fab { top: 16px; }
+.viewer-shell .public-only-fab { top: 62px; }
 /* The viewer has no zoom/settings cluster, so its theme toggle sits at
    the bottom-left corner instead of above the (absent) zoom buttons. */
 .viewer-shell .theme-fab { bottom: 12px; }
@@ -3073,6 +3130,18 @@ iframe.order-youtube-embed {
   opacity: 0.55;
 }
 .event-action-day.is-current:hover { background: transparent; }
+/* "Push to next week" jump: lives in the same chip row but reads as
+   an action, not a date. Coral border + icon-only so it doesn't get
+   mistaken for an 8th day cell. */
+.event-action-day-next-week {
+  color: var(--coral);
+  border-color: var(--coral);
+  border-style: dashed;
+}
+.event-action-day-next-week:hover {
+  background: var(--coral-soft);
+  border-style: solid;
+}
 /* On touch devices give chips real finger-sized targets. */
 @media (hover: none) {
   .event-action-day { padding: 9px 0 7px; }
@@ -3647,6 +3716,148 @@ iframe.order-youtube-embed {
   line-height: 1.3;
   outline: none;
 }
+/* Image-only cards: caption row sits right below the cover. */
+.basecard-body-image {
+  min-height: 0;
+  padding: 6px 10px 8px;
+}
+.basecard-caption {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-soft);
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Full-screen image inspector — opens on image-card click. Backdrop
+   covers the app; frame holds the image, zoom controls, and caption
+   input. */
+.img-inspector-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(15, 15, 18, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.img-inspector-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(96vw, 1400px);
+  height: min(94vh, 1000px);
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.img-inspector-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 30px; height: 30px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.img-inspector-close:hover { background: var(--coral, #ff7f50); }
+.img-inspector-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background:
+    linear-gradient(45deg, rgba(0,0,0,0.04) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.04) 75%),
+    linear-gradient(45deg, rgba(0,0,0,0.04) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.04) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+.img-inspector-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform 0.12s var(--ease-out);
+  user-select: none;
+}
+.img-inspector-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg);
+}
+.img-inspector-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.img-inspector-zoom button {
+  width: 24px; height: 24px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.img-inspector-zoom button:hover { background: var(--bg-elev); }
+.img-inspector-zoom span {
+  min-width: 44px;
+  text-align: center;
+}
+.img-inspector-caption {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 13px;
+  border: 1px solid var(--rule);
+  background: var(--bg-elev);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 6px 10px;
+  outline: none;
+}
+.img-inspector-caption:focus { border-color: var(--coral, #ff7f50); }
+.img-inspector-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.img-inspector-action:hover { background: var(--royal-soft); border-color: var(--royal); }
+.img-inspector-action:disabled { opacity: 0.55; cursor: progress; }
+.img-inspector-action-delete:hover {
+  background: var(--coral-soft);
+  border-color: var(--coral);
+  color: var(--coral);
+}
+.img-inspector-action-delete.is-confirming {
+  background: var(--coral);
+  border-color: var(--coral);
+  color: #fff;
+}
+
 .basecard-meta {
   font-family: var(--sans);
   font-size: 10px;
@@ -3931,23 +4142,24 @@ iframe.order-youtube-embed {
    settings gear above the home indicator). env(safe-area-inset-*) is 0 on
    desktop and non-notched contexts, so these are no-ops there. Requires
    viewport-fit=cover (set in index.html). Placed last so they win on
-   source order over the base rail rules. */
+   source order over the base rail rules. Stays in sync with the desktop
+   rail order (+ → stream-mode → lock → publish). */
 .new-note-fab { top: calc(10px + env(safe-area-inset-top)); }
 .new-note-picker { top: calc(40px + env(safe-area-inset-top)); }
-.publish-fab { top: calc(38px + env(safe-area-inset-top)); }
-.notes-only-fab { top: calc(66px + env(safe-area-inset-top)); }
-.public-only-fab { top: calc(94px + env(safe-area-inset-top)); }
+.stream-mode-fab { top: calc(44px + env(safe-area-inset-top)); }
+.public-only-fab { top: calc(90px + env(safe-area-inset-top)); }
+.publish-fab { top: calc(122px + env(safe-area-inset-top)); }
 .filter-pills {
-  top: calc(126px + env(safe-area-inset-top));
-  max-height: calc(100vh - 142px - env(safe-area-inset-top));
+  top: calc(156px + env(safe-area-inset-top));
+  max-height: calc(100vh - 172px - env(safe-area-inset-top));
 }
 .sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
 .settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
 .zoom-out-fab { bottom: calc(40px + env(safe-area-inset-bottom)); }
 .zoom-in-fab { bottom: calc(68px + env(safe-area-inset-bottom)); }
 .theme-fab { bottom: calc(96px + env(safe-area-inset-bottom)); }
-.viewer-shell .notes-only-fab { top: calc(10px + env(safe-area-inset-top)); }
-.viewer-shell .public-only-fab { top: calc(38px + env(safe-area-inset-top)); }
+.viewer-shell .stream-mode-fab { top: calc(16px + env(safe-area-inset-top)); }
+.viewer-shell .public-only-fab { top: calc(62px + env(safe-area-inset-top)); }
 .viewer-shell .theme-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
 .viewer-shell .filter-pills {
   top: calc(70px + env(safe-area-inset-top));

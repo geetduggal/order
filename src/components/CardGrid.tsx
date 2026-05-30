@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -50,14 +50,26 @@ function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
-// "Notes only" filter: when on, the Stream hides Notable-Folder cards and
-// shows ordinary notes only. Persists across sessions.
-const NOTES_ONLY_KEY = "order.notesOnly";
-function readNotesOnly(): boolean {
-  try { return localStorage.getItem(NOTES_ONLY_KEY) === "1"; } catch { return false; }
+// Stream membership filter — three states, cycled by the prominent
+// FAB on the left rail. Persists across sessions.
+//   - "all":     ordinary notes AND Notable-Folder cards (default in-app)
+//   - "notes":   ordinary notes only
+//   - "folders": Notable-Folder main docs only (default for published home)
+export type StreamMode = "all" | "notes" | "folders";
+const STREAM_MODE_KEY = "order.streamMode";
+function readStreamMode(): StreamMode {
+  try {
+    const v = localStorage.getItem(STREAM_MODE_KEY);
+    if (v === "notes" || v === "folders" || v === "all") return v;
+  } catch { /* non-fatal */ }
+  return "all";
 }
-function writeNotesOnly(on: boolean): void {
-  try { localStorage.setItem(NOTES_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
+function writeStreamMode(m: StreamMode): void {
+  try { localStorage.setItem(STREAM_MODE_KEY, m); } catch { /* non-fatal */ }
+}
+function nextStreamMode(m: StreamMode): StreamMode {
+  // Cycle: all → notes → folders → all.
+  return m === "all" ? "notes" : m === "notes" ? "folders" : "all";
 }
 
 // Every launch picks a viewport-aware default — Day on phones (≤640px,
@@ -364,7 +376,7 @@ export function CardGrid() {
   }, [filters]);
   // "Notes only" toggle: hide Notable-Folder cards from the Stream and
   // show ordinary notes only. Persisted; survives filter changes.
-  const [notesOnly, setNotesOnly] = useState<boolean>(readNotesOnly);
+  const [streamMode, setStreamMode] = useState<StreamMode>(readStreamMode);
   // "Public only" toggle: show only `public: true` notes in the Stream
   // (off = public + private together). Persisted; survives filter changes.
   const [publicOnly, setPublicOnly] = useState<boolean>(readPublicOnly);
@@ -1654,8 +1666,13 @@ export function CardGrid() {
   const filteredNotes = ((includeRefs.length > 0 || excludeRefs.length > 0)
     ? streamCandidates.filter(filterMatches)
     : streamCandidates)
-    // "Notes only": drop Notable-Folder cards (covers + folder tiles).
-    .filter((n) => !notesOnly || !isNotableFolder(n.frontmatter))
+    // Stream mode: "notes" drops NF cards; "folders" drops ordinary
+    // notes (keep only NF main docs); "all" keeps both.
+    .filter((n) => {
+      if (streamMode === "all") return true;
+      const isNF = isNotableFolder(n.frontmatter);
+      return streamMode === "notes" ? !isNF : isNF;
+    })
     // "Public only": drop notes without `public: true` in YAML.
     .filter((n) => !publicOnly || n.frontmatter.public === true);
 
@@ -1823,27 +1840,36 @@ export function CardGrid() {
         +
       </button>
 
+      {/* The note-toggle is the prominent main-circle control: cycles
+          through three modes that change what the Stream shows.
+          notable folders only (default for the published home)
+          → notes only → both. Visually larger + accented to draw the eye. */}
       <button
         type="button"
-        className="publish-fab"
-        onClick={() => setPublishOpen((o) => !o)}
-        title="Publish (Cmd+P)"
-        aria-label="Publish"
+        className={`stream-mode-fab is-${streamMode}`}
+        onClick={() => setStreamMode((m) => {
+          const next = nextStreamMode(m);
+          writeStreamMode(next);
+          return next;
+        })}
+        title={
+          streamMode === "all"
+            ? "Showing notes + notable folders — click for notes only"
+            : streamMode === "notes"
+              ? "Showing notes only — click for notable folders only"
+              : "Showing notable folders only — click to include all"
+        }
+        aria-label={
+          streamMode === "all" ? "Notes and notable folders"
+            : streamMode === "notes" ? "Notes only"
+              : "Notable folders only"
+        }
       >
-        <UploadIcon size={14} strokeWidth={2.1} />
-      </button>
-
-      <button
-        type="button"
-        className={"notes-only-fab" + (notesOnly ? " is-on" : "")}
-        onClick={() => setNotesOnly((v) => { writeNotesOnly(!v); return !v; })}
-        title={notesOnly ? "Notes only — click to include notable folders" : "Notes + notable folders — click for notes only"}
-        aria-label={notesOnly ? "Showing notes only" : "Showing notes and notable folders"}
-        aria-pressed={notesOnly}
-      >
-        {notesOnly
-          ? <FileText size={14} strokeWidth={2.1} />
-          : <Files size={14} strokeWidth={2.1} />}
+        {streamMode === "folders"
+          ? <FolderIcon size={20} strokeWidth={2.1} />
+          : streamMode === "notes"
+            ? <FileText size={20} strokeWidth={2.1} />
+            : <Files size={20} strokeWidth={2.1} />}
       </button>
 
       <button
@@ -1857,6 +1883,16 @@ export function CardGrid() {
         {publicOnly
           ? <Globe size={14} strokeWidth={2.1} />
           : <Lock size={14} strokeWidth={2.1} />}
+      </button>
+
+      <button
+        type="button"
+        className="publish-fab"
+        onClick={() => setPublishOpen((o) => !o)}
+        title="Publish (Cmd+P)"
+        aria-label="Publish"
+      >
+        <UploadIcon size={14} strokeWidth={2.1} />
       </button>
 
       <button
@@ -2053,11 +2089,17 @@ export function CardGrid() {
           view={view}
           onSelectView={setView}
           folders={notableFolders}
-          // Sidebar is pure navigation now: clicking a folder ADDS an
-          // include pill (never toggles). `selected` only drives the
-          // visual checkmark for orientation. Clear resets to default.
+          // Sidebar folder click is a real toggle now: filtered → unfilter
+          // (drop the include pill); not filtered → switch to the Stream,
+          // add the include, and scroll to the NF's main doc.
           selected={includeSet}
-          onToggle={addInclude}
+          onToggle={(ref) => {
+            if (includeSet.has(ref)) {
+              removeFilter({ kind: "include", ref });
+            } else {
+              focusFolder(ref);
+            }
+          }}
           onCreateFolder={handleCreateFolder}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
@@ -2288,6 +2330,24 @@ function EventActionMenu({
                 <span className="event-action-day-num">{d.day}</span>
               </button>
             ))}
+            {/* Fast-forward: jump the event +7 days. Lands on the same
+                weekday at the same time, mirroring the manual repeat
+                gesture without needing recurrence support. */}
+            <button
+              type="button"
+              className="event-action-day event-action-day-next-week"
+              onClick={() => {
+                if (!eventDate || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return;
+                const [y, m, d] = eventDate.split("-").map((s) => parseInt(s, 10));
+                const next = new Date(y, m - 1, d + 7);
+                const iso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+                onMoveToDay(iso);
+              }}
+              title="Push to next week (same day, same time)"
+              aria-label="Push to next week"
+            >
+              <ChevronsRight size={14} strokeWidth={2.2} />
+            </button>
           </div>
         )}
         {availableFolders.length > 0 && (
