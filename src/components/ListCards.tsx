@@ -15,6 +15,8 @@ import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveNoteRef } from "../lib/wikilink";
 import { useTileDrag } from "../lib/use-tile-drag";
+import { assetUrl } from "../lib/attachments";
+import { ImageInspector } from "./ImageInspector";
 export type { ListNoteRef };
 
 interface Props {
@@ -32,6 +34,28 @@ interface Props {
   /** Additive filter — used when the linked target is a Notable
    *  Folder so a click accumulates filter chips. */
   onAddFilter?: (ref: string) => void;
+  /** The list folder's vault-relative directory. Used to resolve
+   *  image-only list items (`* ![[foo.jpg]]`) to a vaultasset:// URL
+   *  against the folder containing the image. */
+  noteDir?: string;
+  /** Upload a file into the list folder's dir, returning the
+   *  vaultasset:// URL of the stored image. Wired from Card so the
+   *  image inspector's Replace button can swap the image. */
+  onUploadImage?: (file: File) => Promise<string>;
+}
+
+/** Build the URL for an image-only list item.
+ *   - Inflated form (`![](vaultasset://…)`) sets item.image to the
+ *     full URL — pass through unchanged.
+ *   - On-disk Obsidian form (`* ![[file.png]]`) sets item.image to the
+ *     basename — resolve against the list folder's own directory,
+ *     which is where Order's kanban-to-cards conversion put the file.
+ *   - External http(s) URLs pass through too. */
+function imageItemUrl(item: ListItem, noteDir?: string): string | undefined {
+  if (!item.image) return undefined;
+  if (/^[a-z]+:\/\//i.test(item.image)) return item.image;
+  const rel = noteDir ? `${noteDir}/${item.image}` : item.image;
+  return assetUrl(rel);
 }
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
@@ -43,9 +67,18 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter }: Props) {
+export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter, noteDir, onUploadImage }: Props) {
   const [adding, setAdding] = useState(false);
+  /** Open image inspector for a specific image-only list item. */
+  const [inspectingIdx, setInspectingIdx] = useState<number | null>(null);
   const hideControls = !!readOnly || !!readOnlyMembership;
+
+  function updateCaption(index: number, caption: string) {
+    const next = items.slice();
+    const trimmed = caption.trim();
+    next[index] = { ...next[index], caption: trimmed || undefined };
+    onChange(next);
+  }
 
   function reorder(order: string[]) {
     const byRef = new Map(items.map((i) => [i.ref, i]));
@@ -102,6 +135,34 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   return (
     <div ref={gridRef} className="basecard-grid">
       {items.map((item, originalIdx) => {
+        // Image-only bullet (`* ![[foo.jpg]]`) — render the image as
+        // the card's cover, no title/meta/navigation. Click opens an
+        // inspector for zoom + caption editing. The image lives in
+        // the list folder's own dir (or is an external URL).
+        if (item.image) {
+          const url = imageItemUrl(item, noteDir);
+          const dragging = item.ref === draggingRef;
+          return (
+            <BaseCard
+              key={item.ref}
+              item={item}
+              Icon={folderIcon(item.ref)}
+              image={url}
+              tintCls={originalIdx % 2 === 0 ? "is-royal" : "is-coral"}
+              displayTitle=""
+              metaSuggestion=""
+              dragging={dragging}
+              draggable={!readOnly}
+              readOnly={hideControls}
+              imageOnly
+              onNavigate={url ? () => setInspectingIdx(originalIdx) : undefined}
+              onTilePointerDown={onTilePointerDown}
+              onDelete={() => remove(originalIdx)}
+              onMetaChange={() => {}}
+              onRefChange={() => {}}
+            />
+          );
+        }
         const note = resolveNoteRef(item.ref, vaultNotes);
         const image = note && typeof note.frontmatter.image === "string"
           ? note.frontmatter.image as string
@@ -143,6 +204,33 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onOpen={() => setAdding(true)}
         />
       )}
+      {inspectingIdx !== null && items[inspectingIdx]?.image && (() => {
+        const item = items[inspectingIdx];
+        const url = imageItemUrl(item, noteDir);
+        if (!url) return null;
+        return (
+          <ImageInspector
+            imageUrl={url}
+            initialCaption={item.caption}
+            onCaptionChange={(c) => updateCaption(inspectingIdx, c)}
+            onReplaceImage={!hideControls && onUploadImage ? async (file) => {
+              const newUrl = await onUploadImage(file);
+              // Derive the basename from the URL so item.ref/image
+              // round-trip cleanly to `![[newfile.png]]` on save.
+              const cleaned = newUrl.split(/[?#]/)[0];
+              let base = cleaned.split("/").pop() ?? cleaned;
+              try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+              const next = items.slice();
+              next[inspectingIdx] = { ...next[inspectingIdx], ref: base, image: base };
+              onChange(next);
+              return base;
+            } : undefined}
+            onDeleteItem={!hideControls ? () => remove(inspectingIdx) : undefined}
+            onClose={() => setInspectingIdx(null)}
+            readOnly={hideControls}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -160,6 +248,9 @@ interface BaseCardProps {
   dragging: boolean;
   draggable: boolean;
   readOnly: boolean;
+  /** Image-only list item (`* ![[foo.jpg]]`): render cover only, no
+   *  title row, no meta row, no inline-rename affordance. */
+  imageOnly?: boolean;
   onNavigate?: () => void;
   onTilePointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
@@ -169,7 +260,7 @@ interface BaseCardProps {
 
 function BaseCard({
   item, Icon, image, tintCls, displayTitle, metaSuggestion,
-  dragging, draggable, readOnly, onNavigate,
+  dragging, draggable, readOnly, imageOnly, onNavigate,
   onTilePointerDown, onDelete, onMetaChange, onRefChange,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
@@ -250,6 +341,13 @@ function BaseCard({
             <XIcon size={11} strokeWidth={2} />
           </button>
         )}
+        {imageOnly ? (
+          item.caption ? (
+            <div className="basecard-body basecard-body-image">
+              <span className="basecard-caption">{item.caption}</span>
+            </div>
+          ) : null
+        ) : (
         <div className="basecard-body">
           {editingTitle ? (
             <input
@@ -302,6 +400,7 @@ function BaseCard({
             </button>
           )}
         </div>
+        )}
       </div>
     </article>
   );

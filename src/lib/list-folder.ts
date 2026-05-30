@@ -11,6 +11,17 @@ export type ListRender = "cards" | "lines";
 export interface ListItem {
   ref: string;
   meta?: string;
+  /** When set, this list item is a raw image embed (`* ![[file.png]]`)
+   *  rather than a wikilink to a note. The renderer shows the file as
+   *  a cover-only card; no title, no navigation, no resolve-by-name
+   *  lookup. `ref` mirrors the image basename so dedup/drag-tracking
+   *  still works. */
+  image?: string;
+  /** Optional caption for an image-only item, persisted as the pipe
+   *  suffix in the wikilink (`* ![[file.png|caption text]]`). Round-
+   *  trips with Obsidian — when present and non-numeric, Obsidian
+   *  treats the suffix as alt text. */
+  caption?: string;
 }
 
 /** Minimal vault index entry the list renderers + base evaluator
@@ -49,6 +60,20 @@ export function isListFolder(frontmatter: Frontmatter): boolean {
 const WIKI_BULLET_RE =
   /^\s*[-*+]\s+\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]\s*(.*)$/;
 
+// Image-embed bullet, accepting two equivalent forms:
+//   * ![[file.png]]                  ← on-disk Obsidian-style embed
+//   * ![[file.png|caption text]]     ← Obsidian alt-text suffix
+//   * ![](vaultasset://…/file.png)   ← inflated form (Card.tsx swaps
+//     `![[X]]` into a vaultasset URL before the editor sees it, so the
+//     list parser also has to recognise the inflated form)
+// All produce the same image-only list item; ref/image carry the
+// bare basename so the renderer's per-item URL construction works.
+// A non-numeric pipe suffix is captured as the caption; a numeric
+// suffix (Obsidian size like `|640` or `|640x480`) is ignored.
+const IMG_BULLET_RE = /^\s*[-*+]\s+!\[\[\s*([^\]|]+?)\s*(?:\|([^\]]*))?\]\]\s*$/;
+const IMG_BULLET_INFLATED_RE = /^\s*[-*+]\s+!\[([^\]]*)\]\(([^)\s]+)\)\s*$/;
+const SIZE_SUFFIX_RE = /^\d+(?:x\d+)?$/;
+
 // Milkdown normalises on save and backslash-escapes the wikilink
 // brackets (they aren't standard markdown). Strip those escapes
 // before regex matching so `\[\[Name]]` and `[[Name]]` both parse.
@@ -57,7 +82,28 @@ function unescapeBrackets(s: string): string {
 }
 
 function parseLine(line: string): ListItem | null {
-  const m = unescapeBrackets(line).match(WIKI_BULLET_RE);
+  const unescaped = unescapeBrackets(line);
+  // Image-only bullet — try Obsidian embed form first, then inflated
+  // (`![](vaultasset://...)`) form. Either yields the same item.
+  const ie = unescaped.match(IMG_BULLET_RE);
+  if (ie) {
+    const full = ie[1].trim();
+    const base = full.split("/").pop() ?? full;
+    const suffix = ie[2]?.trim();
+    const caption = suffix && !SIZE_SUFFIX_RE.test(suffix) ? suffix : undefined;
+    return { ref: base, image: base, ...(caption ? { caption } : {}) };
+  }
+  const iie = unescaped.match(IMG_BULLET_INFLATED_RE);
+  if (iie) {
+    const altText = iie[1]?.trim();
+    const url = iie[2];
+    const cleaned = url.split(/[?#]/)[0];
+    let base = cleaned.split("/").pop() ?? cleaned;
+    try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+    const caption = altText && !SIZE_SUFFIX_RE.test(altText) ? altText : undefined;
+    return { ref: base, image: url, ...(caption ? { caption } : {}) };
+  }
+  const m = unescaped.match(WIKI_BULLET_RE);
   if (!m) return null;
   const ref = (m[2] ?? m[1]).trim();
   const trailing = m[3]?.trim() ?? "";
@@ -109,7 +155,17 @@ export function displayTitleFor(
 
 export function serializeListItems(items: ListItem[]): string {
   return items
-    .map((item) => `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`)
+    .map((item) => {
+      if (item.image) {
+        // Always serialise to the on-disk Obsidian form using just the
+        // basename. `item.ref` already holds the decoded basename in
+        // both the on-disk and inflated cases (see parseLine), so the
+        // round trip stays clean regardless of which form was loaded.
+        const caption = item.caption?.trim();
+        return caption ? `- ![[${item.ref}|${caption}]]` : `- ![[${item.ref}]]`;
+      }
+      return `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`;
+    })
     .join("\n");
 }
 

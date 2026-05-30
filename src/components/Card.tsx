@@ -477,12 +477,17 @@ export function Card(props: Props) {
     return smartMerge(parsedBase, vaultNotes ?? [], manualOrder).map((ref) => ({ ref }));
   }, [parsedBase, listItems, vaultNotes, manualOrder]);
 
-  /** "List of lists": at least one item resolves to another list
-   *  folder. Triggers inline sub-list expansion below each list-pointing
-   *  row and forces the render to lines. */
+  /** "List of lists": EVERY item resolves to another list folder.
+   *  Triggers inline sub-list expansion under each row AND forces the
+   *  render to lines so the tree reads. A loose threshold ("some")
+   *  used to fire spuriously — e.g. a Books note with a single
+   *  `[[Free Will]]` bullet that happened to share a name with a
+   *  Spirituality NF flipped Books to lines. Requiring ALL items
+   *  to resolve to lists makes the trigger purely structural: a
+   *  pure tree of categories qualifies, a list of titles doesn't. */
   const isListOfLists = useMemo(() => {
     if (!vaultNotes || itemsForView.length === 0) return false;
-    return itemsForView.some((item) => {
+    return itemsForView.every((item) => {
       const note = vaultNotes.find(
         (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === item.ref.toLowerCase(),
       );
@@ -748,6 +753,8 @@ export function Card(props: Props) {
               expandSublists={isListOfLists}
               onNavigate={onNavigate ? (ref) => { if (fullscreen) setFullscreen(false); onNavigate(ref); } : undefined}
               onAddFilter={onAddFilter ? (ref) => { if (fullscreen) setFullscreen(false); onAddFilter(ref); } : undefined}
+              noteDir={vaultDir(toVaultRel(pathRef.current))}
+              onUploadImage={readOnly ? undefined : handleImageUpload}
             />
           </>
         )}

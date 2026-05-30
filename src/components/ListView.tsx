@@ -29,9 +29,16 @@ interface Props {
   /** Additive filter handler — used for NF refs so a title click
    *  ADDS the folder to the active set rather than replacing it. */
   onAddFilter?: (ref: string) => void;
+  /** The list folder's vault-relative directory. Needed so image-only
+   *  list items (`* ![[foo.jpg]]`) can build an asset URL against the
+   *  folder where the image sits. */
+  noteDir?: string;
+  /** Image inspector → Replace button. Writes the file into the list
+   *  folder's dir, returns its vaultasset:// URL. */
+  onUploadImage?: (file: File) => Promise<string>;
 }
 
-export function ListView({ render, items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
+export function ListView({ render, items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter, noteDir, onUploadImage }: Props) {
   if (render === "lines") {
     return (
       <ListLines
@@ -55,6 +62,8 @@ export function ListView({ render, items, vaultNotes, onChange, readOnly, readOn
       readOnlyMembership={readOnlyMembership}
       onNavigate={onNavigate}
       onAddFilter={onAddFilter}
+      noteDir={noteDir}
+      onUploadImage={onUploadImage}
     />
   );
 }
