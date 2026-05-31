@@ -505,14 +505,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 8px;
-  padding-top: 4px;
+  margin-top: 10px;
+  padding-top: 6px;
   border-top: 1px solid var(--rule);
-  font-size: 9px;
-  color: var(--ink-ghost);
-  letter-spacing: 0.05em;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  opacity: 0.55;
+  opacity: 0.85;
   transition: opacity 0.15s var(--ease-out);
 }
 .order-card-status:hover { opacity: 1; }
@@ -521,12 +521,13 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-breadcrumb {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  letter-spacing: 0.02em;
+  gap: 6px;
+  letter-spacing: 0.01em;
   text-transform: none;
   font-family: var(--sans);
-  font-size: 10.5px;
-  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
 }
 .order-card-breadcrumb-sep { opacity: 0.5; }
 
@@ -544,13 +545,13 @@ input, textarea, select { outline: none; box-shadow: none; }
 
 .order-card-public {
   font-family: var(--sans);
-  font-size: 9px;
-  letter-spacing: 0.05em;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 0 6px;
+  padding: 1px 8px;
   border-radius: 999px;
   background: transparent;
-  color: var(--ink-ghost);
+  color: var(--ink-soft);
   border: 1px solid var(--rule);
   line-height: 1.5;
   transition:
@@ -709,13 +710,17 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 
 .order-card-fullscreen,
-.order-card-delete {
+.order-card-delete,
+.order-card-dismiss {
   font-size: 16px;
   line-height: 1;
   color: var(--ink-faint);
   background: transparent;
-  padding: 4px 7px;
+  padding: 5px 7px;
   border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .order-card-fullscreen:hover {
@@ -726,8 +731,13 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--coral);
   background: var(--coral-soft);
 }
+.order-card-dismiss:hover {
+  color: var(--ink);
+  background: var(--bg-elev);
+}
 .order-card-fullscreen:active,
-.order-card-delete:active { transform: scale(0.9); }
+.order-card-delete:active,
+.order-card-dismiss:active { transform: scale(0.9); }
 
 .order-card-permalink {
   display: inline-flex;
@@ -1199,7 +1209,14 @@ iframe.order-youtube-embed {
 }
 .shell.sidebar-open { grid-template-columns: 1fr 360px; }
 
-.pane-main { min-width: 0; overflow-x: hidden; padding-top: env(safe-area-inset-top); }
+.pane-main {
+  min-width: 0;
+  overflow-x: hidden;
+  padding-top: env(safe-area-inset-top);
+  /* Leave clearance below the last item for the hovering bottom dock
+     (54px tall + 14px bottom inset + iOS home-indicator safe area). */
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
 
 .pane-right {
   /* Stick to the top of the viewport while the stream scrolls — sidebar
@@ -1680,6 +1697,40 @@ iframe.order-youtube-embed {
 .box-wrapper:hover > .box-remove { opacity: 1; }
 .box-wrapper > .box-remove:hover { color: var(--coral); background: var(--coral-soft); }
 
+/* Filter toggle on Area / Category tiles — bottom-right, mirrors the
+   remove button visually. Always visible when the tile is filtered,
+   hover-only otherwise. */
+.box-wrapper > .box-filter {
+  position: absolute;
+  bottom: 4px; right: 4px;
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-ghost);
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.box-wrapper:hover > .box-filter,
+.box-wrapper.is-filtered > .box-filter { opacity: 1; }
+.box-wrapper > .box-filter:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.box-wrapper > .box-filter.is-on {
+  color: #fff;
+  border-color: var(--royal);
+  background: var(--royal);
+}
+.box-wrapper.is-filtered > .box {
+  outline: 2px solid var(--royal);
+  outline-offset: -2px;
+}
+
 /* Reorder arrows on Area / Category tiles — bottom-left, hover-revealed. */
 .box-reorder {
   position: absolute;
@@ -2153,214 +2204,249 @@ iframe.order-youtube-embed {
 .year-event.continues-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .year-event-title { display: block; }
 
-/* ---------- New-note + FAB (mirror of sidebar toggle, coral) ---------- */
-.new-note-fab {
+/* ---------- Bottom hovering dock ----------
+   Six controls — new note, stream-mode toggle, public/private, search,
+   settings (popup), sidebar toggle — centered along the bottom of the
+   viewport. z-index sits ABOVE the sidebar so the dock is always
+   reachable, even with the sidebar open. */
+.bottom-dock {
   position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 50;
-  width: 22px; height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 15px;
-  font-weight: 300;
-  line-height: 1;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 220;
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  box-shadow: 0 6px 22px rgba(20, 20, 20, 0.18);
+  /* Soft frosted backdrop on browsers that support it; falls back to
+     the solid bg above. */
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+}
+.dock-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--ink-soft);
   background: transparent;
   border: 1px solid var(--rule);
   border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), background-color 0.12s var(--ease-out), color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+  cursor: pointer;
+  transition: transform 0.12s var(--ease-out),
+              color 0.12s var(--ease-out),
+              background-color 0.12s var(--ease-out),
+              border-color 0.12s var(--ease-out);
 }
-.new-note-fab:hover {
+.dock-btn:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
+.dock-btn:active { transform: scale(0.92); }
+.dock-btn:disabled { opacity: 0.35; cursor: default; }
+.dock-btn:disabled:hover {
+  color: var(--ink-soft);
+  border-color: var(--rule);
+  background: transparent;
+}
+
+/* New-note + glyph: bigger so the affordance reads */
+.dock-btn-new {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+}
+.dock-btn-new:hover { color: var(--coral); border-color: var(--coral); background: var(--coral-soft); }
+
+/* Public/private toggle — coral when "public only" is active. */
+.dock-btn-public.is-on {
+  color: #fff;
+  background: var(--coral);
+  border-color: var(--coral);
+}
+.dock-btn-public:hover {
   color: var(--coral);
   border-color: var(--coral);
   background: var(--coral-soft);
 }
-.new-note-fab:active { transform: scale(0.92); }
+.dock-btn-public.is-on:hover { color: #fff; background: var(--coral); }
 
-/* Stream-mode toggle — the prominent main-circle FAB. Cycles through
-   three states: notes + folders (all), notes only, folders only.
-   Bigger than the surrounding rail buttons so it reads as THE control
-   on the page. Sits second on the rail, right under the + button. */
-.stream-mode-fab {
+/* Settings — coral hover; .is-open marks the popup as visible. */
+.dock-btn-settings:hover { color: var(--coral); border-color: var(--coral); background: var(--coral-soft); }
+.dock-btn-settings.is-open { color: #fff; background: var(--coral); border-color: var(--coral); }
+/* Sidebar toggle — royal hover. */
+.dock-btn-sidebar:hover { color: var(--royal); border-color: var(--royal); background: var(--royal-soft); }
+
+/* Tools popup — anchored above the settings button on the dock.
+   Holds publish + theme + zoom + vault-settings so the dock itself
+   stays terse. */
+.dock-tools-popup {
   position: fixed;
-  top: 44px;
-  /* Anchor the circle's CENTER on the same vertical axis as the other
-     left-rail buttons so the cluster reads as one column. The 22px
-     small FABs are centered at left:21 (left:10 + 11), so we offset
-     this 34px button by half-width to land on 21 too. */
-  left: 4px;
-  z-index: 50;
-  width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--ink);
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  /* Anchor over the right-ish side of the dock where the settings
+     button sits. Approximate; exact alignment isn't critical. */
+  left: 50%;
+  transform: translateX(40%);
+  z-index: 230;
+  min-width: 220px;
+  padding: 4px;
   background: var(--bg);
-  border: 1.5px solid var(--royal);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 20, 20, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: order-card-mount 140ms var(--ease-out) both;
+}
+.dock-tools-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.dock-tools-item:hover { background: var(--royal-soft); }
+.dock-tools-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+}
+.dock-tools-zoom-btn {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 1px solid var(--rule);
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  transition: transform 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out);
+  color: var(--ink-soft);
 }
-.stream-mode-fab:hover {
-  background: var(--royal-soft);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
+.dock-tools-zoom-btn:hover { color: var(--royal); border-color: var(--royal); background: var(--royal-soft); }
+.dock-tools-zoom-btn:disabled { opacity: 0.35; cursor: default; }
+.dock-tools-zoom-btn:disabled:hover { color: var(--ink-soft); border-color: var(--rule); background: transparent; }
+.dock-tools-zoom-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  min-width: 42px;
+  text-align: center;
 }
-.stream-mode-fab:active { transform: scale(0.94); }
-/* Fill the icon with the button's current color so it reads as a
-   solid glyph rather than a thin outline — adds visual weight to
-   match the prominent button surface. */
-.stream-mode-fab svg {
-  fill: currentColor;
-  fill-opacity: 0.85;
+
+/* Stream-mode is the visual anchor of the dock. Per-state accents
+   distinguish notes-only / folders-only / all at a glance, with a
+   solid fill so the glyph reads from across the room. */
+.dock-btn-stream {
+  color: var(--ink);
+  border-width: 1.5px;
+  border-color: var(--royal);
 }
-/* Per-state accents so the current mode is unmistakable at a glance. */
-.stream-mode-fab.is-folders {
+.dock-btn-stream svg { fill: currentColor; fill-opacity: 0.85; }
+.dock-btn-stream.is-folders {
   color: #fff;
   background: var(--royal);
   border-color: var(--royal);
 }
-.stream-mode-fab.is-notes {
+.dock-btn-stream.is-folders:hover { color: #fff; background: var(--royal); }
+.dock-btn-stream.is-notes {
   color: #fff;
   background: var(--coral);
   border-color: var(--coral);
 }
-.stream-mode-fab.is-all {
+.dock-btn-stream.is-notes:hover { color: #fff; background: var(--coral); }
+.dock-btn-stream.is-all {
   color: var(--ink);
   background: var(--bg);
   border-color: var(--rule);
 }
 
-/* Public/private (lock) sits below the prominent stream-mode toggle,
-   with breathing room so the big circle doesn't crowd it. */
-.public-only-fab {
-  position: fixed;
-  top: 90px;
-  left: 10px;
-  z-index: 50;
+/* ---------- Sidebar slots ----------
+   `.sb-filters-slot` hosts the active filter pill stack, rendered
+   between the View switcher and the Areas drill so pills sit at the
+   top of the sidebar where they're easy to scan and dismiss.
+   `.sb-footer-slot` is reserved for the viewer's theme toggle. */
+.sb-filters-slot { padding-bottom: 4px; }
+.sb-filters-slot .filter-pills {
+  /* Override the formerly-fixed pill stack positioning so it flows
+     naturally inside the sidebar section. */
+  position: static;
+  top: auto;
+  right: auto;
+  max-height: none;
+  margin: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+/* In the sidebar context, pills are ALWAYS expanded — the folder name
+   must be visible at all times. Override the global hover-to-expand
+   behavior so hovering doesn't change the pill's geometry. */
+.sb-filters-slot .filter-pill,
+.sb-filters-slot .filter-pill:hover,
+.sb-filters-slot .filter-pill.dragging {
+  max-width: 100%;
+  height: 28px;
+}
+.sb-filters-slot .filter-pill-name,
+.sb-filters-slot .filter-pill:hover .filter-pill-name {
+  max-width: 100%;
+  opacity: 1;
+  font-size: 13px;
+  padding-right: 4px;
+}
+.sb-filters-slot .filter-pill-x,
+.sb-filters-slot .filter-pill:hover .filter-pill-x {
   width: 22px;
-  height: 22px;
+  opacity: 1;
+}
+.sb-footer-slot {
+  margin-top: auto;
+  border-top: 1px solid var(--rule);
+  padding-top: 10px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sb-tools {
+  display: flex;
+  gap: 6px;
   align-items: center;
-  justify-content: center;
+}
+.sb-tool {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
   color: var(--ink-soft);
   background: transparent;
   border: 1px solid var(--rule);
   border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
-}
-.public-only-fab:hover {
-  color: var(--coral);
-  border-color: var(--coral);
-  background: var(--coral-soft);
-}
-.public-only-fab.is-on {
-  color: #fff;
-  border-color: var(--coral);
-  background: var(--coral);
-}
-.public-only-fab:active { transform: scale(0.92); }
-
-/* Publish — bottom of the top-rail cluster, under the lock. */
-.publish-fab {
-  position: fixed;
-  top: 122px;
-  left: 10px;
-  z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
-}
-.publish-fab:hover {
-  color: var(--royal);
-  border-color: var(--royal);
-  background: var(--royal-soft);
-}
-.publish-fab:active { transform: scale(0.92); }
-
-/* Published viewer has no +/Publish FABs, so its rail cluster starts
-   at the very top. Stream-mode is still the prominent main circle. */
-.viewer-shell .stream-mode-fab { top: 16px; }
-.viewer-shell .public-only-fab { top: 62px; }
-/* The viewer has no zoom/settings cluster, so its theme toggle sits at
-   the bottom-left corner instead of above the (absent) zoom buttons. */
-.viewer-shell .theme-fab { bottom: 12px; }
-.viewer-shell .filter-pills {
-  top: 70px;
-  max-height: calc(100vh - 86px);
-}
-
-/* Settings gear — pinned to the bottom-left so it stays out of the
-   way of the + / publish / filter rail up top. */
-.settings-fab {
-  position: fixed;
-  bottom: 12px;
-  left: 10px;
-  z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
-  opacity: 1;
-  transition: opacity 0.15s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
-}
-.settings-fab:hover { color: var(--royal); border-color: var(--royal); background: var(--royal-soft); }
-.settings-fab:active { transform: scale(0.92); }
-
-/* Zoom (overall text size) — bottom-left, stacked above the settings
-   gear. Steps page-level zoom applied to <html> (like browser zoom). */
-.zoom-in-fab,
-.zoom-out-fab,
-.theme-fab {
-  position: fixed;
-  left: 10px;
-  z-index: 50;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
-  opacity: 1;
+  cursor: pointer;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
 }
-.zoom-in-fab { bottom: 68px; }
-.zoom-out-fab { bottom: 40px; }
-.theme-fab { bottom: 96px; }
-.zoom-in-fab:hover,
-.zoom-out-fab:hover,
-.theme-fab:hover {
+.sb-tool:hover {
   color: var(--royal);
   border-color: var(--royal);
   background: var(--royal-soft);
 }
-.zoom-in-fab:active,
-.zoom-out-fab:active,
-.theme-fab:active { transform: scale(0.92); }
-.zoom-in-fab:disabled,
-.zoom-out-fab:disabled { opacity: 0.35; cursor: default; }
-.zoom-in-fab:disabled:hover,
-.zoom-out-fab:disabled:hover {
-  color: var(--ink-soft);
-  border-color: var(--rule);
-  background: transparent;
-}
+.sb-tool:disabled { opacity: 0.35; cursor: default; }
+.sb-tool:disabled:hover { color: var(--ink-soft); border-color: var(--rule); background: transparent; }
+
+/* The sidebar grows to fill its column; mt:auto on the footer
+   pushes the tools to the bottom edge. */
+.pane-right { display: flex; flex-direction: column; }
 
 /* ---------- Settings panel ---------- */
 .settings-overlay {
@@ -2609,12 +2695,16 @@ iframe.order-youtube-embed {
 }
 .filter-pill-x:hover { color: var(--coral, #ff7f50); }
 
-/* New-note picker — appears below the FAB when more than one folder
-   is selected; user picks which selected folder the new note lands in. */
+/* New-note picker — appears ABOVE the + button in the bottom dock
+   when more than one folder is selected; user picks which selected
+   folder the new note lands in. */
 .new-note-picker {
   position: fixed;
-  top: 40px;
-  left: 10px;
+  /* Sit just above the dock (dock bottom is 14px + safe-area; dock
+     is ~54px tall including padding, so anchor to bottom-72px). */
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
   /* Above note cards (which become their own stacking contexts during
      the mount-animation transform) so the dropdown isn't occluded. */
   z-index: 250;
@@ -2627,6 +2717,7 @@ iframe.order-youtube-embed {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  box-shadow: 0 4px 18px rgba(20, 20, 20, 0.18);
   animation: order-card-mount 140ms var(--ease-out) both;
 }
 .new-note-picker-item {
@@ -4138,33 +4229,12 @@ iframe.order-youtube-embed {
 }
 
 /* ---------- iOS safe area ---------- */
-/* Offset the fixed left/right rails below the status bar / notch (and the
-   settings gear above the home indicator). env(safe-area-inset-*) is 0 on
-   desktop and non-notched contexts, so these are no-ops there. Requires
-   viewport-fit=cover (set in index.html). Placed last so they win on
-   source order over the base rail rules. Stays in sync with the desktop
-   rail order (+ → stream-mode → lock → publish). */
-.new-note-fab { top: calc(10px + env(safe-area-inset-top)); }
-.new-note-picker { top: calc(40px + env(safe-area-inset-top)); }
-.stream-mode-fab { top: calc(44px + env(safe-area-inset-top)); }
-.public-only-fab { top: calc(90px + env(safe-area-inset-top)); }
-.publish-fab { top: calc(122px + env(safe-area-inset-top)); }
-.filter-pills {
-  top: calc(156px + env(safe-area-inset-top));
-  max-height: calc(100vh - 172px - env(safe-area-inset-top));
-}
+/* Sidebar toggle stays just below the status bar / notch on iOS; the
+   dock keeps clear of the home-indicator inset (its own bottom calc
+   already includes env(safe-area-inset-bottom)). env(safe-area-inset-*)
+   is 0 on desktop and non-notched contexts, so these are no-ops there.
+   Requires viewport-fit=cover (set in index.html). */
 .sidebar-toggle { top: calc(10px + env(safe-area-inset-top)); }
-.settings-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
-.zoom-out-fab { bottom: calc(40px + env(safe-area-inset-bottom)); }
-.zoom-in-fab { bottom: calc(68px + env(safe-area-inset-bottom)); }
-.theme-fab { bottom: calc(96px + env(safe-area-inset-bottom)); }
-.viewer-shell .stream-mode-fab { top: calc(16px + env(safe-area-inset-top)); }
-.viewer-shell .public-only-fab { top: calc(62px + env(safe-area-inset-top)); }
-.viewer-shell .theme-fab { bottom: calc(12px + env(safe-area-inset-bottom)); }
-.viewer-shell .filter-pills {
-  top: calc(70px + env(safe-area-inset-top));
-  max-height: calc(100vh - 86px - env(safe-area-inset-top));
-}
 
 /* ===================================================================
    Phase C: clean image rendering (self-contained — `git revert` this

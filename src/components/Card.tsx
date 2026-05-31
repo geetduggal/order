@@ -657,19 +657,11 @@ export function Card(props: Props) {
         >
           {fullscreen ? "⤡" : "⤢"}
         </button>
-        {/* Filter-remove × stays available even when read-only — it's
-            navigation, not mutation. Delete chrome is editor-only. */}
-        {onRemoveFromFilter && !confirmingDelete && (
-          <button
-            type="button"
-            className="order-card-dismiss"
-            onClick={onRemoveFromFilter}
-            title="Remove from filtered view"
-            aria-label="Remove from filtered view"
-          >
-            <XIcon size={13} strokeWidth={2.2} />
-          </button>
-        )}
+        {/* Delete sits to the LEFT of the dismiss/close × so the
+            destructive action isn't right next to the most-frequent
+            close-this-card affordance. Delete chrome is editor-only;
+            the dismiss × stays available even when read-only because
+            it's navigation, not mutation. */}
         {!readOnly && (confirmingDelete ? (
           <span className="order-card-delete-confirm">
             <button
@@ -697,9 +689,20 @@ export function Card(props: Props) {
             title="Delete this note"
             aria-label="Delete note"
           >
-            <Trash2 size={13} strokeWidth={1.8} />
+            <Trash2 size={15} strokeWidth={2} />
           </button>
         ))}
+        {onRemoveFromFilter && !confirmingDelete && (
+          <button
+            type="button"
+            className="order-card-dismiss"
+            onClick={onRemoveFromFilter}
+            title="Remove from filtered view"
+            aria-label="Remove from filtered view"
+          >
+            <XIcon size={15} strokeWidth={2.4} />
+          </button>
+        )}
       </div>
       <div
         className="order-card-content"

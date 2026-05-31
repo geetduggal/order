@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -1004,16 +1004,34 @@ export function CardGrid() {
   // Popover state for the new-note picker (shows when multiple
   // folders are selected and the user clicks the + FAB).
   const [creatorOpen, setCreatorOpen] = useState(false);
+  // Cmd+O opens the sidebar; Cmd+K opens the centered command palette.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+
   useEffect(() => {
     if (!creatorOpen) return;
     function onDocClick(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (!t) return;
-      if (!t.closest(".new-note-fab, .new-note-picker")) setCreatorOpen(false);
+      if (!t.closest(".dock-btn-new, .new-note-picker")) setCreatorOpen(false);
     }
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [creatorOpen]);
+
+  // Dock tools popup — same outside-click-to-close pattern.
+  useEffect(() => {
+    if (!toolsMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-settings, .dock-tools-popup")) setToolsMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [toolsMenuOpen]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -1022,11 +1040,6 @@ export function CardGrid() {
       return next;
     });
   }, []);
-
-  // Cmd+O opens the sidebar; Cmd+K opens the centered command palette.
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   /** Change (or reset) the vault folder from Settings: persist the
    *  choice, re-seed the home filter for the new vault, and reload. */
@@ -1642,11 +1655,18 @@ export function CardGrid() {
     return !vaultTaxonomy.hiddenRefs.has(ref);
   });
 
-  // Does this note belong to `ref` — either it IS that folder's Main
-  // Document, or it links to that folder via `folder: [[ref]]`.
+  // Does this note belong to `ref`? `ref` may be:
+  //   - a Notable Folder name (the note IS its main doc, or its
+  //     `folder:` YAML points to that NF)
+  //   - a Category name (the note's `category:` resolves to that name)
+  //   - an Area name (the note's inferred area equals `ref`)
   const belongsTo = (n: LoadedNote, ref: string): boolean => {
     if (n.filename.replace(/\.md$/, "") === ref) return true;
-    return noteFolder(n.frontmatter) === ref;
+    if (noteFolder(n.frontmatter) === ref) return true;
+    const cat = parseRef(n.frontmatter.category);
+    if (cat === ref) return true;
+    if (inferredArea(n) === ref) return true;
+    return false;
   };
 
   // Filter semantics:
@@ -1808,137 +1828,161 @@ export function CardGrid() {
     };
   });
 
+  /** The new-note flow — extracted so the dock button can call it. */
+  const handleNewNote = () => {
+    const sel = notableIncludes;
+    const create = view !== "stream" ? promptCreate : createNote;
+    if (sel.length === 1) {
+      void create({
+        date: isoDate(), startTime: isoTime(), allDay: false,
+        folder: `[[${sel[0]}]]`,
+      });
+    } else if (sel.length === 0) {
+      void create({ date: isoDate(), startTime: isoTime(), allDay: false });
+    } else {
+      setCreatorOpen((prev) => !prev);
+    }
+  };
+
   return (
     <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
-      <button
-        type="button"
-        className="new-note-fab"
-        onClick={() => {
-          // New captures key off the INCLUDE filters only (excludes
-          // like the default-home one don't imply a capture target).
-          // 1 include → auto-assign; 0 → plain note (lands in home);
-          // 2+ → picker.
-          const sel = notableIncludes;
-          // In a calendar view, prompt for a title first (matches the
-          // drag-to-create gesture); Stream still goes straight to a
-          // blank note.
-          const create = view !== "stream" ? promptCreate : createNote;
-          if (sel.length === 1) {
-            void create({
-              date: isoDate(), startTime: isoTime(), allDay: false,
-              folder: `[[${sel[0]}]]`,
-            });
-          } else if (sel.length === 0) {
-            void create({ date: isoDate(), startTime: isoTime(), allDay: false });
-          } else {
-            setCreatorOpen((prev) => !prev);
+      {/* Bottom hovering dock — the five most-used controls grouped as
+          a single cluster, equal-sized, sized for thumb taps. Sits
+          above the bottom safe-area inset. */}
+      <div className="bottom-dock" role="toolbar" aria-label="Main controls">
+        <button
+          type="button"
+          className="dock-btn dock-btn-new"
+          onClick={handleNewNote}
+          title="New note"
+          aria-label="New note"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className={`dock-btn dock-btn-stream is-${streamMode}`}
+          onClick={() => setStreamMode((m) => {
+            const next = nextStreamMode(m);
+            writeStreamMode(next);
+            return next;
+          })}
+          title={
+            streamMode === "all"
+              ? "Showing notes + notable folders — click for notes only"
+              : streamMode === "notes"
+                ? "Showing notes only — click for notable folders only"
+                : "Showing notable folders only — click to include all"
           }
-        }}
-        title="New note"
-        aria-label="New note"
-      >
-        +
-      </button>
-
-      {/* The note-toggle is the prominent main-circle control: cycles
-          through three modes that change what the Stream shows.
-          notable folders only (default for the published home)
-          → notes only → both. Visually larger + accented to draw the eye. */}
-      <button
-        type="button"
-        className={`stream-mode-fab is-${streamMode}`}
-        onClick={() => setStreamMode((m) => {
-          const next = nextStreamMode(m);
-          writeStreamMode(next);
-          return next;
-        })}
-        title={
-          streamMode === "all"
-            ? "Showing notes + notable folders — click for notes only"
+          aria-label={
+            streamMode === "all" ? "Notes and notable folders"
+              : streamMode === "notes" ? "Notes only"
+                : "Notable folders only"
+          }
+        >
+          {streamMode === "folders"
+            ? <FolderIcon size={22} strokeWidth={2.1} />
             : streamMode === "notes"
-              ? "Showing notes only — click for notable folders only"
-              : "Showing notable folders only — click to include all"
-        }
-        aria-label={
-          streamMode === "all" ? "Notes and notable folders"
-            : streamMode === "notes" ? "Notes only"
-              : "Notable folders only"
-        }
-      >
-        {streamMode === "folders"
-          ? <FolderIcon size={20} strokeWidth={2.1} />
-          : streamMode === "notes"
-            ? <FileText size={20} strokeWidth={2.1} />
-            : <Files size={20} strokeWidth={2.1} />}
-      </button>
+              ? <FileText size={22} strokeWidth={2.1} />
+              : <Files size={22} strokeWidth={2.1} />}
+        </button>
+        <button
+          type="button"
+          className={"dock-btn dock-btn-public" + (publicOnly ? " is-on" : "")}
+          onClick={() => setPublicOnly((v) => { writePublicOnly(!v); return !v; })}
+          title={publicOnly ? "Public only — click to include private notes" : "Public + private — click for public only"}
+          aria-label={publicOnly ? "Showing public notes only" : "Showing public and private notes"}
+          aria-pressed={publicOnly}
+        >
+          {publicOnly
+            ? <Globe size={20} strokeWidth={2.1} />
+            : <Lock size={20} strokeWidth={2.1} />}
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn-search"
+          onClick={() => setPaletteOpen(true)}
+          title="Search (Cmd+K)"
+          aria-label="Search"
+        >
+          <SearchIcon size={20} strokeWidth={2.1} />
+        </button>
+        <button
+          type="button"
+          className={"dock-btn dock-btn-settings" + (toolsMenuOpen ? " is-open" : "")}
+          onClick={() => setToolsMenuOpen((o) => !o)}
+          title="Settings, theme, zoom, publish"
+          aria-label="Settings"
+        >
+          <SettingsIcon size={20} strokeWidth={2.1} />
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn-sidebar"
+          onClick={toggleSidebar}
+          title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        >
+          {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
+        </button>
+      </div>
 
-      <button
-        type="button"
-        className={"public-only-fab" + (publicOnly ? " is-on" : "")}
-        onClick={() => setPublicOnly((v) => { writePublicOnly(!v); return !v; })}
-        title={publicOnly ? "Public only — click to include private notes" : "Public + private — click for public only"}
-        aria-label={publicOnly ? "Showing public notes only" : "Showing public and private notes"}
-        aria-pressed={publicOnly}
-      >
-        {publicOnly
-          ? <Globe size={14} strokeWidth={2.1} />
-          : <Lock size={14} strokeWidth={2.1} />}
-      </button>
-
-      <button
-        type="button"
-        className="publish-fab"
-        onClick={() => setPublishOpen((o) => !o)}
-        title="Publish (Cmd+P)"
-        aria-label="Publish"
-      >
-        <UploadIcon size={14} strokeWidth={2.1} />
-      </button>
-
-      <button
-        type="button"
-        className="zoom-in-fab"
-        onClick={() => stepTextScale(TEXT_SCALE_STEP)}
-        disabled={textScale >= TEXT_SCALE_MAX}
-        title={`Larger text (${Math.round(textScale * 100)}%)`}
-        aria-label="Larger text"
-      >
-        <ZoomIn size={14} strokeWidth={2.1} />
-      </button>
-
-      <button
-        type="button"
-        className="zoom-out-fab"
-        onClick={() => stepTextScale(-TEXT_SCALE_STEP)}
-        disabled={textScale <= TEXT_SCALE_MIN}
-        title={`Smaller text (${Math.round(textScale * 100)}%)`}
-        aria-label="Smaller text"
-      >
-        <ZoomOut size={14} strokeWidth={2.1} />
-      </button>
-
-      <button
-        type="button"
-        className="theme-fab"
-        onClick={() => toggleTheme()}
-        title={`Theme: ${themeLabel(theme)} — next: ${themeLabel(nextTheme(theme))}`}
-        aria-label={`Theme ${themeLabel(theme)}, switch to ${themeLabel(nextTheme(theme))}`}
-      >
-        {(() => {
-          const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
-          return <Icon size={14} strokeWidth={2.1} />;
-        })()}
-      </button>
-
-      <button
-        type="button"
-        className="settings-fab"
-        onClick={() => setSettingsOpen(true)}
-        title="Settings"
-        aria-label="Settings"
-      >
-        <SettingsIcon size={14} strokeWidth={2.1} />
-      </button>
+      {/* Tools popup — anchored above the settings dock button. Holds
+          the controls that used to live on the rail (publish, theme,
+          zoom) so the dock stays uncluttered. */}
+      {toolsMenuOpen && (
+        <div className="dock-tools-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { setToolsMenuOpen(false); setPublishOpen((o) => !o); }}
+          >
+            <UploadIcon size={14} strokeWidth={2.1} />
+            <span>Publish</span>
+          </button>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { toggleTheme(); }}
+            title={`Theme: ${themeLabel(theme)} — click for ${themeLabel(nextTheme(theme))}`}
+          >
+            {(() => {
+              const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
+              return <Icon size={14} strokeWidth={2.1} />;
+            })()}
+            <span>Theme — {themeLabel(theme)}</span>
+          </button>
+          <div className="dock-tools-zoom">
+            <button
+              type="button"
+              className="dock-tools-zoom-btn"
+              onClick={() => stepTextScale(-TEXT_SCALE_STEP)}
+              disabled={textScale <= TEXT_SCALE_MIN}
+              aria-label="Smaller text"
+            >
+              <ZoomOut size={14} strokeWidth={2.1} />
+            </button>
+            <span className="dock-tools-zoom-label">{Math.round(textScale * 100)}%</span>
+            <button
+              type="button"
+              className="dock-tools-zoom-btn"
+              onClick={() => stepTextScale(TEXT_SCALE_STEP)}
+              disabled={textScale >= TEXT_SCALE_MAX}
+              aria-label="Larger text"
+            >
+              <ZoomIn size={14} strokeWidth={2.1} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { setToolsMenuOpen(false); setSettingsOpen(true); }}
+          >
+            <SettingsIcon size={14} strokeWidth={2.1} />
+            <span>Vault settings…</span>
+          </button>
+        </div>
+      )}
 
       {creatorOpen && (
         <div className="new-note-picker" role="menu">
@@ -1965,33 +2009,6 @@ export function CardGrid() {
           })}
         </div>
       )}
-
-      <button
-        type="button"
-        className="sidebar-toggle"
-        onClick={toggleSidebar}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      >
-        {sidebarOpen ? "›" : "‹"}
-      </button>
-
-      <FilterPillStack
-        filters={filters}
-        onRemove={removeFilter}
-        onReorder={setFilters}
-        onClear={resetToDefault}
-        onSearch={() => setPaletteOpen(true)}
-        onJump={(ref) => {
-          // Focus this folder: pin its Main Document to the top of the
-          // Stream (without changing the filter set), then scroll to
-          // it. (× on the pill removes the filter.)
-          setView("stream");
-          setFocusedFolder(ref);
-          const path = notePathByRef(ref);
-          if (path) setScrollTargetPath(path);
-        }}
-      />
 
       <main className="pane-main">
         {view === "stream" && (
@@ -2115,6 +2132,29 @@ export function CardGrid() {
           onReorderFolders={handleReorderFoldersTo}
           onRemoveFolder={handleRemoveFolder}
           order={vaultTaxonomy.areas}
+          filteredRefs={includeSet}
+          onToggleAreaFilter={(name) => {
+            if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
+            else addInclude(name);
+          }}
+          onToggleCategoryFilter={(name) => {
+            if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
+            else addInclude(name);
+          }}
+          filters={(
+            <FilterPillStack
+              filters={filters}
+              onRemove={removeFilter}
+              onReorder={setFilters}
+              onClear={resetToDefault}
+              onJump={(ref) => {
+                setView("stream");
+                setFocusedFolder(ref);
+                const path = notePathByRef(ref);
+                if (path) setScrollTargetPath(path);
+              }}
+            />
+          )}
         />
       )}
 

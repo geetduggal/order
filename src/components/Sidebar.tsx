@@ -83,6 +83,21 @@ interface Props {
   /** Chain order (Areas → Categories → folder refs) so the lists render
    *  in the on-disk bullet order rather than alphabetically. */
   order?: { ref: string; categories: { ref: string; folders: string[] }[] }[];
+  /** Optional content rendered above the View switcher. */
+  header?: import("react").ReactNode;
+  /** Optional content rendered between the View switcher and the
+   *  Areas/Categories/Folders drill — the host uses this for the
+   *  active filter pill stack so pills sit prominently at the top of
+   *  the sidebar without obscuring the drill below. */
+  filters?: import("react").ReactNode;
+  /** Optional content rendered pinned to the bottom of the sidebar. */
+  footer?: import("react").ReactNode;
+  /** Toggle whether an Area or Category is in the include filter set.
+   *  When omitted, the filter-toggle button on each tile is hidden. */
+  onToggleAreaFilter?: (name: string) => void;
+  onToggleCategoryFilter?: (name: string, area: string) => void;
+  /** Refs currently in the filter (same set used for NF rows). */
+  filteredRefs?: Set<string>;
 }
 
 interface Taxonomy {
@@ -187,6 +202,12 @@ export function Sidebar({
   onReorderFolders,
   onRemoveFolder,
   order,
+  header,
+  filters,
+  footer,
+  onToggleAreaFilter,
+  onToggleCategoryFilter,
+  filteredRefs,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
 
@@ -208,6 +229,7 @@ export function Sidebar({
 
   return (
     <aside className="pane-right">
+      {header && <section className="sb-section sb-header-slot">{header}</section>}
       <section className="sb-section">
         <h2 className="sb-title">View</h2>
         <div className="view-switch">
@@ -223,6 +245,7 @@ export function Sidebar({
           ))}
         </div>
       </section>
+      {filters && <section className="sb-section sb-filters-slot">{filters}</section>}
 
       <section className="sb-section sb-filters">
         <DrillView
@@ -238,6 +261,9 @@ export function Sidebar({
           onRemoveCategory={onRemoveCategory}
           onReorderArea={onReorderArea}
           onReorderCategory={onReorderCategory}
+          onToggleAreaFilter={onToggleAreaFilter}
+          onToggleCategoryFilter={onToggleCategoryFilter}
+          filteredRefs={filteredRefs}
           onReorderFolder={onReorderFolder}
           onReorderAreas={onReorderAreas}
           onReorderCategories={onReorderCategories}
@@ -245,6 +271,7 @@ export function Sidebar({
           onRemoveFolder={onRemoveFolder}
         />
       </section>
+      {footer && <section className="sb-section sb-footer-slot">{footer}</section>}
     </aside>
   );
 }
@@ -255,6 +282,7 @@ function DrillView({
   onAddArea, onRemoveArea, onAddCategory, onRemoveCategory,
   onReorderArea, onReorderCategory, onReorderFolder,
   onReorderAreas, onReorderCategories, onReorderFolders, onRemoveFolder,
+  onToggleAreaFilter, onToggleCategoryFilter, filteredRefs,
 }: {
   drill: DrillState;
   setDrill: (s: DrillState) => void;
@@ -273,6 +301,9 @@ function DrillView({
   onReorderCategories?: (area: string, order: string[]) => void;
   onReorderFolders?: (area: string, category: string, order: string[]) => void;
   onRemoveFolder?: (name: string, area: string, category: string) => void;
+  onToggleAreaFilter?: (name: string) => void;
+  onToggleCategoryFilter?: (name: string, area: string) => void;
+  filteredRefs?: Set<string>;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const draftActive = draft !== null;
@@ -337,6 +368,8 @@ function DrillView({
               tileRef={a}
               dragging={draggingRef === a}
               onTilePointerDown={onReorderAreas ? (e) => onTilePointerDown(e, a) : undefined}
+              filtered={filteredRefs?.has(a)}
+              onToggleFilter={onToggleAreaFilter ? () => onToggleAreaFilter(a) : undefined}
             />
           ))}
           {onAddArea && draftActive && (
@@ -380,6 +413,8 @@ function DrillView({
               tileRef={c}
               dragging={draggingRef === c}
               onTilePointerDown={onReorderCategories ? (e) => onTilePointerDown(e, c) : undefined}
+              filtered={filteredRefs?.has(c)}
+              onToggleFilter={onToggleCategoryFilter ? () => onToggleCategoryFilter(c, drill.areaName) : undefined}
             />
           ))}
           {onAddCategory && draftActive && (
@@ -491,7 +526,7 @@ function BoxGrid({ children, gridRef }: { children: React.ReactNode; gridRef?: R
   return <div className="box-grid" ref={gridRef}>{children}</div>;
 }
 
-function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater, tileRef, dragging, onTilePointerDown }: {
+function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater, tileRef, dragging, onTilePointerDown, filtered, onToggleFilter }: {
   label: string;
   coral: boolean;
   onClick: () => void;
@@ -501,16 +536,22 @@ function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater,
   tileRef?: string;
   dragging?: boolean;
   onTilePointerDown?: (e: React.PointerEvent) => void;
+  /** Whether this area/category is currently in the include filter. */
+  filtered?: boolean;
+  /** Add or remove this area/category from the include filter. When
+   *  omitted, the filter toggle button isn't rendered. */
+  onToggleFilter?: () => void;
 }) {
   const Icon: LucideIcon = folderIcon(label);
   const color = folderColor(label);
-  // The remove × and reorder arrows are siblings of the open-tile button
-  // rather than children — buttons can't nest in HTML. .box-wrapper
-  // carries the aspect-ratio so the children size themselves freely, and
-  // is the drag surface (data-tile-ref) for pointer reordering.
+  // The remove ×, reorder arrows, and filter toggle are siblings of
+  // the open-tile button rather than children — buttons can't nest in
+  // HTML. .box-wrapper carries the aspect-ratio so the children size
+  // themselves freely, and is the drag surface (data-tile-ref) for
+  // pointer reordering.
   return (
     <div
-      className={"box-wrapper" + (dragging ? " dragging" : "") + (onTilePointerDown ? " draggable" : "")}
+      className={"box-wrapper" + (dragging ? " dragging" : "") + (onTilePointerDown ? " draggable" : "") + (filtered ? " is-filtered" : "")}
       data-tile-ref={tileRef}
       onPointerDown={onTilePointerDown}
     >
@@ -525,6 +566,19 @@ function AreaTile({ label, coral, onClick, onRemove, onMoveEarlier, onMoveLater,
         </span>
         <span className="box-label">{label}</span>
       </button>
+      {onToggleFilter && (
+        <button
+          type="button"
+          className={"box-filter" + (filtered ? " is-on" : "")}
+          onClick={(e) => { e.stopPropagation(); onToggleFilter(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={filtered ? `Stop filtering by ${label}` : `Filter by ${label}`}
+          aria-label={filtered ? `Stop filtering by ${label}` : `Filter by ${label}`}
+          aria-pressed={!!filtered}
+        >
+          <Check size={11} strokeWidth={2.5} />
+        </button>
+      )}
       {(onMoveEarlier || onMoveLater) && (
         <div className="box-reorder">
           <button

@@ -5,8 +5,9 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket } from "lucide-react";
+import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
+import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
 import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
@@ -96,6 +97,20 @@ export function ViewerApp(
   const [collapseNonce, setCollapseNonce] = useState(0);
   // Light/dark theme — rail moon/sun button toggles it.
   const theme = useTheme();
+  const textScale = useTextScale();
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+
+  // Outside-click closes the tools popup.
+  useEffect(() => {
+    if (!toolsMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-settings, .dock-tools-popup")) setToolsMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [toolsMenuOpen]);
 
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
   // an arrival deep-link, else the home Notable Folder as the default
@@ -396,68 +411,103 @@ export function ViewerApp(
 
   return (
     <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
-      {/* Prominent 3-state stream-mode toggle. Defaults to "folders"
-          for the published home so visitors land on a NF card grid. */}
-      <button
-        type="button"
-        className={`stream-mode-fab is-${streamMode}`}
-        onClick={() => setStreamModePersist(
-          streamMode === "all" ? "notes"
-            : streamMode === "notes" ? "folders" : "all",
-        )}
-        title={
-          streamMode === "all"
-            ? "Showing notes + notable folders — click for notes only"
+      {/* Bottom dock — viewer doesn't have new-note or publish, so
+          just stream-mode + search. */}
+      <div className="bottom-dock" role="toolbar" aria-label="Main controls">
+        <button
+          type="button"
+          className={`dock-btn dock-btn-stream is-${streamMode}`}
+          onClick={() => setStreamModePersist(
+            streamMode === "all" ? "notes"
+              : streamMode === "notes" ? "folders" : "all",
+          )}
+          title={
+            streamMode === "all"
+              ? "Showing notes + notable folders — click for notes only"
+              : streamMode === "notes"
+                ? "Showing notes only — click for notable folders only"
+                : "Showing notable folders only — click to include all"
+          }
+          aria-label={
+            streamMode === "all" ? "Notes and notable folders"
+              : streamMode === "notes" ? "Notes only"
+                : "Notable folders only"
+          }
+        >
+          {streamMode === "folders"
+            ? <FolderIcon size={22} strokeWidth={2.1} />
             : streamMode === "notes"
-              ? "Showing notes only — click for notable folders only"
-              : "Showing notable folders only — click to include all"
-        }
-        aria-label={
-          streamMode === "all" ? "Notes and notable folders"
-            : streamMode === "notes" ? "Notes only"
-              : "Notable folders only"
-        }
-      >
-        {streamMode === "folders"
-          ? <FolderIcon size={20} strokeWidth={2.1} />
-          : streamMode === "notes"
-            ? <FileText size={20} strokeWidth={2.1} />
-            : <Files size={20} strokeWidth={2.1} />}
-      </button>
+              ? <FileText size={22} strokeWidth={2.1} />
+              : <Files size={22} strokeWidth={2.1} />}
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn-search"
+          onClick={() => setPaletteOpen(true)}
+          title="Search"
+          aria-label="Search"
+        >
+          <SearchIcon size={20} strokeWidth={2.1} />
+        </button>
+        <button
+          type="button"
+          className={"dock-btn dock-btn-settings" + (toolsMenuOpen ? " is-open" : "")}
+          onClick={() => setToolsMenuOpen((o) => !o)}
+          title="Theme and zoom"
+          aria-label="Settings"
+        >
+          <SettingsIcon size={20} strokeWidth={2.1} />
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn-sidebar"
+          onClick={() => setSidebarOpen((o) => !o)}
+          title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        >
+          {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
+        </button>
+      </div>
 
-      <FilterPillStack
-        filters={filters}
-        onRemove={removeFilter}
-        onClear={resetToDefault}
-        onSearch={() => setPaletteOpen(true)}
-        onJump={(ref) => {
-          setView("stream");
-          setFocusedFolder(ref);
-          setScrollTarget(ref);
-        }}
-      />
-
-      <button
-        type="button"
-        className="sidebar-toggle"
-        onClick={() => setSidebarOpen((o) => !o)}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      >
-        {sidebarOpen ? "›" : "‹"}
-      </button>
-
-      <button
-        type="button"
-        className="theme-fab"
-        onClick={() => toggleTheme()}
-        title={`Theme: ${themeLabel(theme)} — next: ${themeLabel(nextTheme(theme))}`}
-        aria-label={`Theme ${themeLabel(theme)}, switch to ${themeLabel(nextTheme(theme))}`}
-      >
-        {(() => {
-          const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
-          return <Icon size={14} strokeWidth={2.1} />;
-        })()}
-      </button>
+      {/* Tools popup — viewer version has only theme + zoom (no
+          publish, no vault settings). Same anchor pattern as the app. */}
+      {toolsMenuOpen && (
+        <div className="dock-tools-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { toggleTheme(); }}
+            title={`Theme: ${themeLabel(theme)} — click for ${themeLabel(nextTheme(theme))}`}
+          >
+            {(() => {
+              const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
+              return <Icon size={14} strokeWidth={2.1} />;
+            })()}
+            <span>Theme — {themeLabel(theme)}</span>
+          </button>
+          <div className="dock-tools-zoom">
+            <button
+              type="button"
+              className="dock-tools-zoom-btn"
+              onClick={() => stepTextScale(-TEXT_SCALE_STEP)}
+              disabled={textScale <= TEXT_SCALE_MIN}
+              aria-label="Smaller text"
+            >
+              <ZoomOut size={14} strokeWidth={2.1} />
+            </button>
+            <span className="dock-tools-zoom-label">{Math.round(textScale * 100)}%</span>
+            <button
+              type="button"
+              className="dock-tools-zoom-btn"
+              onClick={() => stepTextScale(TEXT_SCALE_STEP)}
+              disabled={textScale >= TEXT_SCALE_MAX}
+              aria-label="Larger text"
+            >
+              <ZoomIn size={14} strokeWidth={2.1} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="pane-main">
         {view === "stream" && (
@@ -502,6 +552,27 @@ export function ViewerApp(
           storedAreas={storedAreas}
           storedCategories={storedCategories}
           order={data.taxonomy.areas}
+          filteredRefs={includeSet}
+          onToggleAreaFilter={(name) => {
+            if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
+            else addInclude(name);
+          }}
+          onToggleCategoryFilter={(name) => {
+            if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
+            else addInclude(name);
+          }}
+          filters={(
+            <FilterPillStack
+              filters={filters}
+              onRemove={removeFilter}
+              onClear={resetToDefault}
+              onJump={(ref) => {
+                setView("stream");
+                setFocusedFolder(ref);
+                setScrollTarget(ref);
+              }}
+            />
+          )}
         />
       )}
 
