@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -475,6 +475,21 @@ export function CardGrid() {
     if (path) navigateAndFocus(path);
     else setView("stream");
   }, [addInclude, navigateAndFocus]);
+  /** Jump to the home Notable Folder — the one whose YAML carries
+   *  `home: "<user>/<repo>/<path>"`. Sets the filter to ONLY that
+   *  folder (clearing any other includes/excludes), so the user lands
+   *  on the home newspaper section as if Order had just opened.
+   *  Falls back to plain reset if no home folder exists. */
+  const goHome = useCallback(() => {
+    setView("stream");
+    setCollapseNonce((n) => n + 1);
+    const home = homeFolderRef.current;
+    if (!home) { setFilters([]); return; }
+    setFilters([{ kind: "include", ref: home }]);
+    setFocusedFolder(home);
+    const path = notePathByRef(home);
+    if (path) navigateAndFocus(path);
+  }, [navigateAndFocus]);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -1981,15 +1996,12 @@ export function CardGrid() {
         </button>
         <button
           type="button"
-          className={"dock-btn dock-btn-public" + (publicOnly ? " is-on" : "")}
-          onClick={() => setPublicOnly((v) => { writePublicOnly(!v); return !v; })}
-          title={publicOnly ? "Public only — click to include private notes" : "Public + private — click for public only"}
-          aria-label={publicOnly ? "Showing public notes only" : "Showing public and private notes"}
-          aria-pressed={publicOnly}
+          className="dock-btn dock-btn-home"
+          onClick={goHome}
+          title={homeFolderRef.current ? `Home — ${homeFolderRef.current}` : "Home — clear filters"}
+          aria-label="Go home"
         >
-          {publicOnly
-            ? <Globe size={20} strokeWidth={2.1} />
-            : <Lock size={20} strokeWidth={2.1} />}
+          <HomeIcon size={20} strokeWidth={2.1} />
         </button>
         <button
           type="button"
@@ -2032,6 +2044,18 @@ export function CardGrid() {
           >
             <UploadIcon size={14} strokeWidth={2.1} />
             <span>Publish</span>
+          </button>
+          <button
+            type="button"
+            className={"dock-tools-item" + (publicOnly ? " is-on" : "")}
+            onClick={() => setPublicOnly((v) => { writePublicOnly(!v); return !v; })}
+            title={publicOnly ? "Showing public only — click to include private" : "Showing public + private — click for public only"}
+            aria-pressed={publicOnly}
+          >
+            {publicOnly
+              ? <Globe size={14} strokeWidth={2.1} />
+              : <Lock size={14} strokeWidth={2.1} />}
+            <span>{publicOnly ? "Public only" : "Public + private"}</span>
           </button>
           <button
             type="button"
