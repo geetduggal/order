@@ -87,25 +87,37 @@ export function sortByBase(parsed: ParsedBase, notes: NoteRef[]): NoteRef[] {
   if (!parsed.view.sort) return notes;
   const { prop, dir } = parsed.view.sort;
   const sign = dir === "asc" ? 1 : -1;
+
+  // Pre-compute the normalized sort key for every note, then decide
+  // whether the column is "date-typed" or "number-typed" — i.e. ANY
+  // note's value normalized to a number. If so, every value that
+  // ISN'T a number (a stray string like "" / "Unknown" / "TBD" /
+  // bad-format date) joins the missing bucket at the end of the
+  // list, not the middle of the numeric range. This is what the
+  // user expects from a `sort: published DESC` over a Readwise
+  // dump where most items have ISO dates and a handful don't.
+  const keys = new Map<NoteRef, number | string | null>();
+  let columnIsNumeric = false;
+  for (const n of notes) {
+    const k = normalizeSortKey(getProp(n, prop));
+    keys.set(n, k);
+    if (typeof k === "number") columnIsNumeric = true;
+  }
+  if (columnIsNumeric) {
+    for (const [n, k] of keys) {
+      if (typeof k === "string") keys.set(n, null);
+    }
+  }
+
   return [...notes].sort((a, b) => {
-    const av = normalizeSortKey(getProp(a, prop));
-    const bv = normalizeSortKey(getProp(b, prop));
-    // Items without the sort key go to the END (regardless of asc/desc)
-    // and sort lexicographically among themselves so the bucket is
-    // stable and scannable instead of an arbitrary jumble.
+    const av = keys.get(a) ?? null;
+    const bv = keys.get(b) ?? null;
+    // Items without the sort key go to the END (regardless of
+    // asc/desc) and sort lexicographically among themselves so the
+    // bucket is stable and scannable instead of an arbitrary jumble.
     if (av === null && bv === null) return tiebreak(a, b);
     if (av === null) return 1;
     if (bv === null) return -1;
-    // Different normalized types (number vs string) — coerce both to
-    // strings so the comparison is total and identical across
-    // platforms. Should rarely happen because normalizeSortKey
-    // already picks a single normalized form per value.
-    if (typeof av !== typeof bv) {
-      const sa = String(av);
-      const sb = String(bv);
-      if (sa === sb) return tiebreak(a, b);
-      return sign * (sa < sb ? -1 : 1);
-    }
     if (av === bv) return tiebreak(a, b);
     return sign * ((av as number | string) < (bv as number | string) ? -1 : 1);
   });
