@@ -66,6 +66,7 @@ pub fn run() {
             vault::rename_file,
             vault::delete_file,
             vault::open_path,
+            vault::open_url,
             watcher::start_watcher,
             publish::publish_site,
         ])

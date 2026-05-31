@@ -349,6 +349,13 @@ export function CardGrid() {
    *  the moment it appears. Cleared by the same scroll-target
    *  effect that handles the highlight pulse. */
   const [focusPath, setFocusPath] = useState<string | null>(null);
+  /** Path of the card the user is currently focused on. Sticky:
+   *  navigation (sidebar / calendar / palette / wikilink / new) sets
+   *  it; an external file change to a DIFFERENT path doesn't disturb
+   *  it (used in the React key to suppress remounts of the focused
+   *  card mid-edit). Cleared when the user picks a different card or
+   *  the focused note is gone (deleted / out of view). */
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
   // Note text size — shared with the Cmd± shortcuts in App via the
   // text-scale module (font-size scaling, not page zoom, so the editor
@@ -374,6 +381,12 @@ export function CardGrid() {
       cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
     );
   }, [filters]);
+  // Drop the pinned focus when its note disappears (delete, rename
+  // away from the loaded set, or a vault switch).
+  useEffect(() => {
+    if (!focusedPath || !notes) return;
+    if (!notes.some((n) => n.path === focusedPath)) setFocusedPath(null);
+  }, [notes, focusedPath]);
   // "Notes only" toggle: hide Notable-Folder cards from the Stream and
   // show ordinary notes only. Persisted; survives filter changes.
   const [streamMode, setStreamMode] = useState<StreamMode>(readStreamMode);
@@ -430,14 +443,24 @@ export function CardGrid() {
   }, []);
   // Forward-ref binding for Cmd+' (declared earlier in the component).
   useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);
+  /** Scroll the stream to a card and pin focus on it. Single entry
+   *  point used by every navigation surface (sidebar tile, calendar
+   *  Open, command palette, wikilink, filter-pill jump) so the
+   *  "click → focused card" guarantee holds uniformly. */
+  const navigateAndFocus = useCallback((path: string) => {
+    setView("stream");
+    setScrollTargetPath(path);
+    setFocusPath(path);
+    setFocusedPath(path);
+  }, []);
   /** Add an include filter AND scroll the stream to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
   const navigateToRef = useCallback((ref: string) => {
     addInclude(ref);
     const path = notePathByRef(ref);
-    if (path) setScrollTargetPath(path);
-  }, [addInclude]);
+    if (path) navigateAndFocus(path);
+  }, [addInclude, navigateAndFocus]);
   // Wikilink-to-NF clicks accumulate (same as navigateToRef now that
   // includes always compose with OR). Kept as a distinct name for the
   // list-render prop contract.
@@ -446,12 +469,12 @@ export function CardGrid() {
    *  add it as an include, pin its Main Document, and scroll to it —
    *  so Cmd+K lands you ON that page. */
   const focusFolder = useCallback((ref: string) => {
-    setView("stream");
     addInclude(ref);
     setFocusedFolder(ref);
     const path = notePathByRef(ref);
-    if (path) setScrollTargetPath(path);
-  }, [addInclude]);
+    if (path) navigateAndFocus(path);
+    else setView("stream");
+  }, [addInclude, navigateAndFocus]);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -760,6 +783,7 @@ export function CardGrid() {
         dir: vaultDir(toVaultRel(n.path)),
         frontmatter: n.frontmatter,
         body: n.body,
+        mtime: n.mtime,
       })),
       home,
       sub,
@@ -1281,9 +1305,8 @@ export function CardGrid() {
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
-    setView("stream");
-    setScrollTargetPath(path);
-  }, []);
+    navigateAndFocus(path);
+  }, [navigateAndFocus]);
   const deleteEventNote = useCallback(async (path: string) => {
     const note = notesRef.current?.find((n) => n.path === path);
     if (!note) return;
@@ -1304,6 +1327,9 @@ export function CardGrid() {
   useEffect(() => {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
+    let stickTimer: ReturnType<typeof setInterval> | null = null;
+    let userScrolled = false;
+    const onUserScroll = () => { userScrolled = true; };
     const timer = setTimeout(() => {
       // Query the document, not a single grid — newspaper mode renders
       // many per-section grids, so the flat `gridEl` is null there.
@@ -1311,9 +1337,61 @@ export function CardGrid() {
         `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
       );
       if (cell) {
-        cell.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Land the TOP of the card at the vertical center of the
+        // viewport — the user wants to see the title/start of the
+        // note regardless of card height, with breathing room above
+        // and the body unfurling below.
+        const viewportH = window.innerHeight || document.documentElement.clientHeight;
+        const targetScrollFor = (el: HTMLElement) => {
+          const rect = el.getBoundingClientRect();
+          const cellTopAbs = window.scrollY + rect.top;
+          return Math.max(0, cellTopAbs - viewportH / 2);
+        };
+        window.scrollTo({ top: targetScrollFor(cell), behavior: "smooth" });
         cell.classList.add("is-target");
         setTimeout(() => cell.classList.remove("is-target"), 1400);
+        // Imperatively focus the editor — covers the case where the
+        // Card was already mounted (no key change, so autoFocus prop
+        // alone wouldn't re-fire).
+        const pm = cell.querySelector<HTMLElement>(".ProseMirror");
+        pm?.focus({ preventScroll: true });
+        // Stick to the target: masonry recomputes and image-loads
+        // shift the cell's position after the initial scroll, so the
+        // target often slips out of view. Re-pin every 100 ms for
+        // 1500 ms (or until the user takes over by scrolling
+        // manually). We listen for *input* gestures (wheel/touch/key)
+        // — programmatic scrollTo also fires `scroll`, so reacting to
+        // that would make the smooth scroll itself look like user
+        // intent and the stick loop would never run.
+        window.addEventListener("wheel", onUserScroll, { passive: true });
+        window.addEventListener("touchmove", onUserScroll, { passive: true });
+        window.addEventListener("keydown", onUserScroll, { passive: true });
+        const start = performance.now();
+        const reCenter = () => {
+          if (userScrolled) return;
+          if (!cell.isConnected) return;
+          const rect = cell.getBoundingClientRect();
+          // Distance the card-top has drifted from the viewport
+          // center after the initial smooth scroll. If masonry/image
+          // loads have pushed it more than a fifth of the viewport
+          // away, snap it back instantly (no animation — avoids the
+          // pogo-stick effect when masonry resettles repeatedly).
+          const drift = Math.abs(rect.top - viewportH / 2);
+          if (drift > viewportH * 0.2) {
+            window.scrollTo({ top: targetScrollFor(cell), behavior: "auto" });
+          }
+        };
+        stickTimer = setInterval(() => {
+          if (userScrolled || performance.now() - start > 1500) {
+            if (stickTimer) clearInterval(stickTimer);
+            stickTimer = null;
+            window.removeEventListener("wheel", onUserScroll);
+            window.removeEventListener("touchmove", onUserScroll);
+            window.removeEventListener("keydown", onUserScroll);
+            return;
+          }
+          reCenter();
+        }, 100);
       }
       setScrollTargetPath(null);
       // Drop the autoFocus flag once the Card has had time to
@@ -1321,7 +1399,13 @@ export function CardGrid() {
       // still re-fire focus on the same card.
       setFocusPath(null);
     }, 120);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (stickTimer) clearInterval(stickTimer);
+      window.removeEventListener("wheel", onUserScroll);
+      window.removeEventListener("touchmove", onUserScroll);
+      window.removeEventListener("keydown", onUserScroll);
+    };
   }, [view, scrollTargetPath]);
 
   // Calendar-create title prompt. The calendar views call promptCreate
@@ -1371,6 +1455,7 @@ export function CardGrid() {
     // picks up autoFocus on mount.
     setFocusPath(path);
     setScrollTargetPath(path);
+    setFocusedPath(path);
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Stream sorts it
     // into place by date+startTime.
@@ -1768,6 +1853,8 @@ export function CardGrid() {
         onAddFilter={addFolderToFilter}
         onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
         autoFocus={focusPath === n.path}
+        focused={focusedPath === n.path}
+        onFocus={() => setFocusedPath(n.path)}
         capHeight={capHeight}
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
@@ -1804,7 +1891,13 @@ export function CardGrid() {
           .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
         const keyFor = (n: LoadedNote) =>
-          `${n.id}:${externalChangeVersion[n.path] ?? 0}`;
+          // The focused card's key omits the external-change version
+          // so a watcher event on its file (incl. our own self-write
+          // bouncing back through slow-sync) doesn't remount it and
+          // wipe Milkdown state / focus mid-edit.
+          n.path === focusedPath
+            ? n.id
+            : `${n.id}:${externalChangeVersion[n.path] ?? 0}`;
         const centerpiece: SectionCell | null = mainNote
           ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
@@ -2032,10 +2125,12 @@ export function CardGrid() {
                   // a true external edit (not one of our own writes) bumps it,
                   // remounting the Card with fresh content from disk. Same-id
                   // reloads (chain mutations, our autosaves) keep the same key
-                  // and don't remount.
+                  // and don't remount. The focused card is held stable across
+                  // version bumps so editing it isn't interrupted by sync.
                   const v = externalChangeVersion[n.path] ?? 0;
+                  const key = n.path === focusedPath ? n.id : `${n.id}:${v}`;
                   return (
-                    <div className="card-grid-cell" data-path={n.path} key={`${n.id}:${v}`}>
+                    <div className="card-grid-cell" data-path={n.path} key={key}>
                       {cardNode(n)}
                     </div>
                   );
@@ -2148,10 +2243,10 @@ export function CardGrid() {
               onReorder={setFilters}
               onClear={resetToDefault}
               onJump={(ref) => {
-                setView("stream");
                 setFocusedFolder(ref);
                 const path = notePathByRef(ref);
-                if (path) setScrollTargetPath(path);
+                if (path) navigateAndFocus(path);
+                else setView("stream");
               }}
             />
           )}

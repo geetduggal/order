@@ -739,6 +739,79 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-delete:active,
 .order-card-dismiss:active { transform: scale(0.9); }
 
+/* Inline frontmatter strip at the bottom of every card. Always
+   visible, very small font, key:value pairs flowing horizontally and
+   wrapping as needed. Wikilink and URL values are clickable. Sits
+   outside the cap-cropped content so a capped card still shows it. */
+.order-card-fm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 8px 0 4px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--rule-soft, var(--rule));
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+.order-card-fm-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: normal;
+  max-width: 100%;
+}
+.order-card-fm-key {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 9.5px;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.order-card-fm-key::after {
+  content: ":";
+  color: var(--ink-faint);
+  margin-left: 1px;
+  opacity: 0.6;
+}
+.order-card-fm-val {
+  color: var(--ink-soft, var(--ink));
+  word-break: break-word;
+}
+.order-card-fm-null { color: var(--ink-faint); opacity: 0.6; }
+.order-card-fm-bool, .order-card-fm-num, .order-card-fm-date {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  color: var(--ink-soft, var(--ink));
+}
+.order-card-fm-list {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.order-card-fm-list > li {
+  display: inline;
+}
+.order-card-fm-list > li + li::before {
+  content: ", ";
+  color: var(--ink-faint);
+}
+.order-card-fm-grid,
+.order-card-fm-grid-nested,
+.order-card-fm-row {
+  display: inline;
+}
+.order-card-fm-link {
+  color: var(--royal);
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, var(--royal) 60%, transparent);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease-out);
+}
+.order-card-fm-link:hover { border-bottom-style: solid; }
+
 .order-card-permalink {
   display: inline-flex;
   align-items: center;
@@ -2408,9 +2481,24 @@ iframe.order-youtube-embed {
   font-size: 13px;
   padding-right: 4px;
 }
+/* Push the × to the right edge of the pill so it sits at a consistent
+   horizontal position regardless of the folder name length. The jump
+   button gets `flex: 1` to fill the gap; min-width: 0 so a long name
+   can ellipsize instead of pushing the × off the pill. */
+.sb-filters-slot .filter-pill-jump {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.sb-filters-slot .filter-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sb-filters-slot .filter-pill-x,
 .sb-filters-slot .filter-pill:hover .filter-pill-x {
   width: 22px;
+  flex-shrink: 0;
   opacity: 1;
 }
 .sb-footer-slot {

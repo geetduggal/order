@@ -108,7 +108,12 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
     const url = assetUrl(`${dir}${target}`);
     const width = parseEmbedWidth(size);
     if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
-    return `![](${url})`;
+    // Preserve a text caption (`|Dimensions and Layout`) as alt text
+    // so the editor can render it under the image. Pure numeric
+    // alt-only ratio values are handled by parseEmbedWidth above; an
+    // unsized embed with no pipe gets an empty alt as before.
+    const alt = size?.trim() ?? "";
+    return alt ? `![${alt}](${url})` : `![](${url})`;
   });
 }
 

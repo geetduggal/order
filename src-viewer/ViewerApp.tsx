@@ -613,11 +613,19 @@ function StreamView({
   useGridLayout(gridEl);
 
   const vaultNotes: ListNoteRef[] = useMemo(
-    () => data.notes.map((n) => ({
-      filename: `${n.ref}.md`,
-      frontmatter: n.frontmatter,
-      body: n.body,
-    })),
+    () => data.notes.map((n) => {
+      const dir = n.dir ?? "";
+      const folder = dir.split("/").pop() ?? "";
+      return {
+        filename: `${n.ref}.md`,
+        frontmatter: n.frontmatter,
+        body: n.body,
+        dir,
+        folder,
+        mtime: n.mtime,
+        ctime: n.ctime,
+      };
+    }),
     [data.notes],
   );
 

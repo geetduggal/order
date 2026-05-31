@@ -14,8 +14,18 @@ import { rewritePublishedImages, type AssetCopy } from "./publish-images";
 
 export interface CollectInput {
   /** Every note in the vault, with bodies. `dir` is the note's vault-
-   *  relative directory ("" for root), used to resolve same-folder images. */
-  vaultNotes: { filename: string; dir: string; frontmatter: Frontmatter; body: string }[];
+   *  relative directory ("" for root), used to resolve same-folder images.
+   *  `mtime` / `ctime` (ms since epoch, optional) flow into the published
+   *  payload so base-block sorts on file.mtime / file.ctime work in the
+   *  viewer the same way they do in the desktop app. */
+  vaultNotes: {
+    filename: string;
+    dir: string;
+    frontmatter: Frontmatter;
+    body: string;
+    mtime?: number;
+    ctime?: number;
+  }[];
   /** The home Notable Folder selected for this publish. */
   home: { name: string; title: string; target: string };
   /** Publish subpath (e.g. "order-home") for root-absolute image URLs. */
@@ -42,6 +52,15 @@ export interface PublishedNote {
   listItems: { ref: string; meta?: string }[] | null;
   isHome: boolean;
   frontmatter: Frontmatter;
+  /** Vault-relative directory of the source note (e.g.
+   *  "Home/Stewardship/Stewardship Spaces/Readwise/Full Document
+   *  Contents/Articles"). Required by published base blocks whose
+   *  filters use `file.folder.contains(…)`. */
+  dir: string;
+  /** File timestamps (ms since epoch), captured at publish time, so
+   *  base-block sorts on file.mtime / file.ctime work in the viewer. */
+  mtime?: number;
+  ctime?: number;
 }
 
 export interface PublishedSite {
@@ -90,11 +109,19 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
   const { vaultNotes, home, sub } = input;
   const byRef = new Map(vaultNotes.map((n) => [refOf(n.filename), n]));
 
-  const noteRefs: ListNoteRef[] = vaultNotes.map((n) => ({
-    filename: n.filename,
-    frontmatter: n.frontmatter,
-    body: n.body,
-  }));
+  const noteRefs: ListNoteRef[] = vaultNotes.map((n) => {
+    const dir = n.dir ?? "";
+    const folder = dir.split("/").pop() ?? "";
+    return {
+      filename: n.filename,
+      frontmatter: n.frontmatter,
+      body: n.body,
+      dir,
+      folder,
+      mtime: n.mtime,
+      ctime: n.ctime,
+    };
+  });
 
   const publics = vaultNotes.filter((n) => n.frontmatter.public === true);
   const assets: AssetCopy[] = [];
@@ -130,6 +157,9 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
       listItems: items,
       isHome: refOf(n.filename) === home.name,
       frontmatter: n.frontmatter,
+      dir: n.dir ?? "",
+      mtime: n.mtime,
+      ctime: n.ctime,
     };
   });
 

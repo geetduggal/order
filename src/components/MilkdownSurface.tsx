@@ -12,7 +12,15 @@ import { editorViewCtx, parserCtx, serializerCtx } from "@milkdown/kit/core";
 import { Slice } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
-import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix } from "../lib/attachments";
+import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix, isImagePath } from "../lib/attachments";
+
+// Tauri-only path detector: the @tauri-apps/api runtime injects
+// `window.__TAURI_INTERNALS__`. Absent in the published web viewer.
+// Used to skip `invoke(...)` calls that would otherwise hang or throw
+// silently and stop default browser link navigation.
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 import { join } from "@tauri-apps/api/path";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
@@ -63,9 +71,13 @@ type Props = {
   /** Run Crepe in read-only mode — no caret, no block handles, no
    *  edits saved. Used by the published web viewer. */
   readOnly?: boolean;
+  /** Vault-relative directory of the note being edited. Used to
+   *  resolve `[[X.png]]` (non-embedded image wiki-links) to a local
+   *  file the OS opener can launch on click. */
+  noteDir?: string;
 };
 
-export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly }: Props) {
+export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly, noteDir }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const wikiNotesRef = useRef<WikiRef[]>(wikiNotes ?? []);
@@ -75,9 +87,11 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
   const onChangeRef = useRef(onChange);
   const onDoneRef = useRef(onDone);
   const onImageUploadRef = useRef(onImageUpload);
+  const pathDirRef = useRef<string>(noteDir ?? "");
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
   useEffect(() => { onImageUploadRef.current = onImageUpload; }, [onImageUpload]);
+  useEffect(() => { pathDirRef.current = noteDir ?? ""; }, [noteDir]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -200,24 +214,65 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     async function onClick(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (!t) return;
-      // Wikilink decoration spans carry data-wikilink — navigate on click.
+      // Wikilink decoration spans carry data-wikilink — navigate on
+      // click. Exception: when the link target is an image file
+      // (`[[X.png]]` — bare wiki-link to an image, NOT embedded),
+      // open the image with the OS handler instead of trying to
+      // navigate to a note named "X.png".
       const wiki = t.closest("[data-wikilink]");
       if (wiki instanceof HTMLElement) {
         const name = wiki.getAttribute("data-wikilink");
-        if (name && onWikiNavigateRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          onWikiNavigateRef.current(name);
-          return;
+        if (name) {
+          if (isImagePath(name) && isTauri()) {
+            // Desktop: open image with the OS handler (Preview etc.).
+            // Browser viewer has no `open_path` Tauri command — fall
+            // through and let the wikilink navigate-to-note handler
+            // run (it'll resolve to no-op for a missing image-name
+            // note, which is the least-surprising web behavior).
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              const vault = await vaultRoot();
+              const noteDir = pathDirRef.current;
+              const local = await join(vault, noteDir, name);
+              const inAttachments = await join(vault, ATTACHMENTS_DIRNAME, name);
+              try { await invoke("open_path", { path: local }); }
+              catch { await invoke("open_path", { path: inAttachments }); }
+            } catch (err) {
+              console.warn("open image wikilink failed:", err);
+            }
+            return;
+          }
+          if (onWikiNavigateRef.current) {
+            e.preventDefault();
+            e.stopPropagation();
+            onWikiNavigateRef.current(name);
+            return;
+          }
         }
       }
       const anchor = t.closest("a");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       const raw = anchor.getAttribute("href") ?? "";
       if (!raw) return;
-      // External http(s) URLs: let the default handler (or Tauri's
-      // shell allowlist) take over.
-      if (/^https?:\/\//i.test(raw) || raw.startsWith("mailto:")) return;
+      // External http(s) / mailto / tel URLs: route through the Tauri
+      // shell so they open in the user's default browser. The WebView
+      // would otherwise navigate inside Order itself (no chrome, no
+      // way back), which is never what the user wants for a body link.
+      // In the published web viewer there's no Tauri — fall through to
+      // native browser behavior so window.open / location does the right
+      // thing (mailto/tel hand off to the OS; http(s) opens a tab).
+      if (/^(https?|mailto|tel):/i.test(raw)) {
+        if (!isTauri()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          await invoke("open_url", { url: raw });
+        } catch (err) {
+          console.error("open_url failed:", err);
+        }
+        return;
+      }
       const lower = raw.toLowerCase();
       // Resolve to an absolute filesystem path the OS opener can use.
       let absolute: string | null = null;

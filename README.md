@@ -235,6 +235,12 @@ without migration.
 - **`list: lines`** — dense one-row-per-item layout, drag-handle on hover,
   click-to-edit title and meta.
 
+Image embeds (`![[image.png]]`) on their own bullet are first-class list
+items — the image renders in place of the title with an inline caption
+(from a `|caption` suffix). A bare wiki-link to an image (`[[image.png]]`,
+no `!`) stays a text link the way Obsidian renders it; clicking it opens
+the file in the OS's default viewer on desktop.
+
 ![List folder — Books rendered as a basecard grid below the editor](img/list-folder-grid.png)
 
 Both renders share the same operations: drag-reorder, click-to-edit title and
@@ -303,6 +309,14 @@ render: items still matching the base keep their saved position; newly-matched
 items append in the base's `sort` order; items no longer matching drop out.
 Drag in base mode updates `manual_order`. A "Reset order" button above the
 grid clears it.
+
+Sort is deterministic even when notes are missing the key. Items without the
+sort property bucket to the **end** of the list regardless of `asc` / `desc`
+and sort lexicographically among themselves; any tie on the primary key falls
+through to the same lexicographic tiebreak (title, then filename, case-
+insensitive). So a `sort: published DESC` always shows newest first followed
+by an alphabetical appendix of items without a `published` date — instead of
+those drifting to arbitrary positions on each re-render.
 
 In base mode the membership UI is read-only — no add tile, no per-item delete,
 no inline rename (membership is the filter, not bullets) — but drag-reorder
@@ -431,32 +445,39 @@ temporal Stream. `NotebookSection` is shared by the app and the web viewer so th
 
 ### Chrome
 
-A thin left rail of round icon buttons sits in the top-left:
+A single hovering **bottom dock** holds the everyday controls — equal-sized,
+thumb-friendly, sitting above the iOS safe-area inset and identical on desktop
+and phone. Left to right:
 
-- `+` — new note (auto-folder if the filter has exactly one chip; opens a
-  picker for two or more; plain capture when the filter is empty).
-- `↑` — open the Publish panel.
-- **notes-only toggle** — switch the Stream between *notes + Notable Folders*
-  and *just notes* (hides Notable-Folder cards). Persists across sessions.
-- **public-only toggle** — Globe/Lock icon; flip between *public + private*
-  (default) and *public only* in the Stream. Stacks with notes-only.
-- `+ / −` — grow / shrink note text (font-size scaling; see Keyboard).
-- **theme** — cycle the theme; the icon reflects the current one (see Theming).
-- **settings** — vault-folder picker and app settings.
+- `+` — new note (auto-folder when the filter has exactly one Notable Folder;
+  opens a picker for two or more; plain capture when the filter is empty).
+- **stream mode** — three-state Files / FileText / Folder icon: *all* (notes +
+  Notable Folders), *notes only*, *folders only*. Persists across sessions.
+- **public lens** — Globe / Lock; flip between *public + private* (default) and
+  *public only*. Stacks with stream mode.
+- **search** — opens the centered command palette (same as `Cmd K`) for
+  fuzzy folder pick.
+- **settings** — opens a small popover anchored above the dock with the
+  controls that don't need to live on the main bar: publish, theme cycle,
+  text-size `+ / −`, vault-folder picker.
+- **sidebar toggle** — show / hide the right sidebar (rightmost so the
+  motion ends where the sidebar appears).
 
-Just below the rail is the **filter-pill stack**: a search icon (same as
-`Cmd K`), the active filter chips (drag to reorder, × to remove, click to focus
-a folder), and a clear-all icon beneath them whenever a filter is active.
-The app opens with no folder filter; the persisted set (if any) rehydrates.
+The **right sidebar** *is* the taxonomy: drill Areas → Categories → Notable
+Folders, and **add / remove / reorder** at each level — drag a tile, or use
+its per-tile arrows. At the top of the sidebar sits the **filter-pill stack**
+(always expanded in this slot, drag to reorder, × to remove, click to jump);
+tap an Area or Category tile's check icon to filter the whole branch in one
+gesture. The app opens with no folder filter; the persisted set rehydrates.
+The published viewer's sidebar is read-only.
 
-The right edge holds a `›/‹` sidebar toggle (the sidebar starts closed). The
-sidebar *is* the taxonomy: drill Areas → Categories → Notable Folders, and
-**add / remove / reorder** at each level — drag a tile, or use its per-tile
-arrows. In the published viewer the same sidebar is read-only.
-
-Each card carries its own top-right controls (fullscreen ⤢, copy-permalink 🔗,
-filter-remove ×, trash 🗑) and a subtle footer status bar (public pill,
-breadcrumb / folder chip, filename) that fades up on hover.
+Each card carries its own top-right controls (left to right: copy-permalink 🔗,
+fullscreen ⤢, trash 🗑, filter-remove ×) that fade up on hover. Below the body
+sits a small **frontmatter strip** — every YAML key/value rendered inline in a
+compact mono+sans pair, with wikilinks and URLs clickable (wikilinks navigate
+the Stream; URLs open in the browser via Tauri's shell on desktop, the native
+browser on web). The card footer holds a public/private pill, an Area ›
+Category breadcrumb, and the filename.
 
 ### Theming
 
@@ -493,10 +514,11 @@ adding one is a dozen lines.
 - `Cmd T` — cycle theme. `Cmd '` — clear all filters. `?` — toggle the
   keyboard-shortcut cheat sheet (bare key; suppressed while typing in an
   input / note).
-- `Cmd O` — open the right sidebar.
-- `Cmd K` — open the centered command palette to toggle folder filters.
+- `Cmd O` — open the right sidebar (one-way; pair with `Cmd ;` to toggle).
 - `Cmd ;` — toggle the right sidebar.
-- `Cmd P` — open the Publish panel.
+- `Cmd K` — open the centered command palette to toggle folder filters.
+- `Cmd P` — open the Publish panel (also reachable from the dock's
+  settings popover).
 
 ---
 
@@ -546,6 +568,13 @@ the WYSIWYG promise kept all the way to the published artifact:
 - The viewer's `StreamView` renders `<Card>` for every published note —
   same masonry, same sort (NF Main Docs pinned, then by date), same
   list-of-lists expansion, same folder-color border tint.
+- Base-block lists in the viewer use the same `smartMerge` /
+  `sortByBase` as the desktop: published notes carry their source
+  directory (`dir`) and timestamps in the payload, so `file.folder`
+  filters and `file.mtime` / `file.ctime` sorts work identically.
+  Sort values are normalized (Date instances and ISO date strings
+  treated as the same epoch ms) so a vault rendered in both surfaces
+  reads in the same order.
 - `useGridLayout` (the row-span hook) lives in `src/lib/grid-layout.ts`
   and is imported by both the desktop CardGrid and the viewer's
   StreamView. One source of truth for the masonry.

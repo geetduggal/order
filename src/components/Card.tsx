@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { dirname, join } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import { MilkdownSurface } from "./MilkdownSurface";
@@ -81,7 +82,7 @@ async function uniqueRename(dir: string, oldPath: string, basename: string): Pro
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; body: string; frontmatter: Frontmatter }
+  | { kind: "ready"; body: string; frontmatter: Frontmatter; rawFm: string }
   | { kind: "error"; message: string };
 
 interface Props {
@@ -135,6 +136,16 @@ interface Props {
   /** Focus the editor after the editor mounts. Used to land the
    *  cursor inside a freshly created note. */
   autoFocus?: boolean;
+  /** Pinned-focus signal from the parent: when true, the card is
+   *  treated as currently expanded (newspaper cap lifted) and is the
+   *  card the user is "on". Survives external file changes — the
+   *  parent uses this to keep the React key stable for the focused
+   *  card so a watcher event doesn't remount the editor mid-edit. */
+  focused?: boolean;
+  /** Called when the user clicks/focuses anywhere inside this card.
+   *  Parent uses this to track which card is the currently-focused
+   *  one so it can be held stable across external changes. */
+  onFocus?: () => void;
   /** Skip the Tauri disk read on mount and use this body +
    *  frontmatter directly. Set together with `readOnly` for the
    *  published web viewer, where there's no filesystem to read from
@@ -159,6 +170,122 @@ interface Props {
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
 
+// Wikilink + URL splitter used by the YAML peek popover. Splits a
+// string into a sequence of plain-text and clickable segments. Order
+// matters: try wikilink first (more specific shape), then URLs.
+const FM_TOKEN_RE = /(\[\[[^\]\n]+?\]\])|((?:https?|mailto|tel):[^\s)<>]+)/g;
+function fmTokens(text: string): Array<
+  | { kind: "text"; value: string }
+  | { kind: "wiki"; ref: string; alt?: string }
+  | { kind: "url"; href: string }
+> {
+  const out: ReturnType<typeof fmTokens> = [];
+  let last = 0;
+  for (const m of text.matchAll(FM_TOKEN_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > last) out.push({ kind: "text", value: text.slice(last, idx) });
+    if (m[1]) {
+      const inner = m[1].slice(2, -2);
+      const pipe = inner.indexOf("|");
+      const ref = pipe >= 0 ? inner.slice(0, pipe).trim() : inner.trim();
+      const alt = pipe >= 0 ? inner.slice(pipe + 1).trim() : undefined;
+      out.push({ kind: "wiki", ref, alt });
+    } else if (m[2]) {
+      out.push({ kind: "url", href: m[2] });
+    }
+    last = idx + m[0].length;
+  }
+  if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
+  return out;
+}
+
+function FmInline({
+  text, onNavigate,
+}: { text: string; onNavigate: (ref: string) => void }) {
+  const parts = fmTokens(text);
+  if (parts.length === 1 && parts[0].kind === "text") return <>{text}</>;
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (p.kind === "text") return <span key={i}>{p.value}</span>;
+        if (p.kind === "wiki") return (
+          <a
+            key={i}
+            className="order-card-fm-link order-card-fm-link-wiki"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNavigate(p.ref); }}
+            href="#"
+            title={`Open ${p.ref}`}
+          >
+            {p.alt || p.ref}
+          </a>
+        );
+        return (
+          <a
+            key={i}
+            className="order-card-fm-link order-card-fm-link-url"
+            href={p.href}
+            target="_blank"
+            rel="noreferrer"
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              try { await invoke("open_url", { url: p.href }); }
+              catch (err) { console.warn("open_url failed:", err); }
+            }}
+          >
+            {p.href.replace(/^https?:\/\//, "")}
+          </a>
+        );
+      })}
+    </>
+  );
+}
+
+function FmValue({
+  value, onNavigate,
+}: { value: unknown; onNavigate: (ref: string) => void }) {
+  if (value === null || value === undefined || value === "") {
+    return <span className="order-card-fm-null">—</span>;
+  }
+  if (typeof value === "boolean") {
+    return <span className="order-card-fm-bool">{value ? "true" : "false"}</span>;
+  }
+  if (typeof value === "number") {
+    return <span className="order-card-fm-num">{value}</span>;
+  }
+  if (value instanceof Date) {
+    return <span className="order-card-fm-date">{value.toISOString().slice(0, 10)}</span>;
+  }
+  if (typeof value === "string") {
+    return <FmInline text={value} onNavigate={onNavigate} />;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="order-card-fm-null">[]</span>;
+    return (
+      <ul className="order-card-fm-list">
+        {value.map((it, i) => (
+          <li key={i}><FmValue value={it} onNavigate={onNavigate} /></li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return <span className="order-card-fm-null">{"{}"}</span>;
+    return (
+      <dl className="order-card-fm-grid order-card-fm-grid-nested">
+        {entries.map(([k, v]) => (
+          <div className="order-card-fm-row" key={k}>
+            <dt className="order-card-fm-key">{k}</dt>
+            <dd className="order-card-fm-val"><FmValue value={v} onNavigate={onNavigate} /></dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  return <span>{String(value)}</span>;
+}
+
 export function Card(props: Props) {
   const {
     path: initialPath,
@@ -178,6 +305,8 @@ export function Card(props: Props) {
     onAddFilter,
     onRemoveFromFilter,
     autoFocus,
+    focused: focusedProp,
+    onFocus: onCardFocus,
     initialBody,
     initialFrontmatter,
     readOnly,
@@ -258,6 +387,7 @@ export function Card(props: Props) {
       try {
         let body: string;
         let frontmatter: Frontmatter;
+        let rawFm = "";
         if (initialBody !== undefined && initialFrontmatter !== undefined) {
           // Pre-loaded source (web viewer). Skip Tauri entirely —
           // attachment URLs in the body stay relative because the
@@ -271,6 +401,9 @@ export function Card(props: Props) {
           const split = splitFrontmatter(raw);
           frontmatter = split.frontmatter;
           body = split.body;
+          // Strip the `---` fence lines for display in the YAML peek
+          // popover — the panel header already implies "frontmatter".
+          rawFm = split.raw.replace(/^---\r?\n/, "").replace(/\r?\n---\r?\n?$/, "");
         }
         const noteDir = vaultDir(toVaultRel(initialPath));
         const displayBody = initialBody !== undefined
@@ -308,7 +441,7 @@ export function Card(props: Props) {
           }
         }
         lastTitleRef.current = firstLineTitle(editorInitial);
-        setState({ kind: "ready", body: editorInitial, frontmatter });
+        setState({ kind: "ready", body: editorInitial, frontmatter, rawFm });
         setEditorBody(editorInitial);
         setListItems(initialItems);
         setManualOrder(initialManualOrder);
@@ -602,10 +735,20 @@ export function Card(props: Props) {
     if (readOnly || capHeight === undefined) return;
     const root = articleRef.current;
     if (!root) return;
-    const onFocusIn = () => setExpanded(true);
+    const onFocusIn = () => {
+      setExpanded(true);
+      onCardFocus?.();
+    };
     root.addEventListener("focusin", onFocusIn);
     return () => root.removeEventListener("focusin", onFocusIn);
-  }, [readOnly, capHeight]);
+  }, [readOnly, capHeight, onCardFocus]);
+  // Mirror parent's pinned-focus signal into local expanded state so
+  // a navigate-and-focus from the parent (sidebar click, calendar
+  // open, palette) immediately lifts the cap, even before the editor
+  // has wired its focusin listener.
+  useEffect(() => {
+    if (focusedProp) setExpanded(true);
+  }, [focusedProp]);
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
@@ -635,7 +778,12 @@ export function Card(props: Props) {
     : undefined;
 
   return (
-    <article className={cardClass} style={cardStyle} ref={articleRef}>
+    <article
+      className={cardClass}
+      style={cardStyle}
+      ref={articleRef}
+      onMouseDown={onCardFocus}
+    >
       <div className="order-card-controls" aria-hidden={false}>
         {permalink && (
           <button
@@ -718,6 +866,7 @@ export function Card(props: Props) {
           onWikiNavigate={handleWikiNavigate}
           autoFocus={autoFocus && !readOnly}
           readOnly={readOnly}
+          noteDir={vaultDir(toVaultRel(pathRef.current))}
         />
         {isListFolder(state.frontmatter) && (
           <>
@@ -771,6 +920,18 @@ export function Card(props: Props) {
         >
           Read more
         </button>
+      )}
+      {Object.keys(state.frontmatter).length > 0 && (
+        <footer className="order-card-fm" aria-label="Frontmatter">
+          {Object.entries(state.frontmatter).map(([k, v]) => (
+            <span className="order-card-fm-pair" key={k}>
+              <span className="order-card-fm-key">{k}</span>
+              <span className="order-card-fm-val">
+                <FmValue value={v} onNavigate={handleWikiNavigate} />
+              </span>
+            </span>
+          ))}
+        </footer>
       )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>

@@ -39,16 +39,74 @@ export function matchNotes(parsed: ParsedBase, notes: NoteRef[]): NoteRef[] {
   return notes.filter((n) => evalFilter(f, n));
 }
 
+/** Stable, human-meaningful tiebreaker for items that compare equal on
+ *  the primary sort key — or both lack one. Title first (what the user
+ *  reads on the card), filename second. Always ascending, regardless
+ *  of the primary direction, so "no published date" items read like a
+ *  predictable alphabetical appendix at the end of the list. */
+function tiebreak(a: NoteRef, b: NoteRef): number {
+  const titleA = typeof a.frontmatter.title === "string" ? a.frontmatter.title : "";
+  const titleB = typeof b.frontmatter.title === "string" ? b.frontmatter.title : "";
+  const ka = (titleA || a.filename.replace(/\.md$/i, "")).toLocaleLowerCase();
+  const kb = (titleB || b.filename.replace(/\.md$/i, "")).toLocaleLowerCase();
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+/** Normalize a sort key value so the comparator behaves the same on
+ *  desktop (where js-yaml turns unquoted ISO datetimes into JS Dates)
+ *  and in the published web viewer (where the same values come back
+ *  as ISO strings after JSON round-trip). Date-looking values become
+ *  epoch ms; arbitrary strings become lowercased text; numbers stay
+ *  numbers. Returns null for missing/empty so the comparator can
+ *  push those to the end of the list deterministically. */
+function normalizeSortKey(v: unknown): number | string | null {
+  if (v == null) return null;
+  if (v instanceof Date) {
+    const t = v.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (typeof v === "string") {
+    if (!v.trim()) return null;
+    // Treat anything that round-trips through Date.parse as a date —
+    // covers ISO dates, ISO datetimes, and a few looser forms — so
+    // "2024-01-04" and "2024-01-04T00:00:00.000Z" sort identically
+    // and a Date instance from yaml-parse sorts identically to its
+    // JSON-stringified form in the viewer.
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
+      const t = Date.parse(v);
+      if (Number.isFinite(t)) return t;
+    }
+    return v.toLowerCase();
+  }
+  return String(v).toLowerCase();
+}
+
 export function sortByBase(parsed: ParsedBase, notes: NoteRef[]): NoteRef[] {
   if (!parsed.view.sort) return notes;
   const { prop, dir } = parsed.view.sort;
   const sign = dir === "asc" ? 1 : -1;
   return [...notes].sort((a, b) => {
-    const av = getProp(a, prop);
-    const bv = getProp(b, prop);
-    if (av === bv) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
+    const av = normalizeSortKey(getProp(a, prop));
+    const bv = normalizeSortKey(getProp(b, prop));
+    // Items without the sort key go to the END (regardless of asc/desc)
+    // and sort lexicographically among themselves so the bucket is
+    // stable and scannable instead of an arbitrary jumble.
+    if (av === null && bv === null) return tiebreak(a, b);
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    // Different normalized types (number vs string) — coerce both to
+    // strings so the comparison is total and identical across
+    // platforms. Should rarely happen because normalizeSortKey
+    // already picks a single normalized form per value.
+    if (typeof av !== typeof bv) {
+      const sa = String(av);
+      const sb = String(bv);
+      if (sa === sb) return tiebreak(a, b);
+      return sign * (sa < sb ? -1 : 1);
+    }
+    if (av === bv) return tiebreak(a, b);
     return sign * ((av as number | string) < (bv as number | string) ? -1 : 1);
   });
 }
