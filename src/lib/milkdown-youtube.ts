@@ -26,25 +26,34 @@ import { $prose } from "@milkdown/kit/utils";
 import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
+import { invoke } from "@tauri-apps/api/core";
 import { youtubeId } from "./youtube";
+import { isIosSync } from "./vault";
 
 const KEY = new PluginKey("order-youtube-embed");
 const YT_URL_RE = /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^\s"'<>)]+|youtu\.be\/[\w-]+(?:\?[^\s"'<>)]*)?)/;
 
-function buildIframe(id: string): HTMLDivElement {
+function buildIframe(id: string): HTMLElement {
+  // iOS WebView fallback: even with youtube-nocookie.com, the YouTube
+  // player still rejects Tauri's tauri://localhost origin on iOS with
+  // "Error 153 — Video player configuration error" for many videos
+  // (live streams, certain audio tracks, embeds that require strict
+  // origin checks). Inline playback isn't worth the broken cards, so
+  // on iOS we render a clickable thumbnail card that opens the video
+  // in the native YouTube app / Safari via the Tauri shell. Single
+  // tap, full quality, no broken player state.
+  if (isIosSync()) return buildThumbnailCard(id);
+
   const wrap = document.createElement("div");
   wrap.className = "order-youtube-embed-wrap";
   wrap.setAttribute("contenteditable", "false");
   const iframe = document.createElement("iframe");
   iframe.className = "order-youtube-embed";
-  // youtube-nocookie.com (privacy-enhanced) is more permissive about
-  // non-standard origins than youtube.com — Tauri's iOS WebView serves
-  // pages from tauri://localhost / https://tauri.localhost, which the
-  // normal player rejects with "Error 153 — Video player configuration
-  // error" (no valid referrer). The no-cookie endpoint plays for the
-  // same set of videos in every browser context we ship to.
-  // playsinline=1 keeps the player inline on iOS instead of forcing
-  // full-screen takeover the moment the user taps Play.
+  // youtube-nocookie.com is more permissive about non-standard origins
+  // than youtube.com — needed for the macOS Tauri WebView too. The
+  // same set of videos plays for the same set of contexts.
+  // playsinline=1 keeps macOS inline-player behavior consistent;
+  // rel=0 suppresses unrelated-channel suggestions at video end.
   iframe.src = `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0`;
   iframe.setAttribute("frameborder", "0");
   iframe.setAttribute(
@@ -55,6 +64,43 @@ function buildIframe(id: string): HTMLDivElement {
   iframe.setAttribute("loading", "lazy");
   iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
   wrap.appendChild(iframe);
+  return wrap;
+}
+
+/** Clickable thumbnail card — used wherever the iframe player can't
+ *  reliably initialize (iOS WebView). Renders the maxres/hq thumbnail,
+ *  a play-button overlay, and an Open-in-YouTube affordance. */
+function buildThumbnailCard(id: string): HTMLDivElement {
+  const wrap = document.createElement("div");
+  wrap.className = "order-youtube-embed-wrap order-youtube-thumb-wrap";
+  wrap.setAttribute("contenteditable", "false");
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "order-youtube-thumb";
+  card.setAttribute("aria-label", "Open video in YouTube");
+  const img = document.createElement("img");
+  img.className = "order-youtube-thumb-img";
+  img.alt = "";
+  img.loading = "lazy";
+  img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  img.onerror = () => { img.src = `https://i.ytimg.com/vi/${id}/0.jpg`; };
+  card.appendChild(img);
+  const play = document.createElement("span");
+  play.className = "order-youtube-thumb-play";
+  play.setAttribute("aria-hidden", "true");
+  play.textContent = "▶";
+  card.appendChild(play);
+  const label = document.createElement("span");
+  label.className = "order-youtube-thumb-label";
+  label.textContent = "Open in YouTube";
+  card.appendChild(label);
+  card.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void invoke("open_url", { url: `https://www.youtube.com/watch?v=${id}` })
+      .catch((err) => console.warn("open_url failed:", err));
+  });
+  wrap.appendChild(card);
   return wrap;
 }
 

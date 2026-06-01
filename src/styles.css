@@ -1037,6 +1037,62 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   background: black;
 }
+/* iOS thumbnail-card fallback for the YouTube embed: a clickable
+   preview that opens the video in the native YouTube app / Safari
+   instead of trying to mount the in-WebView player (which fails with
+   "Error 153" on iOS for many videos). */
+.milkdown-host .ProseMirror .order-youtube-thumb-wrap,
+.order-youtube-thumb-wrap {
+  margin: 1em 0;
+}
+.order-youtube-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: #000;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+}
+.order-youtube-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.order-youtube-thumb-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(48px, 8vw, 72px);
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.order-youtube-thumb-label {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  padding: 3px 8px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.order-youtube-thumb:hover .order-youtube-thumb-play { color: white; }
+.order-youtube-thumb:active { transform: scale(0.99); }
 /* Crepe shows an "upload or paste link" placeholder UI (the gray box
    with a question-mark icon and a "Please enter…" caption) for any
    image node without a src. Empty image-blocks turn up from accidental
