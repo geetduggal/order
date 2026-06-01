@@ -151,7 +151,6 @@ its Area, all rooted at the vault.
 ```
 ~/Documents/Dropbox/Home/               (vault root)
 ├── Areas.md                            list: cards, role: areas
-├── Attachments/                        legacy global image dir (still read)
 ├── Creative/
 │   ├── Creative.md                     list: cards (the Area file)
 │   ├── Creative Spaces/                Category dir
@@ -160,7 +159,8 @@ its Area, all rooted at the vault.
 │   │   │   └── Articles.md
 │   │   └── Geet Duggal/                NF — home Notable Folder
 │   │       ├── Geet Duggal.md          (home: "<gh user>/<repo>/<path>")
-│   │       └── 2024-07-22 - First Geet.md
+│   │       ├── 2024-07-22 - First Geet.md
+│   │       └── Pasted image 20240725165042.png
 │   └── Creative Projects/              every published article as its own NF
 │       └── Tech Habits — …/
 └── Craft/
@@ -169,18 +169,36 @@ its Area, all rooted at the vault.
     └── Craft Projects/                 every tool & paper as its own NF
 ```
 
-Every level of the chain is a directory on disk — Areas, Categories, and
-Notable Folders each get their own folder, with a Main Document inside
-named after the folder. Pasted / dropped images write into the **note's own
-directory** and are stored as Obsidian-style `![[image.png]]` embeds (matching
-Obsidian's `attachmentFolderPath: "./"`), so an image travels with its note when
-the note moves. At edit time the embeds are inflated to `vaultasset://` URLs —
-served by a custom URI-scheme handler on the Rust side (`lib.rs`) that resolves
-them against the vault root, including the iOS security-scoped bookmark — and
-deflated back to `![[…]]` on save; a Crepe resize is preserved as an Obsidian
-pixel width. Legacy global `![](Attachments/…)` images at the vault root keep
-working. PDF and other non-image attachment links go through the OS opener
-(Tauri `open_path`) so they launch in the user's default app.
+**A Notable Folder is the folder it sits in.** Not "a note that points at a
+folder" — the folder itself IS the Notable Folder, with a Main Document inside
+named after it. That single decision pulls everything else into place:
+
+- **Attachments live next to the note that uses them.** Pasting or dropping an
+  image into a note writes the file straight into the NF's own directory and
+  the embed is stored as `![[image.png]]` (Obsidian's
+  `attachmentFolderPath: "./"` convention). Moving a note to a different NF
+  drags its images along by reflex — same folder, same fate. Order doesn't
+  need an `Attachments/` dir at the vault root; one can exist for legacy
+  vaults and basename-relative embeds still resolve (Obsidian-compatible),
+  but the *new* convention is just "drop it in the folder, like you would
+  on a real desktop."
+- **Sidecar artifacts have a home.** AI-generated HTML one-pagers, exported
+  PDFs, screenshots, scratch JSON, anything else a tool spits out next to a
+  note — all of it goes in the same NF directory. Order won't render every
+  file type, but they're discoverable from Finder / Obsidian / VS Code exactly
+  where the note that produced them lives.
+- **Cross-tool portability is free.** The vault opens cleanly in Obsidian
+  with no migration: the same `[[wikilink]]`s, the same `![[image.png]]`
+  embeds, the same chain of folder index files. Every other tool — git,
+  Finder, `grep`, `rsync`, a backup script — also sees a sensible folder
+  tree it can reason about.
+
+At edit time the embeds are inflated to `vaultasset://` URLs — served by a
+custom URI-scheme handler on the Rust side (`lib.rs`) that resolves them
+against the vault root, including the iOS security-scoped bookmark — and
+deflated back to `![[…]]` on save; a Crepe resize is preserved as an
+Obsidian pixel width. PDF and other non-image attachment links go through
+the OS opener (Tauri `open_path`) so they launch in the user's default app.
 
 ### State
 
@@ -356,8 +374,13 @@ convention, not a constraint, and the convention is small on purpose:
 - **`log/`** is the default Notable Folder — the catch-all for anything that
   doesn't naturally fit a Category. Quick captures, scratch, daily notes
   land here rather than scattering loose at the root.
-- **`Attachments/`** at the vault root holds pasted and dropped images, plus
-  any other binary attachments, following the Obsidian convention.
+- **Attachments live next to the note they belong to.** Images, PDFs,
+  exported diagrams, scratch JSON — anything you paste, drop, or generate
+  alongside a note writes into the NF's own directory, not a shared
+  `Attachments/` pool. Moving a note moves its files; deleting an NF clears
+  its sidecar artifacts in the same gesture. A legacy `Attachments/` dir at
+  the vault root keeps working for migrations, but new content takes the
+  local route.
 
 The point isn't structure for its own sake. It's the smallest set of rules
 that keeps the vault legible at 10 notes and at 10,000, leaves room to grow
@@ -562,16 +585,61 @@ the target, and Order:
 1. Walks the vault, collects every note flagged `public: true`, and emits a
    `data.json` snapshot (notes + frontmatter + bodies + chain taxonomy).
 2. Prerenders a static permalink page for every public note
-   (`/<slug>/index.html`) — wikilinks rewritten to permalink anchors, images to
-   root-absolute URLs — so a direct link (or a `curl`) returns just that note's
-   content rather than an empty JS shell, then boots the SPA seeded to that note.
+   (`/<slug>/index.html`) — wikilinks rewritten to permalink anchors, images
+   to root-absolute URLs — so a direct link (or a `curl`) returns just that
+   note's content rather than an empty JS shell, then boots the SPA seeded
+   to that note.
 3. Hands `data.json`, the prerendered pages, and a pre-built React bundle
-   (`dist-viewer/`) to the Rust side (`publish_site`), which clones — or pulls —
-   the target GitHub repo, wipes the chosen path, copies the bundle, the legacy
-   `Attachments/` dir, and each public note's same-folder images (placed next to
-   that note's page so direct image URLs resolve), then
-   `git commit && git push origin <branch>`. Auth uses the local git credential
-   helper or SSH key; no new login flow.
+   (`dist-viewer/`) to the Rust side (`publish_site`), which clones — or
+   pulls — the target GitHub repo, wipes the chosen path, copies the bundle,
+   any legacy root-level `Attachments/` dir from the vault, and each public
+   note's same-folder images (placed next to that note's page so direct
+   image URLs resolve), then `git commit && git push origin <branch>`. Auth
+   uses the local git credential helper or SSH key; no new login flow.
+
+### Permalinks
+
+Every public note gets a permalink at `/<slug>/`. The slug is pinned in the
+note's frontmatter the first time it publishes and never changes after — so
+even if you rename the file or move it between Notable Folders, the URL
+stays put. Inbound links from the web, Slack, email, and unfurlers don't
+break the moment you reorganize the vault.
+
+The slug is a human-readable URL fragment derived from the title (Order
+strips punctuation, lowercases, and dasherizes). It deliberately doesn't
+encode the chain — there's no `/<area>/<category>/<folder>/<note>/` route.
+Two reasons:
+
+1. **Folder paths are an editorial detail, not an identity.** A note's
+   *meaning* doesn't change when you move it from `Selfish Spaces/Books`
+   to `Selfish Projects/Reading List`, but a path-based URL would 404 the
+   moment you did. The slug pins the note's identity to the note itself.
+2. **Flat URLs read like a magazine, not a filesystem.** `/cal-newport/`
+   and `/2026-living-room-refresh/` are immediately legible; the chain
+   beats them by zero on shareability and costs everything in stability.
+
+The mechanism. Each public note carries `slug: "<kebab-case>"` in its
+frontmatter, written on its first publish. `publish_site` emits a static
+HTML file at `<pubPath>/<slug>/index.html` containing the prerendered
+content (so `curl` and link unfurlers see real prose, not a JS shell),
+plus a `<script>` boot that hydrates the SPA filtered to that note. A
+top-level `slugMap: { slug → ref }` in `data.json` lets the SPA resolve
+arbitrary `/<slug>/` URLs back to the underlying note when a visitor
+clicks around — same component graph as the desktop app, same NF-on-top
+pile-based navigation, just with one URL per public note as the front
+door.
+
+The home Notable Folder is special-cased: its prerendered page is written
+to **both** `index.html` (so `/` lands on it) and `<slug>/index.html` (so
+the home note's own permalink still resolves). Same content, two paths,
+no duplication of effort.
+
+A small gift falls out of this design: drafting in the open. A note
+marked `public: false` (the default) participates in the same Stream, the
+same Cmd+K palette, the same calendar — but no permalink is emitted and
+nothing reaches the published copy. Flip the boolean and the next publish
+adds the page; flip it back and the page disappears on the publish after
+that. One vault, two lives, one switch.
 
 ### The web viewer
 
