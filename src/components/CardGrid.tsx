@@ -493,10 +493,18 @@ export function CardGrid() {
       const targetFolder = isNotableFolder(note.frontmatter)
         ? ownRef
         : (noteFolder(note.frontmatter) ?? null);
-      if (targetFolder && !includeSetRef.current.has(targetFolder)) {
-        setFilters((prev) => [...prev, { kind: "include", ref: targetFolder }]);
-      }
       if (targetFolder) {
+        // Pin the target NF at the FRONT of the include set so its
+        // newspaper section renders at the top of the Stream. Any
+        // existing entry is moved to the front so a re-click also
+        // bubbles the section back up — the include set acts as a
+        // most-recently-visited stack. The just-pinned section sits
+        // at scrollY ~0, so the scroll target has almost no mass
+        // around it to drift through (no slippage on mobile).
+        setFilters((prev) => [
+          { kind: "include", ref: targetFolder },
+          ...prev.filter((f) => !(f.kind === "include" && f.ref === targetFolder)),
+        ]);
         setFocusedFolder(targetFolder);
         markFolderRecent(targetFolder);
       }
@@ -509,10 +517,21 @@ export function CardGrid() {
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
   const navigateToRef = useCallback((ref: string) => {
-    addInclude(ref);
     const path = notePathByRef(ref);
-    if (path) navigateAndFocus(path);
-  }, [addInclude, navigateAndFocus]);
+    if (path) {
+      // navigateAndFocus pins the target NF to the front of the
+      // include set; no separate addInclude needed.
+      navigateAndFocus(path);
+    } else {
+      // Unresolved ref (no on-disk note) — fall back to a bare
+      // additive include so the user still sees a pill they can
+      // remove. Front-pinned to match the new visibility rule.
+      setFilters((prev) => [
+        { kind: "include", ref },
+        ...prev.filter((f) => !(f.kind === "include" && f.ref === ref)),
+      ]);
+    }
+  }, [navigateAndFocus]);
   // Wikilink-to-NF clicks accumulate (same as navigateToRef now that
   // includes always compose with OR). Kept as a distinct name for the
   // list-render prop contract.
@@ -521,12 +540,22 @@ export function CardGrid() {
    *  add it as an include, pin its Main Document, and scroll to it —
    *  so Cmd+K lands you ON that page. */
   const focusFolder = useCallback((ref: string) => {
-    addInclude(ref);
     setFocusedFolder(ref);
     const path = notePathByRef(ref);
-    if (path) navigateAndFocus(path);
-    else setView("stream");
-  }, [addInclude, navigateAndFocus]);
+    if (path) {
+      // Route through navigateAndFocus so the pinning rule (move
+      // the just-clicked NF to the front of the include set) is
+      // applied uniformly. No need to call addInclude separately.
+      navigateAndFocus(path);
+    } else {
+      // No Main Document — just bubble the bare include to the front.
+      setFilters((prev) => [
+        { kind: "include", ref },
+        ...prev.filter((f) => !(f.kind === "include" && f.ref === ref)),
+      ]);
+      setView("stream");
+    }
+  }, [navigateAndFocus]);
   /** Jump to the home Notable Folder — the one whose YAML carries
    *  `home: "<user>/<repo>/<path>"`. Sets the filter to ONLY that
    *  folder (clearing any other includes/excludes), so the user lands
