@@ -443,6 +443,29 @@ fluid Stream for working, a still page for reading and publishing.
 temporal Stream. `NotebookSection` is shared by the app and the web viewer so the
 "page" is identical in both.)
 
+### Pile-based navigation
+
+Every navigation surface — sidebar tile, calendar event Open, command palette
+pick, wikilink, filter-pill jump, recent-folders search — does the same thing:
+the targeted Notable Folder goes on **top of the pile**. The pile is the
+filter-pill stack; the Stream renders each pinned NF as a newspaper section
+in pill order, so whatever you just touched sits at scrollY ~0. Other pinned
+folders stay underneath, untouched.
+
+This is the same instinct behind [PileTiddly](https://geetduggal.com/PileTiddly.html)
+from 2004 (linked in the opening above) and the [Lifestream](https://en.wikipedia.org/wiki/Lifestreams)
+work that preceded it — digital space behaves like a real desk pile. You don't
+"navigate" to something; you *put it on top*. Recently-touched things float up,
+ignored things sink, structure follows attention. Re-clicking a folder that's
+already several layers down bubbles it back to the surface; clicking the × on
+any pill drops that layer out of the pile. The list is short by design — it's
+a pile, not a folder tree.
+
+Two consequences fall out for free: the scroll target is always right where
+you put it (no slippage through a long flat list, especially on mobile), and
+the pill stack reads as a most-recently-visited breadcrumb you can walk
+backward through with the × buttons.
+
 ### Chrome
 
 A single hovering **bottom dock** holds the everyday controls — equal-sized,
