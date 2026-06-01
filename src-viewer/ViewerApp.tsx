@@ -163,6 +163,29 @@ export function ViewerApp(
     try { localStorage.setItem("order.streamMode", m); } catch { /* non-fatal */ }
   };
 
+  // Recently-pinned Notable Folders, most-recent first. The command
+  // palette uses this on an empty query so the search button doubles
+  // as a back-history through the pile of folders you've visited.
+  const RECENT_KEY = "order.recentFolders";
+  const RECENT_MAX = 20;
+  const [recentFolders, setRecentFolders] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX);
+    } catch { return []; }
+  });
+  const markFolderRecent = (ref: string) => {
+    if (!ref) return;
+    setRecentFolders((prev) => {
+      const next = [ref, ...prev.filter((r) => r !== ref)].slice(0, RECENT_MAX);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* non-fatal */ }
+      return next;
+    });
+  };
+
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
     [filters],
@@ -176,9 +199,22 @@ export function ViewerApp(
     setFilters(next);
     if (typeof history !== "undefined") history.pushState({}, "", filtersToUrl(next));
   }
+  // Pile-based navigation: every nav surface (palette, sidebar tile,
+  // wikilink, filter-pill jump) moves the targeted Notable Folder to
+  // the FRONT of the include set instead of appending. Excludes and
+  // other includes stay put — the just-touched section sits at
+  // scrollY ~0, the prior pile sinks underneath. Re-targeting an NF
+  // already in the set bubbles it back to the top.
+  function pinToFront(ref: string) {
+    const next: Filter[] = [
+      { kind: "include", ref },
+      ...filters.filter((f) => !(f.kind === "include" && f.ref === ref)),
+    ];
+    commitFilters(next);
+    markFolderRecent(ref);
+  }
   function addInclude(ref: string) {
-    if (filters.some((f) => f.kind === "include" && f.ref === ref)) return;
-    commitFilters([...filters, { kind: "include", ref }]);
+    pinToFront(ref);
   }
   function removeFilter(target: Filter) {
     commitFilters(filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref)));
@@ -199,33 +235,35 @@ export function ViewerApp(
     setView("stream");
     const note = data.notes.find((n) => n.ref === ref);
     if (note && note.slug) {
+      // Pile-based navigation: move the target NF to the FRONT of
+      // the include set, preserving other includes and excludes.
+      const targetRef = note.category ? note.ref : (note.folder ?? note.ref);
+      const next: Filter[] = [
+        { kind: "include", ref: targetRef },
+        ...filters.filter((f) => !(f.kind === "include" && f.ref === targetRef)),
+      ];
       if (note.category) {
-        // NF: filter to this folder's section (its Main Doc + children).
         setSingleNoteRef(null);
-        setFilters([{ kind: "include", ref: note.ref }]);
       } else {
         // Regular note: solo-note view inside the parent folder filter.
         setSingleNoteRef(ref);
-        setFilters([{ kind: "include", ref: note.folder ?? note.ref }]);
       }
+      setFilters(next);
+      markFolderRecent(targetRef);
       if (typeof history !== "undefined") {
         history.pushState({}, "", `${basePath}${note.slug}/`);
       }
       return;
     }
-    // Fall back: unresolved or unpublished — accumulate filter + scroll.
-    if (!filters.some((f) => f.kind === "include" && f.ref === ref)) {
-      commitFilters([...filters, { kind: "include", ref }]);
-    }
+    // Fall back: unresolved or unpublished — pin to front (additive).
+    pinToFront(ref);
     setScrollTarget(ref);
   }
   // Command palette pick → like navigate, but also pins the folder's
   // Main Document so Cmd+K lands you ON that page.
   function focusFolder(ref: string) {
     setView("stream");
-    if (!filters.some((f) => f.kind === "include" && f.ref === ref)) {
-      commitFilters([...filters, { kind: "include", ref }]);
-    }
+    pinToFront(ref);
     setFocusedFolder(ref);
     setScrollTarget(ref);
   }
@@ -576,6 +614,7 @@ export function ViewerApp(
               onClear={resetToDefault}
               onJump={(ref) => {
                 setView("stream");
+                pinToFront(ref);
                 setFocusedFolder(ref);
                 setScrollTarget(ref);
               }}
@@ -590,6 +629,7 @@ export function ViewerApp(
           selected={includeSet}
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
+          recents={recentFolders}
         />
       )}
     </div>
