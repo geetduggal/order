@@ -611,13 +611,41 @@ export function CardGrid() {
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     const lastMtime = new Map<string, number>();
-    function reportExternal(paths: string[]) {
+    /** Read the file and compare to the in-memory body for that path —
+     *  return true only if the content actually differs. mtime-only
+     *  signals are very noisy on cloud-synced vaults (Dropbox / iCloud
+     *  touch files during sync without changing content), and bumping
+     *  externalChangeVersion on every touch makes the Stream "jump
+     *  around" every few seconds as cards remount and masonry rejiggers.
+     *  Errors are conservatively treated as "no change" so we don't
+     *  thrash on transient read failures. */
+    async function bodyActuallyChanged(path: string): Promise<boolean> {
+      try {
+        const raw = await vaultFs.readText(toVaultRel(path));
+        const inMem = notesRef.current?.find((n) => n.path === path);
+        if (!inMem) return true; // new file the index doesn't know yet
+        const split = splitFrontmatter(raw);
+        return split.body !== inMem.body;
+      } catch {
+        return false;
+      }
+    }
+    async function reportExternal(paths: string[]) {
+      if (cancelled) return;
       // Drop our own writes from the change set; anything remaining is
-      // a genuine external edit and worth a reload + Card remount.
+      // a genuine external mtime change.
       const external: string[] = [];
       for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
       if (external.length === 0) return;
-      bumpExternal(external);
+      // Content-aware filter: only the paths whose bodies actually
+      // differ get a version bump (which would remount the Card).
+      // The reload still runs so new / removed files reach the index.
+      const changed: string[] = [];
+      for (const p of external) {
+        if (await bodyActuallyChanged(p)) changed.push(p);
+        if (cancelled) return;
+      }
+      if (changed.length > 0) bumpExternal(changed);
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
     }
@@ -1915,10 +1943,22 @@ export function CardGrid() {
     pinnedRef !== null
     && isNotableFolder(n.frontmatter)
     && n.filename.replace(/\.md$/, "") === pinnedRef;
+  // Notable Folder Main Documents float to the top of the Stream by
+  // default — they're the "covers" of each folder and read like a
+  // table of contents for the recency feed below. Alphabetical
+  // among themselves (no meaningful date on an NF main doc). The
+  // pinned-folder cover, when one is active, still sits above the
+  // alphabetical NF block.
   const sortedNotesFull = [...filteredNotes].sort((a, b) => {
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
+    const aNF = isNotableFolder(a.frontmatter);
+    const bNF = isNotableFolder(b.frontmatter);
+    if (aNF !== bNF) return aNF ? -1 : 1;
+    if (aNF && bNF) {
+      return a.filename.localeCompare(b.filename);
+    }
     return sortKey(b).localeCompare(sortKey(a));
   });
   // Pagination for the Stream's flat grid: with no folder filter active

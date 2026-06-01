@@ -322,10 +322,18 @@ export function ViewerApp(
       return `${d} ${t}`;
     };
     const isPinned = (n: PublishedNote) => !!n.category && pinnedRef !== null && n.ref === pinnedRef;
+    // Notable Folder Main Documents float to the top of the Stream
+    // by default — they're the "covers" of each folder and read
+    // like a table of contents for the recency feed below. The
+    // pinned folder cover (single-folder mode) sits above them.
     return [...filtered].sort((a, b) => {
       const am = isPinned(a);
       const bm = isPinned(b);
       if (am !== bm) return am ? -1 : 1;
+      const aNF = !!a.category;
+      const bNF = !!b.category;
+      if (aNF !== bNF) return aNF ? -1 : 1;
+      if (aNF && bNF) return a.ref.localeCompare(b.ref);
       return dateKey(b).localeCompare(dateKey(a));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
