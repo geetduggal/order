@@ -3188,6 +3188,34 @@ iframe.order-youtube-embed {
   outline: none;
 }
 .event-prompt-input::placeholder { color: var(--ink-faint); }
+.event-prompt-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--rule-soft, var(--rule));
+  margin-top: 4px;
+}
+.event-prompt-folder-label {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.event-prompt-folder-select {
+  flex: 1 1 auto;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 4px 6px;
+  outline: none;
+}
+.event-prompt-folder-select:focus { border-color: var(--royal); }
 
 /* Keyboard-shortcut cheat sheet — triggered by bare `?` outside text
    input. Backdrop catches clicks to dismiss; the inner card is a fixed-

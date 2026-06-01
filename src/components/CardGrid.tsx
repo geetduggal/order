@@ -2567,16 +2567,28 @@ export function CardGrid() {
         <div className="cap-warning" role="status">{capWarning}</div>
       )}
 
-      {titlePrompt && (
-        <CreateEventPrompt
-          onSubmit={async (title) => {
-            const patch = titlePrompt.patch;
-            setTitlePrompt(null);
-            await createNote(title ? { ...patch, title } : patch);
-          }}
-          onCancel={() => setTitlePrompt(null)}
-        />
-      )}
+      {titlePrompt && (() => {
+        const callerFolder = parseRef(titlePrompt.patch.folder) ?? null;
+        const filterDefault = notableIncludes.length === 1 ? notableIncludes[0] : null;
+        const defaultFolder = callerFolder ?? filterDefault ?? homeFolderRef.current ?? null;
+        return (
+          <CreateEventPrompt
+            availableFolders={notableFoldersRef.current}
+            defaultFolder={defaultFolder}
+            onSubmit={async (title, folder) => {
+              const patch = { ...titlePrompt.patch };
+              setTitlePrompt(null);
+              if (title) patch.title = title;
+              // Caller-supplied folder wins only if the user kept the
+              // default; an explicit user pick (or clearing it) wins.
+              if (folder) patch.folder = `[[${folder}]]`;
+              else delete patch.folder;
+              await createNote(patch);
+            }}
+            onCancel={() => setTitlePrompt(null)}
+          />
+        );
+      })()}
 
       {eventMenu && (
         <EventActionMenu
@@ -2828,14 +2840,20 @@ function EventActionMenu({
 
 /** Centered title prompt shown after picking a calendar slot/range. Enter
  *  commits (even on an empty title, so it stays a fast capture); Esc and
- *  clicking the backdrop cancel. */
-function CreateEventPrompt({ onSubmit, onCancel }: {
-  onSubmit: (title: string) => void | Promise<void>;
+ *  clicking the backdrop cancel. The folder dropdown is optional — the
+ *  default is the active filter's single include, falling back to the
+ *  home folder — so the gesture stays one-keystroke fast. */
+function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder }: {
+  onSubmit: (title: string, folder: string | null) => void | Promise<void>;
   onCancel: () => void;
+  availableFolders: string[];
+  defaultFolder: string | null;
 }) {
   const [title, setTitle] = useState("");
+  const [folder, setFolder] = useState<string>(defaultFolder ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
+  const submit = () => onSubmit(title.trim(), folder || null);
   return (
     <div className="event-prompt-overlay" onMouseDown={onCancel}>
       <div className="event-prompt" onMouseDown={(e) => e.stopPropagation()}>
@@ -2847,10 +2865,25 @@ function CreateEventPrompt({ onSubmit, onCancel }: {
           placeholder="Event title (Enter to create, Esc to cancel)"
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void onSubmit(title.trim()); }
+            if (e.key === "Enter") { e.preventDefault(); void submit(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
           }}
         />
+        {availableFolders.length > 0 && (
+          <label className="event-prompt-folder">
+            <span className="event-prompt-folder-label">Folder</span>
+            <select
+              className="event-prompt-folder-select"
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+            >
+              <option value="">(none)</option>
+              {availableFolders.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
     </div>
   );
