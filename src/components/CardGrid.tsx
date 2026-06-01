@@ -2856,7 +2856,17 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
   useEffect(() => { inputRef.current?.focus(); }, []);
   const submit = () => onSubmit(title.trim(), folder);
   return (
-    <div className="event-prompt-overlay" onMouseDown={onCancel}>
+    <div
+      className="event-prompt-overlay"
+      onMouseDown={(e) => {
+        // Only dismiss when the click really lands on the backdrop —
+        // not on a child of the prompt, and not on a React-portaled
+        // descendant (the FolderPicker option list lives outside the
+        // prompt's DOM subtree via createPortal but still bubbles
+        // events through the React tree to this handler).
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
       <div className="event-prompt" onMouseDown={(e) => e.stopPropagation()}>
         <input
           ref={inputRef}
