@@ -446,9 +446,28 @@ export function CardGrid() {
   /** Scroll the stream to a card and pin focus on it. Single entry
    *  point used by every navigation surface (sidebar tile, calendar
    *  Open, command palette, wikilink, filter-pill jump) so the
-   *  "click → focused card" guarantee holds uniformly. */
+   *  "click → focused card" guarantee holds uniformly.
+   *
+   *  Side effect: additively include the note's Notable Folder in
+   *  the filter set. This narrows the Stream to the section that
+   *  contains the note — newspaper mode kicks in, the NF main doc
+   *  lands at the top, and the scroll target has far less mass
+   *  around it to drift through. Side benefit: it doubles as a
+   *  navigation breadcrumb ("you're inside Cal Newport now") that
+   *  the user can dismiss with the pill's ×. */
   const navigateAndFocus = useCallback((path: string) => {
     setView("stream");
+    const note = notesRef.current?.find((n) => n.path === path);
+    if (note) {
+      const ownRef = note.filename.replace(/\.md$/i, "");
+      const targetFolder = isNotableFolder(note.frontmatter)
+        ? ownRef
+        : (noteFolder(note.frontmatter) ?? null);
+      if (targetFolder && !includeSetRef.current.has(targetFolder)) {
+        setFilters((prev) => [...prev, { kind: "include", ref: targetFolder }]);
+      }
+      if (targetFolder) setFocusedFolder(targetFolder);
+    }
     setScrollTargetPath(path);
     setFocusPath(path);
     setFocusedPath(path);
