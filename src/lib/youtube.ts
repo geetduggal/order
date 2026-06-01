@@ -41,13 +41,16 @@ const IMAGE_EMBED_RE = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
 
 /** `![](youtube_url)` → `<iframe ...>` with a data-yt attribute carrying
  *  the id so the deflate step can rebuild the original URL. The iframe
- *  is on its own line so Milkdown / remark treat it as a block. */
+ *  is on its own line so Milkdown / remark treat it as a block. Uses
+ *  the privacy-enhanced youtube-nocookie.com endpoint because Tauri's
+ *  iOS WebView origin (tauri://localhost) isn't accepted by the regular
+ *  player ("Error 153 — Video player configuration error"). */
 export function inflateYoutubeEmbeds(body: string): string {
   return body.replace(IMAGE_EMBED_RE, (full, _alt: string, url: string) => {
     if (!YT_HOST_RE.test(url)) return full;
     const id = youtubeId(url);
     if (!id) return full;
-    return `<iframe class="order-youtube-embed" data-yt="${id}" src="https://www.youtube.com/embed/${id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    return `<iframe class="order-youtube-embed" data-yt="${id}" src="https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>`;
   });
 }
 
@@ -55,7 +58,7 @@ export function inflateYoutubeEmbeds(body: string): string {
 // deflate works even if Milkdown's serializer drops `data-yt`, reorders
 // attributes, or strips the order-youtube-embed class on round-trip.
 const IFRAME_SRC_RE =
-  /<iframe\b[^>]*\bsrc="https?:\/\/(?:www\.)?youtube\.com\/embed\/([\w-]+)[^"]*"[^>]*>\s*<\/iframe>/g;
+  /<iframe\b[^>]*\bsrc="https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com)\/embed\/([\w-]+)[^"]*"[^>]*>\s*<\/iframe>/g;
 
 /** `<iframe ... src="...youtube.com/embed/ID..." ...></iframe>` →
  *  `![](https://www.youtube.com/watch?v=ID)`. */

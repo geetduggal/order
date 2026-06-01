@@ -37,14 +37,23 @@ function buildIframe(id: string): HTMLDivElement {
   wrap.setAttribute("contenteditable", "false");
   const iframe = document.createElement("iframe");
   iframe.className = "order-youtube-embed";
-  iframe.src = `https://www.youtube.com/embed/${id}`;
+  // youtube-nocookie.com (privacy-enhanced) is more permissive about
+  // non-standard origins than youtube.com — Tauri's iOS WebView serves
+  // pages from tauri://localhost / https://tauri.localhost, which the
+  // normal player rejects with "Error 153 — Video player configuration
+  // error" (no valid referrer). The no-cookie endpoint plays for the
+  // same set of videos in every browser context we ship to.
+  // playsinline=1 keeps the player inline on iOS instead of forcing
+  // full-screen takeover the moment the user taps Play.
+  iframe.src = `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0`;
   iframe.setAttribute("frameborder", "0");
   iframe.setAttribute(
     "allow",
-    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen",
   );
   iframe.setAttribute("allowfullscreen", "");
   iframe.setAttribute("loading", "lazy");
+  iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
   wrap.appendChild(iframe);
   return wrap;
 }

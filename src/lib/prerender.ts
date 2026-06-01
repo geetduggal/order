@@ -83,7 +83,7 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
       // <img src="youtube_url"> for `![](youtube_url)`, which loads
       // nothing. Swap it for a real iframe so the player works statically.
       const iframeFor = (id: string) =>
-        `<iframe class="order-youtube-embed" src="https://www.youtube.com/embed/${id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+        `<iframe class="order-youtube-embed" src="https://www.youtube-nocookie.com/embed/${id}?playsinline=1&amp;rel=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>`;
       html = html.replace(
         /<img\b[^>]*\bsrc="(https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^"]*|youtu\.be\/[^"]+))"[^>]*>/g,
         (full: string, url: string) => {
