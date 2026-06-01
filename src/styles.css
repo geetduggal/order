@@ -365,12 +365,23 @@ input, textarea, select { outline: none; box-shadow: none; }
 .card-grid-cell.is-full-width {
   grid-column: 1 / -1;
 }
+/* Card mount fade. Originally a 320ms opacity+translate+scale entrance,
+   but with pile-based navigation pinning a fresh section to the top of
+   the Stream on every click, all of that section's cards replay the
+   animation together — combined with the existing sections shifting
+   down underneath, it reads as a full-screen "blink". A short opacity
+   fade keeps the visual cue of "something new appeared" without the
+   motion noise. Falls back to no animation entirely when the user
+   prefers reduced motion. */
 .order-card {
-  animation: order-card-mount 320ms var(--ease-out) both;
+  animation: order-card-mount 90ms linear both;
 }
 @keyframes order-card-mount {
-  from { opacity: 0; transform: translateY(16px) scale(0.94); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0.4; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-card { animation: none; }
 }
 .order-card.is-exiting {
   animation: order-card-exit 240ms var(--ease-out) forwards !important;
