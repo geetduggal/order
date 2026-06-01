@@ -42,6 +42,11 @@ import {
   inflateImageEmbeds,
   vaultDir,
 } from "../lib/attachments";
+import {
+  inflateEmbedFencesToImage,
+  restoreEmbedFences,
+  type EmbedFenceRestore,
+} from "../lib/youtube";
 import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -361,6 +366,11 @@ export function Card(props: Props) {
   const [baseBlockRaw, setBaseBlockRaw] = useState<string | null>(null);
   const baseBlockRawRef = useRef<string | null>(null);
   useEffect(() => { baseBlockRawRef.current = baseBlockRaw; }, [baseBlockRaw]);
+  /** Original `````embed` fence text per canonical YouTube watch-URL,
+   *  populated on load. Save path consults this so the on-disk YAML
+   *  fence (title / image / description) survives the round-trip
+   *  through Crepe's image-form representation. */
+  const embedRestoreRef = useRef<EmbedFenceRestore>({ byUrl: new Map() });
   const editorBodyRef = useRef<string>("");
   useEffect(() => { editorBodyRef.current = editorBody; }, [editorBody]);
   /** Set on any user edit (text or list item). flushNow no-ops without
@@ -406,6 +416,15 @@ export function Card(props: Props) {
           rawFm = split.raw.replace(/^---\r?\n/, "").replace(/\r?\n---\r?\n?$/, "");
         }
         const noteDir = vaultDir(toVaultRel(initialPath));
+        // Transform ```embed YAML fences with YouTube `url:` lines into
+        // canonical `![](watch-url)` image embeds so Crepe parses them
+        // as images and the YouTube plugin's image-handling path can
+        // mount the iframe. The original fence text is stashed in
+        // embedRestoreRef so the save path can write it back verbatim,
+        // preserving the title / image / description metadata.
+        const embedInflate = inflateEmbedFencesToImage(body);
+        body = embedInflate.body;
+        embedRestoreRef.current = embedInflate.restore;
         const displayBody = initialBody !== undefined
           ? body
           : inflateImageEmbeds(
@@ -512,7 +531,13 @@ export function Card(props: Props) {
       const noteDir = vaultDir(toVaultRel(path));
       // tightenListSpacing: Milkdown serializes loose lists (blank line
       // between every item); write them back tight.
-      const persistedBody = tightenListSpacing(deflateImageEmbeds(outBody, noteDir));
+      // restoreEmbedFences: any YouTube image-form embed that came from a
+      // ```embed YAML fence on load is rewritten back to the original
+      // fence text so the title / image / description metadata survive.
+      const persistedBody = restoreEmbedFences(
+        tightenListSpacing(deflateImageEmbeds(outBody, noteDir)),
+        embedRestoreRef.current,
+      );
       const content = joinFrontmatter(outFrontmatter, persistedBody);
       await vaultFs.writeText(toVaultRel(path), content);
 

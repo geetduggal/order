@@ -64,3 +64,73 @@ export function deflateYoutubeEmbeds(body: string): string {
     return `![](https://www.youtube.com/watch?v=${id})`;
   });
 }
+
+// Obsidian's Auto Card Link plugin (and many similar) serialize a
+// YouTube video as a YAML-bodied fenced code block:
+//
+//   ```embed
+//   title: "..."
+//   image: "..."
+//   description: "..."
+//   url: "https://www.youtube.com/watch?v=ID"
+//   ```
+//
+// Crepe's code-block component intercepts the fence render (NodeView
+// override) so an in-editor ProseMirror plugin can't reach those nodes
+// to swap them for an iframe. Instead, we transform the embed fence to
+// the canonical image-syntax form (`![](watch-url)`) BEFORE Crepe sees
+// it, and restore each fence verbatim on save so the on-disk YAML
+// (title, image, description) survives the round trip.
+//
+// EMBED_FENCE_RE captures the fence prefix (` ``` ` plus an info word,
+// commonly `embed`, optionally followed by other text on the same line)
+// and the fence body. The body is the only thing we look at for URLs.
+const EMBED_FENCE_RE = /(```embed[^\n]*\n)([\s\S]*?)\n```/g;
+
+export interface EmbedFenceRestore {
+  /** Map from canonical watch-URL → the original fence text it came from. */
+  byUrl: Map<string, string>;
+}
+
+/** Replace `````embed` blocks whose body has a YouTube `url:` line with
+ *  the canonical `![](watch-url)` image embed form so the existing
+ *  image-handling YouTube plugin picks them up. Returns the rewritten
+ *  body PLUS a restore map so saves can put the original fence text
+ *  back when serializing. */
+export function inflateEmbedFencesToImage(body: string): {
+  body: string;
+  restore: EmbedFenceRestore;
+} {
+  const restore: EmbedFenceRestore = { byUrl: new Map() };
+  const out = body.replace(EMBED_FENCE_RE, (full, _prefix: string, inner: string) => {
+    const m = inner.match(/^\s*url\s*:\s*['"]?([^'"\n]+?)['"]?\s*$/m);
+    if (!m) return full;
+    const rawUrl = m[1].trim();
+    const id = youtubeId(rawUrl);
+    if (!id) return full;
+    const watchUrl = `https://www.youtube.com/watch?v=${id}`;
+    // Keep the FIRST fence per URL — later duplicates round-trip as
+    // image-form, which is still a valid Obsidian embed.
+    if (!restore.byUrl.has(watchUrl)) restore.byUrl.set(watchUrl, full);
+    return `![](${watchUrl})`;
+  });
+  return { body: out, restore };
+}
+
+/** Inverse of `inflateEmbedFencesToImage`: any `![](youtube_url)` whose
+ *  URL has a stashed fence in the restore map is rewritten back to the
+ *  original fence on save. Image-form embeds the user typed directly
+ *  (no stash) stay as image form. */
+export function restoreEmbedFences(body: string, restore: EmbedFenceRestore): string {
+  if (restore.byUrl.size === 0) return body;
+  // Match the image form we emitted on load (no alt; optional alt too).
+  return body.replace(
+    /!\[[^\]]*\]\((https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^)\s]+|youtu\.be\/[\w-]+(?:\?[^)\s]*)?))\)/g,
+    (full, url: string) => {
+      const id = youtubeId(url);
+      if (!id) return full;
+      const canonical = `https://www.youtube.com/watch?v=${id}`;
+      return restore.byUrl.get(canonical) ?? full;
+    },
+  );
+}
