@@ -3191,10 +3191,12 @@ iframe.order-youtube-embed {
 .event-prompt-folder {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 8px 12px 6px;
   border-top: 1px solid var(--rule-soft, var(--rule));
   margin-top: 4px;
+  min-width: 0;
 }
 .event-prompt-folder-label {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -3204,18 +3206,21 @@ iframe.order-youtube-embed {
   color: var(--ink-faint);
   white-space: nowrap;
 }
-.event-prompt-folder-select {
-  flex: 1 1 auto;
-  font-family: var(--sans);
-  font-size: 12.5px;
-  color: var(--ink);
+.event-prompt-folder-clear {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink-faint);
   background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 4px 6px;
-  outline: none;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.event-prompt-folder-select:focus { border-color: var(--royal); }
+.event-prompt-folder-clear:hover {
+  color: var(--coral);
+  background: var(--coral-soft);
+}
 
 /* Keyboard-shortcut cheat sheet — triggered by bare `?` outside text
    input. Backdrop catches clicks to dismiss; the inner card is a fixed-

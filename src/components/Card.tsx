@@ -1031,7 +1031,7 @@ interface FolderPickerProps {
   onAssign: (name: string | null) => Promise<void>;
 }
 
-function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign }: FolderPickerProps) {
+export function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign }: FolderPickerProps) {
   // The dropdown is position:fixed (positioned from the input's rect) so it
   // escapes the card grid's overflow clipping / stacking and never sits
   // behind sibling cards.

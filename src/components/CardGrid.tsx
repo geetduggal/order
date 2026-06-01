@@ -14,7 +14,7 @@ import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
-import { Card } from "./Card";
+import { Card, FolderPicker } from "./Card";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
@@ -2573,14 +2573,12 @@ export function CardGrid() {
         const defaultFolder = callerFolder ?? filterDefault ?? homeFolderRef.current ?? null;
         return (
           <CreateEventPrompt
-            availableFolders={notableFoldersRef.current}
+            availableFolders={availableFolderRefs}
             defaultFolder={defaultFolder}
             onSubmit={async (title, folder) => {
               const patch = { ...titlePrompt.patch };
               setTitlePrompt(null);
               if (title) patch.title = title;
-              // Caller-supplied folder wins only if the user kept the
-              // default; an explicit user pick (or clearing it) wins.
               if (folder) patch.folder = `[[${folder}]]`;
               else delete patch.folder;
               await createNote(patch);
@@ -2840,20 +2838,23 @@ function EventActionMenu({
 
 /** Centered title prompt shown after picking a calendar slot/range. Enter
  *  commits (even on an empty title, so it stays a fast capture); Esc and
- *  clicking the backdrop cancel. The folder dropdown is optional — the
- *  default is the active filter's single include, falling back to the
- *  home folder — so the gesture stays one-keystroke fast. */
+ *  clicking the backdrop cancel. The folder picker is optional and
+ *  visually matches the FolderPicker chip used in card footers / the
+ *  event action menu — a small colored chip with the NF name; click to
+ *  change. Tap × to drop the folder (root note). */
 function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder }: {
   onSubmit: (title: string, folder: string | null) => void | Promise<void>;
   onCancel: () => void;
-  availableFolders: string[];
+  availableFolders: { name: string; color: string }[];
   defaultFolder: string | null;
 }) {
   const [title, setTitle] = useState("");
-  const [folder, setFolder] = useState<string>(defaultFolder ?? "");
+  const [folder, setFolder] = useState<string | null>(defaultFolder);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
-  const submit = () => onSubmit(title.trim(), folder || null);
+  const submit = () => onSubmit(title.trim(), folder);
   return (
     <div className="event-prompt-overlay" onMouseDown={onCancel}>
       <div className="event-prompt" onMouseDown={(e) => e.stopPropagation()}>
@@ -2865,24 +2866,39 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
           placeholder="Event title (Enter to create, Esc to cancel)"
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void submit(); }
+            if (e.key === "Enter" && !pickerOpen) { e.preventDefault(); void submit(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
           }}
         />
         {availableFolders.length > 0 && (
-          <label className="event-prompt-folder">
-            <span className="event-prompt-folder-label">Folder</span>
-            <select
-              className="event-prompt-folder-select"
-              value={folder}
-              onChange={(e) => setFolder(e.target.value)}
-            >
-              <option value="">(none)</option>
-              {availableFolders.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
+          <div className="event-prompt-folder">
+            <span className="event-prompt-folder-label">folder</span>
+            <FolderPicker
+              current={folder}
+              available={availableFolders}
+              open={pickerOpen}
+              query={pickerQuery}
+              onOpen={() => setPickerOpen(true)}
+              onClose={() => { setPickerOpen(false); setPickerQuery(""); }}
+              onQueryChange={setPickerQuery}
+              onAssign={async (name) => {
+                setFolder(name);
+                setPickerOpen(false);
+                setPickerQuery("");
+              }}
+            />
+            {folder && (
+              <button
+                type="button"
+                className="event-prompt-folder-clear"
+                onClick={() => setFolder(null)}
+                title="Drop folder"
+                aria-label="Drop folder"
+              >
+                ×
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
