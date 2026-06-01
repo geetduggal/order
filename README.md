@@ -453,10 +453,9 @@ in pill order, so whatever you just touched sits at scrollY ~0. Other pinned
 folders stay underneath, untouched.
 
 This is the same instinct behind [PileTiddly](https://geetduggal.com/PileTiddly.html)
-from 2004 (linked in the opening above) and the [Lifestream](https://en.wikipedia.org/wiki/Lifestreams)
-work that preceded it — digital space behaves like a real desk pile. You don't
-"navigate" to something; you *put it on top*. Recently-touched things float up,
-ignored things sink, structure follows attention. Re-clicking a folder that's
+from 2004 (linked in the opening above) — digital space behaves like a real
+desk pile. You don't "navigate" to something; you *put it on top*. Recently-
+touched things float up, ignored things sink, structure follows attention. Re-clicking a folder that's
 already several layers down bubbles it back to the surface; clicking the × on
 any pill drops that layer out of the pile. The list is short by design — it's
 a pile, not a folder tree.
