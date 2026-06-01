@@ -4138,6 +4138,16 @@ iframe.order-youtube-embed {
   color: var(--coral);
   margin-left: 8px;
 }
+.cmdk-item-recent {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 8px;
+}
 
 /* ---------- Newspaper sections ---------- */
 /* Each Notable Folder renders as a "section": Main Document

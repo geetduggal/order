@@ -94,6 +94,25 @@ function writePublicOnly(on: boolean): void {
   try { localStorage.setItem(PUBLIC_ONLY_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
+// Recently-opened Notable Folder refs, most recent first, capped at 20.
+// The command palette uses this to show "Recent" entries on an empty
+// query — the search button doubles as a back-history.
+const RECENT_FOLDERS_KEY = "order.recentFolders";
+const RECENT_FOLDERS_MAX = 20;
+function readRecentFolders(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_FOLDERS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string").slice(0, RECENT_FOLDERS_MAX);
+  } catch { return []; }
+}
+function writeRecentFolders(list: string[]): void {
+  try { localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify(list.slice(0, RECENT_FOLDERS_MAX))); }
+  catch { /* non-fatal */ }
+}
+
 // Filter model (`Filter`, pill stack) is shared with the web viewer
 // via ../lib/filters + ./FilterPillStack.
 //
@@ -357,6 +376,17 @@ export function CardGrid() {
    *  the focused note is gone (deleted / out of view). */
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
+  // Recently-opened Notable Folders — surfaced by the command palette
+  // on an empty query so the search button doubles as a back-history.
+  const [recentFolders, setRecentFolders] = useState<string[]>(readRecentFolders);
+  const markFolderRecent = useCallback((ref: string) => {
+    if (!ref) return;
+    setRecentFolders((prev) => {
+      const next = [ref, ...prev.filter((r) => r !== ref)].slice(0, RECENT_FOLDERS_MAX);
+      writeRecentFolders(next);
+      return next;
+    });
+  }, []);
   // Note text size — shared with the Cmd± shortcuts in App via the
   // text-scale module (font-size scaling, not page zoom, so the editor
   // caret stays aligned). The rail +/- buttons step it.
@@ -466,12 +496,15 @@ export function CardGrid() {
       if (targetFolder && !includeSetRef.current.has(targetFolder)) {
         setFilters((prev) => [...prev, { kind: "include", ref: targetFolder }]);
       }
-      if (targetFolder) setFocusedFolder(targetFolder);
+      if (targetFolder) {
+        setFocusedFolder(targetFolder);
+        markFolderRecent(targetFolder);
+      }
     }
     setScrollTargetPath(path);
     setFocusPath(path);
     setFocusedPath(path);
-  }, []);
+  }, [markFolderRecent]);
   /** Add an include filter AND scroll the stream to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
@@ -656,16 +689,30 @@ export function CardGrid() {
       const external: string[] = [];
       for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
       if (external.length === 0) return;
-      // Content-aware filter: only the paths whose bodies actually
+      // Content-aware filter: only paths whose bodies actually
       // differ get a version bump (which would remount the Card).
-      // The reload still runs so new / removed files reach the index.
+      // Pure mtime touches from Dropbox / iCloud sync (the dominant
+      // source of churn on a cloud-synced vault) drop here.
       const changed: string[] = [];
       for (const p of external) {
         if (await bodyActuallyChanged(p)) changed.push(p);
         if (cancelled) return;
       }
-      if (changed.length > 0) bumpExternal(changed);
+      if (changed.length === 0) return;
+      // Only reload when real content changed. The old path scheduled
+      // a reload on every mtime touch — which on iOS, where the bridge
+      // is slow and the reload re-reads every note body, produced a
+      // visible jump every poll cycle even when nothing changed.
+      bumpExternal(changed);
       if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
+    }
+    /** Force a reload regardless of content-change status — for the
+     *  add / remove case where the file list itself shifted, not just
+     *  mtimes on existing files. */
+    function scheduleReload() {
+      if (cancelled) return;
+      if (reloadTimer) return;
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
     }
     async function startWatcher() {
@@ -673,7 +720,17 @@ export function CardGrid() {
       if (!root || cancelled) return;
       try {
         await invoke("start_watcher", { path: root });
-        unlisten = await listen<string[]>("vault-changed", (e) => reportExternal(e.payload ?? []));
+        unlisten = await listen<string[]>("vault-changed", (e) => {
+          // OS-level event from the notify watcher: handle content
+          // changes via the content-aware path AND force an index
+          // reload so brand-new / deleted files reach the Stream.
+          // (The watcher doesn't distinguish create/delete from
+          // modify; reload is cheap relative to body re-reads, and
+          // happens at most once per 250ms via the timer.)
+          const paths = e.payload ?? [];
+          void reportExternal(paths);
+          scheduleReload();
+        });
       } catch (err) {
         // Non-fatal: poller below still gives us a freshness signal.
         console.warn("watcher start failed (poller will cover):", err);
@@ -684,22 +741,42 @@ export function CardGrid() {
         const meta = await vaultFs.walkMetadata();
         const changed: string[] = [];
         const seen = new Set<string>();
+        let added = false;
         for (const m of meta) {
           seen.add(m.path);
           const prev = lastMtime.get(m.path);
-          // First sighting just seeds the table (no false reports on
-          // startup). Subsequent mtime changes are external candidates.
-          if (prev === undefined) lastMtime.set(m.path, m.mtimeMs);
-          else if (m.mtimeMs !== prev) {
+          if (prev === undefined) {
+            lastMtime.set(m.path, m.mtimeMs);
+            // The very first sighting after mount just seeds the
+            // table — that's the bootstrap pass, not a real "add".
+            // A second-or-later pass that finds a NEW path means a
+            // file actually appeared in the vault.
+            if (!firstPoll) added = true;
+          } else if (m.mtimeMs !== prev) {
             lastMtime.set(m.path, m.mtimeMs);
             changed.push(m.path);
           }
         }
-        for (const p of [...lastMtime.keys()]) if (!seen.has(p)) lastMtime.delete(p);
-        if (changed.length > 0) reportExternal(changed);
+        let removed = false;
+        for (const p of [...lastMtime.keys()]) {
+          if (!seen.has(p)) { lastMtime.delete(p); removed = true; }
+        }
+        // Reload only when the file set itself shifted; pure mtime
+        // touches go through the content-aware reportExternal path,
+        // which on iOS no longer triggers a heavy reload-every-cycle
+        // when Dropbox / iCloud touches a file without changing it.
+        if (added || removed) scheduleReload();
+        if (changed.length > 0) void reportExternal(changed);
+        firstPoll = false;
       } catch { /* sleep + retry */ }
-      if (!cancelled) pollTimer = setTimeout(pollOnce, 4000);
+      // Slow poll on iOS: 15s instead of 4s. iOS walk is much more
+      // expensive (security-scoped bookmark + sandboxed FS) and the
+      // content-aware filter already absorbs cloud-sync noise, so a
+      // longer cycle costs nothing perceptually while saving battery
+      // and stopping the every-few-seconds index churn the user saw.
+      if (!cancelled) pollTimer = setTimeout(pollOnce, isIosSync() ? 15000 : 4000);
     }
+    let firstPoll = true;
     async function start() {
       const root = await syncVaultRoot();
       if (!root || cancelled) return;
@@ -2437,6 +2514,7 @@ export function CardGrid() {
           selected={includeSet}
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
+          recents={recentFolders}
         />
       )}
 
