@@ -718,6 +718,11 @@ export function CardGrid() {
   // with an empty-ish dep array, so the latest filters / notable-folder
   // order need to flow in via a mutable ref.
   const notableFoldersRef = useRef<string[]>([]);
+  /** Live mirrors of the current Notable-Folder filter set so the
+   *  empty-deps `createNote` callback can ask "what folder is the
+   *  user currently filtered to?" without a stale closure. */
+  const notableIncludesRef = useRef<string[]>([]);
+  const includeSetRef = useRef<Set<string>>(new Set());
   const filtersRef = useRef<Filter[]>([]);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
 
@@ -1342,85 +1347,154 @@ export function CardGrid() {
   useEffect(() => {
     if (view !== "stream" || !scrollTargetPath) return;
     const target = scrollTargetPath;
-    let stickTimer: ReturnType<typeof setInterval> | null = null;
-    let userScrolled = false;
-    const onUserScroll = () => { userScrolled = true; };
-    const timer = setTimeout(() => {
+    let cleanedUp = false;
+    const cleanups: Array<() => void> = [];
+    const addCleanup = (fn: () => void) => cleanups.push(fn);
+    const teardown = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      while (cleanups.length) cleanups.pop()!();
+    };
+
+    // Initial settle wait: Crepe / ProseMirror mounts and the masonry
+    // remeasure schedule each take ~150-200 ms before card heights
+    // are remotely final. Wait long enough for the *first* good
+    // measurement; the observer below catches everything after.
+    const settleTimer = setTimeout(() => {
       // Query the document, not a single grid — newspaper mode renders
       // many per-section grids, so the flat `gridEl` is null there.
       const cell = document.querySelector<HTMLElement>(
         `.card-grid-cell[data-path="${CSS.escape(target)}"]`,
       );
-      if (cell) {
-        // Land the TOP of the card at the vertical center of the
-        // viewport — the user wants to see the title/start of the
-        // note regardless of card height, with breathing room above
-        // and the body unfurling below.
-        const viewportH = window.innerHeight || document.documentElement.clientHeight;
-        const targetScrollFor = (el: HTMLElement) => {
-          const rect = el.getBoundingClientRect();
-          const cellTopAbs = window.scrollY + rect.top;
-          return Math.max(0, cellTopAbs - viewportH / 2);
-        };
-        window.scrollTo({ top: targetScrollFor(cell), behavior: "smooth" });
-        cell.classList.add("is-target");
-        setTimeout(() => cell.classList.remove("is-target"), 1400);
-        // Imperatively focus the editor — covers the case where the
-        // Card was already mounted (no key change, so autoFocus prop
-        // alone wouldn't re-fire).
-        const pm = cell.querySelector<HTMLElement>(".ProseMirror");
-        pm?.focus({ preventScroll: true });
-        // Stick to the target: masonry recomputes and image-loads
-        // shift the cell's position after the initial scroll, so the
-        // target often slips out of view. Re-pin every 100 ms for
-        // 1500 ms (or until the user takes over by scrolling
-        // manually). We listen for *input* gestures (wheel/touch/key)
-        // — programmatic scrollTo also fires `scroll`, so reacting to
-        // that would make the smooth scroll itself look like user
-        // intent and the stick loop would never run.
-        window.addEventListener("wheel", onUserScroll, { passive: true });
-        window.addEventListener("touchmove", onUserScroll, { passive: true });
-        window.addEventListener("keydown", onUserScroll, { passive: true });
-        const start = performance.now();
-        const reCenter = () => {
-          if (userScrolled) return;
-          if (!cell.isConnected) return;
+      if (!cell) {
+        teardown();
+        return;
+      }
+      const viewportH = () => window.innerHeight || document.documentElement.clientHeight;
+      const targetScrollFor = (el: HTMLElement) => {
+        const rect = el.getBoundingClientRect();
+        const cellTopAbs = window.scrollY + rect.top;
+        return Math.max(0, cellTopAbs - viewportH() / 2);
+      };
+      // Land the TOP of the card at the vertical center of the
+      // viewport so the user sees the title/start of the note with
+      // breathing room above and the body unfurling below.
+      window.scrollTo({ top: targetScrollFor(cell), behavior: "smooth" });
+      cell.classList.add("is-target");
+      const pulseTimer = setTimeout(() => cell.classList.remove("is-target"), 1400);
+      addCleanup(() => clearTimeout(pulseTimer));
+      // Imperatively focus the editor — covers cards that were
+      // already mounted (autoFocus prop alone won't re-fire on the
+      // same React instance).
+      const pm = cell.querySelector<HTMLElement>(".ProseMirror");
+      pm?.focus({ preventScroll: true });
+
+      // Stick-to-target: instead of polling every 100ms and bailing
+      // on touchmove (iOS momentum bounce fires synthetic touchmove
+      // events well after the finger lifts — that was killing the
+      // lock on mobile), observe what actually moves the card:
+      //   - ResizeObserver on the cell  → its own height changing as
+      //                                    Milkdown finishes, images
+      //                                    load, fonts settle
+      //   - MutationObserver on the grid → masonry row-span writes,
+      //                                    sibling cards growing
+      // Recenter whenever the cell's top drifts > 80px (absolute,
+      // not a viewport fraction — a small card on a tall phone needs
+      // the same threshold as a tall card on a desktop).
+      let userScrolled = false;
+      let pointerDownAt: { x: number; y: number } | null = null;
+      const PT_THRESHOLD = 8;
+      let lastMutationAt = performance.now();
+      const onPointerDown = (e: PointerEvent) => {
+        pointerDownAt = { x: e.clientX, y: e.clientY };
+      };
+      const onPointerMove = (e: PointerEvent) => {
+        if (!pointerDownAt) return;
+        const dx = e.clientX - pointerDownAt.x;
+        const dy = e.clientY - pointerDownAt.y;
+        if (dx * dx + dy * dy > PT_THRESHOLD * PT_THRESHOLD) {
+          userScrolled = true;
+        }
+      };
+      const onPointerUp = () => { pointerDownAt = null; };
+      const onWheel = () => { userScrolled = true; };
+      const onKeyDown = (e: KeyboardEvent) => {
+        // Arrow / page / space / home / end — anything that scrolls.
+        // Plain keystrokes inside the focused editor don't, and
+        // shouldn't kill the lock.
+        if (/Arrow|Page|Home|End|Space/.test(e.code)) userScrolled = true;
+      };
+      window.addEventListener("wheel", onWheel, { passive: true });
+      window.addEventListener("pointerdown", onPointerDown, { passive: true });
+      window.addEventListener("pointermove", onPointerMove, { passive: true });
+      window.addEventListener("pointerup", onPointerUp, { passive: true });
+      window.addEventListener("pointercancel", onPointerUp, { passive: true });
+      window.addEventListener("keydown", onKeyDown, { passive: true });
+      addCleanup(() => window.removeEventListener("wheel", onWheel));
+      addCleanup(() => window.removeEventListener("pointerdown", onPointerDown));
+      addCleanup(() => window.removeEventListener("pointermove", onPointerMove));
+      addCleanup(() => window.removeEventListener("pointerup", onPointerUp));
+      addCleanup(() => window.removeEventListener("pointercancel", onPointerUp));
+      addCleanup(() => window.removeEventListener("keydown", onKeyDown));
+
+      let recenterRaf: number | null = null;
+      const scheduleRecenter = () => {
+        if (userScrolled || !cell.isConnected) return;
+        if (recenterRaf !== null) return;
+        recenterRaf = requestAnimationFrame(() => {
+          recenterRaf = null;
+          if (userScrolled || !cell.isConnected) return;
           const rect = cell.getBoundingClientRect();
-          // Distance the card-top has drifted from the viewport
-          // center after the initial smooth scroll. If masonry/image
-          // loads have pushed it more than a fifth of the viewport
-          // away, snap it back instantly (no animation — avoids the
-          // pogo-stick effect when masonry resettles repeatedly).
-          const drift = Math.abs(rect.top - viewportH / 2);
-          if (drift > viewportH * 0.2) {
+          const drift = Math.abs(rect.top - viewportH() / 2);
+          if (drift > 80) {
             window.scrollTo({ top: targetScrollFor(cell), behavior: "auto" });
           }
-        };
-        stickTimer = setInterval(() => {
-          if (userScrolled || performance.now() - start > 1500) {
-            if (stickTimer) clearInterval(stickTimer);
-            stickTimer = null;
-            window.removeEventListener("wheel", onUserScroll);
-            window.removeEventListener("touchmove", onUserScroll);
-            window.removeEventListener("keydown", onUserScroll);
-            return;
-          }
-          reCenter();
-        }, 100);
-      }
+        });
+      };
+
+      // Watch the cell's own size.
+      const ro = new ResizeObserver(() => {
+        lastMutationAt = performance.now();
+        scheduleRecenter();
+      });
+      ro.observe(cell);
+      addCleanup(() => ro.disconnect());
+
+      // Watch the grid for new cells / row-span attribute writes
+      // (masonry layout). MutationObserver on the parent catches
+      // sibling height changes that affect this cell's position.
+      const grid = cell.closest(".card-grid") ?? cell.parentElement;
+      const mo = grid
+        ? new MutationObserver(() => {
+            lastMutationAt = performance.now();
+            scheduleRecenter();
+          })
+        : null;
+      mo?.observe(grid!, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+      addCleanup(() => mo?.disconnect());
+
+      // Hard ceiling: stop watching after 3 s of no observed mutations.
+      // 6 s absolute cap so we never run forever even on a janky page.
+      const start = performance.now();
+      const idleCheck = setInterval(() => {
+        const now = performance.now();
+        const idle = now - lastMutationAt;
+        if (userScrolled || idle > 3000 || now - start > 6000) {
+          clearInterval(idleCheck);
+          teardown();
+        }
+      }, 250);
+      addCleanup(() => clearInterval(idleCheck));
+      if (recenterRaf !== null) addCleanup(() => cancelAnimationFrame(recenterRaf!));
+
       setScrollTargetPath(null);
       // Drop the autoFocus flag once the Card has had time to
       // consume it; otherwise re-renders far in the future would
       // still re-fire focus on the same card.
       setFocusPath(null);
-    }, 120);
-    return () => {
-      clearTimeout(timer);
-      if (stickTimer) clearInterval(stickTimer);
-      window.removeEventListener("wheel", onUserScroll);
-      window.removeEventListener("touchmove", onUserScroll);
-      window.removeEventListener("keydown", onUserScroll);
-    };
+    }, 250);
+    addCleanup(() => clearTimeout(settleTimer));
+    return teardown;
   }, [view, scrollTargetPath]);
 
   // Calendar-create title prompt. The calendar views call promptCreate
@@ -1439,11 +1513,22 @@ export function CardGrid() {
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
-    // Catch-all: a new capture with no explicit folder lands in the
-    // home Notable Folder (the one whose YAML carries `home: "..."`).
-    // Empty vaults skip this and the file just goes at root.
-    if (!frontmatter.folder && homeFolderRef.current) {
-      frontmatter.folder = `[[${homeFolderRef.current}]]`;
+    // Folder resolution priority:
+    //   1. caller supplied `folder` (calendar quick-create from a
+    //      pinned section, dock new-note picker, etc.)
+    //   2. exactly one Notable Folder is active in the include filter
+    //      — drop the new note there so it shows up under the filter
+    //      the user is currently looking at, instead of landing in
+    //      home and disappearing
+    //   3. home Notable Folder
+    // Empty vault skips all three and the file just goes at root.
+    if (!frontmatter.folder) {
+      const activeIncludes = notableIncludesRef.current;
+      if (activeIncludes.length === 1) {
+        frontmatter.folder = `[[${activeIncludes[0]}]]`;
+      } else if (homeFolderRef.current) {
+        frontmatter.folder = `[[${homeFolderRef.current}]]`;
+      }
     }
     // New note's directory = the linked folder's directory in the
     // chain (e.g., Creative/Creative Spaces/Geet Duggal/). We find
@@ -1465,6 +1550,14 @@ export function CardGrid() {
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: title || "Untitled", body: seedBody, mtime: Date.now() },
     ]);
+    // Visibility safety net: if a filter is active and the new note's
+    // folder isn't part of the include set, additively add it so the
+    // card lands on screen instead of being hidden behind a filter
+    // the user just authored under. Keeps the user's existing filter
+    // intent intact (doesn't clear) — additive, like a wikilink click.
+    if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
+      setFilters((prev) => [...prev, { kind: "include", ref: folderRef }]);
+    }
     // Land focus + scroll on the new note. Both Stream and the
     // calendar views consume scrollTargetPath; the Card itself
     // picks up autoFocus on mount.
@@ -1728,6 +1821,8 @@ export function CardGrid() {
   // filters — areas/categories/other includes are not valid targets.
   const notableNames = new Set(notableFolders.map((f) => f.name));
   const notableIncludes = [...includeSet].filter((name) => notableNames.has(name));
+  notableIncludesRef.current = notableIncludes;
+  includeSetRef.current = includeSet;
 
   // Minimal vault index for resolving `- [[Name]]` bullets and
   // evaluating `base` blocks. `folder` is the dirname's last segment
