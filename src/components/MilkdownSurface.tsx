@@ -24,7 +24,6 @@ function isTauri(): boolean {
 import { join } from "@tauri-apps/api/path";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
-import { videoEmbedPlugin } from "../lib/milkdown-video";
 import { youtubeId } from "../lib/youtube";
 import type { WikiRef } from "../lib/wikilink";
 
@@ -117,11 +116,6 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       crepe.editor.use(youtubeEmbedPlugin());
     } catch (err) {
       console.warn("youtube embed plugin registration failed:", err);
-    }
-    try {
-      crepe.editor.use(videoEmbedPlugin());
-    } catch (err) {
-      console.warn("video embed plugin registration failed:", err);
     }
 
     crepe

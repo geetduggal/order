@@ -115,12 +115,17 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
   return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
-    // Both image AND video embeds round-trip as `![[file.ext]]` on
-    // disk; videos come through the same image-syntax inflation so
-    // Crepe sees a node we can later transform into a <video> via a
-    // ProseMirror plugin (see milkdown-video.ts), exactly the same
-    // pattern as the YouTube image-form path.
-    if (!isMediaPath(target)) return full;
+    if (isVideoPath(target)) {
+      // Videos render as a raw HTML <video> block — emitting image
+      // syntax (`![](vaultasset://…mov)`) makes Crepe's image-block
+      // component try to mount it as a broken-image placeholder AND
+      // a parallel video plugin would duplicate the playback (we
+      // hit exactly that bug). HTML blocks pass through commonmark
+      // unchanged and the WebView renders them as a real <video>.
+      const url = assetUrl(`${dir}${target}`);
+      return `\n<video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video>\n`;
+    }
+    if (!isImagePath(target)) return full;
     const url = assetUrl(`${dir}${target}`);
     const width = parseEmbedWidth(size);
     if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
@@ -157,6 +162,19 @@ export function deflateImageEmbeds(body: string, noteDir: string): string {
     // stray Crepe paste artifact). Also consume trailing blank space so
     // we don't leave a dangling empty paragraph.
     .replace(/!\[[^\]]*\]\(blob:[^)\s]+\)[ \t]*\n?/g, "")
+    // <video src="vaultasset://…X.mov"> → ![[X.mov]] (inverse of the
+    // HTML form emitted by inflateImageEmbeds for video extensions).
+    // Match either order of the attributes by parsing the src out of
+    // the tag's attribute list.
+    .replace(/[ \t]*<video\b[^>]*?\bsrc="(vaultasset:\/\/localhost\/[^"]+)"[^>]*>\s*<\/video>[ \t]*\n?/g,
+      (_full, url: string) => {
+        const rest = url.slice(VAULTASSET_BASE.length);
+        let rel = rest;
+        try { rel = decodeURI(rest); } catch { /* keep raw */ }
+        if (dir && rel.startsWith(dir)) return `![[${rel.slice(dir.length)}]]\n`;
+        if (!dir && !rel.includes("/")) return `![[${rel}]]\n`;
+        return `![[${rel.split("/").pop()}]]\n`;
+      })
     .replace(VAULTASSET_IMG_RE, (_full, alt: string, url: string) => {
     const rest = url.slice(VAULTASSET_BASE.length);
     let rel = rest;
