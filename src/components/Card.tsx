@@ -47,7 +47,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -328,6 +328,12 @@ export function Card(props: Props) {
    *  the body actually exceeds the cap (only then do we show the
    *  fade + Read more). */
   const [expanded, setExpanded] = useState(false);
+  /** Frontmatter strip collapsed (just the `{ }` toggle) vs. shown
+   *  (full key/value pairs). Default is initialized once state loads:
+   *  collapsed when the body has substantial content (the user is
+   *  reading prose; YAML metadata is a distraction), shown when the
+   *  body is essentially empty (the YAML IS the content). */
+  const [fmCollapsed, setFmCollapsed] = useState<boolean | null>(null);
   const [overflowing, setOverflowing] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -774,6 +780,25 @@ export function Card(props: Props) {
   useEffect(() => {
     if (focusedProp) setExpanded(true);
   }, [focusedProp]);
+  // Decide frontmatter strip default once the body is loaded.
+  // "Substantial" = anything beyond a single H1 heading (with
+  // surrounding whitespace) — so a calendar event that's just
+  // "# Some title" still surfaces its YAML, but a note with even
+  // one paragraph of prose collapses the strip out of the way.
+  useEffect(() => {
+    if (state.kind !== "ready" || fmCollapsed !== null) return;
+    const body = state.body || "";
+    // Strip everything that's "just the title" — leading whitespace,
+    // an H1 line, and trailing whitespace. Anything left counts as
+    // substantial. Setext-style headings (=== underlines) and HTML
+    // block tags like <br /> are also peeled off.
+    const remainder = body
+      .replace(/^\s*#\s+[^\n]*\n?/, "")
+      .replace(/^\s*[^\n]+\n=+\s*\n?/, "")
+      .replace(/^\s*<br\s*\/?>\s*/i, "")
+      .trim();
+    setFmCollapsed(remainder.length > 0);
+  }, [state, fmCollapsed]);
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
@@ -947,16 +972,43 @@ export function Card(props: Props) {
         </button>
       )}
       {Object.keys(state.frontmatter).length > 0 && (
-        <footer className="order-card-fm" aria-label="Frontmatter">
-          {Object.entries(state.frontmatter).map(([k, v]) => (
-            <span className="order-card-fm-pair" key={k}>
-              <span className="order-card-fm-key">{k}</span>
-              <span className="order-card-fm-val">
-                <FmValue value={v} onNavigate={handleWikiNavigate} />
-              </span>
-            </span>
-          ))}
-        </footer>
+        fmCollapsed
+          ? (
+            <footer className="order-card-fm is-collapsed" aria-label="Frontmatter (collapsed)">
+              <button
+                type="button"
+                className="order-card-fm-toggle"
+                onClick={() => setFmCollapsed(false)}
+                title="Show frontmatter"
+                aria-label="Show frontmatter"
+                aria-expanded={false}
+              >
+                <Braces size={12} strokeWidth={2} />
+              </button>
+            </footer>
+          )
+          : (
+            <footer className="order-card-fm" aria-label="Frontmatter">
+              <button
+                type="button"
+                className="order-card-fm-toggle"
+                onClick={() => setFmCollapsed(true)}
+                title="Hide frontmatter"
+                aria-label="Hide frontmatter"
+                aria-expanded={true}
+              >
+                <Braces size={12} strokeWidth={2} />
+              </button>
+              {Object.entries(state.frontmatter).map(([k, v]) => (
+                <span className="order-card-fm-pair" key={k}>
+                  <span className="order-card-fm-key">{k}</span>
+                  <span className="order-card-fm-val">
+                    <FmValue value={v} onNavigate={handleWikiNavigate} />
+                  </span>
+                </span>
+              ))}
+            </footer>
+          )
       )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>
@@ -992,7 +1044,12 @@ export function Card(props: Props) {
             {category && <span>{category}</span>}
           </span>
         )}
-        {!area && !category && (
+        {/* Folder picker stays available even when an Area › Category
+            breadcrumb is showing, so the user can re-select the
+            Notable Folder for a note that already lives in one. The
+            breadcrumb shows where the note is in the taxonomy; the
+            chip shows which NF it's assigned to. */}
+        {onAssignFolder && (
           <FolderPicker
             current={currentFolder ?? null}
             available={availableFolders ?? []}

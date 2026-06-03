@@ -759,6 +759,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-fm {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 12px;
   margin: 8px 0 4px;
   padding: 6px 0 0;
@@ -767,6 +768,32 @@ input, textarea, select { outline: none; box-shadow: none; }
   line-height: 1.45;
   color: var(--ink-faint);
 }
+.order-card-fm.is-collapsed {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 4px;
+  justify-content: flex-end;
+}
+.order-card-fm-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin-right: 2px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0.55;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.order-card-fm-toggle:hover {
+  opacity: 1;
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.order-card-fm.is-collapsed .order-card-fm-toggle { margin-right: 0; }
 .order-card-fm-pair {
   display: inline-flex;
   align-items: baseline;
