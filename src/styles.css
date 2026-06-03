@@ -1077,6 +1077,30 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   background: black;
 }
+/* Obsidian-style ![[file.mov]] video embeds. inflateImageEmbeds rewrites
+   the wikilink into image syntax pointing at a vaultasset:// URL; the
+   videoEmbedPlugin then hides that broken <img> via `.is-video-source`
+   and mounts a native <video controls> alongside. */
+.milkdown-host .ProseMirror .milkdown-image-block.is-video-source,
+.milkdown-host .ProseMirror p.is-video-source,
+.milkdown-host .ProseMirror figure.is-video-source,
+.milkdown-host .ProseMirror div.is-video-source,
+.milkdown-host .ProseMirror img.is-video-source {
+  display: none !important;
+}
+.milkdown-host .ProseMirror .order-video-embed-wrap,
+.order-video-embed-wrap {
+  margin: 1em 0;
+}
+.milkdown-host .ProseMirror video.order-video-embed,
+video.order-video-embed {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: black;
+}
 /* iOS thumbnail-card fallback for the YouTube embed: a clickable
    preview that opens the video in the native YouTube app / Safari
    instead of trying to mount the in-WebView player (which fails with

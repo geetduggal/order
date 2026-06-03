@@ -56,10 +56,21 @@ export function deflateAttachmentUrls(body: string, assetPrefix: string): string
 
 const VAULTASSET_BASE = "vaultasset://localhost/";
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp|tiff?|heic|heif)$/i;
+const VIDEO_EXT_RE = /\.(mov|mp4|m4v|webm)$/i;
 
 /** True if `name` looks like an image file (by extension). */
 export function isImagePath(name: string): boolean {
   return IMAGE_EXT_RE.test(name.trim());
+}
+
+/** True if `name` looks like a video file Obsidian/Order can embed. */
+export function isVideoPath(name: string): boolean {
+  return VIDEO_EXT_RE.test(name.trim());
+}
+
+/** True if `name` is anything we round-trip as a `![[…]]` embed. */
+export function isMediaPath(name: string): boolean {
+  return isImagePath(name) || isVideoPath(name);
 }
 
 /** Build the vaultasset:// URL for a vault-relative path. encodeURI keeps
@@ -104,27 +115,29 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
   return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
-    if (!isImagePath(target)) return full;
+    // Both image AND video embeds round-trip as `![[file.ext]]` on
+    // disk; videos come through the same image-syntax inflation so
+    // Crepe sees a node we can later transform into a <video> via a
+    // ProseMirror plugin (see milkdown-video.ts), exactly the same
+    // pattern as the YouTube image-form path.
+    if (!isMediaPath(target)) return full;
     const url = assetUrl(`${dir}${target}`);
     const width = parseEmbedWidth(size);
     if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
-    // Preserve a text caption (`|Dimensions and Layout`) as alt text
-    // so the editor can render it under the image. Pure numeric
-    // alt-only ratio values are handled by parseEmbedWidth above; an
-    // unsized embed with no pipe gets an empty alt as before.
     const alt = size?.trim() ?? "";
     return alt ? `![${alt}](${url})` : `![](${url})`;
   });
 }
 
-/** Image filenames referenced by `![[file]]` embeds (same-folder images),
- *  e.g. to move them alongside a relocated note. Legacy `![](Attachments/…)`
- *  images live in the shared dir and are intentionally excluded. */
+/** Image AND video filenames referenced by `![[file]]` embeds (same-
+ *  folder media), e.g. to move them alongside a relocated note.
+ *  Legacy `![](Attachments/…)` images live in the shared dir and are
+ *  intentionally excluded. */
 export function embeddedImageFiles(body: string): string[] {
   const out: string[] = [];
   for (const m of body.matchAll(IMG_EMBED_RE)) {
     const file = m[1]?.trim();
-    if (file && isImagePath(file)) out.push(file);
+    if (file && isMediaPath(file)) out.push(file);
   }
   return out;
 }

@@ -6,7 +6,7 @@
 // `/<sub>/<slug>/`), and the same-folder files must be copied to sit
 // next to that page so a direct image URL works.
 
-import { isImagePath } from "./attachments";
+import { isMediaPath } from "./attachments";
 
 /** A file to copy at publish time: `from` is vault-relative, `to` is
  *  relative to the publish target dir. */
@@ -42,7 +42,11 @@ export function rewritePublishedImages(
 
   let out = body.replace(IMG_EMBED_RE, (full, name: string) => {
     const file = name.trim();
-    if (!isImagePath(file)) return full; // non-image embed: leave it
+    // Image AND video embeds round-trip identically: copy the file to
+    // sit next to the note's page, rewrite the ref to a root-absolute
+    // URL. The marked → prerender pass swaps video-extension <img>
+    // tags for <video controls>.
+    if (!isMediaPath(file)) return full;
     assets.push({ from: `${dir}${file}`, to: `${slug}/${file}` });
     const url = `/${sub}/${slug}/${encodeURI(file)}`;
     // Drop any Obsidian width token: Crepe's viewer interprets a numeric

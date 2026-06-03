@@ -79,6 +79,15 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
         (_m, pre: string, ratio: string, post: string) =>
           `<img${pre}${post} style="width:${Math.round(parseFloat(ratio) * EMBED_REF_WIDTH)}px;max-width:100%">`,
       );
+      // Obsidian-style video embeds (![[file.mov]] → inflateImageEmbeds
+       // rewrote it to <img src="…video.mov"> via marked). Replace those
+       // with a native <video controls> so the static page actually
+       // plays the file (and is curl/unfurl-friendly).
+      html = html.replace(
+        /<img\b[^>]*\bsrc="([^"]*\.(?:mov|mp4|m4v|webm))(\?[^"]*)?"[^>]*>/gi,
+        (_m, src: string, qs: string | undefined) =>
+          `<video class="order-video-embed" controls playsinline preload="metadata" src="${src}${qs ?? ""}"></video>`,
+      );
       // Obsidian YouTube embeds (image syntax): marked emits
       // <img src="youtube_url"> for `![](youtube_url)`, which loads
       // nothing. Swap it for a real iframe so the player works statically.

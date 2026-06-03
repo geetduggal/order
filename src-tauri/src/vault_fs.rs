@@ -276,6 +276,10 @@ pub fn mime_for(rel: &str) -> &'static str {
         Some("avif") => "image/avif",
         Some("bmp") => "image/bmp",
         Some("pdf") => "application/pdf",
+        // QuickTime .mov and H.264/H.265 .mp4 both ride the mp4 container
+        // in practice — Safari / WebKit play either as `video/mp4`.
+        Some("mov") | Some("mp4") | Some("m4v") => "video/mp4",
+        Some("webm") => "video/webm",
         _ => "application/octet-stream",
     }
 }
