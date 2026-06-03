@@ -2431,10 +2431,14 @@ iframe.order-youtube-embed {
 .dock-tools-popup {
   position: fixed;
   bottom: calc(72px + env(safe-area-inset-bottom));
-  /* Anchor over the right-ish side of the dock where the settings
-     button sits. Approximate; exact alignment isn't critical. */
+  /* Center above the dock with a viewport-aware max-width — earlier
+     this was translateX(40%) to point at the settings button on the
+     right side of the dock, but on a phone that pushed the popup's
+     right edge clean off the screen. Centering it above the dock
+     reads as "above the dock controls" and always fits. */
   left: 50%;
-  transform: translateX(40%);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 16px);
   z-index: 230;
   min-width: 220px;
   padding: 4px;
@@ -2866,7 +2870,7 @@ iframe.order-youtube-embed {
      the mount-animation transform) so the dropdown isn't occluded. */
   z-index: 250;
   min-width: 180px;
-  max-width: 260px;
+  max-width: min(260px, calc(100vw - 16px));
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--rule);

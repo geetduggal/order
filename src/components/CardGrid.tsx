@@ -1756,7 +1756,9 @@ export function CardGrid() {
 
   const handleCardRenamed = useCallback((id: string, newPath: string) => {
     const newFilename = newPath.split("/").pop() ?? newPath;
-    const oldName = notesRef.current?.find((n) => n.id === id)?.filename.replace(/\.md$/i, "") ?? null;
+    const prevNote = notesRef.current?.find((n) => n.id === id);
+    const oldPath = prevNote?.path ?? null;
+    const oldName = prevNote?.filename.replace(/\.md$/i, "") ?? null;
     const newName = newFilename.replace(/\.md$/i, "");
     setNotes((prev) =>
       prev?.map((n) =>
@@ -1765,6 +1767,16 @@ export function CardGrid() {
           : n,
       ) ?? null,
     );
+    // The card we just renamed may be the user's currently-focused
+    // editor — if its OLD path is in any of our path-tracking refs,
+    // forward them to the NEW path so the cleanup effect doesn't
+    // clear focusedPath (which would change the React key and
+    // remount the Card, dropping the user out of edit mode).
+    if (oldPath) {
+      setFocusedPath((p) => (p === oldPath ? newPath : p));
+      setFocusPath((p) => (p === oldPath ? newPath : p));
+      setScrollTargetPath((p) => (p === oldPath ? newPath : p));
+    }
     // Keep inbound links pointing at the new name.
     if (oldName && oldName !== newName) void rewriteInboundWikilinks(oldName, newName);
   }, [rewriteInboundWikilinks]);
@@ -1818,6 +1830,11 @@ export function CardGrid() {
         n.path === path
           ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }
           : n) ?? null);
+      // Forward path-tracking state so the focused card's React key
+      // stays stable across the move (otherwise edit mode is lost).
+      setFocusedPath((p) => (p === path ? newPath : p));
+      setFocusPath((p) => (p === path ? newPath : p));
+      setScrollTargetPath((p) => (p === path ? newPath : p));
       return;
     }
 
