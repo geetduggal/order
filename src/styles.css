@@ -1114,6 +1114,7 @@ video.order-vault-video {
   margin: 1em 0;
 }
 .order-youtube-card {
+  position: relative;
   display: flex;
   align-items: stretch;
   max-width: 560px;
@@ -1192,6 +1193,34 @@ video.order-vault-video {
   .order-youtube-card { flex-direction: column; max-width: 100%; }
   .order-youtube-card-thumb { flex: 0 0 auto; width: 100%; }
   .order-youtube-card-play { font-size: clamp(40px, 9vw, 64px); }
+}
+/* Debug-tap status pill — temporary visual confirmation of which
+   open path fired so iOS dead-tap problems can be diagnosed without
+   devtools. Hidden by default; fades in for ~2.5s after each tap. */
+.order-youtube-card-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: white;
+  background: rgba(0, 0, 0, 0.78);
+  padding: 3px 8px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.16s var(--ease-out), transform 0.16s var(--ease-out);
+  pointer-events: none;
+  z-index: 2;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-youtube-card-status.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 /* Crepe shows an "upload or paste link" placeholder UI (the gray box
    with a question-mark icon and a "Please enter…" caption) for any

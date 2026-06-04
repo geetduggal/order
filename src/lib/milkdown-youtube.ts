@@ -105,6 +105,20 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // whichever the platform supports wins. Cooldown prevents duplicate
   // YouTube app launches when multiple events (touchend + click) fire
   // for one tap.
+  // Debug status pill that fades in on tap and shows which open path
+  // ran. Lives inside the card so the user can immediately see
+  // whether the handler is reaching them at all — when iOS taps look
+  // dead, this tells us whether the tap is reaching the handler vs.
+  // every external-open path silently failing.
+  const status = document.createElement("span");
+  status.className = "order-youtube-card-status";
+  card.appendChild(status);
+  const showStatus = (msg: string) => {
+    status.textContent = msg;
+    status.classList.add("is-visible");
+    setTimeout(() => status.classList.remove("is-visible"), 2500);
+  };
+
   let lastTap = 0;
   const openIt = (e: Event) => {
     const now = Date.now();
@@ -112,25 +126,28 @@ function buildThumbnailCard(id: string): HTMLDivElement {
     lastTap = now;
     e.preventDefault();
     e.stopPropagation();
-    // Fire-and-forget invoke (works on desktop Tauri + iOS via the
-    // vault plugin). Don't await — iOS UIApplication.open's completion
-    // callback can take seconds while the user confirms the app-switch
-    // prompt, and awaiting that would freeze the click handler.
+    showStatus(`tap · ${e.type}`);
+    // All three paths fire sequentially with brief delays so we can
+    // narrow which one actually opens YouTube. The cooldown above
+    // prevents dupes when a single tap fires touchend then click.
+    let resolved = false;
     try {
       invoke("open_url", { url: watchUrl })
-        .catch(() => {
-          // Tauri rejected (web viewer or unsupported platform). Try
-          // window.open. iOS WKWebView's default UIDelegate often
-          // returns null for _blank popups — if that's the case the
-          // location fallback fires.
-          const w = window.open(watchUrl, "_blank");
-          if (!w) window.location.href = watchUrl;
+        .then(() => { resolved = true; showStatus("opened via tauri"); })
+        .catch((err) => {
+          showStatus(`tauri rejected: ${String(err).slice(0, 40)}`);
         });
-    } catch {
-      // invoke() is not a function (web viewer with no Tauri shim).
-      const w = window.open(watchUrl, "_blank");
-      if (!w) window.location.href = watchUrl;
+    } catch (err) {
+      showStatus(`invoke threw: ${String(err).slice(0, 40)}`);
     }
+    // If invoke hasn't resolved in 250ms, try the browser paths.
+    setTimeout(() => {
+      if (resolved) return;
+      const w = window.open(watchUrl, "_blank");
+      if (w) { showStatus("opened via window.open"); return; }
+      showStatus("window.open blocked → location.href");
+      window.location.href = watchUrl;
+    }, 250);
   };
   card.addEventListener("touchend", openIt, { capture: true, passive: false });
   card.addEventListener("click", openIt, { capture: true });
