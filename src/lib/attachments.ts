@@ -116,14 +116,16 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
   return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
     if (isVideoPath(target)) {
-      // Videos render as a raw HTML <video> block — emitting image
-      // syntax (`![](vaultasset://…mov)`) makes Crepe's image-block
-      // component try to mount it as a broken-image placeholder AND
-      // a parallel video plugin would duplicate the playback (we
-      // hit exactly that bug). HTML blocks pass through commonmark
-      // unchanged and the WebView renders them as a real <video>.
+      // Videos render as a raw HTML block wrapped in a
+      // contenteditable=false div so WKWebView doesn't try to manage
+      // the <video> as part of the editable surface — without the
+      // wrapper, iOS Safari composites the video frame and the
+      // native controls into separate layers (the user sees the
+      // playing frame stacked on top of a stranded controls bar
+      // below). Pulling the player out of contenteditable makes the
+      // browser treat it as a static media block.
       const url = assetUrl(`${dir}${target}`);
-      return `\n<video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video>\n`;
+      return `\n\n<div class="order-vault-video-wrap" contenteditable="false"><video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video></div>\n\n`;
     }
     if (!isImagePath(target)) return full;
     const url = assetUrl(`${dir}${target}`);
@@ -162,11 +164,12 @@ export function deflateImageEmbeds(body: string, noteDir: string): string {
     // stray Crepe paste artifact). Also consume trailing blank space so
     // we don't leave a dangling empty paragraph.
     .replace(/!\[[^\]]*\]\(blob:[^)\s]+\)[ \t]*\n?/g, "")
-    // <video src="vaultasset://…X.mov"> → ![[X.mov]] (inverse of the
-    // HTML form emitted by inflateImageEmbeds for video extensions).
-    // Match either order of the attributes by parsing the src out of
-    // the tag's attribute list.
-    .replace(/[ \t]*<video\b[^>]*?\bsrc="(vaultasset:\/\/localhost\/[^"]+)"[^>]*>\s*<\/video>[ \t]*\n?/g,
+    // <div class="order-vault-video-wrap"><video src="vaultasset://…X.mov" ...></video></div>
+    // → ![[X.mov]]  (inverse of inflateImageEmbeds for videos). The
+    // wrapper div is optional — older saves may have written the bare
+    // <video> tag — so we strip either shape and fall back to
+    // matching on src= alone.
+    .replace(/[ \t]*(?:<div[^>]*class="order-vault-video-wrap"[^>]*>\s*)?<video\b[^>]*?\bsrc="(vaultasset:\/\/localhost\/[^"]+)"[^>]*>\s*<\/video>(?:\s*<\/div>)?[ \t]*\n?/g,
       (_full, url: string) => {
         const rest = url.slice(VAULTASSET_BASE.length);
         let rel = rest;
