@@ -1147,13 +1147,16 @@ video.order-vault-video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   display: block;
-  /* Over-scale by 14% so YouTube's letterbox bars on 4:3 hqdefault
-     thumbnails (12.5% top + 12.5% bottom) are always cropped, even
-     if a particular video's bars aren't exactly 12.5%. The container
-     has overflow:hidden, so the extra crop is invisible. */
-  transform: scale(1.14);
-  transform-origin: center;
+  /* Aggressive over-scale (30%) anchored to center. Catches every
+     letterbox shape we've seen — YouTube's 4:3 hqdefault bars,
+     uploader-baked-in 16:9-inside-16:9 frames, and the off-by-a-row
+     subpixel residue that scale(1.14) wasn't quite eating. Some
+     video content at the very edges gets cropped, but the title +
+     host + thumbnail center together always read as the right video. */
+  transform: scale(1.3);
+  transform-origin: center center;
 }
 .order-youtube-card-play {
   position: absolute;
