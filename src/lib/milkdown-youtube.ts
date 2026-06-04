@@ -29,18 +29,18 @@ import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { youtubeId } from "./youtube";
 
-// Document-level capture-phase listeners that fire BEFORE ProseMirror's
-// root-level handlers can consume the gesture. Registered once at
-// module load; the handler runs only when the target is inside a
-// YouTube card. iOS WKWebView's preventDefault on touchstart inside
-// contenteditable suppresses the subsequent click — touchend at the
-// document level is the only path that reliably fires.
+// Document-level click handler that fires BEFORE ProseMirror's
+// editor-root handlers can consume the gesture. PASSIVE — never
+// preventDefault on a non-card touch, so we don't tell iOS WebView
+// "wait for me before scrolling" on every gesture (which froze the
+// whole UI). Click is enough — by the time iOS has decided this is
+// a click (not a scroll), the gesture is committed.
 let installedDocHandlers = false;
 let docLastTap = 0;
 function installDocumentHandlers() {
   if (installedDocHandlers) return;
   installedDocHandlers = true;
-  const onAnyTap = (e: Event) => {
+  const onClick = (e: Event) => {
     const t = e.target as Element | null;
     const card = t?.closest?.(".order-youtube-card") as HTMLAnchorElement | null;
     if (!card) return;
@@ -58,15 +58,13 @@ function installDocumentHandlers() {
       status.classList.add("is-visible");
       setTimeout(() => status.classList.remove("is-visible"), 2500);
     };
-    showStatus(`tap · ${e.type}`);
+    showStatus("tap");
     let resolved = false;
     try {
       invoke("open_url", { url: watchUrl })
         .then(() => { resolved = true; showStatus("opened via tauri"); })
         .catch((err: unknown) => { showStatus(`tauri rejected: ${String(err).slice(0, 40)}`); });
-    } catch (err) {
-      showStatus(`invoke threw: ${String(err).slice(0, 40)}`);
-    }
+    } catch (err) { showStatus(`invoke threw: ${String(err).slice(0, 40)}`); }
     setTimeout(() => {
       if (resolved) return;
       const w = window.open(watchUrl, "_blank");
@@ -75,12 +73,12 @@ function installDocumentHandlers() {
       window.location.href = watchUrl;
     }, 250);
   };
-  // Capture phase + window-level so ProseMirror's editor-root
-  // handlers can't preempt us. touchstart catches the very first
-  // gesture frame on iOS even if touchend/click are later suppressed.
-  window.addEventListener("touchstart", onAnyTap, { capture: true, passive: false });
-  window.addEventListener("touchend", onAnyTap, { capture: true, passive: false });
-  window.addEventListener("click", onAnyTap, { capture: true });
+  // Click only. NO touch listeners — registering at window level
+  // with passive:false on touchstart locked the UI on Ambience
+  // because every scroll first had to ask this handler whether to
+  // cancel. Click fires reliably for taps on anchors in modern
+  // WebViews, even WKWebView.
+  window.addEventListener("click", onClick, { capture: true });
 }
 
 // Module-level title cache so repeated renders of the same video id
@@ -95,15 +93,23 @@ function fetchOEmbed(id: string): Promise<void> {
   const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
     `https://www.youtube.com/watch?v=${id}`,
   )}&format=json`;
-  entry.promise = fetch(url)
+  // AbortSignal timeout so a blocked / slow YouTube request can't hold
+  // a pending promise forever (and so any sync DOM mutations
+  // triggered by an upstream `.then` don't pile up unboundedly).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  entry.promise = fetch(url, { signal: ctrl.signal })
     .then((r) => (r.ok ? r.json() : null))
     .then((data: { title?: string; author_name?: string } | null) => {
       if (!data) return;
       entry!.title = data.title;
       entry!.author = data.author_name;
     })
-    .catch(() => { /* offline / network blocked / CORS — leave title empty */ })
-    .finally(() => { entry!.promise = undefined; });
+    .catch(() => { /* offline / network blocked / CORS / timeout */ })
+    .finally(() => {
+      clearTimeout(timer);
+      entry!.promise = undefined;
+    });
   return entry.promise;
 }
 
