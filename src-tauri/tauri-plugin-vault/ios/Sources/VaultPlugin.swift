@@ -53,6 +53,25 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
     pickInvoke = nil
   }
 
+  // Open an http(s) / mailto / tel URL via the OS — the JS bridge
+  // calls this so a tap on a body link or a YouTube thumbnail card
+  // opens Safari / the YouTube app instead of trying to navigate
+  // inside Order's WKWebView. Mirrors the macOS `open` shell call.
+  @objc public func openUrl(_ invoke: Invoke) throws {
+    struct Args: Decodable { let url: String }
+    let args = try invoke.parseArgs(Args.self)
+    guard let url = URL(string: args.url) else {
+      invoke.reject("invalid url: \(args.url)")
+      return
+    }
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url, options: [:]) { ok in
+        if ok { invoke.resolve([:]) }
+        else  { invoke.reject("UIApplication.open returned false for \(url)") }
+      }
+    }
+  }
+
   @objc public func restore(_ invoke: Invoke) throws {
     guard let data = UserDefaults.standard.data(forKey: VaultPlugin.bookmarkKey) else {
       invoke.resolve([:])

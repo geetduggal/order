@@ -33,4 +33,14 @@ impl<R: Runtime> Vault<R> {
   pub fn restore(&self) -> crate::Result<VaultFolder> {
     self.0.run_mobile_plugin("restore", ()).map_err(Into::into)
   }
+
+  /// Open an external URL via the iOS `UIApplication.open(_:)` system
+  /// API. Used by the JS-side `open_url` shim to route taps on body
+  /// links and YouTube-thumbnail fallbacks out of the in-app WebView
+  /// and into Safari / the YouTube app.
+  pub fn open_url(&self, url: String) -> crate::Result<()> {
+    #[derive(serde::Serialize)]
+    struct Args { url: String }
+    self.0.run_mobile_plugin("openUrl", Args { url }).map_err(Into::into)
+  }
 }

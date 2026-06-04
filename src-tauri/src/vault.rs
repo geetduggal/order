@@ -497,9 +497,22 @@ pub fn open_path(path: String) -> Result<(), String> {
 // external anchor clicks (Tauri's webview navigates IN the webview by
 // default, which we don't want for http(s) links in note bodies).
 #[tauri::command]
-pub fn open_url(url: String) -> Result<(), String> {
+pub fn open_url(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    url: String,
+) -> Result<(), String> {
     if url.is_empty() {
         return Err("empty url".into());
+    }
+    // iOS: shell-spawn isn't available, so delegate to the vault
+    // plugin's Swift-side `openUrl` which calls UIApplication.open.
+    // Without this path, taps on links and the YouTube thumbnail
+    // fallback all fail silently and the user is stranded inside
+    // the in-app WebView.
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_vault::VaultExt;
+        return app.vault().open_url(url).map_err(|e| e.to_string());
     }
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(&url).spawn();
@@ -507,10 +520,13 @@ pub fn open_url(url: String) -> Result<(), String> {
     let result = std::process::Command::new("xdg-open").arg(&url).spawn();
     #[cfg(target_os = "windows")]
     let result = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows", target_os = "ios")))]
     let result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "open_url is not supported on this platform",
     ));
-    result.map(|_| ()).map_err(|e| e.to_string())
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    return result.map(|_| ()).map_err(|e| e.to_string());
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows", target_os = "ios")))]
+    return result.map(|_| ()).map_err(|e| e.to_string());
 }

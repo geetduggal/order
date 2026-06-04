@@ -23,4 +23,12 @@ impl<R: Runtime> Vault<R> {
   pub fn restore(&self) -> crate::Result<VaultFolder> {
     Ok(VaultFolder::default())
   }
+
+  /// Desktop never calls the plugin path — the main vault::open_url
+  /// command spawns `open` / `xdg-open` / `cmd /C start` directly —
+  /// but the API has to exist for the trait to compile across
+  /// platforms.
+  pub fn open_url(&self, _url: String) -> crate::Result<()> {
+    Ok(())
+  }
 }
