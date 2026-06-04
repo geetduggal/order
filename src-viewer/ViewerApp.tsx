@@ -4,7 +4,7 @@
 // views; filtering is managed exclusively through the left-rail pills,
 // identical to CardGrid.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
@@ -873,17 +873,73 @@ function StreamView({
     );
   }
 
-  // Flat temporal grid (no Notable Folder filtered in). With no
-  // pagination on the published page, this would otherwise mount one
-  // Milkdown Crepe instance per published note up front; LazyCell
-  // defers each Card until its grid cell is within scroll reach.
+  // Flat temporal grid (no Notable Folder filtered in). The published
+  // page has no pagination by default — on a vault with thousands of
+  // notes this means thousands of grid cells, thousands of Lazy
+  // observers, and a JSON payload of every body waiting to mount.
+  // Cap to the N most-recent (sort upstream already orders newest
+  // first) and auto-extend via an IntersectionObserver sentinel
+  // anchored below the visible window. That gives a near-instant
+  // first paint and a seamless scroll-to-load tail instead of a
+  // synchronous wall of cells.
+  return <BareStreamGrid notes={notes} setGridEl={setGridEl} cardNode={cardNode} />;
+}
+
+const STREAM_PAGE_SIZE = 60;
+
+function BareStreamGrid({
+  notes,
+  setGridEl,
+  cardNode,
+}: {
+  notes: PublishedNote[];
+  setGridEl: (el: HTMLDivElement | null) => void;
+  cardNode: (n: PublishedNote) => ReactNode;
+}) {
+  const [limit, setLimit] = useState(STREAM_PAGE_SIZE);
+  // Reset paging when the underlying list changes (filter toggle,
+  // stream-mode flip). Keying off length is enough — sort is stable
+  // upstream, so identity tracking would just be churn.
+  useEffect(() => { setLimit(STREAM_PAGE_SIZE); }, [notes.length]);
+
+  const visibleSlice = notes.slice(0, limit);
+  const hasMore = limit < notes.length;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!hasMore || !sentinelRef.current) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setLimit(notes.length);
+      return;
+    }
+    const el = sentinelRef.current;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) setLimit((cur) => Math.min(cur + STREAM_PAGE_SIZE, notes.length));
+      },
+      { rootMargin: "1500px 0px 1500px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, notes.length]);
+
   return (
-    <div className="card-grid" ref={setGridEl}>
-      {notes.map((n) => (
-        <LazyCell key={n.ref} className="card-grid-cell" dataPath={n.ref}>
-          {() => cardNode(n)}
-        </LazyCell>
-      ))}
-    </div>
+    <>
+      <div className="card-grid" ref={setGridEl}>
+        {visibleSlice.map((n) => (
+          <LazyCell key={n.ref} className="card-grid-cell" dataPath={n.ref}>
+            {() => cardNode(n)}
+          </LazyCell>
+        ))}
+      </div>
+      {hasMore && (
+        <div
+          ref={sentinelRef}
+          className="stream-load-sentinel"
+          aria-hidden="true"
+          data-remaining={notes.length - limit}
+        />
+      )}
+    </>
   );
 }
