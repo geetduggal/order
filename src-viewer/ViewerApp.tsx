@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useState } from "react";
-import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut } from "lucide-react";
+import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
@@ -99,8 +99,14 @@ export function ViewerApp(
   const theme = useTheme();
   const textScale = useTextScale();
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  // View picker — same shape as the desktop app's: two parallel
+  // selections (View: stream/day/week/month/year, Show: all/notes/
+  // folders). Home button menu picks between home folder filter and
+  // clearing all filters.
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [homeMenuOpen, setHomeMenuOpen] = useState(false);
 
-  // Outside-click closes the tools popup.
+  // Outside-click closes each popup.
   useEffect(() => {
     if (!toolsMenuOpen) return;
     function onDocClick(e: MouseEvent) {
@@ -111,6 +117,26 @@ export function ViewerApp(
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [toolsMenuOpen]);
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-view, .dock-view-popup")) setViewMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [viewMenuOpen]);
+  useEffect(() => {
+    if (!homeMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-home, .dock-home-popup")) setHomeMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [homeMenuOpen]);
 
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
   // an arrival deep-link, else the home Notable Folder as the default
@@ -465,30 +491,56 @@ export function ViewerApp(
       <div className="bottom-dock" role="toolbar" aria-label="Main controls">
         <button
           type="button"
-          className={`dock-btn dock-btn-stream is-${streamMode}`}
-          onClick={() => setStreamModePersist(
-            streamMode === "all" ? "notes"
-              : streamMode === "notes" ? "folders" : "all",
-          )}
-          title={
-            streamMode === "all"
-              ? "Showing notes + notable folders — click for notes only"
-              : streamMode === "notes"
-                ? "Showing notes only — click for notable folders only"
-                : "Showing notable folders only — click to include all"
-          }
-          aria-label={
-            streamMode === "all" ? "Notes and notable folders"
-              : streamMode === "notes" ? "Notes only"
-                : "Notable folders only"
-          }
+          className={`dock-btn dock-btn-view is-${view}` + (viewMenuOpen ? " is-open" : "")}
+          onClick={() => { setHomeMenuOpen(false); setViewMenuOpen((o) => !o); }}
+          title="Pick view"
+          aria-label="Pick view"
+          aria-haspopup="menu"
+          aria-expanded={viewMenuOpen}
         >
-          {streamMode === "folders"
-            ? <FolderIcon size={22} strokeWidth={2.1} />
-            : streamMode === "notes"
-              ? <FileText size={22} strokeWidth={2.1} />
-              : <Files size={22} strokeWidth={2.1} />}
+          {(() => {
+            if (view === "day") return <CalendarClock size={20} strokeWidth={2.1} />;
+            if (view === "week") return <CalendarRange size={20} strokeWidth={2.1} />;
+            if (view === "month") return <CalendarDays size={20} strokeWidth={2.1} />;
+            if (view === "year") return <CalendarIcon size={20} strokeWidth={2.1} />;
+            if (streamMode === "folders") return <FolderIcon size={22} strokeWidth={2.1} />;
+            if (streamMode === "notes") return <FileText size={22} strokeWidth={2.1} />;
+            return <Files size={22} strokeWidth={2.1} />;
+          })()}
         </button>
+        {(() => {
+          const home = data.home?.name ?? null;
+          const noFilters = filters.length === 0;
+          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
+          const stateClass = noFilters
+            ? " is-no-filters"
+            : homeFiltered
+              ? " is-at-home"
+              : "";
+          const icon = noFilters
+            ? <FilterX size={20} strokeWidth={2.1} />
+            : <HomeIcon size={20} strokeWidth={2.1} />;
+          const tip = noFilters
+            ? "No filters — pick a home view"
+            : homeFiltered
+              ? `At home — ${home}`
+              : home
+                ? `Home — ${home}`
+                : "Home — clear filters";
+          return (
+            <button
+              type="button"
+              className={"dock-btn dock-btn-home" + stateClass + (homeMenuOpen ? " is-open" : "")}
+              onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
+              title={tip}
+              aria-label="Home menu"
+              aria-haspopup="menu"
+              aria-expanded={homeMenuOpen}
+            >
+              {icon}
+            </button>
+          );
+        })()}
         <button
           type="button"
           className="dock-btn dock-btn-search"
@@ -517,6 +569,68 @@ export function ViewerApp(
           {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
         </button>
       </div>
+
+      {viewMenuOpen && (() => {
+        const pickStream = (mode: StreamMode) => { setStreamModePersist(mode); };
+        const pickView = (v: View) => { setView(v); };
+        const opt = (
+          active: boolean,
+          icon: React.ReactNode,
+          label: string,
+          onClick: () => void,
+        ) => (
+          <button
+            type="button"
+            className={"dock-tools-item" + (active ? " is-on" : "")}
+            onClick={onClick}
+          >
+            {icon}
+            <span>{label}</span>
+            {active && <Check size={12} strokeWidth={2.4} className="dock-tools-check" />}
+          </button>
+        );
+        return (
+          <div className="dock-tools-popup dock-view-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="dock-tools-group-label">View</div>
+            {opt(view === "stream", <Files size={14} strokeWidth={2.1} />, "Stream", () => pickView("stream"))}
+            {opt(view === "day", <CalendarClock size={14} strokeWidth={2.1} />, "Day", () => pickView("day"))}
+            {opt(view === "week", <CalendarRange size={14} strokeWidth={2.1} />, "Week", () => pickView("week"))}
+            {opt(view === "month", <CalendarDays size={14} strokeWidth={2.1} />, "Month", () => pickView("month"))}
+            {opt(view === "year", <CalendarIcon size={14} strokeWidth={2.1} />, "Year", () => pickView("year"))}
+            <div className="dock-tools-group-label">Show</div>
+            {opt(streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
+            {opt(streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
+            {opt(streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
+          </div>
+        );
+      })()}
+
+      {homeMenuOpen && (() => {
+        const home = data.home?.name ?? null;
+        const goHome = () => {
+          setHomeMenuOpen(false);
+          if (home) {
+            commitFilters([{ kind: "include", ref: home }]);
+            navigate(home);
+          }
+        };
+        const clearAll = () => {
+          setHomeMenuOpen(false);
+          resetToDefault();
+        };
+        return (
+          <div className="dock-tools-popup dock-home-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+            <button type="button" className="dock-tools-item" onClick={goHome}>
+              <HomeIcon size={14} strokeWidth={2.1} />
+              <span>{home ? `Home — ${home}` : "Home page"}</span>
+            </button>
+            <button type="button" className="dock-tools-item" onClick={clearAll}>
+              <XCircle size={14} strokeWidth={2.1} />
+              <span>Clear all filters</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Tools popup — viewer version has only theme + zoom (no
           publish, no vault settings). Same anchor pattern as the app. */}
