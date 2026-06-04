@@ -103,15 +103,18 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   img.alt = "";
   img.loading = "lazy";
   img.draggable = false;
-  // mqdefault is true 16:9 (320x180). hqdefault is 4:3 (480x360) with
-  // YouTube's stock black bars baked in — when the card's thumbnail
-  // is 16:9 those bars take up a visible quarter of the height. Try
-  // maxresdefault (1280x720) first for sharp screens, fall back to
-  // mqdefault on the 404 (some videos don't have maxres).
-  img.src = `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  // hqdefault is YouTube's universal 4:3 thumbnail (480x360). For a
+  // 16:9 video the letterbox bars are 12.5% top + 12.5% bottom; the
+  // 16:9 card container with `object-fit: cover` scales the image
+  // horizontally to fill the width and crops exactly that 25% off
+  // top + bottom — bars gone, real video frame edge-to-edge.
+  // (maxresdefault was tempting but it's 1280x720 of whatever shape
+  // YouTube cooked it into — sometimes still letterboxed, sometimes
+  // 404. hqdefault is the most reliable shape across the catalog.)
+  img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   img.onerror = () => {
     img.onerror = null;
-    img.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+    img.src = `https://i.ytimg.com/vi/${id}/0.jpg`;
   };
   thumb.appendChild(img);
   const play = document.createElement("span");

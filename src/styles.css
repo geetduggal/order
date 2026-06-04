@@ -2570,6 +2570,17 @@ iframe.order-youtube-embed {
   border-color: var(--royal);
   background: var(--royal-soft);
 }
+/* Home button reflects the current filter state at a glance —
+   at-home fills like a soft pill; no-filters dims the chrome so
+   the "nothing filtered" state reads as the resting baseline. */
+.dock-btn-home.is-at-home {
+  color: var(--coral);
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+.dock-btn-home.is-no-filters {
+  color: var(--ink-faint);
+}
 .dock-tools-zoom {
   display: flex;
   align-items: center;

@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -2298,17 +2298,46 @@ export function CardGrid() {
             return <Files size={22} strokeWidth={2.1} />;
           })()}
         </button>
-        <button
-          type="button"
-          className={"dock-btn dock-btn-home" + (homeMenuOpen ? " is-open" : "")}
-          onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
-          title={homeFolderRef.current ? `Home — ${homeFolderRef.current}` : "Home — clear filters"}
-          aria-label="Home menu"
-          aria-haspopup="menu"
-          aria-expanded={homeMenuOpen}
-        >
-          <HomeIcon size={20} strokeWidth={2.1} />
-        </button>
+        {(() => {
+          // The button icon mirrors the current filter state at a
+          // glance: a Home icon when filtered to the home folder
+          // (the user is "at home"), a FilterX icon when no filters
+          // are active (no constraint — the whole vault is in view).
+          // Anything in between (a custom filter pile) lands on the
+          // neutral Home icon so the menu still feels like the home
+          // affordance.
+          const home = homeFolderRef.current;
+          const noFilters = filters.length === 0;
+          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
+          const stateClass = noFilters
+            ? " is-no-filters"
+            : homeFiltered
+              ? " is-at-home"
+              : "";
+          const icon = noFilters
+            ? <FilterX size={20} strokeWidth={2.1} />
+            : <HomeIcon size={20} strokeWidth={2.1} />;
+          const tip = noFilters
+            ? "No filters — pick a home view"
+            : homeFiltered
+              ? `At home — ${home}`
+              : home
+                ? `Home — ${home}`
+                : "Home — clear filters";
+          return (
+            <button
+              type="button"
+              className={"dock-btn dock-btn-home" + stateClass + (homeMenuOpen ? " is-open" : "")}
+              onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
+              title={tip}
+              aria-label="Home menu"
+              aria-haspopup="menu"
+              aria-expanded={homeMenuOpen}
+            >
+              {icon}
+            </button>
+          );
+        })()}
         <button
           type="button"
           className="dock-btn dock-btn-search"

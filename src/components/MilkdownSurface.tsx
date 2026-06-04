@@ -315,8 +315,25 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
         console.error("open_path failed:", err);
       }
     }
-    root.addEventListener("click", onClick, true);
-    return () => { root.removeEventListener("click", onClick, true); };
+    // iOS WKWebView often DOESN'T fire `click` on anchors inside
+    // ProseMirror widgets — the touchstart gesture gets consumed by
+    // PM's selection plumbing and never escalates to a click event.
+    // Catching `touchend` in capture phase reaches those taps; we
+    // dedupe against `click` via a short cooldown so a single tap on
+    // desktop (touchend → click, both fire) doesn't double-handle.
+    let lastHandled = 0;
+    const wrappedOnClick = (e: Event) => {
+      const now = Date.now();
+      if (now - lastHandled < 600) return;
+      lastHandled = now;
+      void onClick(e as MouseEvent);
+    };
+    root.addEventListener("click", wrappedOnClick, true);
+    root.addEventListener("touchend", wrappedOnClick, true);
+    return () => {
+      root.removeEventListener("click", wrappedOnClick, true);
+      root.removeEventListener("touchend", wrappedOnClick, true);
+    };
   }, []);
 
   // Image paste/drop handler. Capture phase so it runs before Milkdown's
