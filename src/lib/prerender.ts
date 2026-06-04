@@ -88,23 +88,39 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
         (_m, src: string, qs: string | undefined) =>
           `<video class="order-video-embed" controls playsinline preload="metadata" src="${src}${qs ?? ""}"></video>`,
       );
-      // Obsidian YouTube embeds (image syntax): marked emits
-      // <img src="youtube_url"> for `![](youtube_url)`, which loads
-      // nothing. Swap it for a real iframe so the player works statically.
-      const iframeFor = (id: string) =>
-        `<iframe class="order-youtube-embed" src="https://www.youtube-nocookie.com/embed/${id}?playsinline=1&amp;rel=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>`;
+      // YouTube embeds (image syntax + ```embed fence) — emit a
+      // clean card-style link with thumbnail + title that opens the
+      // video in the native YouTube app (or default browser). The
+      // SPA's milkdown-youtube plugin renders the same shape so the
+      // static page matches what the editor shows.
+      //
+      // The static HTML can't run an oEmbed fetch (no JS at prerender
+      // time), so the title slot starts as "YouTube video" and the
+      // SPA hydration upgrades it once on load.
+      const cardFor = (id: string) => {
+        const url = `https://www.youtube.com/watch?v=${id}`;
+        return `<a class="order-youtube-card" href="${url}" target="_blank" rel="noreferrer" aria-label="Open video on YouTube" data-yt-id="${id}">`
+          + `<span class="order-youtube-card-thumb">`
+          + `<img class="order-youtube-card-img" loading="lazy" alt="" src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" onerror="this.onerror=null;this.src='https://i.ytimg.com/vi/${id}/0.jpg';">`
+          + `<span class="order-youtube-card-play" aria-hidden="true">▶</span>`
+          + `</span>`
+          + `<span class="order-youtube-card-meta">`
+          + `<span class="order-youtube-card-title">YouTube video</span>`
+          + `<span class="order-youtube-card-host">youtube.com</span>`
+          + `</span>`
+          + `</a>`;
+      };
       html = html.replace(
         /<img\b[^>]*\bsrc="(https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^"]*|youtu\.be\/[^"]+))"[^>]*>/g,
         (full: string, url: string) => {
           const id = youtubeId(url);
-          return id ? iframeFor(id) : full;
+          return id ? cardFor(id) : full;
         },
       );
       // Obsidian YouTube embeds (```embed YAML form, e.g. Auto Card
       // Link). marked emits the fence as <pre><code class="language-embed">
-      // YAML </code></pre>; swap it for an iframe whenever the YAML has
-      // a YouTube `url:` line. The captured class may be `language-embed`
-      // or absent — match on the content's URL line either way.
+      // YAML </code></pre>; swap it for a card whenever the YAML has
+      // a YouTube `url:` line.
       html = html.replace(
         /<pre><code(?:\s[^>]*)?>([\s\S]*?)<\/code><\/pre>/g,
         (full: string, body: string) => {
@@ -118,7 +134,7 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
           const m = decoded.match(/url\s*:\s*['"]?(https?:\/\/[^\s'"<>]+)/);
           if (!m) return full;
           const id = youtubeId(m[1]);
-          return id ? iframeFor(id) : full;
+          return id ? cardFor(id) : full;
         },
       );
       // The home note lives at the site root (index.html), but it also

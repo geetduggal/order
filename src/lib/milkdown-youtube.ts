@@ -28,88 +28,120 @@ import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { youtubeId } from "./youtube";
-import { isIosSync } from "./vault";
+
+// Module-level title cache so repeated renders of the same video id
+// (every keystroke in the editor) don't re-hit YouTube's oEmbed
+// endpoint. Map<videoId, { title?: string; author?: string }>.
+const oembedCache = new Map<string, { title?: string; author?: string; promise?: Promise<void> }>();
+function fetchOEmbed(id: string): Promise<void> {
+  let entry = oembedCache.get(id);
+  if (entry?.title || entry?.promise) return entry?.promise ?? Promise.resolve();
+  entry = entry ?? {};
+  oembedCache.set(id, entry);
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
+    `https://www.youtube.com/watch?v=${id}`,
+  )}&format=json`;
+  entry.promise = fetch(url)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data: { title?: string; author_name?: string } | null) => {
+      if (!data) return;
+      entry!.title = data.title;
+      entry!.author = data.author_name;
+    })
+    .catch(() => { /* offline / network blocked / CORS — leave title empty */ })
+    .finally(() => { entry!.promise = undefined; });
+  return entry.promise;
+}
 
 const KEY = new PluginKey("order-youtube-embed");
 const YT_URL_RE = /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^\s"'<>)]+|youtu\.be\/[\w-]+(?:\?[^\s"'<>)]*)?)/;
 
 function buildIframe(id: string): HTMLElement {
-  // iOS WebView fallback: even with youtube-nocookie.com, the YouTube
-  // player still rejects Tauri's tauri://localhost origin on iOS with
-  // "Error 153 — Video player configuration error" for many videos
-  // (live streams, certain audio tracks, embeds that require strict
-  // origin checks). Inline playback isn't worth the broken cards, so
-  // on iOS we render a clickable thumbnail card that opens the video
-  // in the native YouTube app / Safari via the Tauri shell. Single
-  // tap, full quality, no broken player state.
-  if (isIosSync()) return buildThumbnailCard(id);
-
-  const wrap = document.createElement("div");
-  wrap.className = "order-youtube-embed-wrap";
-  wrap.setAttribute("contenteditable", "false");
-  const iframe = document.createElement("iframe");
-  iframe.className = "order-youtube-embed";
-  // youtube-nocookie.com is more permissive about non-standard origins
-  // than youtube.com — needed for the macOS Tauri WebView too. The
-  // same set of videos plays for the same set of contexts.
-  // playsinline=1 keeps macOS inline-player behavior consistent;
-  // rel=0 suppresses unrelated-channel suggestions at video end.
-  iframe.src = `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0`;
-  iframe.setAttribute("frameborder", "0");
-  iframe.setAttribute(
-    "allow",
-    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen",
-  );
-  iframe.setAttribute("allowfullscreen", "");
-  iframe.setAttribute("loading", "lazy");
-  iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-  wrap.appendChild(iframe);
-  return wrap;
+  // Always render a clickable thumbnail card: a clean preview with
+  // the video's title that opens in the default browser on desktop
+  // and the YouTube app (or Safari) on iOS via the Tauri shell.
+  //
+  // The previous inline iframe path was endlessly fragile:
+  //   - iOS Tauri WebView rejects YouTube's player config on
+  //     non-standard origins ("Error 153")
+  //   - even when it works, the inline player invites stuttering
+  //     UI work and unwanted autoplay
+  //   - the published web viewer's iframe was fine but reads
+  //     differently from the desktop / mobile app
+  // A thumbnail card is consistent, fast, and uses the native
+  // YouTube experience for actual playback.
+  return buildThumbnailCard(id);
 }
 
-/** Clickable thumbnail card — used wherever the iframe player can't
- *  reliably initialize (iOS WebView). Renders the maxres/hq thumbnail,
- *  a play-button overlay, and an Open-in-YouTube affordance. */
+/** Clickable thumbnail card — the universal YouTube embed render.
+ *  Thumbnail preview + title (fetched via oEmbed) + play affordance;
+ *  a tap routes through the Tauri shell on desktop / iOS, and falls
+ *  back to native anchor navigation in the published web viewer. */
 function buildThumbnailCard(id: string): HTMLDivElement {
   const watchUrl = `https://www.youtube.com/watch?v=${id}`;
   const wrap = document.createElement("div");
-  wrap.className = "order-youtube-embed-wrap order-youtube-thumb-wrap";
+  wrap.className = "order-youtube-embed-wrap order-youtube-card-wrap";
   wrap.setAttribute("contenteditable", "false");
-  // Use an <a> so the OS can handle the tap natively even if the
-  // synthetic JS handlers below don't fire — iOS Safari is much more
-  // permissive about anchor activation than button click inside a
-  // contenteditable-adjacent ProseMirror widget. The href + target
-  // is a free fallback; the JS handler intercepts when Tauri is
-  // available so the URL goes through the shell (opens in the
-  // YouTube app, not in-place inside the WebView).
+  // <a> so the OS sees a real activation target even if the synthetic
+  // JS handlers below don't fire — iOS WKWebView treats anchor taps
+  // more permissively than button clicks inside contenteditable.
   const card = document.createElement("a");
-  card.className = "order-youtube-thumb";
+  card.className = "order-youtube-card";
   card.href = watchUrl;
   card.target = "_blank";
   card.rel = "noreferrer";
   card.setAttribute("role", "button");
-  card.setAttribute("aria-label", "Open video in YouTube");
-  // Make sure ProseMirror / Crepe don't swallow the gesture as part
-  // of their text selection or block-handle drag handling.
+  card.setAttribute("aria-label", "Open video on YouTube");
   card.setAttribute("draggable", "false");
   card.style.touchAction = "manipulation";
+
+  // Thumbnail half.
+  const thumb = document.createElement("span");
+  thumb.className = "order-youtube-card-thumb";
   const img = document.createElement("img");
-  img.className = "order-youtube-thumb-img";
+  img.className = "order-youtube-card-img";
   img.alt = "";
   img.loading = "lazy";
   img.draggable = false;
   img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   img.onerror = () => { img.src = `https://i.ytimg.com/vi/${id}/0.jpg`; };
-  card.appendChild(img);
+  thumb.appendChild(img);
   const play = document.createElement("span");
-  play.className = "order-youtube-thumb-play";
+  play.className = "order-youtube-card-play";
   play.setAttribute("aria-hidden", "true");
   play.textContent = "▶";
-  card.appendChild(play);
-  const label = document.createElement("span");
-  label.className = "order-youtube-thumb-label";
-  label.textContent = "Open in YouTube";
-  card.appendChild(label);
+  thumb.appendChild(play);
+  card.appendChild(thumb);
+
+  // Title / meta half.
+  const meta = document.createElement("span");
+  meta.className = "order-youtube-card-meta";
+  const title = document.createElement("span");
+  title.className = "order-youtube-card-title";
+  title.textContent = "YouTube video";
+  meta.appendChild(title);
+  const host = document.createElement("span");
+  host.className = "order-youtube-card-host";
+  host.textContent = "youtube.com";
+  meta.appendChild(host);
+  card.appendChild(meta);
+
+  // Cached title — fetch once per id and update the DOM when it lands.
+  // The fallback "YouTube video" stays if the network call fails (no
+  // CORS, offline, etc.) so the card always reads as a video.
+  const cached = oembedCache.get(id);
+  if (cached?.title) {
+    title.textContent = cached.title;
+    if (cached.author) host.textContent = `${cached.author} · youtube.com`;
+  } else {
+    void fetchOEmbed(id).then(() => {
+      const entry = oembedCache.get(id);
+      if (entry?.title) {
+        title.textContent = entry.title;
+        if (entry.author) host.textContent = `${entry.author} · youtube.com`;
+      }
+    });
+  }
 
   // Route through Tauri's shell when available so the URL opens in
   // the native YouTube app (or Safari), not inside the in-app
@@ -121,9 +153,8 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // there for desktop and keyboard activation.
   // Suppress duplicate invocations: a single tap on iOS fires touchend,
   // pointerup, AND click in quick succession. We only want one
-  // open_url call. The cooldown is long enough (600ms) to absorb the
-  // typical touch → click delay but short enough that a follow-up
-  // tap a moment later still triggers.
+  // hand-off attempt. The cooldown absorbs the typical touch → click
+  // delay (~300ms) but doesn't block a deliberate follow-up tap.
   let lastFiredAt = 0;
   const activate = (e: Event) => {
     const now = Date.now();
@@ -135,8 +166,21 @@ function buildThumbnailCard(id: string): HTMLDivElement {
     lastFiredAt = now;
     e.preventDefault();
     e.stopPropagation();
-    void invoke("open_url", { url: watchUrl })
-      .catch((err) => console.warn("open_url failed; native anchor will navigate:", err));
+    // Cascading fallbacks so the tap reaches YouTube somehow even if
+    // the primary path fails:
+    //  1. Tauri shell → UIApplication.open / `open` / xdg-open / start
+    //  2. window.open(_blank) — works in published web viewer and most
+    //     WKWebView configurations
+    //  3. window.location.href — last-resort in-WebView navigation
+    invoke("open_url", { url: watchUrl })
+      .catch((err) => {
+        console.warn("open_url failed, trying window.open:", err);
+        const opened = window.open(watchUrl, "_blank");
+        if (!opened) {
+          console.warn("window.open failed, falling back to location.href");
+          window.location.href = watchUrl;
+        }
+      });
   };
   card.addEventListener("click", activate);
   card.addEventListener("pointerup", activate);
