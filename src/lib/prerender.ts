@@ -99,9 +99,12 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
       // SPA hydration upgrades it once on load.
       const cardFor = (id: string) => {
         const url = `https://www.youtube.com/watch?v=${id}`;
+        const thumbUrl = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+        // background-image inline so the CSS over-crop kicks in the
+        // moment the page paints — no img element, no object-fit /
+        // transform subpixel gap for letterbox bars to peek through.
         return `<a class="order-youtube-card" href="${url}" rel="noreferrer" aria-label="Open video on YouTube" data-yt-id="${id}">`
-          + `<span class="order-youtube-card-thumb">`
-          + `<img class="order-youtube-card-img" loading="lazy" alt="" src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" onerror="this.onerror=null;this.src='https://i.ytimg.com/vi/${id}/hqdefault.jpg';">`
+          + `<span class="order-youtube-card-thumb" style="background-image:url('${thumbUrl}')">`
           + `<span class="order-youtube-card-play" aria-hidden="true">▶</span>`
           + `</span>`
           + `<span class="order-youtube-card-meta">`

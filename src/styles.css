@@ -1139,24 +1139,19 @@ video.order-vault-video {
   position: relative;
   flex: 0 0 168px;
   aspect-ratio: 16 / 9;
-  background: #000;
+  /* Background-image with background-size:130% does the over-crop
+     for us — browser cropping is pixel-aligned (no subpixel gaps
+     where letterbox bars peek through). 130% centered means we
+     show the middle 77% of the image both horizontally and
+     vertically, which eats any baked-in letterbox bars up to ~11%
+     of source height. Background color matches the card so any
+     edge sliver during image load matches the chrome. */
+  background-color: var(--bg);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 150%;
   display: block;
   overflow: hidden;
-}
-.order-youtube-card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  display: block;
-  /* Aggressive over-scale (30%) anchored to center. Catches every
-     letterbox shape we've seen — YouTube's 4:3 hqdefault bars,
-     uploader-baked-in 16:9-inside-16:9 frames, and the off-by-a-row
-     subpixel residue that scale(1.14) wasn't quite eating. Some
-     video content at the very edges gets cropped, but the title +
-     host + thumbnail center together always read as the right video. */
-  transform: scale(1.3);
-  transform-origin: center center;
 }
 .order-youtube-card-play {
   position: absolute;

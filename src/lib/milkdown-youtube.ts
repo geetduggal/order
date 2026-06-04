@@ -177,25 +177,25 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // reconstruct the watch URL even if the href somehow gets stripped.
   card.dataset.ytId = id;
 
-  // Thumbnail half.
+  // Thumbnail half — uses CSS background-image instead of <img>
+  // because object-fit + transform produced subpixel gaps where
+  // YouTube's letterbox bars would show through. With
+  // background-size:cover and background-position:center the browser
+  // does pixel-aligned cropping itself, and we use a slightly
+  // wider-than-16:9 background-size to guarantee any baked-in bars
+  // are eaten regardless of the source thumbnail's exact letterbox.
   const thumb = document.createElement("span");
   thumb.className = "order-youtube-card-thumb";
-  const img = document.createElement("img");
-  img.className = "order-youtube-card-img";
-  img.alt = "";
-  img.loading = "lazy";
-  img.draggable = false;
-  // mqdefault is YouTube's native-16:9 thumbnail (320x180), generated
-  // straight from the video frame with no letterbox bars for 16:9
-  // sources. hqdefault is the 4:3 fallback (with bars) — the
-  // container also over-scales 14% via CSS so any residual bar is
-  // cropped regardless of which size lands.
-  img.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
-  img.onerror = () => {
-    img.onerror = null;
-    img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  // Try mqdefault first (native 16:9 from the video frame). Probe with
+  // a hidden Image() so we can fall back to hqdefault on 404 without
+  // a visible flash.
+  const setBg = (src: string) => {
+    thumb.style.backgroundImage = `url("${src}")`;
   };
-  thumb.appendChild(img);
+  const probe = new Image();
+  probe.onload = () => setBg(`https://i.ytimg.com/vi/${id}/mqdefault.jpg`);
+  probe.onerror = () => setBg(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
+  probe.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
   const play = document.createElement("span");
   play.className = "order-youtube-card-play";
   play.setAttribute("aria-hidden", "true");
