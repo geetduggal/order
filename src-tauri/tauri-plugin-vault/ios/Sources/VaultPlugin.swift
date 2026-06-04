@@ -70,11 +70,16 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
       invoke.reject("invalid url: \(args.url)")
       return
     }
+    // Resolve the invoke BEFORE calling UIApplication.open. The
+    // Rust caller (run_mobile_plugin) blocks until we resolve or
+    // reject, and UIApplication.open's completion fires only after
+    // the user confirms iOS's app-switch prompt — which is seconds
+    // of frozen main thread on the Rust + IPC side. With the early
+    // resolve the JS bridge unblocks, the WebView stays
+    // responsive, and the open continues asynchronously.
+    invoke.resolve([:])
     DispatchQueue.main.async {
-      UIApplication.shared.open(url, options: [:]) { ok in
-        if ok { invoke.resolve([:]) }
-        else  { invoke.reject("UIApplication.open returned false for \(url)") }
-      }
+      UIApplication.shared.open(url, options: [:]) { _ in }
     }
   }
 
