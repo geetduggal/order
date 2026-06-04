@@ -29,6 +29,60 @@ import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { youtubeId } from "./youtube";
 
+// Document-level capture-phase listeners that fire BEFORE ProseMirror's
+// root-level handlers can consume the gesture. Registered once at
+// module load; the handler runs only when the target is inside a
+// YouTube card. iOS WKWebView's preventDefault on touchstart inside
+// contenteditable suppresses the subsequent click — touchend at the
+// document level is the only path that reliably fires.
+let installedDocHandlers = false;
+let docLastTap = 0;
+function installDocumentHandlers() {
+  if (installedDocHandlers) return;
+  installedDocHandlers = true;
+  const onAnyTap = (e: Event) => {
+    const t = e.target as Element | null;
+    const card = t?.closest?.(".order-youtube-card") as HTMLAnchorElement | null;
+    if (!card) return;
+    const now = Date.now();
+    if (now - docLastTap < 700) { e.preventDefault(); e.stopPropagation(); return; }
+    docLastTap = now;
+    e.preventDefault();
+    e.stopPropagation();
+    const watchUrl = card.href || (card.dataset.ytId ? `https://www.youtube.com/watch?v=${card.dataset.ytId}` : "");
+    if (!watchUrl) return;
+    const status = card.querySelector(".order-youtube-card-status") as HTMLElement | null;
+    const showStatus = (msg: string) => {
+      if (!status) return;
+      status.textContent = msg;
+      status.classList.add("is-visible");
+      setTimeout(() => status.classList.remove("is-visible"), 2500);
+    };
+    showStatus(`tap · ${e.type}`);
+    let resolved = false;
+    try {
+      invoke("open_url", { url: watchUrl })
+        .then(() => { resolved = true; showStatus("opened via tauri"); })
+        .catch((err: unknown) => { showStatus(`tauri rejected: ${String(err).slice(0, 40)}`); });
+    } catch (err) {
+      showStatus(`invoke threw: ${String(err).slice(0, 40)}`);
+    }
+    setTimeout(() => {
+      if (resolved) return;
+      const w = window.open(watchUrl, "_blank");
+      if (w) { showStatus("opened via window.open"); return; }
+      showStatus("window.open blocked → location.href");
+      window.location.href = watchUrl;
+    }, 250);
+  };
+  // Capture phase + window-level so ProseMirror's editor-root
+  // handlers can't preempt us. touchstart catches the very first
+  // gesture frame on iOS even if touchend/click are later suppressed.
+  window.addEventListener("touchstart", onAnyTap, { capture: true, passive: false });
+  window.addEventListener("touchend", onAnyTap, { capture: true, passive: false });
+  window.addEventListener("click", onAnyTap, { capture: true });
+}
+
 // Module-level title cache so repeated renders of the same video id
 // (every keystroke in the editor) don't re-hit YouTube's oEmbed
 // endpoint. Map<videoId, { title?: string; author?: string }>.
@@ -105,52 +159,15 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // whichever the platform supports wins. Cooldown prevents duplicate
   // YouTube app launches when multiple events (touchend + click) fire
   // for one tap.
-  // Debug status pill that fades in on tap and shows which open path
-  // ran. Lives inside the card so the user can immediately see
-  // whether the handler is reaching them at all — when iOS taps look
-  // dead, this tells us whether the tap is reaching the handler vs.
-  // every external-open path silently failing.
+  // The status pill is populated by the document-level handler.
   const status = document.createElement("span");
   status.className = "order-youtube-card-status";
   card.appendChild(status);
-  const showStatus = (msg: string) => {
-    status.textContent = msg;
-    status.classList.add("is-visible");
-    setTimeout(() => status.classList.remove("is-visible"), 2500);
-  };
-
-  let lastTap = 0;
-  const openIt = (e: Event) => {
-    const now = Date.now();
-    if (now - lastTap < 700) { e.preventDefault(); e.stopPropagation(); return; }
-    lastTap = now;
-    e.preventDefault();
-    e.stopPropagation();
-    showStatus(`tap · ${e.type}`);
-    // All three paths fire sequentially with brief delays so we can
-    // narrow which one actually opens YouTube. The cooldown above
-    // prevents dupes when a single tap fires touchend then click.
-    let resolved = false;
-    try {
-      invoke("open_url", { url: watchUrl })
-        .then(() => { resolved = true; showStatus("opened via tauri"); })
-        .catch((err) => {
-          showStatus(`tauri rejected: ${String(err).slice(0, 40)}`);
-        });
-    } catch (err) {
-      showStatus(`invoke threw: ${String(err).slice(0, 40)}`);
-    }
-    // If invoke hasn't resolved in 250ms, try the browser paths.
-    setTimeout(() => {
-      if (resolved) return;
-      const w = window.open(watchUrl, "_blank");
-      if (w) { showStatus("opened via window.open"); return; }
-      showStatus("window.open blocked → location.href");
-      window.location.href = watchUrl;
-    }, 250);
-  };
-  card.addEventListener("touchend", openIt, { capture: true, passive: false });
-  card.addEventListener("click", openIt, { capture: true });
+  // Tag the card with its video id so the document handler can
+  // reconstruct the watch URL even if the href somehow gets stripped.
+  card.dataset.ytId = id;
+  // One-shot install for the page; safe to call repeatedly.
+  installDocumentHandlers();
 
   // Thumbnail half.
   const thumb = document.createElement("span");
