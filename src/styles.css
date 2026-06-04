@@ -2107,10 +2107,30 @@ iframe.order-youtube-embed {
   font-size: 12px;
 }
 
-/* Toolbar: smaller, calmer */
+/* Toolbar: smaller, calmer. Sticks to the top of the viewport while the
+   body scrolls so prev/next/title stay reachable in long week / month
+   views. Background opaque so events don't bleed through underneath. */
 .fc-shell .fc-toolbar.fc-header-toolbar {
   margin-bottom: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--bg);
+  padding-top: 4px;
 }
+/* The day-of-week / month-column header row sticks just below the toolbar
+   so the date labels stay anchored while the calendar body scrolls. FC
+   v6 puts the header inside a scrollgrid section; the visible cushion is
+   `.fc-col-header`, which we lift via sticky on its container <td>. */
+.fc-shell .fc-scrollgrid-section-header,
+.fc-shell .fc-scrollgrid-section-header > * {
+  position: sticky;
+  top: var(--fc-sticky-col-header-top, 46px);
+  z-index: 5;
+  background: var(--bg);
+}
+/* Day-grid (month) cells share the same .fc-col-header element under the
+   .fc-daygrid view, so the same rule pins the M T W T F S row. */
 .fc-shell .fc-toolbar-title {
   font-family: var(--serif);
   font-weight: 500;
@@ -2329,13 +2349,21 @@ iframe.order-youtube-embed {
    next/title at narrow widths. Reserved for the week view — day and
    month views remount CalendarView without it. */
 .fc-week-day-picker {
-  position: absolute;
-  top: 14px;
-  right: clamp(16px, 4vw, 40px);
+  position: sticky;
+  top: 8px;
+  z-index: 7;
   display: flex;
   gap: 4px;
   align-items: center;
-  z-index: 5;
+  justify-content: flex-end;
+  /* Sit alongside the sticky toolbar's empty right slot. We use
+     negative margins to overlap the toolbar's vertical space — the
+     picker reads as part of the same chrome band without forcing
+     extra height. */
+  margin: 0 0 -28px auto;
+  padding-right: 2px;
+  width: max-content;
+  pointer-events: auto;
 }
 .fc-week-day-chip {
   width: 22px;
@@ -2374,11 +2402,16 @@ iframe.order-youtube-embed {
 .fc-week-day-all:hover { border-color: var(--royal); color: var(--ink); }
 
 @media (max-width: 768px) {
+  /* On phones, the toolbar is narrower than the picker would need next
+     to it — drop the negative-margin trick and let the picker sit on
+     its own row above the toolbar. It still sticks alongside the
+     toolbar's sticky band so it stays visible while scrolling. */
   .fc-week-day-picker {
-    position: static;
     justify-content: center;
-    padding: 0 0 6px;
-    margin-top: -4px;
+    margin: 0 0 4px;
+    padding: 0;
+    width: auto;
+    top: 4px;
   }
 }
 
