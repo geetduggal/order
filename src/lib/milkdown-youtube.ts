@@ -51,26 +51,16 @@ function installDocumentHandlers() {
     e.stopPropagation();
     const watchUrl = card.href || (card.dataset.ytId ? `https://www.youtube.com/watch?v=${card.dataset.ytId}` : "");
     if (!watchUrl) return;
-    const status = card.querySelector(".order-youtube-card-status") as HTMLElement | null;
-    const showStatus = (msg: string) => {
-      if (!status) return;
-      status.textContent = msg;
-      status.classList.add("is-visible");
-      setTimeout(() => status.classList.remove("is-visible"), 2500);
-    };
-    showStatus("tap");
     let resolved = false;
     try {
       invoke("open_url", { url: watchUrl })
-        .then(() => { resolved = true; showStatus("opened via tauri"); })
-        .catch((err: unknown) => { showStatus(`tauri rejected: ${String(err).slice(0, 40)}`); });
-    } catch (err) { showStatus(`invoke threw: ${String(err).slice(0, 40)}`); }
+        .then(() => { resolved = true; })
+        .catch(() => { /* fallthrough to window.open */ });
+    } catch { /* no Tauri shim */ }
     setTimeout(() => {
       if (resolved) return;
       const w = window.open(watchUrl, "_blank");
-      if (w) { showStatus("opened via window.open"); return; }
-      showStatus("window.open blocked → location.href");
-      window.location.href = watchUrl;
+      if (!w) window.location.href = watchUrl;
     }, 250);
   };
   // Click only. NO touch listeners — registering at window level
@@ -80,38 +70,14 @@ function installDocumentHandlers() {
   // WebViews, even WKWebView.
   window.addEventListener("click", onClick, { capture: true });
 }
+// Install once at module import — well before any card renders.
+if (typeof window !== "undefined") installDocumentHandlers();
 
-// Module-level title cache so repeated renders of the same video id
-// (every keystroke in the editor) don't re-hit YouTube's oEmbed
-// endpoint. Map<videoId, { title?: string; author?: string }>.
-const oembedCache = new Map<string, { title?: string; author?: string; promise?: Promise<void> }>();
-function fetchOEmbed(id: string): Promise<void> {
-  let entry = oembedCache.get(id);
-  if (entry?.title || entry?.promise) return entry?.promise ?? Promise.resolve();
-  entry = entry ?? {};
-  oembedCache.set(id, entry);
-  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
-    `https://www.youtube.com/watch?v=${id}`,
-  )}&format=json`;
-  // AbortSignal timeout so a blocked / slow YouTube request can't hold
-  // a pending promise forever (and so any sync DOM mutations
-  // triggered by an upstream `.then` don't pile up unboundedly).
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 4000);
-  entry.promise = fetch(url, { signal: ctrl.signal })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data: { title?: string; author_name?: string } | null) => {
-      if (!data) return;
-      entry!.title = data.title;
-      entry!.author = data.author_name;
-    })
-    .catch(() => { /* offline / network blocked / CORS / timeout */ })
-    .finally(() => {
-      clearTimeout(timer);
-      entry!.promise = undefined;
-    });
-  return entry.promise;
-}
+// oEmbed title fetch removed — net-blocking inside the iOS WKWebView
+// was the load-time freeze. The card shows a generic "YouTube video"
+// title; the host already reads "youtube.com" and the thumbnail is
+// recognizable on its own. Re-enable later only with a strictly
+// time-bounded path that can't ever sync-block layout.
 
 const KEY = new PluginKey("order-youtube-embed");
 const YT_URL_RE = /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^\s"'<>)]+|youtu\.be\/[\w-]+(?:\?[^\s"'<>)]*)?)/;
@@ -165,15 +131,9 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // whichever the platform supports wins. Cooldown prevents duplicate
   // YouTube app launches when multiple events (touchend + click) fire
   // for one tap.
-  // The status pill is populated by the document-level handler.
-  const status = document.createElement("span");
-  status.className = "order-youtube-card-status";
-  card.appendChild(status);
   // Tag the card with its video id so the document handler can
   // reconstruct the watch URL even if the href somehow gets stripped.
   card.dataset.ytId = id;
-  // One-shot install for the page; safe to call repeatedly.
-  installDocumentHandlers();
 
   // Thumbnail half.
   const thumb = document.createElement("span");
@@ -204,7 +164,8 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   thumb.appendChild(play);
   card.appendChild(thumb);
 
-  // Title / meta half.
+  // Title / meta half — static text. Title fetch removed for now,
+  // see note on the deleted fetchOEmbed.
   const meta = document.createElement("span");
   meta.className = "order-youtube-card-meta";
   const title = document.createElement("span");
@@ -216,23 +177,6 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   host.textContent = "youtube.com";
   meta.appendChild(host);
   card.appendChild(meta);
-
-  // Cached title — fetch once per id and update the DOM when it lands.
-  // The fallback "YouTube video" stays if the network call fails (no
-  // CORS, offline, etc.) so the card always reads as a video.
-  const cached = oembedCache.get(id);
-  if (cached?.title) {
-    title.textContent = cached.title;
-    if (cached.author) host.textContent = `${cached.author} · youtube.com`;
-  } else {
-    void fetchOEmbed(id).then(() => {
-      const entry = oembedCache.get(id);
-      if (entry?.title) {
-        title.textContent = entry.title;
-        if (entry.author) host.textContent = `${entry.author} · youtube.com`;
-      }
-    });
-  }
 
   // Route through Tauri's shell when available so the URL opens in
   // the native YouTube app (or Safari), not inside the in-app
