@@ -430,6 +430,11 @@ export function CardGrid() {
   const STREAM_PAGE_SIZE = 60;
   const [streamLimit, setStreamLimit] = useState<number | null>(STREAM_PAGE_SIZE);
   useEffect(() => { setStreamLimit(STREAM_PAGE_SIZE); }, [filters]);
+  // Latest sorted-full list, read by the target-extend effect below
+  // without forcing the effect to refire on every render (a non-memoed
+  // array would cause that — we want it to fire only when a new target
+  // is requested, then look up against current state).
+  const sortedFullRef = useRef<LoadedNote[]>([]);
   // Callback ref backed by state so layout effects re-run when the
   // .card-grid div actually mounts. A plain useRef has a stable
   // identity, so an effect with [gridRef] deps never re-fires — and
@@ -1517,6 +1522,31 @@ export function CardGrid() {
    *  invoke the latest version once updateNoteFrontmatter is in scope. */
   const moveEventToDayRef = useRef<((path: string, newDate: string) => Promise<void>) | null>(null);
 
+  // Before the scroll-to-target settle timer fires, make sure the
+  // target is actually in the rendered slice. The bare-stream is
+  // paginated to STREAM_PAGE_SIZE; a newly-created note dated in the
+  // past — or a calendar-event Open on something off the recency
+  // tail — could land outside that window, and the cell lookup
+  // below would silently miss. Extend the limit to the next
+  // STREAM_PAGE_SIZE boundary that covers the target's sorted index.
+  useEffect(() => {
+    if (view !== "stream") return;
+    if (filters.length > 0) return;
+    const target = scrollTargetPath ?? focusPath ?? focusedPath;
+    if (!target) return;
+    const idx = sortedFullRef.current.findIndex((n) => n.path === target);
+    if (idx < 0) return;
+    const need = idx + 1;
+    setStreamLimit((cur) => {
+      if (cur === null) return cur;
+      if (need <= cur) return cur;
+      return Math.ceil(need / STREAM_PAGE_SIZE) * STREAM_PAGE_SIZE;
+    });
+    // sortedFullRef is a mutable ref — we deliberately don't list it
+    // in deps so this only fires when a new target is requested.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, scrollTargetPath, focusPath, focusedPath, filters.length]);
+
   // After switching to Stream with a target set, scroll the matching
   // card into view and pulse a highlight on it. We wait long enough
   // for the masonry layout effect to compute row spans (otherwise the
@@ -2135,6 +2165,7 @@ export function CardGrid() {
   // set at STREAM_PAGE_SIZE and surface a "Show more" affordance for
   // when the user wants to scroll further. Filtered views show the full
   // set (filtering already bounds the count by folder membership).
+  sortedFullRef.current = sortedNotesFull;
   const sortedNotes = streamLimit !== null && filters.length === 0
     ? sortedNotesFull.slice(0, streamLimit)
     : sortedNotesFull;

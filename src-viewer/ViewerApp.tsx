@@ -685,6 +685,7 @@ export function ViewerApp(
             onNavigate={navigate}
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
             soloRef={singleNoteRef}
+            scrollTarget={scrollTarget}
           />
         )}
         {view === "day" && (
@@ -760,7 +761,7 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function StreamView({
-  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
@@ -774,6 +775,10 @@ function StreamView({
   onRemoveInclude: (ref: string) => void;
   /** When set, render ONLY this note (a single-note permalink). */
   soloRef?: string | null;
+  /** Ref of a note the parent is about to scroll-target — used to
+   *  extend the bare-stream pagination window when the target lives
+   *  past the default cap. */
+  scrollTarget?: string | null;
 }) {
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
@@ -882,7 +887,14 @@ function StreamView({
   // anchored below the visible window. That gives a near-instant
   // first paint and a seamless scroll-to-load tail instead of a
   // synchronous wall of cells.
-  return <BareStreamGrid notes={notes} setGridEl={setGridEl} cardNode={cardNode} />;
+  return (
+    <BareStreamGrid
+      notes={notes}
+      setGridEl={setGridEl}
+      cardNode={cardNode}
+      scrollTarget={scrollTarget ?? null}
+    />
+  );
 }
 
 const STREAM_PAGE_SIZE = 60;
@@ -891,16 +903,35 @@ function BareStreamGrid({
   notes,
   setGridEl,
   cardNode,
+  scrollTarget,
 }: {
   notes: PublishedNote[];
   setGridEl: (el: HTMLDivElement | null) => void;
   cardNode: (n: PublishedNote) => ReactNode;
+  /** Ref of a note the parent is about to scroll to. If it's beyond
+   *  the current pagination window, extend the window so the cell
+   *  mounts before the parent's rAF poll gives up. */
+  scrollTarget: string | null;
 }) {
   const [limit, setLimit] = useState(STREAM_PAGE_SIZE);
   // Reset paging when the underlying list changes (filter toggle,
   // stream-mode flip). Keying off length is enough — sort is stable
   // upstream, so identity tracking would just be churn.
   useEffect(() => { setLimit(STREAM_PAGE_SIZE); }, [notes.length]);
+
+  // Extend the window to include any requested scroll-target. The
+  // upstream sort is most-recent-first, so a note dated weeks back
+  // sits past the cap; without this bump, the parent's rAF poll
+  // looking for `.card-grid-cell[data-path=…]` finds nothing and
+  // gives up. Round up to the next STREAM_PAGE_SIZE boundary so the
+  // tail keeps its predictable batch size.
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const idx = notes.findIndex((n) => n.ref === scrollTarget);
+    if (idx < 0) return;
+    const need = idx + 1;
+    setLimit((cur) => (need <= cur ? cur : Math.ceil(need / STREAM_PAGE_SIZE) * STREAM_PAGE_SIZE));
+  }, [scrollTarget, notes]);
 
   const visibleSlice = notes.slice(0, limit);
   const hasMore = limit < notes.length;
