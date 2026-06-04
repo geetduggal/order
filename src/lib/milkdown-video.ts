@@ -23,7 +23,13 @@ import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 
 const KEY = new PluginKey("order-video-embed");
-const VIDEO_TAG_RE = /<video\b[^>]*\bclass="order-vault-video"[^>]*\bsrc="([^"]+)"[^>]*>/;
+const VIDEO_OPEN_TAG_RE = /<video\b[^>]*\bclass="order-vault-video"[^>]*\bsrc="([^"]+)"[^>]*>/;
+// Any html-node fragment that should be hidden: an open <video class=
+// "order-vault-video"…> tag, or a bare </video> close that Milkdown
+// may have split out as its own html node. Both are 100%-ours-only
+// output (`order-vault-video` is the marker on the open; a `</video>`
+// elsewhere in the doc would be unusual and worth hiding regardless).
+const VIDEO_FRAGMENT_RE = /(?:<video\b[^>]*\bclass="order-vault-video")|<\/video>/;
 
 function buildVideo(src: string): HTMLDivElement {
   const wrap = document.createElement("div");
@@ -43,26 +49,33 @@ function buildVideo(src: string): HTMLDivElement {
   return wrap;
 }
 
-interface Target {
+interface Hide {
   pos: number;
   end: number;
+}
+interface Widget {
+  pos: number;
   src: string;
 }
 
-function findVideoTargets(doc: ProseNode): Target[] {
-  const out: Target[] = [];
+function scanVideoBlocks(doc: ProseNode): { hides: Hide[]; widgets: Widget[] } {
+  const hides: Hide[] = [];
+  const widgets: Widget[] = [];
   doc.descendants((node, pos) => {
-    // Milkdown's commonmark html schema is an inline atom node with
-    // a `value` attribute holding the raw HTML text.
     if (node.type.name !== "html") return undefined;
     const attrs = node.attrs as { value?: unknown };
     if (typeof attrs?.value !== "string") return undefined;
-    const m = attrs.value.match(VIDEO_TAG_RE);
-    if (!m) return undefined;
-    out.push({ pos, end: pos + node.nodeSize, src: m[1] });
+    const value = attrs.value;
+    // Anything that's our output — opener tag or stranded closer —
+    // gets hidden so the user doesn't see literal `<video…>` text in
+    // the editor. Each opener also mounts a widget; closers don't.
+    if (!VIDEO_FRAGMENT_RE.test(value)) return undefined;
+    hides.push({ pos, end: pos + node.nodeSize });
+    const open = value.match(VIDEO_OPEN_TAG_RE);
+    if (open) widgets.push({ pos: pos + node.nodeSize, src: open[1] });
     return false;
   });
-  return out;
+  return { hides, widgets };
 }
 
 export function videoEmbedPlugin() {
@@ -72,24 +85,20 @@ export function videoEmbedPlugin() {
         key: KEY,
         props: {
           decorations(state) {
-            const targets = findVideoTargets(state.doc);
-            if (targets.length === 0) return DecorationSet.empty;
+            const { hides, widgets } = scanVideoBlocks(state.doc);
+            if (widgets.length === 0 && hides.length === 0) return DecorationSet.empty;
             const decos: Decoration[] = [];
-            for (const { pos, end, src } of targets) {
-              // Hide the text-rendered span (Milkdown's `html` node
-              // renders as a `<span data-type="html">raw text</span>`).
+            for (const { pos, end } of hides) {
               decos.push(
-                Decoration.node(pos, end, {
-                  class: "is-video-source",
-                  "data-video-src": src,
-                }),
+                Decoration.node(pos, end, { class: "is-video-source" }),
               );
-              // Mount the real video widget right after the source.
-              // Keyed by src so PM reuses the existing <video> across
-              // re-renders (otherwise every keystroke would reset
-              // playback state).
+            }
+            for (const { pos, src } of widgets) {
+              // Keyed by src so PM reuses the existing <video>
+              // across re-renders (otherwise every keystroke would
+              // reset playback state).
               decos.push(
-                Decoration.widget(end, () => buildVideo(src), {
+                Decoration.widget(pos, () => buildVideo(src), {
                   key: `video-${src}`,
                   side: 1,
                   ignoreSelection: true,

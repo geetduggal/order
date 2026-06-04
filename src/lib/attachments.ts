@@ -116,16 +116,17 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
   return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
     if (isVideoPath(target)) {
-      // Videos render as a raw HTML block wrapped in a
-      // contenteditable=false div so WKWebView doesn't try to manage
-      // the <video> as part of the editable surface — without the
-      // wrapper, iOS Safari composites the video frame and the
-      // native controls into separate layers (the user sees the
-      // playing frame stacked on top of a stranded controls bar
-      // below). Pulling the player out of contenteditable makes the
-      // browser treat it as a static media block.
+      // Emit a bare HTML video block — Milkdown's commonmark turns
+      // the open + close tag into one or two `html` schema nodes
+      // whose value is the raw text. The video-embed PM plugin
+      // (lib/milkdown-video.ts) finds those nodes, hides their
+      // literal-text rendering via a node decoration, and mounts a
+      // real <video controls playsinline> widget at the same spot.
+      // Blank lines above and below make it a CommonMark type-7
+      // HTML block so the parser keeps it intact instead of
+      // shredding it into inline fragments.
       const url = assetUrl(`${dir}${target}`);
-      return `\n\n<div class="order-vault-video-wrap" contenteditable="false"><video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video></div>\n\n`;
+      return `\n\n<video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video>\n\n`;
     }
     if (!isImagePath(target)) return full;
     const url = assetUrl(`${dir}${target}`);
@@ -164,11 +165,10 @@ export function deflateImageEmbeds(body: string, noteDir: string): string {
     // stray Crepe paste artifact). Also consume trailing blank space so
     // we don't leave a dangling empty paragraph.
     .replace(/!\[[^\]]*\]\(blob:[^)\s]+\)[ \t]*\n?/g, "")
-    // <div class="order-vault-video-wrap"><video src="vaultasset://…X.mov" ...></video></div>
-    // → ![[X.mov]]  (inverse of inflateImageEmbeds for videos). The
-    // wrapper div is optional — older saves may have written the bare
-    // <video> tag — so we strip either shape and fall back to
-    // matching on src= alone.
+    // <video src="vaultasset://…X.mov" ...></video> → ![[X.mov]]
+    // (inverse of inflateImageEmbeds for video extensions). Also
+    // accepts an optional legacy <div class="order-vault-video-wrap">
+    // wrapper from earlier builds.
     .replace(/[ \t]*(?:<div[^>]*class="order-vault-video-wrap"[^>]*>\s*)?<video\b[^>]*?\bsrc="(vaultasset:\/\/localhost\/[^"]+)"[^>]*>\s*<\/video>(?:\s*<\/div>)?[ \t]*\n?/g,
       (_full, url: string) => {
         const rest = url.slice(VAULTASSET_BASE.length);
