@@ -316,3 +316,68 @@ pub fn mime_for(rel: &str) -> &'static str {
         _ => "application/octet-stream",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    /// Build a VaultState rooted at `dir` so resolve() targets it. Uses
+    /// the same shape as the iOS / desktop runtime path.
+    fn state_at(dir: PathBuf) -> VaultState {
+        let s = VaultState::default();
+        *s.root.lock().unwrap() = Some(dir);
+        s
+    }
+
+    fn tmp_vault_with_file(name: &str, bytes: &[u8]) -> (tempfile::TempDir, VaultState) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(name);
+        let mut f = fs::File::create(&path).expect("create file");
+        f.write_all(bytes).expect("write file");
+        let state = state_at(dir.path().to_path_buf());
+        (dir, state)
+    }
+
+    #[test]
+    fn range_slice_returns_exact_bytes_for_middle_window() {
+        // 256 sequential bytes — easy to assert on by value.
+        let payload: Vec<u8> = (0u8..=255).collect();
+        let (_dir, state) = tmp_vault_with_file("video.mov", &payload);
+        let (slice, total) = read_asset_range(&state, "video.mov", 100, 199).expect("range read");
+        assert_eq!(total, 256, "reports correct total size");
+        assert_eq!(slice.len(), 100, "returns exactly (end - start + 1) bytes");
+        assert_eq!(slice[0], 100, "starts at the requested offset");
+        assert_eq!(slice[99], 199, "ends at the inclusive end");
+    }
+
+    #[test]
+    fn range_slice_clamps_end_past_eof() {
+        let payload: Vec<u8> = (0u8..=99).collect();
+        let (_dir, state) = tmp_vault_with_file("video.mp4", &payload);
+        // Request goes past EOF — the slice should clamp to file end,
+        // matching HTTP Range semantics ("read what's available").
+        let (slice, total) = read_asset_range(&state, "video.mp4", 50, 9999).expect("range read");
+        assert_eq!(total, 100);
+        assert_eq!(slice.len(), 50, "clamped to file length");
+        assert_eq!(slice[0], 50);
+        assert_eq!(slice[49], 99);
+    }
+
+    #[test]
+    fn range_slice_rejects_start_past_eof() {
+        let payload: Vec<u8> = vec![0xAB; 64];
+        let (_dir, state) = tmp_vault_with_file("video.webm", &payload);
+        let err = read_asset_range(&state, "video.webm", 200, 300).expect_err("should fail");
+        assert!(err.contains("out of bounds"), "error mentions out of bounds: {err}");
+    }
+
+    #[test]
+    fn asset_size_returns_file_length_without_reading() {
+        let payload: Vec<u8> = vec![0; 12345];
+        let (_dir, state) = tmp_vault_with_file("big.mov", &payload);
+        let size = asset_size(&state, "big.mov").expect("size");
+        assert_eq!(size, 12345);
+    }
+}
