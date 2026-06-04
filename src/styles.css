@@ -2052,6 +2052,7 @@ iframe.order-youtube-embed {
   max-width: 1400px;
   margin: 0 auto;
   font-family: var(--sans);
+  position: relative;
   /* FullCalendar v6 theming via CSS variables. */
   --fc-border-color: var(--rule);
   --fc-page-bg-color: var(--bg);
@@ -2275,6 +2276,65 @@ iframe.order-youtube-embed {
 .fc-shell .fc-multimonth .fc-event {
   font-size: 9.5px;
   padding: 0 3px;
+}
+
+/* ---------- Week-view day-of-week picker ---------- */
+/* Floats over FullCalendar's empty `right:""` toolbar slot on desktop;
+   drops inline below the toolbar on phones so it never overlaps prev/
+   next/title at narrow widths. Reserved for the week view — day and
+   month views remount CalendarView without it. */
+.fc-week-day-picker {
+  position: absolute;
+  top: 14px;
+  right: clamp(16px, 4vw, 40px);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  z-index: 5;
+}
+.fc-week-day-chip {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--rule);
+  background: var(--bg-elev);
+  color: var(--ink);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  transition: background-color 0.12s var(--ease-out),
+              border-color 0.12s var(--ease-out),
+              opacity 0.12s var(--ease-out);
+}
+.fc-week-day-chip.is-on { background: var(--royal-soft); border-color: var(--royal); color: var(--ink); }
+.fc-week-day-chip.is-off { opacity: 0.35; background: transparent; color: var(--ink-faint); }
+.fc-week-day-chip:hover { border-color: var(--royal); opacity: 1; }
+.fc-week-day-all {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--sans);
+  margin-left: 4px;
+}
+.fc-week-day-all:hover { border-color: var(--royal); color: var(--ink); }
+
+@media (max-width: 768px) {
+  .fc-week-day-picker {
+    position: static;
+    justify-content: center;
+    padding: 0 0 6px;
+    margin-top: -4px;
+  }
 }
 
 /* ---------- Year linear strip view (ported from Full Calendar Plus) ---------- */

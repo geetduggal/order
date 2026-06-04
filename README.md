@@ -468,6 +468,18 @@ three independent sources:
   (`addOneDayIso` for all-day spans; `endDate + endTime` for timed events that
   cross midnight). Timed events without an end date keep the simple start-only
   behavior they always had.
+- **Week-view day-of-week picker**: a row of seven small day chips (S M T W
+  T F S) floats over the empty right side of the week-view toolbar (drops
+  inline below the toolbar on phones). Tap a chip to hide / show that
+  weekday column; an `All` pill appears once anything is hidden to one-tap
+  restore the full week. The leftmost visible day becomes `firstDay`, so a
+  contiguous selection sits flush at the left edge of the grid. First-
+  launch default is screen-aware: phones open to **yesterday / today /
+  tomorrow** with today in the middle column; desktop / iOS pad sees all
+  seven. The picker is week-view only — day and month remount
+  `CalendarView` without it. Selection persists in localStorage
+  (`order.calendar.week-hidden-days`) so it survives reloads on desktop,
+  iOS, and the published viewer.
 
 ### File watching
 

@@ -8,7 +8,7 @@
 // them. Year view is deferred — Full Calendar Plus uses a custom
 // LinearView plugin we haven't ported yet.
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -190,6 +190,57 @@ export interface CalendarViewHandle {
   today(): void;
 }
 
+// Week-view column visibility. Stored as the SET OF HIDDEN day-of-week
+// numbers (0=Sun..6=Sat) so an unconfigured array means "show all 7"
+// and a freshly-cleared selection round-trips cleanly. The picker is
+// the only thing that writes here.
+const WEEK_HIDDEN_KEY = "order.calendar.week-hidden-days";
+const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function readPersistedHiddenDays(): number[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(WEEK_HIDDEN_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const days = parsed.filter((d: unknown): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6);
+    // Never restore a state that hides every column — that would
+    // lock the week view out completely.
+    if (days.length >= 7) return null;
+    return days;
+  } catch {
+    return null;
+  }
+}
+
+function mobileNarrowDefault(): number[] {
+  // Phone / narrow tablet: yesterday / today / tomorrow only — three
+  // adjacent columns with today in the middle once firstDay is
+  // derived. Computed from the device's local day so the cell
+  // alignment matches the user's wall clock on first launch.
+  const today = new Date().getDay();
+  const yesterday = (today + 6) % 7;
+  const tomorrow = (today + 1) % 7;
+  const visible = new Set([yesterday, today, tomorrow]);
+  return [0, 1, 2, 3, 4, 5, 6].filter((d) => !visible.has(d));
+}
+
+function defaultHiddenDays(): number[] {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return [];
+  return window.matchMedia("(max-width: 768px)").matches ? mobileNarrowDefault() : [];
+}
+
+function deriveFirstDay(hidden: ReadonlySet<number>): number {
+  // First visible day-of-week, scanning Sun..Sat. Pinning firstDay
+  // to the leftmost visible day keeps the visible columns flush to
+  // the left edge of the week grid — and on a 3-day mobile default
+  // centered on today, today lands in the middle column automatically.
+  for (let d = 0; d < 7; d++) if (!hidden.has(d)) return d;
+  return 0;
+}
+
 export const CalendarView = forwardRef<CalendarViewHandle, Props>(function CalendarView(props, navRef) {
   const { notes, initialView, onMoveEvent } = props;
   const apiRef = useRef<FullCalendar | null>(null);
@@ -219,6 +270,35 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     return () => ro.disconnect();
   }, []);
   const events = useMemo(() => notesToEvents(notes), [notes]);
+
+  // Week-view column visibility lives here so the desktop, iOS, and
+  // published viewer all pick it up by mounting the same component.
+  // The picker only renders for week view; switching to day / month
+  // remounts CalendarView (CardGrid keys on view) and these props
+  // simply don't flow through.
+  const [weekHidden, setWeekHidden] = useState<number[]>(() => {
+    const persisted = readPersistedHiddenDays();
+    return persisted ?? defaultHiddenDays();
+  });
+  const weekHiddenSet = useMemo(() => new Set(weekHidden), [weekHidden]);
+  const weekFirstDay = useMemo(() => deriveFirstDay(weekHiddenSet), [weekHiddenSet]);
+
+  function persistWeekHidden(next: number[]) {
+    setWeekHidden(next);
+    try { window.localStorage.setItem(WEEK_HIDDEN_KEY, JSON.stringify(next)); } catch { /* localStorage unavailable */ }
+  }
+  function toggleWeekDay(d: number) {
+    if (weekHiddenSet.has(d)) {
+      persistWeekHidden(weekHidden.filter((x) => x !== d));
+    } else {
+      // Refuse to hide the last visible column — the calendar would
+      // collapse to an empty grid and become unrecoverable from inside
+      // FC's own toolbar.
+      if (weekHiddenSet.size >= 6) return;
+      persistWeekHidden([...weekHidden, d].sort((a, b) => a - b));
+    }
+  }
+  function showAllWeekDays() { persistWeekHidden([]); }
 
   async function handleEventDrop(arg: EventDropArg) {
     const patch = patchFromEvent(arg);
@@ -291,8 +371,41 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     void api;
   }
 
+  const isWeek = initialView === "timeGridWeek";
+
   return (
-    <div className="fc-shell" ref={shellRef}>
+    <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}`} ref={shellRef}>
+      {isWeek && (
+        <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
+          {DAY_LABELS.map((label, d) => {
+            const hidden = weekHiddenSet.has(d);
+            return (
+              <button
+                key={d}
+                type="button"
+                className={`fc-week-day-chip${hidden ? " is-off" : " is-on"}`}
+                onClick={() => toggleWeekDay(d)}
+                aria-pressed={!hidden}
+                aria-label={`${hidden ? "Show" : "Hide"} ${DAY_NAMES[d]}`}
+                title={DAY_NAMES[d]}
+              >
+                {label}
+              </button>
+            );
+          })}
+          {weekHidden.length > 0 && (
+            <button
+              type="button"
+              className="fc-week-day-all"
+              onClick={showAllWeekDays}
+              aria-label="Show all days"
+              title="Show all days"
+            >
+              All
+            </button>
+          )}
+        </div>
+      )}
       <FullCalendar
         ref={(instance) => {
           apiRef.current = instance;
@@ -306,7 +419,8 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         selectable
         selectMirror
         nowIndicator
-        firstDay={0}
+        firstDay={isWeek ? weekFirstDay : 0}
+        hiddenDays={isWeek ? weekHidden : undefined}
         height="auto"
         // Touch-friendly: drop FC's 1000ms long-press to 250ms so dragging
         // an event or selecting a range with a finger feels responsive.
