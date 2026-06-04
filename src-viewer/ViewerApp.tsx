@@ -871,6 +871,7 @@ function StreamView({
               centerpiece={centerpiece}
               notes={noteCells}
               collapseSignal={collapseSignal}
+              scrollTarget={scrollTarget ?? null}
             />
           );
         })}

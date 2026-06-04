@@ -18,7 +18,7 @@ export interface SectionCell {
 }
 
 export function NotebookSection({
-  sectionRef, centerpiece, notes, batch = 14, divider = true, collapseSignal = 0,
+  sectionRef, centerpiece, notes, batch = 14, divider = true, collapseSignal = 0, scrollTarget = null,
 }: {
   /** Folder ref — anchors the section for pill click-to-jump. */
   sectionRef: string;
@@ -33,12 +33,29 @@ export function NotebookSection({
   /** Bump this to collapse the section back to its first batch (the
    *  home button uses it to reset all expansions). */
   collapseSignal?: number;
+  /** When set, ensure the section is expanded enough to render the
+   *  cell with this `dataPath`. The host already matches `dataPath`
+   *  to what its scroll-target effect queries for, so a single string
+   *  pass-through covers both desktop (path) and viewer (ref) hosts. */
+  scrollTarget?: string | null;
 }) {
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
   const [shown, setShown] = useState(batch);
   // Collapse back to the first batch whenever the signal changes.
   useEffect(() => { setShown(batch); }, [collapseSignal, batch]);
+
+  // Auto-extend `shown` so a navigation target (calendar Open,
+  // palette pick, newly-created note past the first batch) actually
+  // appears in this section before the host's scroll effect tries to
+  // locate it in the DOM.
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const idx = notes.findIndex((c) => c.dataPath === scrollTarget);
+    if (idx < 0) return;
+    const need = idx + 1;
+    setShown((cur) => (need <= cur ? cur : Math.ceil(need / batch) * batch));
+  }, [scrollTarget, notes, batch]);
 
   const visibleNotes = notes.slice(0, shown);
   const hasMore = notes.length > shown;

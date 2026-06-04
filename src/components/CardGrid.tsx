@@ -2572,6 +2572,7 @@ export function CardGrid() {
                   centerpiece={s.centerpiece}
                   notes={s.noteCells}
                   collapseSignal={collapseNonce}
+                  scrollTarget={scrollTargetPath ?? focusPath ?? focusedPath}
                 />
               ))}
             </div>
