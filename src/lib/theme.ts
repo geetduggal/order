@@ -7,18 +7,20 @@ import { useEffect, useState } from "react";
 
 // Themes cycled by the rail button, in this order:
 //   light → dark → black (OLED) → wordperfect (DOS blue) →
+//   terminal (WordPerfect chrome on pure black) →
 //   america (red/white/blue) → christmas (red/green) → lcars → light.
-export type Theme = "light" | "dark" | "black" | "wordperfect" | "america" | "christmas" | "lcars";
+export type Theme = "light" | "dark" | "black" | "wordperfect" | "terminal" | "america" | "christmas" | "lcars";
 const KEY = "order.theme";
 const EVENT = "order:theme";
 
 /** Cycle order for the toggle. */
-export const THEME_CYCLE: Theme[] = ["light", "dark", "black", "wordperfect", "america", "christmas", "lcars"];
+export const THEME_CYCLE: Theme[] = ["light", "dark", "black", "wordperfect", "terminal", "america", "christmas", "lcars"];
 
 /** Human label for tooltips. */
 export function themeLabel(t: Theme): string {
   switch (t) {
     case "wordperfect": return "WordPerfect";
+    case "terminal": return "Terminal";
     case "america": return "America";
     case "christmas": return "Christmas";
     case "lcars": return "LCARS";

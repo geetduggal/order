@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
+import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
@@ -644,7 +644,7 @@ export function ViewerApp(
             title={`Theme: ${themeLabel(theme)} — click for ${themeLabel(nextTheme(theme))}`}
           >
             {(() => {
-              const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
+              const Icon = { light: Sun, dark: Moon, black: MoonStar, wordperfect: Monitor, terminal: TerminalIcon, america: Flag, christmas: TreePine, lcars: Rocket }[theme];
               return <Icon size={14} strokeWidth={2.1} />;
             })()}
             <span>Theme — {themeLabel(theme)}</span>
