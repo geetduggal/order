@@ -2248,22 +2248,37 @@ iframe.order-youtube-embed {
 .fc-shell .fc-event { touch-action: none; }
 /* Make the bottom resize grip a real finger-sized target on touch, with a
    subtle visible affordance so users can find it. FC defaults to a 4px
-   invisible strip — fine for mouse, hard to grab on mobile. */
+   invisible strip — fine for mouse, hard to grab on mobile. On touch we
+   bump the hit-target itself AND let it extend a few pixels below the
+   visible event so a finger landing on the bottom edge (or just past it)
+   still grabs the resize gesture instead of the next slot. */
 .fc-shell { --fc-event-resizer-thickness: 8px; }
 @media (hover: none) {
+  .fc-shell { --fc-event-resizer-thickness: 18px; }
+  /* The resizer lives inside the event; letting the event paint outside
+     its own box lets the hit-target hang ~6px below the bottom edge.
+     FC stacks timegrid events with a small gap between them, so the
+     extension occupies otherwise-dead space rather than another event. */
+  .fc-shell .fc-timegrid-event { overflow: visible; }
+  .fc-shell .fc-timegrid-event .fc-event-resizer-end {
+    bottom: -6px;
+  }
   .fc-shell .fc-timegrid-event .fc-event-resizer-end::after {
     content: "";
     position: absolute;
     left: 50%;
-    bottom: 1px;
-    width: 24px;
-    height: 3px;
-    margin-left: -12px;
+    bottom: 8px;
+    width: 34px;
+    height: 4px;
+    margin-left: -17px;
     border-radius: 2px;
-    background: var(--ink-faint);
-    opacity: 0.5;
+    background: var(--ink);
+    opacity: 0.6;
     pointer-events: none;
   }
+  /* For events that are taller than ~45 min, let the grip indicator
+     sit a little proud of the new extended hit-target so it lines up
+     with the visible event bottom and reads as "drag this edge." */
 }
 
 /* Day grid (month) cells */

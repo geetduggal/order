@@ -141,7 +141,12 @@ export function useTileDrag(
       const d = drag.current;
       if (!d) return;
       if (!d.started) {
-        if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 6) return;
+        // 12 px (Manhattan) start threshold: a finger tap routinely
+        // wiggles 6–10 px before lift on iOS, and the previous 6 px
+        // bar was promoting those taps to drags — the no-op drag's
+        // click-swallow then ate the × tap on a filter pill, so the
+        // first close looked like it did nothing.
+        if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 12) return;
         d.started = true;
         setDragRef(d.ref);
         d.el = gridRef.current
@@ -183,11 +188,6 @@ export function useTileDrag(
       if (!d?.started || !gridRef.current) return;
       const px = d.lastX;
       const py = d.lastY;
-      // Swallow the click that fires right after the drag.
-      const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
-      window.addEventListener("click", swallow, { capture: true, once: true });
-      setTimeout(() => window.removeEventListener("click", swallow, true), 50);
-
       // Rebuild cells with the dragged ref still excluded (drag.current is
       // now null, so reuse the same filter manually).
       const cells = (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])
@@ -202,7 +202,17 @@ export function useTileDrag(
       const order = refsRef.current.filter((r) => r !== d.ref);
       insertAt = Math.max(0, Math.min(insertAt, order.length));
       order.splice(insertAt, 0, d.ref);
-      if (order.join("") !== refsRef.current.join("")) reorder(order);
+      if (order.join("") === refsRef.current.join("")) return;
+
+      // Only swallow the post-drag click when a real reorder happened.
+      // A finger-jitter drag that lifts back over its origin would
+      // otherwise eat a legitimate tap on a child control (filter
+      // pill ×, area folder picker, etc.) — that was the "first × tap
+      // does nothing, second works" symptom on iOS.
+      const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, true), 50);
+      reorder(order);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
