@@ -156,7 +156,10 @@ export function ViewerApp(
       const v = localStorage.getItem("order.streamMode");
       if (v === "all" || v === "notes" || v === "folders") return v;
     } catch { /* non-fatal */ }
-    return "folders";
+    // Published web viewer defaults to "notes" — a visitor lands on
+    // the home folder's section and reads the actual writing; the
+    // Notable Folder grid is one tap away via the sidebar.
+    return "notes";
   });
   const setStreamModePersist = (m: StreamMode) => {
     setStreamMode(m);

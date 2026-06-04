@@ -72,15 +72,13 @@ function nextStreamMode(m: StreamMode): StreamMode {
   return m === "all" ? "notes" : m === "notes" ? "folders" : "all";
 }
 
-// Every launch picks a viewport-aware default — Day on phones (≤640px,
-// the same breakpoint the layout collapses at), Week on desktop. We
-// deliberately do NOT persist the active view: the calendar surface is
-// the home base, and a single accidental Stream / Day / Month switch
-// shouldn't quietly change "what Order opens on" forever.
+// Every launch defaults to Week. We deliberately do NOT persist the
+// active view: the calendar surface is the home base, and a single
+// accidental Stream / Day / Month switch shouldn't quietly change
+// "what Order opens on" forever. Week is the right balance — a full
+// look at the upcoming week without the density of a Month grid or
+// the tunnel-vision of a single Day.
 function readInitialView(): View {
-  try {
-    if (window.matchMedia("(max-width: 640px)").matches) return "day";
-  } catch { /* non-fatal */ }
   return "week";
 }
 
@@ -2242,6 +2240,13 @@ export function CardGrid() {
 
   /** The new-note flow — extracted so the dock button can call it. */
   const handleNewNote = () => {
+    // A new note is a regular note (never an NF main doc), so under
+    // "Notable folders only" it would land out of sight. Flip Show to
+    // "All notes + folders" first — the simplest invariant: the +
+    // button always produces a card the user can see immediately.
+    if (streamMode === "folders") {
+      setStreamMode(() => { writeStreamMode("all"); return "all"; });
+    }
     const sel = notableIncludes;
     const create = view !== "stream" ? promptCreate : createNote;
     if (sel.length === 1) {
@@ -2337,12 +2342,19 @@ export function CardGrid() {
           the controls that used to live on the rail (publish, theme,
           zoom) so the dock stays uncluttered. */}
       {viewMenuOpen && (() => {
+        // Two independent selections:
+        //   View    — what surface the user is on (stream / day / week
+        //             / month / year). One always-active radio.
+        //   Show    — which notes that surface presents (all / notes /
+        //             notable folders). Applies to BOTH stream and
+        //             calendar surfaces. One always-active radio.
+        // Each pick changes only its own selection so the user can
+        // independently toggle "look at week" vs "look at stream"
+        // without losing their "notes only" preference, and vice versa.
         const pickStream = (mode: StreamMode) => {
           setStreamMode(() => { writeStreamMode(mode); return mode; });
-          setView("stream");
-          setViewMenuOpen(false);
         };
-        const pickView = (v: View) => { setView(v); setViewMenuOpen(false); };
+        const pickView = (v: View) => { setView(v); };
         const opt = (
           active: boolean,
           icon: React.ReactNode,
@@ -2361,15 +2373,16 @@ export function CardGrid() {
         );
         return (
           <div className="dock-tools-popup dock-view-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="dock-tools-group-label">Stream</div>
-            {opt(view === "stream" && streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
-            {opt(view === "stream" && streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
-            {opt(view === "stream" && streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
-            <div className="dock-tools-group-label">Calendar</div>
+            <div className="dock-tools-group-label">View</div>
+            {opt(view === "stream", <Files size={14} strokeWidth={2.1} />, "Stream", () => pickView("stream"))}
             {opt(view === "day", <CalendarClock size={14} strokeWidth={2.1} />, "Day", () => pickView("day"))}
             {opt(view === "week", <CalendarRange size={14} strokeWidth={2.1} />, "Week", () => pickView("week"))}
             {opt(view === "month", <CalendarDays size={14} strokeWidth={2.1} />, "Month", () => pickView("month"))}
             {opt(view === "year", <CalendarIcon size={14} strokeWidth={2.1} />, "Year", () => pickView("year"))}
+            <div className="dock-tools-group-label">Show</div>
+            {opt(streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
+            {opt(streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
+            {opt(streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
           </div>
         );
       })()}
