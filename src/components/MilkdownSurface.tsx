@@ -113,16 +113,20 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     } catch (err) {
       console.warn("wikilink plugin registration failed:", err);
     }
-    try {
-      crepe.editor.use(youtubeEmbedPlugin());
-    } catch (err) {
-      console.warn("youtube embed plugin registration failed:", err);
-    }
-    try {
-      crepe.editor.use(videoEmbedPlugin());
-    } catch (err) {
-      console.warn("video embed plugin registration failed:", err);
-    }
+    // TEMPORARILY DISABLED to bisect the Ambience freeze. If the page
+    // loads cleanly with these off, the freeze is in one of the
+    // plugins (most likely the YouTube one given recent churn). If
+    // the page still freezes, the freeze is elsewhere.
+    // try {
+    //   crepe.editor.use(youtubeEmbedPlugin());
+    // } catch (err) {
+    //   console.warn("youtube embed plugin registration failed:", err);
+    // }
+    // try {
+    //   crepe.editor.use(videoEmbedPlugin());
+    // } catch (err) {
+    //   console.warn("video embed plugin registration failed:", err);
+    // }
 
     crepe
       .create()
