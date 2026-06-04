@@ -103,8 +103,16 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   img.alt = "";
   img.loading = "lazy";
   img.draggable = false;
-  img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-  img.onerror = () => { img.src = `https://i.ytimg.com/vi/${id}/0.jpg`; };
+  // mqdefault is true 16:9 (320x180). hqdefault is 4:3 (480x360) with
+  // YouTube's stock black bars baked in — when the card's thumbnail
+  // is 16:9 those bars take up a visible quarter of the height. Try
+  // maxresdefault (1280x720) first for sharp screens, fall back to
+  // mqdefault on the 404 (some videos don't have maxres).
+  img.src = `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  img.onerror = () => {
+    img.onerror = null;
+    img.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+  };
   thumb.appendChild(img);
   const play = document.createElement("span");
   play.className = "order-youtube-card-play";
