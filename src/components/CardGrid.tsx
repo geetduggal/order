@@ -15,6 +15,7 @@ import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIo
 import { vaultFs, consumeSelfWrite } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
+import { LazyCell } from "./LazyCell";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
@@ -2556,9 +2557,14 @@ export function CardGrid() {
                   const v = externalChangeVersion[n.path] ?? 0;
                   const key = n.path === focusedPath ? n.id : `${n.id}:${v}`;
                   return (
-                    <div className="card-grid-cell" data-path={n.path} key={key}>
-                      {cardNode(n)}
-                    </div>
+                    <LazyCell
+                      key={key}
+                      className="card-grid-cell"
+                      dataPath={n.path}
+                      forceMount={n.path === focusedPath}
+                    >
+                      {() => cardNode(n)}
+                    </LazyCell>
                   );
                 })}
               </div>

@@ -16,6 +16,7 @@ import { CalendarView, type NoteMeta } from "../src/components/CalendarView";
 import { YearLinearView } from "../src/components/YearLinearView";
 import { FilterPillStack } from "../src/components/FilterPillStack";
 import { NotebookSection, type SectionCell } from "../src/components/NotebookSection";
+import { LazyCell } from "../src/components/LazyCell";
 import type { Filter } from "../src/lib/filters";
 import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
@@ -872,13 +873,16 @@ function StreamView({
     );
   }
 
-  // Flat temporal grid (no Notable Folder filtered in).
+  // Flat temporal grid (no Notable Folder filtered in). With no
+  // pagination on the published page, this would otherwise mount one
+  // Milkdown Crepe instance per published note up front; LazyCell
+  // defers each Card until its grid cell is within scroll reach.
   return (
     <div className="card-grid" ref={setGridEl}>
       {notes.map((n) => (
-        <div key={n.ref} className="card-grid-cell" data-path={n.ref}>
-          {cardNode(n)}
-        </div>
+        <LazyCell key={n.ref} className="card-grid-cell" dataPath={n.ref}>
+          {() => cardNode(n)}
+        </LazyCell>
       ))}
     </div>
   );
