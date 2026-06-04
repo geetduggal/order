@@ -90,11 +90,36 @@ function installDocumentHandlers() {
 // Install once at module import — well before any card renders.
 if (typeof window !== "undefined") installDocumentHandlers();
 
-// oEmbed title fetch removed — net-blocking inside the iOS WKWebView
-// was the load-time freeze. The card shows a generic "YouTube video"
-// title; the host already reads "youtube.com" and the thumbnail is
-// recognizable on its own. Re-enable later only with a strictly
-// time-bounded path that can't ever sync-block layout.
+// Module-level title cache so repeated renders of the same video id
+// (every keystroke in the editor) don't re-hit YouTube's oEmbed
+// endpoint. Map<videoId, { title?: string; author?: string }>.
+const oembedCache = new Map<string, { title?: string; author?: string; promise?: Promise<void> }>();
+function fetchOEmbed(id: string): Promise<void> {
+  let entry = oembedCache.get(id);
+  if (entry?.title || entry?.promise) return entry?.promise ?? Promise.resolve();
+  entry = entry ?? {};
+  oembedCache.set(id, entry);
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
+    `https://www.youtube.com/watch?v=${id}`,
+  )}&format=json`;
+  // AbortSignal timeout — a blocked or hung response can't tie up the
+  // pending promise forever.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  entry.promise = fetch(url, { signal: ctrl.signal })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data: { title?: string; author_name?: string } | null) => {
+      if (!data) return;
+      entry!.title = data.title;
+      entry!.author = data.author_name;
+    })
+    .catch(() => { /* offline / CORS / timeout — leave defaults */ })
+    .finally(() => {
+      clearTimeout(timer);
+      entry!.promise = undefined;
+    });
+  return entry.promise;
+}
 
 const KEY = new PluginKey("order-youtube-embed");
 const YT_URL_RE = /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?[^\s"'<>)]+|youtu\.be\/[\w-]+(?:\?[^\s"'<>)]*)?)/;
@@ -181,8 +206,10 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   thumb.appendChild(play);
   card.appendChild(thumb);
 
-  // Title / meta half — static text. Title fetch removed for now,
-  // see note on the deleted fetchOEmbed.
+  // Title / meta half — title comes from oEmbed (fetched once per id
+  // and cached). The fallback "YouTube video" stays if the network
+  // call is blocked / offline / times out so the card always reads
+  // as a video. Author renders subtly between title and host.
   const meta = document.createElement("span");
   meta.className = "order-youtube-card-meta";
   const title = document.createElement("span");
@@ -194,6 +221,19 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   host.textContent = "youtube.com";
   meta.appendChild(host);
   card.appendChild(meta);
+  const cached = oembedCache.get(id);
+  if (cached?.title) {
+    title.textContent = cached.title;
+    if (cached.author) host.textContent = `${cached.author} · youtube.com`;
+  } else {
+    void fetchOEmbed(id).then(() => {
+      const entry = oembedCache.get(id);
+      if (entry?.title) {
+        title.textContent = entry.title;
+        if (entry.author) host.textContent = `${entry.author} · youtube.com`;
+      }
+    });
+  }
 
   // Route through Tauri's shell when available so the URL opens in
   // the native YouTube app (or Safari), not inside the in-app
