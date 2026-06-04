@@ -1148,6 +1148,12 @@ video.order-vault-video {
   height: 100%;
   object-fit: cover;
   display: block;
+  /* Over-scale by 14% so YouTube's letterbox bars on 4:3 hqdefault
+     thumbnails (12.5% top + 12.5% bottom) are always cropped, even
+     if a particular video's bars aren't exactly 12.5%. The container
+     has overflow:hidden, so the extra crop is invisible. */
+  transform: scale(1.14);
+  transform-origin: center;
 }
 .order-youtube-card-play {
   position: absolute;
