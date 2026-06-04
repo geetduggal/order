@@ -19,21 +19,79 @@ pub fn run() {
         .plugin(tauri_plugin_vault::init())
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(vault_fs::VaultState::default())
-        // Serve attachment images from the vault via vaultasset://localhost/<rel>.
-        // Resolves through the same VaultState as the FS bridge, so it works for
-        // an absolute desktop root or a bookmarked iOS folder alike.
+        // Serve attachment images / videos from the vault via
+        // vaultasset://localhost/<rel>. Resolves through the same
+        // VaultState as the FS bridge so it works for an absolute
+        // desktop root or a bookmarked iOS folder alike.
+        //
+        // HTTP Range support is critical for video playback: without
+        // it, WebKit can't seek a multi-MB .mov / .mp4 — every
+        // currentTime change triggers a full file re-download that
+        // saturates the IPC bridge and freezes the UI. With Range,
+        // the WebView fetches small slices on demand and playback
+        // streams smoothly.
         .register_uri_scheme_protocol("vaultasset", |ctx, request| {
             use tauri::Manager;
             let rel = percent_encoding::percent_decode_str(request.uri().path().trim_start_matches('/'))
                 .decode_utf8_lossy()
                 .to_string();
             let state = ctx.app_handle().state::<vault_fs::VaultState>();
+            let mime = vault_fs::mime_for(&rel);
+
+            // Parse `Range: bytes=START-END` (END optional). Anything
+            // else falls through to a full-body response.
+            let range_header = request
+                .headers()
+                .get("Range")
+                .or_else(|| request.headers().get("range"))
+                .and_then(|v| v.to_str().ok());
+            if let Some(range) = range_header.and_then(|r| r.strip_prefix("bytes=")) {
+                let parts: Vec<&str> = range.split('-').collect();
+                if parts.len() == 2 {
+                    if let Ok(total) = vault_fs::asset_size(&state, &rel) {
+                        if total > 0 {
+                            // Open-ended (`bytes=START-`) gets capped at
+                            // a streaming-friendly chunk so we don't tip
+                            // the WebView's appetite back into "fetch
+                            // everything in one go" territory.
+                            const MAX_CHUNK: u64 = 4 * 1024 * 1024; // 4 MiB
+                            let start: u64 = parts[0].parse().unwrap_or(0);
+                            let end_request: u64 = if parts[1].is_empty() {
+                                start + MAX_CHUNK - 1
+                            } else {
+                                parts[1].parse().unwrap_or(total - 1)
+                            };
+                            let end = end_request.min(total - 1);
+                            if start <= end {
+                                if let Ok((bytes, _)) = vault_fs::read_asset_range(&state, &rel, start, end) {
+                                    return tauri::http::Response::builder()
+                                        .status(206)
+                                        .header("Content-Type", mime)
+                                        .header("Content-Length", bytes.len().to_string())
+                                        .header("Content-Range", format!("bytes {start}-{end}/{total}"))
+                                        .header("Accept-Ranges", "bytes")
+                                        .body(bytes)
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             match vault_fs::read_asset(&state, &rel) {
-                Ok(bytes) => tauri::http::Response::builder()
-                    .status(200)
-                    .header("Content-Type", vault_fs::mime_for(&rel))
-                    .body(bytes)
-                    .unwrap(),
+                Ok(bytes) => {
+                    let len = bytes.len();
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", mime)
+                        .header("Content-Length", len.to_string())
+                        // Advertise range support so video elements
+                        // know they can seek without re-fetching.
+                        .header("Accept-Ranges", "bytes")
+                        .body(bytes)
+                        .unwrap()
+                }
                 Err(_) => tauri::http::Response::builder()
                     .status(404)
                     .body(Vec::new())

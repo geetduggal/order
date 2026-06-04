@@ -265,6 +265,39 @@ pub fn read_asset(state: &VaultState, rel: &str) -> Result<Vec<u8>, String> {
     fs::read(resolve(state, rel)?).map_err(|e| e.to_string())
 }
 
+/// Read a byte range (start..=end inclusive) of a vault-relative file.
+/// Used by the vaultasset handler to serve HTTP-Range requests for
+/// video files — without this, WebKit can't stream a multi-MB .mov
+/// efficiently and every seek triggers a full re-download that locks
+/// the IPC bridge and stalls the UI.
+pub fn read_asset_range(
+    state: &VaultState,
+    rel: &str,
+    start: u64,
+    end: u64,
+) -> Result<(Vec<u8>, u64), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let path = resolve(state, rel)?;
+    let mut f = fs::File::open(&path).map_err(|e| e.to_string())?;
+    let total = f.metadata().map_err(|e| e.to_string())?.len();
+    let actual_end = end.min(total.saturating_sub(1));
+    if start > actual_end {
+        return Err(format!("range start {start} out of bounds (file size {total})"));
+    }
+    let len = (actual_end - start + 1) as usize;
+    f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; len];
+    f.read_exact(&mut buf).map_err(|e| e.to_string())?;
+    Ok((buf, total))
+}
+
+/// File size in bytes for a vault-relative path, without reading any
+/// content. Used by the vaultasset handler when answering Range
+/// requests so it can populate Content-Range / Content-Length.
+pub fn asset_size(state: &VaultState, rel: &str) -> Result<u64, String> {
+    fs::metadata(resolve(state, rel)?).map(|m| m.len()).map_err(|e| e.to_string())
+}
+
 /// Best-effort MIME from a file extension, for the asset handler.
 pub fn mime_for(rel: &str) -> &'static str {
     match rel.rsplit('.').next().map(|s| s.to_ascii_lowercase()).as_deref() {
