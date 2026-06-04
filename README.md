@@ -197,8 +197,21 @@ At edit time the embeds are inflated to `vaultasset://` URLs — served by a
 custom URI-scheme handler on the Rust side (`lib.rs`) that resolves them
 against the vault root, including the iOS security-scoped bookmark — and
 deflated back to `![[…]]` on save; a Crepe resize is preserved as an
-Obsidian pixel width. PDF and other non-image attachment links go through
-the OS opener (Tauri `open_path`) so they launch in the user's default app.
+Obsidian pixel width. The `vaultasset://` handler honors HTTP `Range`
+requests (returning 206 Partial Content with `Accept-Ranges: bytes`), so
+a multi-megabyte `![[clip.mov]]` streams through the WKWebView's native
+chunked-fetch path instead of blocking the IPC bridge waiting for the
+full body. PDF and other non-image attachment links go through the OS
+opener (Tauri `open_path` on desktop; `tauri-plugin-vault.openUrl` →
+`UIApplication.open` on iOS) so they launch in the user's default app.
+
+External `http(s)://` links from anywhere in the UI route through a single
+`open_url` Tauri command — `std::process::Command` for `open` / `xdg-open` /
+`start` on desktop, and on iOS through the project-local
+**tauri-plugin-vault**'s Swift module, which resolves the invoke
+*before* calling `UIApplication.shared.open` so Rust's `run_mobile_plugin`
+doesn't deadlock the main thread waiting for the user to confirm iOS's
+app-switch prompt.
 
 ### State
 
@@ -258,6 +271,22 @@ items — the image renders in place of the title with an inline caption
 (from a `|caption` suffix). A bare wiki-link to an image (`[[image.png]]`,
 no `!`) stays a text link the way Obsidian renders it; clicking it opens
 the file in the OS's default viewer on desktop.
+
+**Video embeds**: `![[clip.mov]]` (also `.mp4`, `.m4v`, `.webm`) inflates
+to a native `<video controls playsinline preload="metadata">` inline in
+the card — same on desktop, iOS, and the published page. The asset rides
+through Order's custom `vaultasset://` URI scheme, which honors HTTP
+`Range` requests so a multi-megabyte clip streams instead of blocking the
+IPC bridge waiting for the full body. The static published page emits the
+same `<video>` element verbatim, so it plays without JS.
+
+**YouTube embeds**: a markdown image with a YouTube URL (`![](https://…)`)
+or an Obsidian `embed` YAML fence renders as a single horizontal link
+card with thumbnail + title + host. The title is fetched once via YouTube's
+oEmbed and cached. Tap behavior: iOS opens the YouTube app, desktop opens
+the default browser, the published page opens a new tab. The card shape
+matches pre- and post-hydration on the static page, so layout doesn't
+shift when the SPA wakes up.
 
 ![List folder — Books rendered as a basecard grid below the editor](img/list-folder-grid.png)
 
@@ -433,6 +462,12 @@ three independent sources:
   shell calls `api.updateSize()` whenever the pane width changes, so toggling
   the sidebar (or any width change that's not a full window resize) rebalances
   the grid immediately.
+- **Multi-day events**: any event with an `endDate` (Obsidian Full Calendar's
+  inclusive end-date) spans the full range in Day/Week/Month. The conversion to
+  FullCalendar's exclusive-end model happens in `notesToEvents`
+  (`addOneDayIso` for all-day spans; `endDate + endTime` for timed events that
+  cross midnight). Timed events without an end date keep the simple start-only
+  behavior they always had.
 
 ### File watching
 
@@ -496,15 +531,27 @@ and phone. Left to right:
 
 - `+` — new note (auto-folder when the filter has exactly one Notable Folder;
   opens a picker for two or more; plain capture when the filter is empty).
-- **stream mode** — three-state Files / FileText / Folder icon: *all* (notes +
-  Notable Folders), *notes only*, *folders only*. Persists across sessions.
-- **public lens** — Globe / Lock; flip between *public + private* (default) and
-  *public only*. Stacks with stream mode.
+  Auto-flips Show to *All* when invoked under *Notable folders only* so the
+  new card is always immediately visible.
+- **view picker** — one button, a menu with two parallel groups:
+    - *View*: Stream / Day / Week / Month / Year
+    - *Show*: All notes + folders / Notes only / Notable folders only
+  Pick from either group changes only its own selection (a tap on "Notes only"
+  doesn't force Stream view — you can be in Week + Notes-only at the same
+  time). The button's icon reflects the current view at a glance.
+- **home** — a button whose icon mirrors the current filter state: a
+  `HomeIcon` when filtered to the home folder (coral fill, "at home"), a
+  `FilterX` (muted) when no filters are active, and the neutral HomeIcon for
+  any custom filter pile. The menu picks between *Home — `<folder>`* (single
+  include for the home NF) and *Clear all filters* (bare stream). Single-tap
+  destructive actions are explicit, never hiding behind a long-press.
 - **search** — opens the centered command palette (same as `Cmd K`) for
-  fuzzy folder pick.
-- **settings** — opens a small popover anchored above the dock with the
-  controls that don't need to live on the main bar: publish, theme cycle,
-  text-size `+ / −`, vault-folder picker.
+  fuzzy folder pick. The empty-query view shows recently-opened Notable
+  Folders first.
+- **settings** — opens a small popover above the dock with the rest of the
+  controls: publish, theme cycle, text-size `+ / −`, vault-folder picker,
+  and the public/private lens (Globe / Lock — flip between *public + private*
+  and *public only*).
 - **sidebar toggle** — show / hide the right sidebar (rightmost so the
   motion ends where the sidebar appears).
 
@@ -520,9 +567,19 @@ Each card carries its own top-right controls (left to right: copy-permalink 🔗
 fullscreen ⤢, trash 🗑, filter-remove ×) that fade up on hover. Below the body
 sits a small **frontmatter strip** — every YAML key/value rendered inline in a
 compact mono+sans pair, with wikilinks and URLs clickable (wikilinks navigate
-the Stream; URLs open in the browser via Tauri's shell on desktop, the native
-browser on web). The card footer holds a public/private pill, an Area ›
-Category breadcrumb, and the filename.
+the Stream; URLs open in the system browser via Tauri's shell). The strip
+**starts collapsed** to a single `{ }` toggle for any note whose body has
+substantial content; cards whose body is essentially empty (a calendar event
+with just a title, say) expand the strip by default so the YAML reads at a
+glance. The card footer holds a public/private pill, an Area › Category
+breadcrumb, and the filename.
+
+**Defaults**:
+- Desktop / iOS app: View = *Week*, Show = *All notes + folders*. The
+  calendar is the resting surface; the recency stream is one tap away.
+- Published web viewer: View = *Stream*, Show = *Notes only*, filtered to
+  the home Notable Folder. A first-time visitor lands on the home page
+  reading actual writing, not on a flat recency timeline.
 
 ### Theming
 
@@ -679,6 +736,14 @@ the WYSIWYG promise kept all the way to the published artifact:
 - The theme switcher and the notes-only filter work in the viewer too;
   everything that would mutate the vault — editing, add / remove, and
   drag-reorder — is disabled, so the published page is fully read-only.
+- The viewer's bottom dock is identical to the app's — view picker
+  (Stream / Day / Week / Month / Year) and Show picker (All /
+  Notes only / Folders only) in one popover, a state-aware Home button
+  (HomeIcon when filtered to the home folder, FilterX when there's no
+  filter, neutral HomeIcon otherwise) whose menu picks between *Home* and
+  *Clear all filters*. A visitor lands with View = Stream and Show =
+  Notes only on the home folder, and can fan out to Week or Year with
+  one tap.
 
 Build the viewer bundle once with `pnpm build:viewer` before the first
 publish; subsequent publishes reuse it.
