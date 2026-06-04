@@ -1078,15 +1078,28 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: black;
 }
 /* Obsidian-style ![[file.mov]] video embeds. inflateImageEmbeds
-   rewrites the wikilink into a raw HTML <video> block so Crepe's
-   image-block component never tries to mount it as a broken image —
-   the WebView just renders the native player. */
-.milkdown-host .ProseMirror video.order-vault-video,
+   emits a raw HTML <video> block which Milkdown's `html` schema node
+   would otherwise render as literal text. The videoEmbedPlugin
+   detects that html node, hides it via `.is-video-source`, and
+   mounts a real <video controls playsinline> widget at the same
+   position via Decoration.widget.
+   The bare `.order-vault-video` class also targets the static
+   published page (where prerender.ts emits the <video> tag directly
+   into the static HTML — no plugin needed). */
+.milkdown-host .ProseMirror span.is-video-source,
+.milkdown-host .ProseMirror .is-video-source {
+  display: none !important;
+}
+.milkdown-host .ProseMirror .order-video-embed-wrap,
+.order-video-embed-wrap {
+  margin: 1em 0;
+}
+.milkdown-host .ProseMirror video.order-video-embed,
+video.order-video-embed,
 video.order-vault-video {
   display: block;
   width: 100%;
   max-width: 720px;
-  margin: 1em 0;
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: black;

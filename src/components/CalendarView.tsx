@@ -47,6 +47,19 @@ interface Props {
   onCreate?: (patch: Frontmatter) => Promise<void>;
 }
 
+/** Add one day to a `YYYY-MM-DD` string (UTC-safe via the Date ctor).
+ *  FullCalendar treats all-day `end` as EXCLUSIVE: a 3-day event that
+ *  the user wrote `date: ...; endDate: 2026-06-10` (inclusive in the
+ *  Obsidian Full Calendar YAML convention) needs end = 2026-06-11
+ *  for the bar to span all three days in week/month views. */
+function addOneDayIso(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
   const events: EventInput[] = [];
   for (const note of notes) {
@@ -59,6 +72,14 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       : null;
     const endTime = typeof note.frontmatter.endTime === "string"
       ? note.frontmatter.endTime
+      : null;
+    // Optional `endDate` (Obsidian Full Calendar convention) — present
+    // on multi-day events. The value the user writes is INCLUSIVE
+    // (e.g. a Mon–Wed event has endDate: Wed). For FullCalendar's
+    // all-day `end` we need exclusive, so we add a day before
+    // handing it over. ISO date or full datetime both work.
+    const endDate = typeof note.frontmatter.endDate === "string"
+      ? note.frontmatter.endDate.slice(0, 10)
       : null;
 
     const title = note.title || note.filename;
@@ -75,17 +96,25 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
         id: note.path,
         title,
         start: date,
+        // Exclusive end for all-day multi-day spans.
+        end: endDate ? addOneDayIso(endDate) : undefined,
         allDay: true,
         ...colorProps,
       });
       continue;
     }
 
+    // Timed events. If `endDate` is set and differs from `date`, the
+    // event spans multiple days — combine endDate with endTime (or
+    // fall back to startTime so the event has a positive duration).
+    // Otherwise stay on the same calendar day.
+    const endDayIso = endDate && endDate !== date.slice(0, 10) ? endDate : date.slice(0, 10);
+    const endIsoTime = endTime ?? startTime;
     events.push({
       id: note.path,
       title,
-      start: `${date}T${startTime}`,
-      end: endTime ? `${date}T${endTime}` : undefined,
+      start: `${date.slice(0, 10)}T${startTime}`,
+      end: `${endDayIso}T${endIsoTime}`,
       allDay: false,
       ...colorProps,
     });
