@@ -99,7 +99,7 @@ export function prerenderPages(site: PublishedSite, pubPath: string): Prerendere
       // SPA hydration upgrades it once on load.
       const cardFor = (id: string) => {
         const url = `https://www.youtube.com/watch?v=${id}`;
-        return `<a class="order-youtube-card" href="${url}" target="_blank" rel="noreferrer" aria-label="Open video on YouTube" data-yt-id="${id}">`
+        return `<a class="order-youtube-card" href="${url}" rel="noreferrer" aria-label="Open video on YouTube" data-yt-id="${id}">`
           + `<span class="order-youtube-card-thumb">`
           + `<img class="order-youtube-card-img" loading="lazy" alt="" src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" onerror="this.onerror=null;this.src='https://i.ytimg.com/vi/${id}/0.jpg';">`
           + `<span class="order-youtube-card-play" aria-hidden="true">▶</span>`

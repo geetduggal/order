@@ -88,12 +88,52 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   const card = document.createElement("a");
   card.className = "order-youtube-card";
   card.href = watchUrl;
-  card.target = "_blank";
+  // No target=_blank: WKWebView's default WKUIDelegate doesn't open
+  // _blank links, so the tap appears dead. Letting the anchor stay
+  // _self lets the platform-specific click handlers below take over
+  // before any default WebView navigation fires.
   card.rel = "noreferrer";
   card.setAttribute("role", "button");
   card.setAttribute("aria-label", "Open video on YouTube");
   card.setAttribute("draggable", "false");
   card.style.touchAction = "manipulation";
+
+  // Inline pointer handlers — bound directly to the element so they
+  // execute before any ProseMirror gesture machinery can swallow the
+  // tap. Cascading attempts: invoke (desktop / iOS plugin) →
+  // window.open → location.href as last resort. All three fire so
+  // whichever the platform supports wins. Cooldown prevents duplicate
+  // YouTube app launches when multiple events (touchend + click) fire
+  // for one tap.
+  let lastTap = 0;
+  const openIt = (e: Event) => {
+    const now = Date.now();
+    if (now - lastTap < 700) { e.preventDefault(); e.stopPropagation(); return; }
+    lastTap = now;
+    e.preventDefault();
+    e.stopPropagation();
+    // Fire-and-forget invoke (works on desktop Tauri + iOS via the
+    // vault plugin). Don't await — iOS UIApplication.open's completion
+    // callback can take seconds while the user confirms the app-switch
+    // prompt, and awaiting that would freeze the click handler.
+    try {
+      invoke("open_url", { url: watchUrl })
+        .catch(() => {
+          // Tauri rejected (web viewer or unsupported platform). Try
+          // window.open. iOS WKWebView's default UIDelegate often
+          // returns null for _blank popups — if that's the case the
+          // location fallback fires.
+          const w = window.open(watchUrl, "_blank");
+          if (!w) window.location.href = watchUrl;
+        });
+    } catch {
+      // invoke() is not a function (web viewer with no Tauri shim).
+      const w = window.open(watchUrl, "_blank");
+      if (!w) window.location.href = watchUrl;
+    }
+  };
+  card.addEventListener("touchend", openIt, { capture: true, passive: false });
+  card.addEventListener("click", openIt, { capture: true });
 
   // Thumbnail half.
   const thumb = document.createElement("span");

@@ -259,6 +259,12 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       }
       const anchor = t.closest("a");
       if (!(anchor instanceof HTMLAnchorElement)) return;
+      // YouTube card anchors wire their own platform-cascading
+      // open handler directly on the element (lib/milkdown-youtube.ts).
+      // Letting this capture-phase handler also fire would either
+      // double-open the URL on desktop (two browser tabs) or race
+      // with the card's iOS path. Skip them.
+      if (anchor.classList.contains("order-youtube-card")) return;
       const raw = anchor.getAttribute("href") ?? "";
       if (!raw) return;
       // External http(s) / mailto / tel URLs: route through the Tauri
