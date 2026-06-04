@@ -151,40 +151,13 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   // anchor href as the only fallback. pointerup + touchend cover
   // every iOS pathway we've actually seen miss; click is still
   // there for desktop and keyboard activation.
-  // Suppress duplicate invocations: a single tap on iOS fires touchend,
-  // pointerup, AND click in quick succession. We only want one
-  // hand-off attempt. The cooldown absorbs the typical touch → click
-  // delay (~300ms) but doesn't block a deliberate follow-up tap.
-  let lastFiredAt = 0;
-  const activate = (e: Event) => {
-    const now = Date.now();
-    if (now - lastFiredAt < 600) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    lastFiredAt = now;
-    e.preventDefault();
-    e.stopPropagation();
-    // Cascading fallbacks so the tap reaches YouTube somehow even if
-    // the primary path fails:
-    //  1. Tauri shell → UIApplication.open / `open` / xdg-open / start
-    //  2. window.open(_blank) — works in published web viewer and most
-    //     WKWebView configurations
-    //  3. window.location.href — last-resort in-WebView navigation
-    invoke("open_url", { url: watchUrl })
-      .catch((err) => {
-        console.warn("open_url failed, trying window.open:", err);
-        const opened = window.open(watchUrl, "_blank");
-        if (!opened) {
-          console.warn("window.open failed, falling back to location.href");
-          window.location.href = watchUrl;
-        }
-      });
-  };
-  card.addEventListener("click", activate);
-  card.addEventListener("pointerup", activate);
-  card.addEventListener("touchend", activate, { passive: false });
+  // No card-level click handler — MilkdownSurface's capture-phase
+  // anchor handler routes every `<a href="http…">` inside the editor
+  // through the same open_url path AND falls back to window.open in
+  // the published web viewer (no Tauri). Adding our own handler here
+  // produced two open_url calls per tap on desktop (one in capture,
+  // one in bubble) and the racing awaits froze iOS during the
+  // UIApplication.open completion handshake.
 
   wrap.appendChild(card);
   return wrap;

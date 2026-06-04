@@ -272,11 +272,19 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
         if (!isTauri()) return;
         e.preventDefault();
         e.stopPropagation();
-        try {
-          await invoke("open_url", { url: raw });
-        } catch (err) {
-          console.error("open_url failed:", err);
-        }
+        // Fire-and-forget: awaiting `open_url` on iOS blocks the
+        // click handler until UIApplication.open's completion fires,
+        // which is after the user confirms the app-switch prompt —
+        // during that window the UI appeared frozen. The fallback
+        // chain (window.open → location.href) runs only if invoke
+        // outright rejects, which only happens on a platform with no
+        // shell at all (the published web viewer takes the
+        // !isTauri branch above and never reaches this code).
+        void invoke("open_url", { url: raw }).catch((err) => {
+          console.warn("open_url failed, trying window.open:", err);
+          const opened = window.open(raw, "_blank");
+          if (!opened) window.location.href = raw;
+        });
         return;
       }
       const lower = raw.toLowerCase();
