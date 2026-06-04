@@ -51,17 +51,25 @@ function installDocumentHandlers() {
     e.stopPropagation();
     const watchUrl = card.href || (card.dataset.ytId ? `https://www.youtube.com/watch?v=${card.dataset.ytId}` : "");
     if (!watchUrl) return;
-    let resolved = false;
-    try {
-      invoke("open_url", { url: watchUrl })
-        .then(() => { resolved = true; })
-        .catch(() => { /* fallthrough to window.open */ });
-    } catch { /* no Tauri shim */ }
-    setTimeout(() => {
-      if (resolved) return;
+    // Fallback chain ONLY fires when the primary path explicitly
+    // rejects. The previous build had a setTimeout speculative
+    // fallback that ran window.open / location.href after 250ms —
+    // but iOS's UIApplication.open completion can take several
+    // seconds while the user confirms the app-switch prompt, so the
+    // fallback fired during a successful hand-off and navigated the
+    // in-app WebView to youtube.com underneath, leaving the page
+    // looking "frozen" when the user returned to Order.
+    const fallback = () => {
       const w = window.open(watchUrl, "_blank");
       if (!w) window.location.href = watchUrl;
-    }, 250);
+    };
+    try {
+      invoke("open_url", { url: watchUrl }).catch(fallback);
+    } catch {
+      // No Tauri shim at all (published web viewer); use the browser
+      // path directly.
+      fallback();
+    }
   };
   // Click only. NO touch listeners — registering at window level
   // with passive:false on touchstart locked the UI on Ambience

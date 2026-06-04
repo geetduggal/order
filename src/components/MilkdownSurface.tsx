@@ -113,20 +113,16 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     } catch (err) {
       console.warn("wikilink plugin registration failed:", err);
     }
-    // Bisect step 2: YouTube plugin back on, video plugin still off.
-    // If Ambience freezes again, the freeze is in the YouTube plugin's
-    // decoration / widget path. If it loads cleanly, the freeze is in
-    // the video plugin's html-node scan.
     try {
       crepe.editor.use(youtubeEmbedPlugin());
     } catch (err) {
       console.warn("youtube embed plugin registration failed:", err);
     }
-    // try {
-    //   crepe.editor.use(videoEmbedPlugin());
-    // } catch (err) {
-    //   console.warn("video embed plugin registration failed:", err);
-    // }
+    try {
+      crepe.editor.use(videoEmbedPlugin());
+    } catch (err) {
+      console.warn("video embed plugin registration failed:", err);
+    }
 
     crepe
       .create()
