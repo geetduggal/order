@@ -71,17 +71,33 @@ function buildIframe(id: string): HTMLElement {
  *  reliably initialize (iOS WebView). Renders the maxres/hq thumbnail,
  *  a play-button overlay, and an Open-in-YouTube affordance. */
 function buildThumbnailCard(id: string): HTMLDivElement {
+  const watchUrl = `https://www.youtube.com/watch?v=${id}`;
   const wrap = document.createElement("div");
   wrap.className = "order-youtube-embed-wrap order-youtube-thumb-wrap";
   wrap.setAttribute("contenteditable", "false");
-  const card = document.createElement("button");
-  card.type = "button";
+  // Use an <a> so the OS can handle the tap natively even if the
+  // synthetic JS handlers below don't fire — iOS Safari is much more
+  // permissive about anchor activation than button click inside a
+  // contenteditable-adjacent ProseMirror widget. The href + target
+  // is a free fallback; the JS handler intercepts when Tauri is
+  // available so the URL goes through the shell (opens in the
+  // YouTube app, not in-place inside the WebView).
+  const card = document.createElement("a");
   card.className = "order-youtube-thumb";
+  card.href = watchUrl;
+  card.target = "_blank";
+  card.rel = "noreferrer";
+  card.setAttribute("role", "button");
   card.setAttribute("aria-label", "Open video in YouTube");
+  // Make sure ProseMirror / Crepe don't swallow the gesture as part
+  // of their text selection or block-handle drag handling.
+  card.setAttribute("draggable", "false");
+  card.style.touchAction = "manipulation";
   const img = document.createElement("img");
   img.className = "order-youtube-thumb-img";
   img.alt = "";
   img.loading = "lazy";
+  img.draggable = false;
   img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   img.onerror = () => { img.src = `https://i.ytimg.com/vi/${id}/0.jpg`; };
   card.appendChild(img);
@@ -94,12 +110,38 @@ function buildThumbnailCard(id: string): HTMLDivElement {
   label.className = "order-youtube-thumb-label";
   label.textContent = "Open in YouTube";
   card.appendChild(label);
-  card.addEventListener("click", (e) => {
+
+  // Route through Tauri's shell when available so the URL opens in
+  // the native YouTube app (or Safari), not inside the in-app
+  // WebView. Listen on multiple events because iOS WebView's
+  // synthetic `click` is unreliable inside ProseMirror — the touch
+  // gesture sometimes never escalates to a click, leaving the
+  // anchor href as the only fallback. pointerup + touchend cover
+  // every iOS pathway we've actually seen miss; click is still
+  // there for desktop and keyboard activation.
+  // Suppress duplicate invocations: a single tap on iOS fires touchend,
+  // pointerup, AND click in quick succession. We only want one
+  // open_url call. The cooldown is long enough (600ms) to absorb the
+  // typical touch → click delay but short enough that a follow-up
+  // tap a moment later still triggers.
+  let lastFiredAt = 0;
+  const activate = (e: Event) => {
+    const now = Date.now();
+    if (now - lastFiredAt < 600) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    lastFiredAt = now;
     e.preventDefault();
     e.stopPropagation();
-    void invoke("open_url", { url: `https://www.youtube.com/watch?v=${id}` })
-      .catch((err) => console.warn("open_url failed:", err));
-  });
+    void invoke("open_url", { url: watchUrl })
+      .catch((err) => console.warn("open_url failed; native anchor will navigate:", err));
+  };
+  card.addEventListener("click", activate);
+  card.addEventListener("pointerup", activate);
+  card.addEventListener("touchend", activate, { passive: false });
+
   wrap.appendChild(card);
   return wrap;
 }
