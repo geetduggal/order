@@ -2527,6 +2527,23 @@ iframe.order-youtube-embed {
   text-align: left;
 }
 .dock-tools-item:hover { background: var(--royal-soft); }
+.dock-tools-item.is-on { color: var(--royal); font-weight: 500; }
+.dock-tools-check { margin-left: auto; color: var(--royal); }
+.dock-tools-group-label {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 6px 10px 2px;
+}
+.dock-tools-group-label:first-child { padding-top: 2px; }
+.dock-btn-view.is-open,
+.dock-btn-home.is-open {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
 .dock-tools-zoom {
   display: flex;
   align-items: center;

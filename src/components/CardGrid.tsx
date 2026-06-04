@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -1206,6 +1206,11 @@ export function CardGrid() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  // Dock-view picker — pick a stream sub-mode or a calendar view
+  // from a menu instead of cycling through them by repeated taps.
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // Home button menu — pick the home folder OR clear all filters.
+  const [homeMenuOpen, setHomeMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!creatorOpen) return;
@@ -1229,6 +1234,28 @@ export function CardGrid() {
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [toolsMenuOpen]);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-view, .dock-view-popup")) setViewMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [viewMenuOpen]);
+
+  useEffect(() => {
+    if (!homeMenuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (!t.closest(".dock-btn-home, .dock-home-popup")) setHomeMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [homeMenuOpen]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -2246,37 +2273,34 @@ export function CardGrid() {
         </button>
         <button
           type="button"
-          className={`dock-btn dock-btn-stream is-${streamMode}`}
-          onClick={() => setStreamMode((m) => {
-            const next = nextStreamMode(m);
-            writeStreamMode(next);
-            return next;
-          })}
-          title={
-            streamMode === "all"
-              ? "Showing notes + notable folders — click for notes only"
-              : streamMode === "notes"
-                ? "Showing notes only — click for notable folders only"
-                : "Showing notable folders only — click to include all"
-          }
-          aria-label={
-            streamMode === "all" ? "Notes and notable folders"
-              : streamMode === "notes" ? "Notes only"
-                : "Notable folders only"
-          }
+          className={`dock-btn dock-btn-view is-${view}` + (viewMenuOpen ? " is-open" : "")}
+          onClick={() => { setHomeMenuOpen(false); setViewMenuOpen((o) => !o); }}
+          title="Pick view"
+          aria-label="Pick view"
+          aria-haspopup="menu"
+          aria-expanded={viewMenuOpen}
         >
-          {streamMode === "folders"
-            ? <FolderIcon size={22} strokeWidth={2.1} />
-            : streamMode === "notes"
-              ? <FileText size={22} strokeWidth={2.1} />
-              : <Files size={22} strokeWidth={2.1} />}
+          {(() => {
+            // Show the icon for the currently active view so the dock
+            // button reads as a status indicator first, picker second.
+            if (view === "day") return <CalendarClock size={20} strokeWidth={2.1} />;
+            if (view === "week") return <CalendarRange size={20} strokeWidth={2.1} />;
+            if (view === "month") return <CalendarDays size={20} strokeWidth={2.1} />;
+            if (view === "year") return <CalendarIcon size={20} strokeWidth={2.1} />;
+            // Stream view — icon reflects the sub-mode.
+            if (streamMode === "folders") return <FolderIcon size={22} strokeWidth={2.1} />;
+            if (streamMode === "notes") return <FileText size={22} strokeWidth={2.1} />;
+            return <Files size={22} strokeWidth={2.1} />;
+          })()}
         </button>
         <button
           type="button"
-          className="dock-btn dock-btn-home"
-          onClick={goHome}
+          className={"dock-btn dock-btn-home" + (homeMenuOpen ? " is-open" : "")}
+          onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
           title={homeFolderRef.current ? `Home — ${homeFolderRef.current}` : "Home — clear filters"}
-          aria-label="Go home"
+          aria-label="Home menu"
+          aria-haspopup="menu"
+          aria-expanded={homeMenuOpen}
         >
           <HomeIcon size={20} strokeWidth={2.1} />
         </button>
@@ -2312,6 +2336,65 @@ export function CardGrid() {
       {/* Tools popup — anchored above the settings dock button. Holds
           the controls that used to live on the rail (publish, theme,
           zoom) so the dock stays uncluttered. */}
+      {viewMenuOpen && (() => {
+        const pickStream = (mode: StreamMode) => {
+          setStreamMode(() => { writeStreamMode(mode); return mode; });
+          setView("stream");
+          setViewMenuOpen(false);
+        };
+        const pickView = (v: View) => { setView(v); setViewMenuOpen(false); };
+        const opt = (
+          active: boolean,
+          icon: React.ReactNode,
+          label: string,
+          onClick: () => void,
+        ) => (
+          <button
+            type="button"
+            className={"dock-tools-item" + (active ? " is-on" : "")}
+            onClick={onClick}
+          >
+            {icon}
+            <span>{label}</span>
+            {active && <Check size={12} strokeWidth={2.4} className="dock-tools-check" />}
+          </button>
+        );
+        return (
+          <div className="dock-tools-popup dock-view-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="dock-tools-group-label">Stream</div>
+            {opt(view === "stream" && streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
+            {opt(view === "stream" && streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
+            {opt(view === "stream" && streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
+            <div className="dock-tools-group-label">Calendar</div>
+            {opt(view === "day", <CalendarClock size={14} strokeWidth={2.1} />, "Day", () => pickView("day"))}
+            {opt(view === "week", <CalendarRange size={14} strokeWidth={2.1} />, "Week", () => pickView("week"))}
+            {opt(view === "month", <CalendarDays size={14} strokeWidth={2.1} />, "Month", () => pickView("month"))}
+            {opt(view === "year", <CalendarIcon size={14} strokeWidth={2.1} />, "Year", () => pickView("year"))}
+          </div>
+        );
+      })()}
+
+      {homeMenuOpen && (
+        <div className="dock-tools-popup dock-home-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { setHomeMenuOpen(false); goHome(); }}
+          >
+            <HomeIcon size={14} strokeWidth={2.1} />
+            <span>{homeFolderRef.current ? `Home — ${homeFolderRef.current}` : "Home page"}</span>
+          </button>
+          <button
+            type="button"
+            className="dock-tools-item"
+            onClick={() => { setHomeMenuOpen(false); resetToDefault(); }}
+          >
+            <XCircle size={14} strokeWidth={2.1} />
+            <span>Clear all filters</span>
+          </button>
+        </div>
+      )}
+
       {toolsMenuOpen && (
         <div className="dock-tools-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
           <button
