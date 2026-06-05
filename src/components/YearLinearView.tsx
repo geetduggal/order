@@ -155,18 +155,20 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
   const [anchor, setAnchor] = useState<Date | null>(null);
   const [hover, setHover] = useState<Date | null>(null);
 
-  // All-day event filter. Default ON (all-day events visible); flipping
-  // it off hides them so a year of full-day notes (book reads, trips,
-  // calendar holds) doesn't obscure the timed events underneath.
-  const [showAllDay, setShowAllDay] = useState(true);
+  // All-day filter. Default ON — at year zoom-out the timed entries
+  // (meetings, classes) overwhelm the canvas and the wide spans that
+  // actually read at this scale are the all-day ones (trips, book
+  // reads, sprints, holiday holds). Flip OFF to widen back to every
+  // event.
+  const [allDayOnly, setAllDayOnly] = useState(true);
 
   const visibleNotes = useMemo(() => {
-    if (showAllDay) return notes;
+    if (!allDayOnly) return notes;
     return notes.filter((n) => {
       const allDay = n.frontmatter.allDay === true || !n.frontmatter.startTime;
-      return !allDay;
+      return allDay;
     });
-  }, [notes, showAllDay]);
+  }, [notes, allDayOnly]);
 
   const monthLayouts = useMemo(
     () => Array.from({ length: 12 }, (_, m) => packIntoMonth(year, m, visibleNotes)),
@@ -292,12 +294,12 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
         <h2 className="year-label">{year}</h2>
         <button
           type="button"
-          className={"year-allday-toggle" + (showAllDay ? " is-on" : " is-off")}
-          onClick={() => setShowAllDay((v) => !v)}
-          aria-pressed={showAllDay}
-          title={showAllDay ? "Hide all-day events" : "Show all-day events"}
+          className={"year-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
+          onClick={() => setAllDayOnly((v) => !v)}
+          aria-pressed={allDayOnly}
+          title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
         >
-          all-day
+          all-day only
         </button>
       </header>
 
