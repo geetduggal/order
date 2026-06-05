@@ -2109,11 +2109,17 @@ iframe.order-youtube-embed {
 
 /* Toolbar: smaller, calmer. Sticks to the top of the viewport while the
    body scrolls so prev/next/title stay reachable in long week / month
-   views. Background opaque so events don't bleed through underneath. */
+   views. We pin BELOW the iOS safe-area inset (status bar / dynamic
+   island) so the toolbar reads as a real chrome strip, not a row
+   clipped under the notch. Background is opaque so events don't bleed
+   through underneath. */
+.fc-shell {
+  --fc-safe-top: env(safe-area-inset-top, 0px);
+}
 .fc-shell .fc-toolbar.fc-header-toolbar {
   margin-bottom: 14px;
   position: sticky;
-  top: 0;
+  top: var(--fc-safe-top);
   z-index: 6;
   background: var(--bg);
   padding-top: 4px;
@@ -2125,7 +2131,7 @@ iframe.order-youtube-embed {
 .fc-shell .fc-scrollgrid-section-header,
 .fc-shell .fc-scrollgrid-section-header > * {
   position: sticky;
-  top: var(--fc-sticky-col-header-top, 46px);
+  top: calc(var(--fc-safe-top) + var(--fc-sticky-col-header-top, 46px));
   z-index: 5;
   background: var(--bg);
 }
@@ -2350,7 +2356,7 @@ iframe.order-youtube-embed {
    month views remount CalendarView without it. */
 .fc-week-day-picker {
   position: sticky;
-  top: 8px;
+  top: calc(var(--fc-safe-top, 0px) + 8px);
   z-index: 7;
   display: flex;
   gap: 4px;
@@ -2411,7 +2417,7 @@ iframe.order-youtube-embed {
     margin: 0 0 4px;
     padding: 0;
     width: auto;
-    top: 4px;
+    top: calc(var(--fc-safe-top, 0px) + 4px);
   }
 }
 
