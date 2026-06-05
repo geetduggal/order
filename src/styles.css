@@ -1474,7 +1474,14 @@ iframe.order-youtube-embed {
 
 .pane-main {
   min-width: 0;
-  overflow-x: hidden;
+  /* `overflow-x: hidden` would implicitly promote overflow-y to `auto`,
+     making .pane-main its own scroll container — at which point
+     `position: sticky` inside it pins to a container that never
+     actually scrolls (the page does), and nothing appears to float.
+     `overflow-x: clip` prevents the horizontal bleed without
+     creating a scroll context, so sticky inside resolves against
+     the document viewport. (Safari 16+ / Chrome 90+ / Firefox 81+.) */
+  overflow-x: clip;
   padding-top: env(safe-area-inset-top);
   /* Leave clearance below the last item for the hovering bottom dock
      (54px tall + 14px bottom inset + iOS home-indicator safe area). */
