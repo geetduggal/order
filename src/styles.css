@@ -2438,6 +2438,43 @@ iframe.order-youtube-embed {
 .year-head {
   display: flex; align-items: center; gap: 16px;
   margin: 4px 0 16px;
+  position: sticky;
+  top: var(--fc-safe-top, env(safe-area-inset-top, 0px));
+  z-index: 6;
+  background: var(--bg);
+  padding: 6px 0;
+}
+.year-allday-toggle {
+  margin-left: auto;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease-out),
+              color 0.12s var(--ease-out),
+              border-color 0.12s var(--ease-out);
+}
+.year-allday-toggle.is-on {
+  background: var(--royal-soft);
+  border-color: var(--royal);
+  color: var(--ink);
+}
+.year-allday-toggle.is-off {
+  background: transparent;
+  color: var(--ink-faint);
+  opacity: 0.75;
+}
+.year-allday-toggle:hover { border-color: var(--royal); color: var(--ink); }
+/* Day-of-week column header strip also sticks below the year-head so
+   the M T W T F S labels stay anchored across all 12 month rows. */
+.year-strip-header {
+  position: sticky;
+  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 42px);
+  z-index: 5;
 }
 .year-nav { display: inline-flex; gap: 2px; align-items: center; }
 .year-nav-btn {

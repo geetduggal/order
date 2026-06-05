@@ -145,16 +145,32 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
     today: () => setYear(today.getFullYear()),
   }), [today]);
 
-  // Mouse-drag selection state. anchor = mousedown date, hover = the
-  // most recent cell the mouse entered. While both are set we render a
-  // coral preview band across the inferred range, and a global mouseup
-  // listener commits the range as a new event.
+  // Pointer-drag selection state. anchor = pointerdown date, hover = the
+  // most recent cell the pointer entered. While both are set we render a
+  // coral preview band across the inferred range, and a global pointerup
+  // listener commits the range as a new event. Pointer events are used
+  // (rather than mouse-only) so a single tap on iOS becomes a "create at
+  // this date" gesture rather than a dead click — the previous mouse
+  // listeners weren't reaching the WKWebView reliably on touch.
   const [anchor, setAnchor] = useState<Date | null>(null);
   const [hover, setHover] = useState<Date | null>(null);
 
+  // All-day event filter. Default ON (all-day events visible); flipping
+  // it off hides them so a year of full-day notes (book reads, trips,
+  // calendar holds) doesn't obscure the timed events underneath.
+  const [showAllDay, setShowAllDay] = useState(true);
+
+  const visibleNotes = useMemo(() => {
+    if (showAllDay) return notes;
+    return notes.filter((n) => {
+      const allDay = n.frontmatter.allDay === true || !n.frontmatter.startTime;
+      return !allDay;
+    });
+  }, [notes, showAllDay]);
+
   const monthLayouts = useMemo(
-    () => Array.from({ length: 12 }, (_, m) => packIntoMonth(year, m, notes)),
-    [year, notes],
+    () => Array.from({ length: 12 }, (_, m) => packIntoMonth(year, m, visibleNotes)),
+    [year, visibleNotes],
   );
 
   // Range as inclusive [lo, hi] dates regardless of drag direction.
@@ -171,8 +187,12 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
     return t >= dragRange.lo.getTime() && t <= dragRange.hi.getTime();
   }
 
-  // Commit the drag on mouseup — anywhere on the document, so releasing
-  // off the grid still finishes the selection cleanly.
+  // Commit the drag on pointerup — anywhere on the document, so releasing
+  // off the grid still finishes the selection cleanly. Pointer events
+  // cover mouse, touch, and pen with one listener — on iOS a single tap
+  // triggers down + up here, creating a single-day all-day event for
+  // that cell. Pointermove during the press hovers the range so a tap-
+  // and-drag across cells turns into a multi-day span.
   useEffect(() => {
     if (!anchor || !hover) return;
     function commit() {
@@ -186,8 +206,25 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
       void onCreate(patch);
       setAnchor(null); setHover(null);
     }
-    window.addEventListener("mouseup", commit);
-    return () => window.removeEventListener("mouseup", commit);
+    function move(e: PointerEvent) {
+      // Touch / iPad: pointermove targets the original press element, so
+      // hover tracking would freeze. Resolve the actual cell under the
+      // finger via elementFromPoint and read its `data-date`.
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const cell = el?.closest<HTMLElement>(".year-cell[data-date]");
+      const ds = cell?.dataset.date;
+      if (!ds) return;
+      const d = parseIsoDate(ds);
+      if (d) setHover(d);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", commit);
+    window.addEventListener("pointercancel", commit);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", commit);
+      window.removeEventListener("pointercancel", commit);
+    };
   }, [anchor, hover, onCreate]);
 
   function onEventDragStart(e: React.DragEvent<HTMLDivElement>, path: string) {
@@ -230,15 +267,14 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
     await onMoveEvent(path, patch);
   }
 
-  function onCellMouseDown(e: React.MouseEvent<HTMLDivElement>, date: Date) {
-    // Only start a drag for primary button on empty cell area; clicks
-    // on an event bar set their own draggable handler.
-    if (e.button !== 0) return;
+  function onCellPointerDown(e: React.PointerEvent<HTMLDivElement>, date: Date) {
+    // Primary button / touch / pen — anything that's not a secondary
+    // mouse button. The drag-to-create flow listens on the window for
+    // pointermove + pointerup so a release outside the grid still
+    // commits cleanly.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     setAnchor(date);
     setHover(date);
-  }
-  function onCellMouseEnter(date: Date) {
-    if (anchor) setHover(date);
   }
 
   function goPrev() { setYear(year - 1); }
@@ -254,6 +290,15 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
           <button className="year-nav-btn" onClick={goNext} title="Next year">›</button>
         </div>
         <h2 className="year-label">{year}</h2>
+        <button
+          type="button"
+          className={"year-allday-toggle" + (showAllDay ? " is-on" : " is-off")}
+          onClick={() => setShowAllDay((v) => !v)}
+          aria-pressed={showAllDay}
+          title={showAllDay ? "Hide all-day events" : "Show all-day events"}
+        >
+          all-day
+        </button>
       </header>
 
       <div className="year-strip-header">
@@ -303,8 +348,7 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
                   data-date={dateStr}
                   onDragOver={isValid ? onCellDragOver : undefined}
                   onDrop={isValid && dateStr ? (e) => { void onCellDrop(e, dateStr); } : undefined}
-                  onMouseDown={isValid && date ? (e) => onCellMouseDown(e, date) : undefined}
-                  onMouseEnter={isValid && date ? () => onCellMouseEnter(date) : undefined}
+                  onPointerDown={isValid && date ? (e) => onCellPointerDown(e, date) : undefined}
                 >
                   {isValid && <span className="year-cell-day">{dayNum}</span>}
                 </div>
@@ -337,9 +381,9 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
                     draggable
                     onDragStart={(e) => onEventDragStart(e, note.path)}
                     onDragEnd={onEventDragEnd}
-                    // Stop mousedown bubbling so clicking an event bar
+                    // Stop pointerdown bubbling so tapping an event bar
                     // doesn't start a cell drag-to-create selection.
-                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onEventClick?.(note.path, { x: e.clientX, y: e.clientY }); }}
                     title={note.title}
                   >
