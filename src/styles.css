@@ -512,20 +512,18 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 
 /* Notable Folder Main Document — permanent coral highlight so the NF
-   cover reads as the section header it is. Border + subtle outer
-   coral glow, identical accent to the navigation pulse (.is-target),
-   just calmer for at-rest viewing. The folder-tint inline border is
-   skipped for these cards (see Card.tsx) so this rule wins without
-   `!important` games. */
+   cover reads as the section header it is. A clean 1 px coral border
+   + the standard soft drop shadow; no doubled outline ring, no extra
+   weight. The folder-tint inline border is skipped for these cards
+   (see Card.tsx) so this rule wins without `!important` games. */
 .order-card.is-main {
+  border-width: 1px;
   border-color: var(--coral);
-  box-shadow: 0 0 0 1px var(--coral),
-              0 6px 18px rgba(255, 90, 72, 0.12);
+  box-shadow: 0 6px 18px rgba(255, 90, 72, 0.10);
 }
 :root[data-theme="dark"] .order-card.is-main,
 :root[data-theme="black"] .order-card.is-main {
-  box-shadow: 0 0 0 1px var(--coral),
-              0 6px 18px rgba(255, 138, 120, 0.18);
+  box-shadow: 0 6px 18px rgba(255, 138, 120, 0.15);
 }
 .order-card.is-loading {
   min-height: 100px;
