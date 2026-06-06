@@ -12,8 +12,9 @@
 // Desktop-only: the calling card hides the flip control on iOS and
 // in the published viewer.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ArrowDownAZ, Clock4, FolderOpen, Terminal, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
 import { vaultFs, type VaultDirEntryStat } from "../lib/vault-fs";
 
@@ -119,35 +120,64 @@ export function NotableFolderBackside({
     catch (e) { console.error("open_terminal failed:", e); }
   }, [absPath]);
 
-  // Drag IN from the OS: a file dropped onto the panel is copied into
-  // the folder via vault_write_binary. Multiple files supported.
-  const onDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDropHover(false);
-    setUploadError(null);
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    if (files.length === 0) return;
-    try {
-      for (const f of files) {
-        const buf = new Uint8Array(await f.arrayBuffer());
-        const rel = folderRel ? `${folderRel}/${f.name}` : f.name;
-        await vaultFs.writeBinary(rel, Array.from(buf));
-      }
-      await reload();
-    } catch (err) {
-      setUploadError(String(err));
-    }
-  }, [folderRel, reload]);
-
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Allow drop when the dragged item is from the OS (files).
-    if (e.dataTransfer.types.includes("Files")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-      setDropHover(true);
-    }
+  // Drag IN from the OS: Tauri's webview eats HTML5 dataTransfer at
+  // the OS layer, so the React onDrop handler never receives the
+  // file list. The native event from getCurrentWebview().
+  // onDragDropEvent() gives us absolute OS paths instead. We gate on
+  // whether the drop position is inside this panel's bounding rect
+  // (multiple flipped cards could be open at once, only the one
+  // under the cursor should claim the drop).
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const inPanel = useCallback((x: number, y: number) => {
+    const el = panelRef.current;
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    // The native event reports physical pixels — divide by devicePixelRatio
+    // so we compare against CSS-pixel coords from getBoundingClientRect.
+    const dpr = window.devicePixelRatio || 1;
+    const cx = x / dpr;
+    const cy = y / dpr;
+    return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
   }, []);
-  const onDragLeave = useCallback(() => setDropHover(false), []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const handle = await getCurrentWebview().onDragDropEvent((e) => {
+          const p = e.payload;
+          if (p.type === "over" || p.type === "enter") {
+            const pos = (p as { position?: { x: number; y: number } }).position;
+            setDropHover(!!pos && inPanel(pos.x, pos.y));
+          } else if (p.type === "leave") {
+            setDropHover(false);
+          } else if (p.type === "drop") {
+            const pos = (p as { position?: { x: number; y: number } }).position;
+            const paths = (p as { paths?: string[] }).paths ?? [];
+            setDropHover(false);
+            if (!pos || !inPanel(pos.x, pos.y) || paths.length === 0) return;
+            (async () => {
+              try {
+                await vaultFs.importFiles(paths, folderRel);
+                await reload();
+              } catch (err) {
+                setUploadError(String(err));
+              }
+            })();
+          }
+        });
+        if (cancelled) handle();
+        else unlisten = handle;
+      } catch {
+        // Non-Tauri context (web viewer) — ignore.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [folderRel, reload, inPanel]);
 
   // Drag OUT to the OS isn't directly supported by HTML5 drag-and-drop
   // (browsers refuse to expose a fs path for security), but we can hand
@@ -169,10 +199,8 @@ export function NotableFolderBackside({
 
   return (
     <div
+      ref={panelRef}
       className={"nf-flip-panel" + (dropHover ? " is-drop-hover" : "")}
-      onDrop={onDrop}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
     >
       <header className="nf-flip-header">
         <div className="nf-flip-title">

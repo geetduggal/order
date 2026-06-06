@@ -260,6 +260,46 @@ pub fn vault_exists(state: tauri::State<VaultState>, rel: String) -> Result<bool
     Ok(resolve(&state, &rel)?.exists())
 }
 
+/// Copy one or more absolute source paths into a vault-relative
+/// directory. Used by the NF flip-card's drop-target: Tauri's webview
+/// hands the JS side an array of absolute OS paths (HTML5 dataTransfer
+/// is empty under the webview), and Rust does the copy so we never
+/// shuttle multi-megabyte blobs through the IPC bridge.
+/// Filenames collide → suffix `-1`, `-2`, … until we find a free name.
+#[tauri::command]
+pub fn vault_import_files(
+    state: tauri::State<VaultState>,
+    sources: Vec<String>,
+    dest_rel: String,
+) -> Result<Vec<String>, String> {
+    let dest_dir = resolve(&state, &dest_rel)?;
+    if !dest_dir.is_dir() {
+        return Err(format!("not a directory: {dest_rel}"));
+    }
+    let mut written = Vec::new();
+    for src in sources {
+        let src_path = PathBuf::from(&src);
+        let stem = src_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file".into());
+        let ext = src_path
+            .extension()
+            .map(|s| format!(".{}", s.to_string_lossy()))
+            .unwrap_or_default();
+        let mut candidate = format!("{stem}{ext}");
+        let mut n = 1;
+        while dest_dir.join(&candidate).exists() {
+            candidate = format!("{stem}-{n}{ext}");
+            n += 1;
+        }
+        let dst = dest_dir.join(&candidate);
+        fs::copy(&src_path, &dst).map_err(|e| format!("copy {src}: {e}"))?;
+        written.push(candidate);
+    }
+    Ok(written)
+}
+
 #[derive(serde::Serialize)]
 pub struct Stat {
     pub mtime: u64,

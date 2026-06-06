@@ -109,6 +109,7 @@ pub fn run() {
             vault_fs::vault_write_binary,
             vault_fs::vault_read_dir,
             vault_fs::vault_list_dir,
+            vault_fs::vault_import_files,
             vault_fs::vault_exists,
             vault_fs::vault_stat,
             vault_fs::vault_rename,

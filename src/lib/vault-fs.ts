@@ -121,6 +121,13 @@ export const vaultFs = {
         }),
       ),
     ),
+  /** Copy a list of absolute OS paths into a vault-relative dir. The
+   *  Tauri webview eats HTML5 dataTransfer, so the JS drop handler
+   *  can only receive paths (via getCurrentWebview().onDragDropEvent);
+   *  Rust does the byte copy. Returns the actual filenames written
+   *  (with `-N` suffix if there was a name collision). */
+  importFiles: (sources: string[], destRel: string) =>
+    invoke<string[]>("vault_import_files", { sources, destRel }),
   exists: (rel: string) => invoke<boolean>("vault_exists", { rel }),
   stat: (rel: string) => invoke<VaultStat>("vault_stat", { rel }),
   rename: (from: string, to: string) => {
