@@ -70,6 +70,9 @@ export function NotableFolderBackside({
   const [sort, setSort] = useState<SortMode>("name");
   const [dropHover, setDropHover] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  /** Names freshly imported by a drop — used to scroll-into-view and
+   *  pulse the matching row(s) once the list reloads. */
+  const [justImported, setJustImported] = useState<Set<string>>(new Set());
 
   const absPath = useMemo(() => {
     const base = vaultRoot.replace(/\/+$/, "");
@@ -90,6 +93,24 @@ export function NotableFolderBackside({
   }, [folderRel]);
 
   useEffect(() => { void reload(); }, [reload]);
+
+  // After an import lands and the list reloads, scroll the first
+  // freshly-imported row into view and let it pulse for a moment.
+  const listRef = useRef<HTMLUListElement | null>(null);
+  useEffect(() => {
+    if (justImported.size === 0) return;
+    const id = requestAnimationFrame(() => {
+      const root = listRef.current;
+      if (!root) return;
+      const target = Array.from(
+        root.querySelectorAll<HTMLElement>(".nf-flip-row"),
+      ).find((el) => el.dataset.name && justImported.has(el.dataset.name));
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    // Decay the highlight after the pulse animation settles.
+    const t = setTimeout(() => setJustImported(new Set()), 1800);
+    return () => { cancelAnimationFrame(id); clearTimeout(t); };
+  }, [justImported, entries]);
 
   const sorted = useMemo(() => {
     const xs = [...entries];
@@ -157,6 +178,10 @@ export function NotableFolderBackside({
                 const written = await vaultFs.importFiles(paths, folderRel);
                 // eslint-disable-next-line no-console
                 console.log("[nf-flip] imported", written);
+                // Flip to mtime sort so newly-imported files land at
+                // the top — most natural place to look for them.
+                setSort("mtime");
+                setJustImported(new Set(written));
                 await reload();
               } catch (err) {
                 // eslint-disable-next-line no-console
@@ -260,13 +285,19 @@ export function NotableFolderBackside({
       ) : sorted.length === 0 ? (
         <div className="nf-flip-empty">Empty folder. Drop files here to add them.</div>
       ) : (
-        <ul className="nf-flip-list">
+        <ul className="nf-flip-list" ref={listRef}>
           {sorted.map((e) => {
             const Icon = iconFor(e.name, e.isDir);
+            const highlighted = justImported.has(e.name);
             return (
               <li
                 key={e.name}
-                className={"nf-flip-row" + (e.isDir ? " is-dir" : "")}
+                data-name={e.name}
+                className={
+                  "nf-flip-row" +
+                  (e.isDir ? " is-dir" : "") +
+                  (highlighted ? " is-just-imported" : "")
+                }
                 draggable={!e.isDir}
                 onDragStart={!e.isDir ? (ev) => onRowDragStart(ev, e.name) : undefined}
                 onClick={() => { void openFile(e.name); }}

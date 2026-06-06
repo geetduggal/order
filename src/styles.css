@@ -4977,6 +4977,14 @@ iframe.order-youtube-embed {
   user-select: none;
 }
 .nf-flip-row:hover { background: var(--bg-elev); }
+.nf-flip-row.is-just-imported {
+  animation: nf-flip-row-pulse 1500ms var(--ease-out);
+}
+@keyframes nf-flip-row-pulse {
+  0%   { background: var(--coral-soft); box-shadow: inset 2px 0 0 var(--coral); }
+  60%  { background: var(--coral-soft); box-shadow: inset 2px 0 0 var(--coral); }
+  100% { background: transparent;       box-shadow: inset 2px 0 0 transparent; }
+}
 .nf-flip-row.is-dir .nf-flip-row-name { color: var(--royal); }
 .nf-flip-row-icon { color: var(--ink-faint); }
 .nf-flip-row-name {
