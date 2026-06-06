@@ -49,6 +49,7 @@ import {
 } from "../lib/youtube";
 import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
+import { isIosSync } from "../lib/vault";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -868,9 +869,12 @@ export function Card(props: Props) {
     >
       <div className="order-card-controls" aria-hidden={false}>
         {/* Folder flip — Notable Folder Main Docs only, desktop only.
-            The backside lazy-loads the folder's file list with sort /
-            drag-drop / reveal / terminal controls. */}
-        {isMainDoc && !readOnly && (
+            iOS has no Finder / Terminal to point at and HTML5 drag-out
+            via DownloadURL is a desktop concept, so the flip control
+            is hidden under the sandbox there. The backside lazy-loads
+            the folder's file list with sort / drag-drop / reveal /
+            terminal controls. */}
+        {isMainDoc && !readOnly && !isIosSync() && (
           <button
             type="button"
             className={"order-card-flip" + (flipped ? " is-on" : "")}
