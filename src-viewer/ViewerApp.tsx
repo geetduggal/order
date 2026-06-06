@@ -416,18 +416,38 @@ export function ViewerApp(
     })),
     [visible],
   );
-  // Calendar event click — match the desktop app's openEventNote:
-  //   switch to Stream, scroll to the card, leave filters as-is so
-  //   the timeline stays intact (the visitor "hops within" the Stream
-  //   instead of collapsing to a single-note view). Also push the
-  //   note's slug to the URL so the address bar reflects the focused
-  //   note and the link is shareable — without touching pill state,
-  //   which would otherwise filter the Stream to just that ref.
+  // Calendar event click — open the note's permalink. The previous
+  // "scroll to it in the Stream" flow silently failed whenever the
+  // note's folder wasn't in the current filter pile (the Stream
+  // didn't render the card, so there was nothing to scroll to).
+  // The note permalink (singleNoteRef) is the dedicated "read just
+  // this one" surface, which works regardless of which folders are
+  // pinned. URL updates so the link is shareable.
   const onEventClick = (path: string) => {
     const ref = path.replace(/\.md$/i, "").replace(/^.*\//, "");
+    const note = data.notes.find((n) => n.ref === ref);
+    if (!note) return;
     setView("stream");
-    setSingleNoteRef(null);
-    setScrollTarget(ref);
+    if (note.category) {
+      // Folder Main Doc → pin its include and scroll there.
+      const next: Filter[] = [
+        { kind: "include", ref: note.ref },
+        ...filters.filter((f) => !(f.kind === "include" && f.ref === note.ref)),
+      ];
+      setFilters(next);
+      setSingleNoteRef(null);
+      setScrollTarget(note.ref);
+    } else {
+      // Regular note → solo-note view inside its parent folder.
+      const parent = note.folder ?? note.ref;
+      const next: Filter[] = [
+        { kind: "include", ref: parent },
+        ...filters.filter((f) => !(f.kind === "include" && f.ref === parent)),
+      ];
+      setFilters(next);
+      setSingleNoteRef(note.ref);
+      setScrollTarget(note.ref);
+    }
     if (typeof history !== "undefined") {
       const slug = refToSlug.get(ref.toLowerCase());
       if (slug) history.pushState({}, "", `${basePath}${slug}/`);
