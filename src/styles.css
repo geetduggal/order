@@ -4895,7 +4895,11 @@ iframe.order-youtube-embed {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0 8px;
+  /* Reserve space on the right so the header doesn't run into the
+     card's top-right controls (flip / fullscreen / delete / ×) which
+     hover at top:6 right:6 with absolute positioning. ~150 px clears
+     all five icons even at the widest hover-expanded state. */
+  padding: 4px 152px 8px 0;
   border-bottom: 1px solid var(--rule-soft);
   margin-bottom: 6px;
   gap: 12px;

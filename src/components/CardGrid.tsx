@@ -2216,7 +2216,7 @@ export function CardGrid() {
         focused={focusedPath === n.path}
         onFocus={() => setFocusedPath(n.path)}
         capHeight={capHeight}
-        visited={isMain ? recentFolders.includes(ref) : undefined}
+        visited={isMain ? includeSet.has(ref) : undefined}
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
         onDelete={(path) => handleCardDelete(n.id, path)}

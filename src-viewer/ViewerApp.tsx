@@ -678,7 +678,7 @@ export function ViewerApp(
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
             soloRef={singleNoteRef}
             scrollTarget={scrollTarget}
-            recentFolders={recentFolders}
+            // recentFolders no longer used: "visited" is now derived from includeSet
           />
         )}
         {view === "day" && (
@@ -754,7 +754,7 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function StreamView({
-  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget, recentFolders,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
@@ -772,10 +772,6 @@ function StreamView({
    *  extend the bare-stream pagination window when the target lives
    *  past the default cap. */
   scrollTarget?: string | null;
-  /** Folder refs the user has focused on at least once. NF Main Docs
-   *  whose ref is in this set get a thinner coral highlight (visited);
-   *  others get the louder version. */
-  recentFolders: string[];
 }) {
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
@@ -824,7 +820,7 @@ function StreamView({
         onAddFilter={onNavigate}
         onRemoveFromFilter={includeSet.has(n.ref) ? () => onRemoveInclude(n.ref) : undefined}
         capHeight={capHeight}
-        visited={isMain ? recentFolders.includes(n.ref) : undefined}
+        visited={isMain ? includeSet.has(n.ref) : undefined}
       />
     );
   };
