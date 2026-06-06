@@ -516,7 +516,7 @@ input, textarea, select { outline: none; box-shadow: none; }
    highlight stays loud whether the folder is pinned in the pile or
    just appearing in the bare stream. */
 .order-card.is-main {
-  border-width: 1.5px;
+  border-width: 2px;
   border-color: var(--coral);
   box-shadow: 0 6px 18px rgba(255, 90, 72, 0.14);
 }
