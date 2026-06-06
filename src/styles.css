@@ -5,21 +5,25 @@
 /* Default light theme: lifted directly from the Glass / Original
    icon palette — cream paper, royal blue ink-card, coral accent.
    Same three tokens that compose the app icon compose the chrome,
-   so the brand reads identically at every scale. */
+   so the brand reads identically at every scale.
+   Saturated rules + parchment elev so the icon's deliberate, slightly
+   formal print-on-paper feel carries into the chrome at full scale —
+   borders read clearly, chrome surfaces lift off the card bg, and
+   chips/hover states show the royal+coral accents the icon evokes. */
 :root {
   --bg:        #faf8f4;  /* cream paper, exact match to the icon's outer rect */
-  --bg-elev:   #f3f0e8;  /* warmer cream for elevated surfaces */
-  --ink:       #1a1a1a;
-  --ink-soft:  #2a2a2a;
-  --ink-faint: #7d7a74;  /* warm grey — neutral on cream */
-  --ink-ghost: #c8c4ba;  /* faded paper-tone */
-  --rule:      #d4cfc4;  /* warm cream-grey, matches the icon HTML's --rule */
-  --rule-soft: #e6e1d6;
+  --bg-elev:   #ece4d2;  /* parchment — sidebar / dock / popover */
+  --ink:       #131618;
+  --ink-soft:  #232628;
+  --ink-faint: #6a665a;  /* deeper warm grey — sharper secondary text on cream */
+  --ink-ghost: #b8b09a;
+  --rule:      #c2b896;  /* deeper warm-tan rule — borders read as ink, not haze */
+  --rule-soft: #d8cfb4;
 
   --royal:      #1f3fa8;  /* Original royal — the inner ink-card of the icon */
-  --royal-soft: #d8def0;  /* light wash for chips / today / hover */
-  --coral:      #ff6b5b;  /* Original coral — the heart in the icon */
-  --coral-soft: #ffd9d2;  /* light coral wash */
+  --royal-soft: #c8d4ee;  /* more saturated wash for chips / today / hover */
+  --coral:      #ff5a48;  /* a touch more saturated for chrome accents */
+  --coral-soft: #ffc5b6;  /* deeper coral wash so today / focus reads strongly */
 
   /* Iowan Old Style as the reading face keeps the icon's quiet
      formality (the Original mock pairs the rotated logo with serif
@@ -43,18 +47,21 @@
   color-scheme: dark;
   /* Dark theme is the inverse of the icon — the deep navy that lives
      at the bottom-right of the Glass gradient (#06104a) becomes the
-     field; the cream paper becomes the ink; coral stays the accent. */
-  --bg:        #0d1530;  /* mid-tone navy from the icon background */
-  --bg-elev:   #131c45;
+     field; the cream paper becomes the ink; coral stays the accent.
+     Bumping bg-elev + rule into more saturated royal so the chrome
+     reads as the icon's deep-blue dominant field, not a flat dark
+     grey with blue hints. */
+  --bg:        #0a1230;  /* deeper, more saturated than the prior mid-tone */
+  --bg-elev:   #182a64;  /* royal-tinted elev — sidebar / dock / popover lift */
   --ink:       #faf8f4;  /* the icon's cream as the reading color */
   --ink-soft:  #ffffff;
-  --ink-faint: #9aa0b8;  /* cool blue-grey — neutral on navy */
-  --ink-ghost: #4a527a;
-  --rule:      #243057;
-  --rule-soft: #1a2348;
+  --ink-faint: #a0a8c8;
+  --ink-ghost: #525a82;
+  --rule:      #2e3d72;  /* more visible borders so cards read as cards on navy */
+  --rule-soft: #1f2a55;
 
-  --royal:      #5478e8;  /* the icon's light-end blue — accents pop on navy */
-  --royal-soft: #1a2858;
+  --royal:      #6488f0;  /* the icon's light-end blue, pushed a touch brighter */
+  --royal-soft: #1f2e5c;
   --coral:      #ff8a78;  /* slightly lighter coral so it reads on navy */
   --coral-soft: #4a221d;
 }
@@ -71,23 +78,23 @@
 
 :root[data-theme="dark"] .milkdown,
 :root[data-theme="black"] .milkdown {
-  --crepe-color-background: #0d1530;
+  --crepe-color-background: #0a1230;
   --crepe-color-on-background: #faf8f4;
-  --crepe-color-surface: #131c45;
-  --crepe-color-surface-low: #0f173a;
+  --crepe-color-surface: #182a64;
+  --crepe-color-surface-low: #0f1a40;
   --crepe-color-on-surface: #faf8f4;
-  --crepe-color-on-surface-variant: #9aa0b8;
-  --crepe-color-outline: #4a527a;
-  --crepe-color-primary: #5478e8;
-  --crepe-color-secondary: #243057;
+  --crepe-color-on-surface-variant: #a0a8c8;
+  --crepe-color-outline: #525a82;
+  --crepe-color-primary: #6488f0;
+  --crepe-color-secondary: #2e3d72;
   --crepe-color-on-secondary: #faf8f4;
   --crepe-color-inverse: #faf8f4;
-  --crepe-color-on-inverse: #0d1530;
+  --crepe-color-on-inverse: #0a1230;
   --crepe-color-inline-code: #ff8a78;
-  --crepe-color-inline-area: #1a2348;
+  --crepe-color-inline-area: #1f2a55;
   --crepe-color-error: #ff6b6b;
-  --crepe-color-hover: #1a2348;
-  --crepe-color-selected: #1f2a55;
+  --crepe-color-hover: #1f2a55;
+  --crepe-color-selected: #243a7c;
 }
 
 /* OLED black: drop the editor surfaces to true black. */
@@ -483,24 +490,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card {
   position: relative;
   background: var(--bg);
-  border: 1px solid var(--rule);
+  /* 1.5 px border on the warm-tan rule so the card edge reads
+     like the icon's high-contrast inner-card outline. */
+  border: 1.5px solid var(--rule);
   /* Softer corner, matched proportionally to the icon's interior
      rounded square (rx=20 on a 104px side ≈ 10/100). */
   border-radius: 10px;
-  /* Quiet shadow under the card on light themes — same low-elevation
-     drop the icon's framing uses (0 8px 24px rgba(0,0,0,0.08)) but
-     dialed back so the masonry stays calm. Darker themes get a
-     near-flat shadow so the card lifts subtly off the navy field
-     without bloom. */
-  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.04),
-              0 4px 12px rgba(20, 20, 40, 0.05);
+  /* Slightly deeper drop on light themes — the icon's framing
+     uses 0 8px 24px rgba(0,0,0,0.08); we use a two-stop version
+     so cards lift off the cream field with conviction. */
+  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.05),
+              0 6px 18px rgba(20, 20, 40, 0.07);
   /* Tighter top padding — heading at start of file should hug the
      card top, not float in a sea of whitespace. */
   padding: 10px clamp(18px, 3.5vw, 40px) 12px;
 }
 :root[data-theme="dark"] .order-card,
 :root[data-theme="black"] .order-card {
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45),
+              0 4px 12px rgba(0, 0, 0, 0.25);
 }
 .order-card.is-loading {
   min-height: 100px;
