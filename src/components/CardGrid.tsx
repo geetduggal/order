@@ -741,6 +741,12 @@ export function CardGrid() {
         const inMem = notesRef.current?.find((n) => n.path === path);
         if (!inMem) return true; // new file the index doesn't know yet
         const split = splitFrontmatter(raw);
+        // Loaded-on-demand leaf notes have inMem.body === "" because
+        // bodies are read by Card on mount, not eagerly. Treat that as
+        // "unknown" — accept the change so the Card remounts with the
+        // current disk contents instead of comparing against an empty
+        // baseline (which would falsely flag every sync touch).
+        if (inMem.body === "" && split.body !== "") return true;
         return split.body !== inMem.body;
       } catch {
         return false;
@@ -752,6 +758,8 @@ export function CardGrid() {
       // a genuine external mtime change.
       const external: string[] = [];
       for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
+      // eslint-disable-next-line no-console
+      if (paths.length) console.log("[watcher] reportExternal", { incoming: paths.length, external: external.length });
       if (external.length === 0) return;
       // Content-aware filter: only paths whose bodies actually
       // differ get a version bump (which would remount the Card).
@@ -762,6 +770,8 @@ export function CardGrid() {
         if (await bodyActuallyChanged(p)) changed.push(p);
         if (cancelled) return;
       }
+      // eslint-disable-next-line no-console
+      console.log("[watcher] changed bodies", changed);
       if (changed.length === 0) return;
       // Only reload when real content changed. The old path scheduled
       // a reload on every mtime touch — which on iOS, where the bridge
@@ -784,6 +794,8 @@ export function CardGrid() {
       if (!root || cancelled) return;
       try {
         await invoke("start_watcher", { path: root });
+        // eslint-disable-next-line no-console
+        console.log("[watcher] notify started on", root);
         unlisten = await listen<string[]>("vault-changed", (e) => {
           // OS-level event from the notify watcher: handle content
           // changes via the content-aware path AND force an index
@@ -792,6 +804,8 @@ export function CardGrid() {
           // modify; reload is cheap relative to body re-reads, and
           // happens at most once per 250ms via the timer.)
           const paths = e.payload ?? [];
+          // eslint-disable-next-line no-console
+          console.log("[watcher] notify event", paths);
           void reportExternal(paths);
           scheduleReload();
         });
@@ -829,16 +843,19 @@ export function CardGrid() {
         // touches go through the content-aware reportExternal path,
         // which on iOS no longer triggers a heavy reload-every-cycle
         // when Dropbox / iCloud touches a file without changing it.
+        if (added || removed || changed.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log("[watcher] poll", { added, removed, changed: changed.length });
+        }
         if (added || removed) scheduleReload();
         if (changed.length > 0) void reportExternal(changed);
         firstPoll = false;
       } catch { /* sleep + retry */ }
-      // Slow poll on iOS: 15s instead of 4s. iOS walk is much more
-      // expensive (security-scoped bookmark + sandboxed FS) and the
-      // content-aware filter already absorbs cloud-sync noise, so a
-      // longer cycle costs nothing perceptually while saving battery
-      // and stopping the every-few-seconds index churn the user saw.
-      if (!cancelled) pollTimer = setTimeout(pollOnce, isIosSync() ? 15000 : 4000);
+      // iOS lacks a working recursive notify watcher under the
+      // security-scoped sandbox, so the poller is the ONLY freshness
+      // signal there. 15 s left external edits feeling laggy; drop to
+      // 5 s. The content-aware filter still drops pure-touch noise.
+      if (!cancelled) pollTimer = setTimeout(pollOnce, isIosSync() ? 5000 : 3000);
     }
     let firstPoll = true;
     async function start() {
