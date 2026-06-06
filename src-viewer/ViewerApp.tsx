@@ -234,7 +234,16 @@ export function ViewerApp(
     pinToFront(ref);
   }
   function removeFilter(target: Filter) {
-    commitFilters(filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref)));
+    const next = filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref));
+    commitFilters(next);
+    if (next.length === 0) {
+      // Empty filter set: route through the same default-restore the
+      // dock Home toggle uses, so dismissing the last pinned NF
+      // doesn't leave the cleared stream behind. The viewer's default
+      // landing surface is Stream (a visitor lands on home reading
+      // prose), so we don't change the view here.
+      setCollapseNonce((n) => n + 1);
+    }
   }
   function resetToDefault() {
     // Match the desktop app: clear all filters outright. (Previously the
@@ -242,6 +251,7 @@ export function ViewerApp(
     // dropped that behaviour after the no-default-folder change.)
     commitFilters([]);
     setCollapseNonce((n) => n + 1);
+    setView("stream");
   }
   // Wikilink / list-row click → open the target's permalink (matches
   // arriving at /<slug>/ directly). The old "accumulate filter + scroll"
