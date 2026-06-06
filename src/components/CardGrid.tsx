@@ -469,6 +469,10 @@ export function CardGrid() {
       const next = prev.filter(
         (f) => !(f.kind === target.kind && f.ref === target.ref),
       );
+      // Diagnostic — verify a single tap fires once and yields the
+      // right state. Keep until the close-twice complaint is gone.
+      // eslint-disable-next-line no-console
+      console.log("[removeFilter]", target, "prev", prev, "next", next);
       if (next.length === 0) {
         setCollapseNonce((n) => n + 1);
         setView("week");
