@@ -332,9 +332,17 @@ export function Card(props: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   /** Notable Folder Main Documents only: flips the card to the folder
    *  contents browser (see NotableFolderBackside). Desktop-only
-   *  feature; the calling card hides the flip button on iOS / viewer. */
+   *  feature; the calling card hides the flip button on iOS / viewer.
+   *  Lives at the TOP of the hook list so the early-return loading /
+   *  error branches don't change hook count between renders. */
   const [flipped, setFlipped] = useState(false);
   const [vaultRootForFlip, setVaultRootForFlip] = useState<string | null>(null);
+  useEffect(() => {
+    if (!flipped || vaultRootForFlip !== null || readOnly) return;
+    let cancelled = false;
+    void vaultRoot().then((r) => { if (!cancelled) setVaultRootForFlip(r); });
+    return () => { cancelled = true; };
+  }, [flipped, vaultRootForFlip, readOnly]);
   /** Newspaper height-cap state: `expanded` lifts the cap (Read more
    *  or, when editable, focusing the card); `overflowing` is whether
    *  the body actually exceeds the cap (only then do we show the
@@ -831,16 +839,6 @@ export function Card(props: Props) {
   // an NF cover at a glance — no need to remember which card you
   // just navigated to.
   const isMainDoc = isNotableFolder(state.frontmatter);
-
-  // Lazy-load the vault root once the user flips an NF card — needed
-  // to assemble absolute paths for the OS open / reveal / terminal
-  // commands. Skip on read-only (viewer) and non-main-doc cards.
-  useEffect(() => {
-    if (!flipped || vaultRootForFlip !== null || readOnly || !isMainDoc) return;
-    let cancelled = false;
-    void vaultRoot().then((r) => { if (!cancelled) setVaultRootForFlip(r); });
-    return () => { cancelled = true; };
-  }, [flipped, vaultRootForFlip, readOnly, isMainDoc]);
   const folderRelForFlip = vaultDir(toVaultRel(pathRef.current));
   const folderName = pathRef.current.split("/").pop()?.replace(/\.md$/i, "") ?? "";
   const cardClass =
