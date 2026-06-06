@@ -517,7 +517,10 @@ input, textarea, select { outline: none; box-shadow: none; }
    weight. The folder-tint inline border is skipped for these cards
    (see Card.tsx) so this rule wins without `!important` games. */
 .order-card.is-main {
-  border-width: 1px;
+  /* 0.5 px renders as a true hairline on Retina / iOS; standard-DPI
+     displays round up to 1 px, which is still slimmer than the
+     card's default border. */
+  border-width: 0.5px;
   border-color: var(--coral);
   box-shadow: 0 6px 18px rgba(255, 90, 72, 0.10);
 }
