@@ -239,19 +239,20 @@ export function ViewerApp(
     if (next.length === 0) {
       // Empty filter set: route through the same default-restore the
       // dock Home toggle uses, so dismissing the last pinned NF
-      // doesn't leave the cleared stream behind. The viewer's default
-      // landing surface is Stream (a visitor lands on home reading
-      // prose), so we don't change the view here.
+      // doesn't leave a flat wall of every NF Main Doc behind.
       setCollapseNonce((n) => n + 1);
+      setView("week");
     }
   }
   function resetToDefault() {
-    // Match the desktop app: clear all filters outright. (Previously the
-    // viewer restored the home folder as the sole include; the app
-    // dropped that behaviour after the no-default-folder change.)
+    // Match the desktop app: clear filters AND pin Week. A bare
+    // viewer stream with no filter renders every NF cover as a flat
+    // wall — confusing for a visitor and inconsistent with what the
+    // dock Home button does on desktop. Week is the canonical
+    // empty-filter landing surface across both surfaces now.
     commitFilters([]);
     setCollapseNonce((n) => n + 1);
-    setView("stream");
+    setView("week");
   }
   // Wikilink / list-row click → open the target's permalink (matches
   // arriving at /<slug>/ directly). The old "accumulate filter + scroll"
