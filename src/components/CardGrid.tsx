@@ -458,11 +458,23 @@ export function CardGrid() {
       return [...prev, { kind: "include", ref }];
     });
   }, []);
-  /** Remove a specific pill (matched by kind + ref). */
+  /** Remove a specific pill (matched by kind + ref). If this empties
+   *  the filter set, behave like resetToDefault — clear collapsing
+   *  signal + jump to the default Week view — so dismissing the last
+   *  pinned NF doesn't leave the cleared stream behind, which read
+   *  as "the close button didn't do anything" since the NF Main Doc
+   *  re-rendered as a flat-grid card. */
   const removeFilter = useCallback((target: Filter) => {
-    setFilters((prev) => prev.filter(
-      (f) => !(f.kind === target.kind && f.ref === target.ref),
-    ));
+    setFilters((prev) => {
+      const next = prev.filter(
+        (f) => !(f.kind === target.kind && f.ref === target.ref),
+      );
+      if (next.length === 0) {
+        setCollapseNonce((n) => n + 1);
+        setView("week");
+      }
+      return next;
+    });
   }, []);
   /** Reset to the default view: a single include pill for the home
    *  Notable Folder, AND collapse every section's Show-more

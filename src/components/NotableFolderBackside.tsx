@@ -151,6 +151,9 @@ export function NotableFolderBackside({
             position?: { x: number; y: number };
             paths?: string[];
           };
+          // Diagnostic — keep until the drop flow is confirmed working.
+          // eslint-disable-next-line no-console
+          console.log("[nf-flip] dragDrop", p.type, p);
           if (p.type === "over" || p.type === "enter") {
             setDropHover(positionInPanel(p.position?.x, p.position?.y));
           } else if (p.type === "leave") {
@@ -162,9 +165,13 @@ export function NotableFolderBackside({
             if (!positionInPanel(p.position?.x, p.position?.y)) return;
             (async () => {
               try {
-                await vaultFs.importFiles(paths, folderRel);
+                const written = await vaultFs.importFiles(paths, folderRel);
+                // eslint-disable-next-line no-console
+                console.log("[nf-flip] imported", written);
                 await reload();
               } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error("[nf-flip] import failed", err);
                 setUploadError(String(err));
               }
             })();
