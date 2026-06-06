@@ -171,6 +171,11 @@ interface Props {
    *  the card's top-right copies it. Omitted when the note has no
    *  published permalink (private / unpublished). */
   permalink?: string;
+  /** Has the user already focused on / visited this Notable Folder?
+   *  Only meaningful for NF Main Documents — the chrome dials the
+   *  coral highlight back to a hairline once a folder is no longer
+   *  novel, so unvisited NF covers stand out and visited ones recede. */
+  visited?: boolean;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -822,6 +827,7 @@ export function Card(props: Props) {
   const cardClass =
     "order-card" +
     (isMainDoc ? " is-main" : "") +
+    (isMainDoc && props.visited ? " is-visited" : "") +
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "") +
     (capActive && overflowing ? " is-capped" : "");

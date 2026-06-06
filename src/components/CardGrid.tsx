@@ -575,6 +575,8 @@ export function CardGrid() {
     const path = notePathByRef(home);
     if (path) navigateAndFocus(path);
   }, [navigateAndFocus]);
+  // Forward-ref binding for Cmd+R's "jump to home" half of the toggle.
+  useEffect(() => { goHomeRef.current = goHome; }, [goHome]);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. Sidebar consumes this as flat arrays so it can
@@ -1272,6 +1274,10 @@ export function CardGrid() {
   // Forward-ref so the keyboard handler (declared above resetToDefault)
   // can invoke the latest version for Cmd+'.
   const resetToDefaultRef = useRef<(() => void) | null>(null);
+  // Same forward-ref pattern for Cmd+R's "jump to home" half of the
+  // toggle — goHome is defined earlier and we don't want a stale
+  // closure from the keydown effect's mount.
+  const goHomeRef = useRef<(() => void) | null>(null);
   // Shortcuts overlay — toggled by bare `?` outside text input.
   const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
@@ -1386,6 +1392,19 @@ export function CardGrid() {
       if (e.key === "'") {
         e.preventDefault();
         resetToDefaultRef.current?.();
+        return;
+      }
+      // Cmd+R mirrors the dock's Home toggle: if currently filtered
+      // to home only, clear all filters; otherwise jump to home.
+      // Overrides the platform's "reload" default — Order is the
+      // page, you don't reload the page from inside the page.
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        const home = homeFolderRef.current;
+        const inc = includeSetRef.current;
+        const homeFiltered = !!home && inc.size === 1 && inc.has(home);
+        if (homeFiltered) resetToDefaultRef.current?.();
+        else goHomeRef.current?.();
         return;
       }
     }
@@ -1712,15 +1731,16 @@ export function CardGrid() {
     // Folder resolution priority:
     //   1. caller supplied `folder` (calendar quick-create from a
     //      pinned section, dock new-note picker, etc.)
-    //   2. exactly one Notable Folder is active in the include filter
-    //      — drop the new note there so it shows up under the filter
-    //      the user is currently looking at, instead of landing in
-    //      home and disappearing
+    //   2. at least one Notable Folder is active in the include
+    //      filter — drop the new note in the top of the pile (the
+    //      most-recently-touched section, which sits first in the
+    //      include set). No picker even when several folders are
+    //      pinned: the user's pile order IS the picker.
     //   3. home Notable Folder
     // Empty vault skips all three and the file just goes at root.
     if (!frontmatter.folder) {
       const activeIncludes = notableIncludesRef.current;
-      if (activeIncludes.length === 1) {
+      if (activeIncludes.length >= 1) {
         frontmatter.folder = `[[${activeIncludes[0]}]]`;
       } else if (homeFolderRef.current) {
         frontmatter.folder = `[[${homeFolderRef.current}]]`;
@@ -2192,6 +2212,7 @@ export function CardGrid() {
         focused={focusedPath === n.path}
         onFocus={() => setFocusedPath(n.path)}
         capHeight={capHeight}
+        visited={isMain ? recentFolders.includes(ref) : undefined}
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
         onDelete={(path) => handleCardDelete(n.id, path)}
@@ -2268,15 +2289,16 @@ export function CardGrid() {
     }
     const sel = notableIncludes;
     const create = view !== "stream" ? promptCreate : createNote;
-    if (sel.length === 1) {
+    // Pile-based: when one or more Notable Folders are pinned, drop
+    // the new note in the TOP of the pile (the most-recently-touched
+    // section). No picker; the user's pile order IS the picker.
+    if (sel.length >= 1) {
       void create({
         date: isoDate(), startTime: isoTime(), allDay: false,
         folder: `[[${sel[0]}]]`,
       });
-    } else if (sel.length === 0) {
-      void create({ date: isoDate(), startTime: isoTime(), allDay: false });
     } else {
-      setCreatorOpen((prev) => !prev);
+      void create({ date: isoDate(), startTime: isoTime(), allDay: false });
     }
   };
 

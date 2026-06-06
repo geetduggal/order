@@ -466,11 +466,28 @@ export function ViewerApp(
       } else if ((e.metaKey || e.ctrlKey) && e.key === ";") {
         e.preventDefault();
         setSidebarOpen((o) => !o);
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === "r" || e.key === "R")) {
+        // Cmd+R mirrors the dock's Home toggle in the viewer too:
+        // at home → clear all filters; otherwise → filter to home.
+        // Overrides the browser's reload default — the viewer is the
+        // page, the page doesn't reload itself.
+        e.preventDefault();
+        const home = data.home?.name ?? null;
+        const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
+        if (homeFiltered) {
+          resetToDefault();
+        } else if (home) {
+          commitFilters([{ kind: "include", ref: home }]);
+          navigate(home);
+        } else {
+          resetToDefault();
+        }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeSet, data.home?.name]);
 
   return (
     <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
@@ -661,6 +678,7 @@ export function ViewerApp(
             onRemoveInclude={(ref) => removeFilter({ kind: "include", ref })}
             soloRef={singleNoteRef}
             scrollTarget={scrollTarget}
+            recentFolders={recentFolders}
           />
         )}
         {view === "day" && (
@@ -736,7 +754,7 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function StreamView({
-  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget, recentFolders,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
@@ -754,6 +772,10 @@ function StreamView({
    *  extend the bare-stream pagination window when the target lives
    *  past the default cap. */
   scrollTarget?: string | null;
+  /** Folder refs the user has focused on at least once. NF Main Docs
+   *  whose ref is in this set get a thinner coral highlight (visited);
+   *  others get the louder version. */
+  recentFolders: string[];
 }) {
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
   useGridLayout(gridEl);
@@ -802,6 +824,7 @@ function StreamView({
         onAddFilter={onNavigate}
         onRemoveFromFilter={includeSet.has(n.ref) ? () => onRemoveInclude(n.ref) : undefined}
         capHeight={capHeight}
+        visited={isMain ? recentFolders.includes(n.ref) : undefined}
       />
     );
   };
