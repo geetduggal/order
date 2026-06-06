@@ -39,6 +39,10 @@ interface Props {
    *  Folder so a click ACCUMULATES filter chips instead of
    *  replacing the set. */
   onAddFilter?: (ref: string) => void;
+  /** Paste / drop image upload. When the user pastes (or drops) an
+   *  image onto the list, the file is persisted to the list folder's
+   *  dir via this callback and an image-only bullet is appended. */
+  onUploadImage?: (file: File) => Promise<string>;
 }
 
 function pickMeta(item: ListItem, note?: ListNoteRef): string {
@@ -67,9 +71,24 @@ function splitDatedMeta(meta: string): { pinned: string; secondary: string } | n
   return null;
 }
 
-export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter }: Props) {
+export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembership, expandSublists, onNavigate, onAddFilter, onUploadImage }: Props) {
   const [adding, setAdding] = useState(false);
+  const [addingTop, setAddingTop] = useState(false);
   const hideControls = !!readOnly || !!readOnlyMembership;
+
+  // Image paste / drop: write the file to the list folder's own dir
+  // via onUploadImage, then insert an image-only list item at the end
+  // (same shape as `* ![[file.png]]` in the source bullets). We watch
+  // the surrounding container so the user doesn't have to click into
+  // a specific input to make the paste work.
+  async function ingestImageFile(file: File) {
+    if (!onUploadImage) return;
+    const url = await onUploadImage(file);
+    const cleaned = url.split(/[?#]/)[0];
+    let base = cleaned.split("/").pop() ?? cleaned;
+    try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+    addItem({ ref: base, image: base }, "end");
+  }
 
   // Map a reordered ref list back to items, then persist.
   function reorder(order: string[]) {
@@ -88,11 +107,15 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     next.splice(index, 1);
     onChange(next);
   }
-  function add(ref: string) {
+  function add(ref: string, position: "start" | "end" = "end") {
     const t = ref.trim();
     if (!t) return;
     if (items.some((i) => i.ref.toLowerCase() === t.toLowerCase())) return;
-    onChange([...items, { ref: t }]);
+    onChange(position === "start" ? [{ ref: t }, ...items] : [...items, { ref: t }]);
+  }
+  function addItem(item: ListItem, position: "start" | "end" = "end") {
+    if (items.some((i) => i.ref.toLowerCase() === item.ref.toLowerCase())) return;
+    onChange(position === "start" ? [item, ...items] : [...items, item]);
   }
   function updateMeta(index: number, meta: string) {
     const next = items.slice();
@@ -121,7 +144,36 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   }
 
   return (
-    <div ref={gridRef} className="list-lines">
+    <div
+      ref={gridRef}
+      className="list-lines"
+      onPaste={hideControls || !onUploadImage ? undefined : (e) => {
+        const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (files.length === 0) return;
+        e.preventDefault();
+        void Promise.all(files.map(ingestImageFile));
+      }}
+      onDragOver={hideControls || !onUploadImage ? undefined : (e) => {
+        if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={hideControls || !onUploadImage ? undefined : (e) => {
+        const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (files.length === 0) return;
+        e.preventDefault();
+        void Promise.all(files.map(ingestImageFile));
+      }}
+    >
+      {!hideControls && (
+        <AddRow
+          startOpen={addingTop}
+          onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
+          onCancel={() => setAddingTop(false)}
+          onOpen={() => setAddingTop(true)}
+        />
+      )}
       {items.map((item, originalIdx) => {
         const note = resolveNoteRef(item.ref, vaultNotes);
         const color = folderColor(item.ref, note?.frontmatter.color);

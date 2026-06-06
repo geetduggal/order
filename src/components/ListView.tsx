@@ -50,6 +50,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnly, readOn
         expandSublists={expandSublists}
         onNavigate={onNavigate}
         onAddFilter={onAddFilter}
+        onUploadImage={onUploadImage}
       />
     );
   }

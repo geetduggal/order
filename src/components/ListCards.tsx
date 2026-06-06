@@ -69,6 +69,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
 
 export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter, noteDir, onUploadImage }: Props) {
   const [adding, setAdding] = useState(false);
+  const [addingTop, setAddingTop] = useState(false);
   /** Open image inspector for a specific image-only list item. */
   const [inspectingIdx, setInspectingIdx] = useState<number | null>(null);
   const hideControls = !!readOnly || !!readOnlyMembership;
@@ -97,11 +98,25 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     onChange(next);
   }
 
-  function add(ref: string) {
+  function add(ref: string, position: "start" | "end" = "end") {
     const trimmed = ref.trim();
     if (!trimmed) return;
     if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return;
-    onChange([...items, { ref: trimmed }]);
+    onChange(position === "start" ? [{ ref: trimmed }, ...items] : [...items, { ref: trimmed }]);
+  }
+  function addItem(item: ListItem, position: "start" | "end" = "end") {
+    if (items.some((i) => i.ref.toLowerCase() === item.ref.toLowerCase())) return;
+    onChange(position === "start" ? [item, ...items] : [...items, item]);
+  }
+  // Paste / drop image → upload to the list folder's dir and add an
+  // image-only item at the end (same shape as `* ![[file.png]]`).
+  async function ingestImageFile(file: File) {
+    if (!onUploadImage) return;
+    const url = await onUploadImage(file);
+    const cleaned = url.split(/[?#]/)[0];
+    let base = cleaned.split("/").pop() ?? cleaned;
+    try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+    addItem({ ref: base, image: base }, "end");
   }
 
   function updateMeta(index: number, meta: string) {
@@ -133,7 +148,36 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   }
 
   return (
-    <div ref={gridRef} className="basecard-grid">
+    <div
+      ref={gridRef}
+      className="basecard-grid"
+      onPaste={hideControls || !onUploadImage ? undefined : (e) => {
+        const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (files.length === 0) return;
+        e.preventDefault();
+        void Promise.all(files.map(ingestImageFile));
+      }}
+      onDragOver={hideControls || !onUploadImage ? undefined : (e) => {
+        if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={hideControls || !onUploadImage ? undefined : (e) => {
+        const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+        if (files.length === 0) return;
+        e.preventDefault();
+        void Promise.all(files.map(ingestImageFile));
+      }}
+    >
+      {!hideControls && (
+        <AddTile
+          startOpen={addingTop}
+          onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
+          onCancel={() => setAddingTop(false)}
+          onOpen={() => setAddingTop(true)}
+        />
+      )}
       {items.map((item, originalIdx) => {
         // Image-only bullet (`* ![[foo.jpg]]`) — render the image as
         // the card's cover, no title/meta/navigation. Click opens an
