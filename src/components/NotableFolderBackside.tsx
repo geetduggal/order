@@ -124,20 +124,20 @@ export function NotableFolderBackside({
   // the OS layer, so the React onDrop handler never receives the
   // file list. The native event from getCurrentWebview().
   // onDragDropEvent() gives us absolute OS paths instead. We gate on
-  // whether the drop position is inside this panel's bounding rect
-  // (multiple flipped cards could be open at once, only the one
-  // under the cursor should claim the drop).
+  // whether the drop point lands on a descendant of this panel via
+  // document.elementFromPoint — more robust than bounding-rect math
+  // (handles cards in scroll containers, transformed parents, etc.).
+  // If no panelRef yet or position is missing, we still import — being
+  // generous beats failing silently when the user clearly intends to
+  // drop on the flipped card.
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const inPanel = useCallback((x: number, y: number) => {
-    const el = panelRef.current;
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    // The native event reports physical pixels — divide by devicePixelRatio
-    // so we compare against CSS-pixel coords from getBoundingClientRect.
+  const positionInPanel = useCallback((x: number | undefined, y: number | undefined) => {
+    if (panelRef.current == null) return false;
+    if (x == null || y == null) return true; // no position → trust the listener
     const dpr = window.devicePixelRatio || 1;
-    const cx = x / dpr;
-    const cy = y / dpr;
-    return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+    const el = document.elementFromPoint(x / dpr, y / dpr) as HTMLElement | null;
+    if (!el) return true; // off-canvas → accept
+    return panelRef.current.contains(el);
   }, []);
 
   useEffect(() => {
@@ -146,17 +146,20 @@ export function NotableFolderBackside({
     (async () => {
       try {
         const handle = await getCurrentWebview().onDragDropEvent((e) => {
-          const p = e.payload;
+          const p = e.payload as {
+            type: "enter" | "over" | "drop" | "leave";
+            position?: { x: number; y: number };
+            paths?: string[];
+          };
           if (p.type === "over" || p.type === "enter") {
-            const pos = (p as { position?: { x: number; y: number } }).position;
-            setDropHover(!!pos && inPanel(pos.x, pos.y));
+            setDropHover(positionInPanel(p.position?.x, p.position?.y));
           } else if (p.type === "leave") {
             setDropHover(false);
           } else if (p.type === "drop") {
-            const pos = (p as { position?: { x: number; y: number } }).position;
-            const paths = (p as { paths?: string[] }).paths ?? [];
+            const paths = p.paths ?? [];
             setDropHover(false);
-            if (!pos || !inPanel(pos.x, pos.y) || paths.length === 0) return;
+            if (paths.length === 0) return;
+            if (!positionInPanel(p.position?.x, p.position?.y)) return;
             (async () => {
               try {
                 await vaultFs.importFiles(paths, folderRel);
@@ -177,7 +180,7 @@ export function NotableFolderBackside({
       cancelled = true;
       if (unlisten) unlisten();
     };
-  }, [folderRel, reload, inPanel]);
+  }, [folderRel, reload, positionInPanel]);
 
   // Drag OUT to the OS isn't directly supported by HTML5 drag-and-drop
   // (browsers refuse to expose a fs path for security), but we can hand
