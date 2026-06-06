@@ -531,6 +531,15 @@ export function CardGrid() {
         ]);
         setFocusedFolder(targetFolder);
         markFolderRecent(targetFolder);
+      } else {
+        // Folder-less note: pin its OWN ref so the include filter
+        // narrows to just this one card. belongsTo() matches by
+        // filename ref, so the note appears alone instead of getting
+        // lost in whatever the current stream happens to show.
+        setFilters((prev) => [
+          { kind: "include", ref: ownRef },
+          ...prev.filter((f) => !(f.kind === "include" && f.ref === ownRef)),
+        ]);
       }
     }
     setScrollTargetPath(path);
