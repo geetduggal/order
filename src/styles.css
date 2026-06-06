@@ -2,21 +2,28 @@
    CSS Grid with measured row-spans gives masonry-like flow while
    preserving source order (left-to-right, top-to-bottom). */
 
+/* Default light theme: lifted directly from the Glass / Original
+   icon palette — cream paper, royal blue ink-card, coral accent.
+   Same three tokens that compose the app icon compose the chrome,
+   so the brand reads identically at every scale. */
 :root {
-  --bg:        #ffffff;
-  --bg-elev:   #f7f7f5;
-  --ink:       #000000;
-  --ink-soft:  #0d0d0d;
-  --ink-faint: #8a8a87;
-  --ink-ghost: #c4c2bd;
-  --rule:      #d4d4cf;
-  --rule-soft: #e2e1dd;
+  --bg:        #faf8f4;  /* cream paper, exact match to the icon's outer rect */
+  --bg-elev:   #f3f0e8;  /* warmer cream for elevated surfaces */
+  --ink:       #1a1a1a;
+  --ink-soft:  #2a2a2a;
+  --ink-faint: #7d7a74;  /* warm grey — neutral on cream */
+  --ink-ghost: #c8c4ba;  /* faded paper-tone */
+  --rule:      #d4cfc4;  /* warm cream-grey, matches the icon HTML's --rule */
+  --rule-soft: #e6e1d6;
 
-  --royal:      #2a4ec0;
-  --royal-soft: #e0e7f7;
-  --coral:      #FF7F50;
-  --coral-soft: #ffe9de;
+  --royal:      #1f3fa8;  /* Original royal — the inner ink-card of the icon */
+  --royal-soft: #d8def0;  /* light wash for chips / today / hover */
+  --coral:      #ff6b5b;  /* Original coral — the heart in the icon */
+  --coral-soft: #ffd9d2;  /* light coral wash */
 
+  /* Iowan Old Style as the reading face keeps the icon's quiet
+     formality (the Original mock pairs the rotated logo with serif
+     body copy). Inter for chrome stays clean and modern. */
   --serif: "Iowan Old Style", "Palatino", "Charter", Georgia, serif;
   --sans:  "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
   --mono:  "JetBrains Mono", "SF Mono", Menlo, monospace;
@@ -34,61 +41,64 @@
 :root[data-theme="dark"],
 :root[data-theme="black"] {
   color-scheme: dark;
-  --bg:        #17171a;
-  --bg-elev:   #232329;
-  --ink:       #ededeb;
-  --ink-soft:  #f6f6f4;
-  --ink-faint: #9a9a95;
-  --ink-ghost: #56565b;
-  --rule:      #34343b;
-  --rule-soft: #28282d;
+  /* Dark theme is the inverse of the icon — the deep navy that lives
+     at the bottom-right of the Glass gradient (#06104a) becomes the
+     field; the cream paper becomes the ink; coral stays the accent. */
+  --bg:        #0d1530;  /* mid-tone navy from the icon background */
+  --bg-elev:   #131c45;
+  --ink:       #faf8f4;  /* the icon's cream as the reading color */
+  --ink-soft:  #ffffff;
+  --ink-faint: #9aa0b8;  /* cool blue-grey — neutral on navy */
+  --ink-ghost: #4a527a;
+  --rule:      #243057;
+  --rule-soft: #1a2348;
 
-  --royal:      #7d97ec;
-  --royal-soft: #232f54;
-  --coral:      #ff8a63;
-  --coral-soft: #3b2419;
+  --royal:      #5478e8;  /* the icon's light-end blue — accents pop on navy */
+  --royal-soft: #1a2858;
+  --coral:      #ff8a78;  /* slightly lighter coral so it reads on navy */
+  --coral-soft: #4a221d;
 }
 
 /* Black (OLED): same palette as dark, but pitch-black backgrounds and
    dimmer surfaces/rules so true-black pixels dominate. */
 :root[data-theme="black"] {
   --bg:        #000000;
-  --bg-elev:   #0c0c0e;
-  --ink-ghost: #4a4a4f;
-  --rule:      #232327;
-  --rule-soft: #161618;
+  --bg-elev:   #0a0a14;
+  --ink-ghost: #3a4060;
+  --rule:      #14182a;
+  --rule-soft: #0a0c18;
 }
 
 :root[data-theme="dark"] .milkdown,
 :root[data-theme="black"] .milkdown {
-  --crepe-color-background: #17171a;
-  --crepe-color-on-background: #ededeb;
-  --crepe-color-surface: #232329;
-  --crepe-color-surface-low: #1e1e22;
-  --crepe-color-on-surface: #e8e8e6;
-  --crepe-color-on-surface-variant: #9a9a95;
-  --crepe-color-outline: #56565b;
-  --crepe-color-primary: #7d97ec;
-  --crepe-color-secondary: #34343b;
-  --crepe-color-on-secondary: #ededeb;
-  --crepe-color-inverse: #ededeb;
-  --crepe-color-on-inverse: #17171a;
-  --crepe-color-inline-code: #ff8a63;
-  --crepe-color-inline-area: #2a2a31;
+  --crepe-color-background: #0d1530;
+  --crepe-color-on-background: #faf8f4;
+  --crepe-color-surface: #131c45;
+  --crepe-color-surface-low: #0f173a;
+  --crepe-color-on-surface: #faf8f4;
+  --crepe-color-on-surface-variant: #9aa0b8;
+  --crepe-color-outline: #4a527a;
+  --crepe-color-primary: #5478e8;
+  --crepe-color-secondary: #243057;
+  --crepe-color-on-secondary: #faf8f4;
+  --crepe-color-inverse: #faf8f4;
+  --crepe-color-on-inverse: #0d1530;
+  --crepe-color-inline-code: #ff8a78;
+  --crepe-color-inline-area: #1a2348;
   --crepe-color-error: #ff6b6b;
-  --crepe-color-hover: #2a2a31;
-  --crepe-color-selected: #2f3a5a;
+  --crepe-color-hover: #1a2348;
+  --crepe-color-selected: #1f2a55;
 }
 
 /* OLED black: drop the editor surfaces to true black. */
 :root[data-theme="black"] .milkdown {
   --crepe-color-background: #000000;
-  --crepe-color-surface: #0c0c0e;
-  --crepe-color-surface-low: #050506;
-  --crepe-color-secondary: #232327;
+  --crepe-color-surface: #0a0a14;
+  --crepe-color-surface-low: #050508;
+  --crepe-color-secondary: #14182a;
   --crepe-color-on-inverse: #000000;
-  --crepe-color-inline-area: #161618;
-  --crepe-color-hover: #161618;
+  --crepe-color-inline-area: #0a0c18;
+  --crepe-color-hover: #0a0c18;
 }
 
 /* Cover tiles use a light→white gradient; swap to dark surfaces. */
@@ -474,10 +484,23 @@ input, textarea, select { outline: none; box-shadow: none; }
   position: relative;
   background: var(--bg);
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  /* Softer corner, matched proportionally to the icon's interior
+     rounded square (rx=20 on a 104px side ≈ 10/100). */
+  border-radius: 10px;
+  /* Quiet shadow under the card on light themes — same low-elevation
+     drop the icon's framing uses (0 8px 24px rgba(0,0,0,0.08)) but
+     dialed back so the masonry stays calm. Darker themes get a
+     near-flat shadow so the card lifts subtly off the navy field
+     without bloom. */
+  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.04),
+              0 4px 12px rgba(20, 20, 40, 0.05);
   /* Tighter top padding — heading at start of file should hug the
      card top, not float in a sea of whitespace. */
   padding: 10px clamp(18px, 3.5vw, 40px) 12px;
+}
+:root[data-theme="dark"] .order-card,
+:root[data-theme="black"] .order-card {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 .order-card.is-loading {
   min-height: 100px;
