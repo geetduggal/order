@@ -1213,8 +1213,6 @@ export function CardGrid() {
   // Dock-view picker — pick a stream sub-mode or a calendar view
   // from a menu instead of cycling through them by repeated taps.
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
-  // Home button menu — pick the home folder OR clear all filters.
-  const [homeMenuOpen, setHomeMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!creatorOpen) return;
@@ -1249,17 +1247,6 @@ export function CardGrid() {
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [viewMenuOpen]);
-
-  useEffect(() => {
-    if (!homeMenuOpen) return;
-    function onDocClick(e: MouseEvent) {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (!t.closest(".dock-btn-home, .dock-home-popup")) setHomeMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onDocClick);
-    return () => window.removeEventListener("mousedown", onDocClick);
-  }, [homeMenuOpen]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -2311,7 +2298,7 @@ export function CardGrid() {
         <button
           type="button"
           className={`dock-btn dock-btn-view is-${view}` + (viewMenuOpen ? " is-open" : "")}
-          onClick={() => { setHomeMenuOpen(false); setViewMenuOpen((o) => !o); }}
+          onClick={() => setViewMenuOpen((o) => !o)}
           title="Pick view"
           aria-label="Pick view"
           aria-haspopup="menu"
@@ -2356,15 +2343,24 @@ export function CardGrid() {
               : home
                 ? `Home — ${home}`
                 : "Home — clear filters";
+          // Single-tap toggle: when already at home, clear all filters;
+          // otherwise, jump to home-only. No popover — the icon swap
+          // (FilterX ⇄ HomeIcon) IS the affordance.
+          const toggleHome = () => {
+            setViewMenuOpen(false);
+            if (homeFiltered) resetToDefault();
+            else goHome();
+          };
+          const ariaLabel = homeFiltered
+            ? "Clear all filters"
+            : (home ? `Filter to home — ${home}` : "Home");
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-home" + stateClass + (homeMenuOpen ? " is-open" : "")}
-              onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
+              className={"dock-btn dock-btn-home" + stateClass}
+              onClick={toggleHome}
               title={tip}
-              aria-label="Home menu"
-              aria-haspopup="menu"
-              aria-expanded={homeMenuOpen}
+              aria-label={ariaLabel}
             >
               {icon}
             </button>
@@ -2447,27 +2443,6 @@ export function CardGrid() {
           </div>
         );
       })()}
-
-      {homeMenuOpen && (
-        <div className="dock-tools-popup dock-home-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="dock-tools-item"
-            onClick={() => { setHomeMenuOpen(false); goHome(); }}
-          >
-            <HomeIcon size={14} strokeWidth={2.1} />
-            <span>{homeFolderRef.current ? `Home — ${homeFolderRef.current}` : "Home page"}</span>
-          </button>
-          <button
-            type="button"
-            className="dock-tools-item"
-            onClick={() => { setHomeMenuOpen(false); resetToDefault(); }}
-          >
-            <XCircle size={14} strokeWidth={2.1} />
-            <span>Clear all filters</span>
-          </button>
-        </div>
-      )}
 
       {toolsMenuOpen && (
         <div className="dock-tools-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>

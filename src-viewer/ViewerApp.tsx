@@ -102,10 +102,8 @@ export function ViewerApp(
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   // View picker — same shape as the desktop app's: two parallel
   // selections (View: stream/day/week/month/year, Show: all/notes/
-  // folders). Home button menu picks between home folder filter and
-  // clearing all filters.
+  // folders).
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
-  const [homeMenuOpen, setHomeMenuOpen] = useState(false);
 
   // Outside-click closes each popup.
   useEffect(() => {
@@ -128,17 +126,6 @@ export function ViewerApp(
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [viewMenuOpen]);
-  useEffect(() => {
-    if (!homeMenuOpen) return;
-    function onDocClick(e: MouseEvent) {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (!t.closest(".dock-btn-home, .dock-home-popup")) setHomeMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onDocClick);
-    return () => window.removeEventListener("mousedown", onDocClick);
-  }, [homeMenuOpen]);
-
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
   // an arrival deep-link, else the home Notable Folder as the default
   // include. (The desktop app starts with no filters at all, but on the
@@ -493,7 +480,7 @@ export function ViewerApp(
         <button
           type="button"
           className={`dock-btn dock-btn-view is-${view}` + (viewMenuOpen ? " is-open" : "")}
-          onClick={() => { setHomeMenuOpen(false); setViewMenuOpen((o) => !o); }}
+          onClick={() => setViewMenuOpen((o) => !o)}
           title="Pick view"
           aria-label="Pick view"
           aria-haspopup="menu"
@@ -528,15 +515,30 @@ export function ViewerApp(
               : home
                 ? `Home — ${home}`
                 : "Home — clear filters";
+          // Single-tap toggle: at home → clear all filters; otherwise
+          // → filter to home only. The icon swap (FilterX ⇄ HomeIcon)
+          // reflects state; the popover is gone — one tap, one outcome.
+          const toggleHome = () => {
+            setViewMenuOpen(false);
+            if (homeFiltered) {
+              resetToDefault();
+            } else if (home) {
+              commitFilters([{ kind: "include", ref: home }]);
+              navigate(home);
+            } else {
+              resetToDefault();
+            }
+          };
+          const ariaLabel = homeFiltered
+            ? "Clear all filters"
+            : (home ? `Filter to home — ${home}` : "Home");
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-home" + stateClass + (homeMenuOpen ? " is-open" : "")}
-              onClick={() => { setViewMenuOpen(false); setHomeMenuOpen((o) => !o); }}
+              className={"dock-btn dock-btn-home" + stateClass}
+              onClick={toggleHome}
               title={tip}
-              aria-label="Home menu"
-              aria-haspopup="menu"
-              aria-expanded={homeMenuOpen}
+              aria-label={ariaLabel}
             >
               {icon}
             </button>
@@ -602,33 +604,6 @@ export function ViewerApp(
             {opt(streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
             {opt(streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
             {opt(streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
-          </div>
-        );
-      })()}
-
-      {homeMenuOpen && (() => {
-        const home = data.home?.name ?? null;
-        const goHome = () => {
-          setHomeMenuOpen(false);
-          if (home) {
-            commitFilters([{ kind: "include", ref: home }]);
-            navigate(home);
-          }
-        };
-        const clearAll = () => {
-          setHomeMenuOpen(false);
-          resetToDefault();
-        };
-        return (
-          <div className="dock-tools-popup dock-home-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
-            <button type="button" className="dock-tools-item" onClick={goHome}>
-              <HomeIcon size={14} strokeWidth={2.1} />
-              <span>{home ? `Home — ${home}` : "Home page"}</span>
-            </button>
-            <button type="button" className="dock-tools-item" onClick={clearAll}>
-              <XCircle size={14} strokeWidth={2.1} />
-              <span>Clear all filters</span>
-            </button>
           </div>
         );
       })()}
