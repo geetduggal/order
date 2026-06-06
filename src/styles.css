@@ -518,11 +518,11 @@ input, textarea, select { outline: none; box-shadow: none; }
    (the ref enters recentFolders), the border collapses to a
    hairline so visited covers recede. */
 .order-card.is-main {
-  /* Loud by default — thick enough to land at a glance on the cream
-     field but still ribbon-thin relative to the card body. */
-  border-width: 2px;
+  /* Loud by default — a proper coral ribbon so unvisited NF covers
+     announce themselves as section headers from across the page. */
+  border-width: 4px;
   border-color: var(--coral);
-  box-shadow: 0 6px 18px rgba(255, 90, 72, 0.12);
+  box-shadow: 0 6px 18px rgba(255, 90, 72, 0.14);
 }
 .order-card.is-main.is-visited {
   /* Quiet once focused — true hairline on Retina / iOS, 1 px on
