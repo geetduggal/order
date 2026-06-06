@@ -147,20 +147,25 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     <div
       ref={gridRef}
       className="list-lines"
+      tabIndex={hideControls ? undefined : -1}
+      onClick={hideControls ? undefined : (e) => {
+        // Focus the container on empty-area click so paste reaches
+        // onPaste below — plain <div>s don't receive paste events
+        // unless they're focusable AND focused.
+        if (e.target === e.currentTarget) e.currentTarget.focus();
+      }}
       onPaste={hideControls || !onUploadImage ? undefined : (e) => {
-        const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
-        if (files.length === 0) return;
-        e.preventDefault();
-        void Promise.all(files.map(ingestImageFile));
-      }}
-      onDragOver={hideControls || !onUploadImage ? undefined : (e) => {
-        if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
+        // Use clipboardData.items, not .files — screenshot pastes from
+        // macOS / Windows tools come through items only.
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const files: File[] = [];
+        for (const it of Array.from(items)) {
+          if (it.kind === "file") {
+            const f = it.getAsFile();
+            if (f && f.type.startsWith("image/")) files.push(f);
+          }
         }
-      }}
-      onDrop={hideControls || !onUploadImage ? undefined : (e) => {
-        const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
         if (files.length === 0) return;
         e.preventDefault();
         void Promise.all(files.map(ingestImageFile));

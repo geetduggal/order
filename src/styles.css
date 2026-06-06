@@ -4263,6 +4263,19 @@ iframe.order-youtube-embed {
   border-color: var(--coral, #ff7f50);
   background: var(--coral-soft, rgba(255, 127, 80, 0.06));
 }
+/* Slim variant — a single-line full-width add row instead of a full
+   grid tile. Used at the top and bottom of card lists so the affordance
+   doesn't take a card-sized slot in the masonry. */
+.basecard-add.is-slim {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+  flex-direction: row;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: 32px;
+}
+.basecard-add.is-slim .basecard-add-label { letter-spacing: 0.02em; }
+.basecard-add.is-slim.is-input { padding: 6px 10px; align-items: center; }
 .basecard-add-label {
   font-family: var(--sans);
   font-size: 11px;

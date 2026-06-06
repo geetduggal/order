@@ -142,7 +142,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     }
     return (
       <div className="basecard-grid">
-        <AddTile onCancel={() => setAdding(false)} onAdd={add} startOpen />
+        <AddTile slim onCancel={() => setAdding(false)} onAdd={add} startOpen />
       </div>
     );
   }
@@ -151,20 +151,26 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     <div
       ref={gridRef}
       className="basecard-grid"
+      tabIndex={hideControls ? undefined : -1}
+      onClick={hideControls ? undefined : (e) => {
+        // Focusing the container makes paste reach this onPaste —
+        // plain <div>s don't receive paste events otherwise. Click
+        // anywhere not on a child element transfers focus here.
+        if (e.target === e.currentTarget) e.currentTarget.focus();
+      }}
       onPaste={hideControls || !onUploadImage ? undefined : (e) => {
-        const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
-        if (files.length === 0) return;
-        e.preventDefault();
-        void Promise.all(files.map(ingestImageFile));
-      }}
-      onDragOver={hideControls || !onUploadImage ? undefined : (e) => {
-        if (Array.from(e.dataTransfer?.types ?? []).includes("Files")) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
+        // Use clipboardData.items, not .files — screenshot pastes from
+        // macOS / Windows screen-shot tools come through items only,
+        // and .files is empty in that case.
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const files: File[] = [];
+        for (const it of Array.from(items)) {
+          if (it.kind === "file") {
+            const f = it.getAsFile();
+            if (f && f.type.startsWith("image/")) files.push(f);
+          }
         }
-      }}
-      onDrop={hideControls || !onUploadImage ? undefined : (e) => {
-        const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
         if (files.length === 0) return;
         e.preventDefault();
         void Promise.all(files.map(ingestImageFile));
@@ -172,6 +178,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     >
       {!hideControls && (
         <AddTile
+          slim
           startOpen={addingTop}
           onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
           onCancel={() => setAddingTop(false)}
@@ -242,6 +249,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       })}
       {!hideControls && (
         <AddTile
+          slim
           startOpen={adding}
           onAdd={(name) => { add(name); setAdding(false); }}
           onCancel={() => setAdding(false)}
@@ -452,12 +460,14 @@ function BaseCard({
 
 interface AddTileProps {
   startOpen?: boolean;
+  /** Render as a slim full-width row instead of a full grid cell. */
+  slim?: boolean;
   onAdd: (name: string) => void;
   onCancel: () => void;
   onOpen?: () => void;
 }
 
-function AddTile({ startOpen, onAdd, onCancel, onOpen }: AddTileProps) {
+function AddTile({ startOpen, slim, onAdd, onCancel, onOpen }: AddTileProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -480,16 +490,16 @@ function AddTile({ startOpen, onAdd, onCancel, onOpen }: AddTileProps) {
     return (
       <button
         type="button"
-        className="basecard basecard-add"
+        className={"basecard basecard-add" + (slim ? " is-slim" : "")}
         onClick={() => { setOpen(true); onOpen?.(); }}
       >
-        <Plus size={20} strokeWidth={1.6} />
-        <span className="basecard-add-label">New</span>
+        <Plus size={slim ? 14 : 20} strokeWidth={1.6} />
+        <span className="basecard-add-label">{slim ? "Add note (paste image to insert here)" : "New"}</span>
       </button>
     );
   }
   return (
-    <div className="basecard basecard-add is-input">
+    <div className={"basecard basecard-add is-input" + (slim ? " is-slim" : "")}>
       <input
         ref={inputRef}
         className="basecard-add-input"
