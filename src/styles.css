@@ -511,24 +511,14 @@ input, textarea, select { outline: none; box-shadow: none; }
               0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-/* Notable Folder Main Document — permanent coral highlight so the NF
-   cover reads as the section header it is. The chrome dials with
-   "novelty": an NF the user has never focused on shows a thicker
-   coral border to announce itself; once focused on at least once
-   (the ref enters recentFolders), the border collapses to a
-   hairline so visited covers recede. */
+/* Notable Folder Main Document — permanent thick coral border so the
+   NF cover always reads as the section header it is. No tiering; the
+   highlight stays loud whether the folder is pinned in the pile or
+   just appearing in the bare stream. */
 .order-card.is-main {
-  /* Loud by default — a proper coral ribbon so unvisited NF covers
-     announce themselves as section headers from across the page. */
   border-width: 4px;
   border-color: var(--coral);
   box-shadow: 0 6px 18px rgba(255, 90, 72, 0.14);
-}
-.order-card.is-main.is-visited {
-  /* Quiet once focused — true hairline on Retina / iOS, 1 px on
-     standard-DPI fallback. */
-  border-width: 0.5px;
-  box-shadow: 0 6px 18px rgba(255, 90, 72, 0.08);
 }
 :root[data-theme="dark"] .order-card.is-main,
 :root[data-theme="black"] .order-card.is-main {
