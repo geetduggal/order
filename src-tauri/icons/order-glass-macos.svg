@@ -1,0 +1,42 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="25%" cy="25%" r="100%">
+      <stop offset="0%" stop-color="#5478e8"/>
+      <stop offset="100%" stop-color="#06104a"/>
+    </radialGradient>
+    <radialGradient id="cream" cx="25%" cy="25%" r="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#beae8c"/>
+    </radialGradient>
+    <radialGradient id="coral" cx="30%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#ffd0c0"/>
+      <stop offset="100%" stop-color="#a01e0a"/>
+    </radialGradient>
+    <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="100" y1="100" x2="924" y2="924">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="macSquircle">
+      <!-- Apple's macOS icon template: 824px artwork inside a 1024
+           canvas, with a continuous rounded-rect mask at rx≈185 so it
+           reads as the standard macOS squircle alongside system apps
+           in Dock + Cmd+Tab. -->
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+  </defs>
+  <!-- Transparent margin around the squircle (100 px on every side)
+       so macOS doesn't render the icon edge-to-edge in Cmd+Tab. -->
+  <g clip-path="url(#macSquircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <g transform="translate(100 100) scale(0.8047)">
+      <!-- 824 / 1024 = 0.8047 so the original 1024-space artwork
+           fits inside the 824 content box exactly. -->
+      <g transform="rotate(-15 512 512)">
+        <rect x="163.84" y="163.84" width="696.32" height="696.32" rx="133.12" fill="url(#cream)"/>
+        <rect x="327.68" y="327.68" width="532.48" height="532.48" rx="102.4" fill="url(#bg)"/>
+        <circle cx="675.84" cy="675.84" r="174.08" fill="url(#coral)"/>
+      </g>
+    </g>
+    <rect x="100" y="100" width="824" height="824" fill="url(#sheen)"/>
+  </g>
+</svg>
