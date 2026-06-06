@@ -123,22 +123,13 @@ export function NotableFolderBackside({
   // Drag IN from the OS: Tauri's webview eats HTML5 dataTransfer at
   // the OS layer, so the React onDrop handler never receives the
   // file list. The native event from getCurrentWebview().
-  // onDragDropEvent() gives us absolute OS paths instead. We gate on
-  // whether the drop point lands on a descendant of this panel via
-  // document.elementFromPoint — more robust than bounding-rect math
-  // (handles cards in scroll containers, transformed parents, etc.).
-  // If no panelRef yet or position is missing, we still import — being
-  // generous beats failing silently when the user clearly intends to
-  // drop on the flipped card.
+  // onDragDropEvent() gives us absolute OS paths instead.
+  //
+  // We don't gate on position — only one card is normally flipped at
+  // a time, and "drop anywhere on the window while the flipped panel
+  // is mounted" matches the user's intent. (Multiple flipped cards
+  // would each receive the drop and each import; rare and fine.)
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const positionInPanel = useCallback((x: number | undefined, y: number | undefined) => {
-    if (panelRef.current == null) return false;
-    if (x == null || y == null) return true; // no position → trust the listener
-    const dpr = window.devicePixelRatio || 1;
-    const el = document.elementFromPoint(x / dpr, y / dpr) as HTMLElement | null;
-    if (!el) return true; // off-canvas → accept
-    return panelRef.current.contains(el);
-  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -148,21 +139,19 @@ export function NotableFolderBackside({
         const handle = await getCurrentWebview().onDragDropEvent((e) => {
           const p = e.payload as {
             type: "enter" | "over" | "drop" | "leave";
-            position?: { x: number; y: number };
             paths?: string[];
           };
           // Diagnostic — keep until the drop flow is confirmed working.
           // eslint-disable-next-line no-console
           console.log("[nf-flip] dragDrop", p.type, p);
           if (p.type === "over" || p.type === "enter") {
-            setDropHover(positionInPanel(p.position?.x, p.position?.y));
+            setDropHover(true);
           } else if (p.type === "leave") {
             setDropHover(false);
           } else if (p.type === "drop") {
             const paths = p.paths ?? [];
             setDropHover(false);
             if (paths.length === 0) return;
-            if (!positionInPanel(p.position?.x, p.position?.y)) return;
             (async () => {
               try {
                 const written = await vaultFs.importFiles(paths, folderRel);
@@ -179,15 +168,16 @@ export function NotableFolderBackside({
         });
         if (cancelled) handle();
         else unlisten = handle;
-      } catch {
-        // Non-Tauri context (web viewer) — ignore.
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[nf-flip] failed to register drag-drop listener", err);
       }
     })();
     return () => {
       cancelled = true;
       if (unlisten) unlisten();
     };
-  }, [folderRel, reload, positionInPanel]);
+  }, [folderRel, reload]);
 
   // Drag OUT to the OS isn't directly supported by HTML5 drag-and-drop
   // (browsers refuse to expose a fs path for security), but we can hand
