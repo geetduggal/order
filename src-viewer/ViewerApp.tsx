@@ -406,15 +406,30 @@ export function ViewerApp(
   }, [data.notes, hidden, filters, focusedFolder, streamMode]);
 
   // Calendar projection from the same filtered set.
+  // Calendar feed bypasses streamMode (Show: all/notes/folders) so
+  // the calendar always shows every dated note that passes the folder
+  // pile. Show is a Stream concept — a "what to render as cards"
+  // toggle — but a calendar is about WHEN things happen and should
+  // surface every dated event regardless of NF-vs-regular.
+  const calendarFeed = useMemo(
+    () => data.notes.filter((n) => {
+      if (hidden.has(n.ref.toLowerCase())) return false;
+      if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
+      if (excludeRefs.some((r) => belongsTo(n, r))) return false;
+      return true;
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.notes, hidden, filters],
+  );
   const calendarNotes: NoteMeta[] = useMemo(
-    () => visible.map((n) => ({
+    () => calendarFeed.map((n) => ({
       path: `${n.ref}.md`,
       filename: `${n.ref}.md`,
       title: n.title,
       frontmatter: n.frontmatter,
       color: n.folder ? folderColor(n.folder) : (n.category ? folderColor(n.ref) : undefined),
     })),
-    [visible],
+    [calendarFeed],
   );
   // Calendar event click — open the note's permalink. The previous
   // "scroll to it in the Stream" flow silently failed whenever the

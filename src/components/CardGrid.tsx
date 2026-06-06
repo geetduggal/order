@@ -2287,16 +2287,25 @@ export function CardGrid() {
 
   // Calendar events carry their folder's color so Week/Month/Year
   // events read at a glance.
-  const calendarNotes: NoteMeta[] = filteredNotes.map((n) => {
-    const f = noteFolder(n.frontmatter);
-    return {
-      path: n.path,
-      filename: n.filename,
-      title: n.title,
-      frontmatter: n.frontmatter,
-      color: f ? folderColor(f) : undefined,
-    };
-  });
+  // Calendar / Year feed: apply the include/exclude folder pile and
+  // the public-only toggle, but DON'T apply the streamMode (Show)
+  // filter. Show is about which cards belong in the Stream — calendar
+  // surfaces are about WHEN things happen, so an event should always
+  // appear if its parent folder passes the pile and its public flag
+  // satisfies the toggle.
+  const calendarNotes: NoteMeta[] = streamCandidates
+    .filter(filterMatches)
+    .filter((n) => !publicOnly || n.frontmatter.public === true)
+    .map((n) => {
+      const f = noteFolder(n.frontmatter);
+      return {
+        path: n.path,
+        filename: n.filename,
+        title: n.title,
+        frontmatter: n.frontmatter,
+        color: f ? folderColor(f) : undefined,
+      };
+    });
 
   /** The new-note flow — extracted so the dock button can call it. */
   const handleNewNote = () => {
