@@ -8,7 +8,7 @@
 
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { GripVertical, Plus, X as XIcon } from "lucide-react";
+import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -76,18 +76,14 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   const [addingTop, setAddingTop] = useState(false);
   const hideControls = !!readOnly || !!readOnlyMembership;
 
-  // Image paste / drop: write the file to the list folder's own dir
-  // via onUploadImage, then insert an image-only list item at the end
-  // (same shape as `* ![[file.png]]` in the source bullets). We watch
-  // the surrounding container so the user doesn't have to click into
-  // a specific input to make the paste work.
-  async function ingestImageFile(file: File) {
+  // Persist an image file as a new image-only list item.
+  async function ingestImageFile(file: File, position: "start" | "end" = "end") {
     if (!onUploadImage) return;
     const url = await onUploadImage(file);
     const cleaned = url.split(/[?#]/)[0];
     let base = cleaned.split("/").pop() ?? cleaned;
     try { base = decodeURIComponent(base); } catch { /* keep raw */ }
-    addItem({ ref: base, image: base }, "end");
+    addItem({ ref: base, image: base }, position);
   }
 
   // Map a reordered ref list back to items, then persist.
@@ -147,29 +143,6 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     <div
       ref={gridRef}
       className="list-lines"
-      tabIndex={hideControls ? undefined : -1}
-      onClick={hideControls ? undefined : (e) => {
-        // Focus the container on empty-area click so paste reaches
-        // onPaste below — plain <div>s don't receive paste events
-        // unless they're focusable AND focused.
-        if (e.target === e.currentTarget) e.currentTarget.focus();
-      }}
-      onPaste={hideControls || !onUploadImage ? undefined : (e) => {
-        // Use clipboardData.items, not .files — screenshot pastes from
-        // macOS / Windows tools come through items only.
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        const files: File[] = [];
-        for (const it of Array.from(items)) {
-          if (it.kind === "file") {
-            const f = it.getAsFile();
-            if (f && f.type.startsWith("image/")) files.push(f);
-          }
-        }
-        if (files.length === 0) return;
-        e.preventDefault();
-        void Promise.all(files.map(ingestImageFile));
-      }}
     >
       {!hideControls && (
         <AddRow
@@ -177,6 +150,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
           onCancel={() => setAddingTop(false)}
           onOpen={() => setAddingTop(true)}
+          onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
         />
       )}
       {items.map((item, originalIdx) => {
@@ -301,6 +275,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onAdd={(name) => { add(name); setAdding(false); }}
           onCancel={() => setAdding(false)}
           onOpen={() => setAdding(true)}
+          onImage={onUploadImage ? (f) => ingestImageFile(f, "end") : undefined}
         />
       )}
     </div>
@@ -457,9 +432,12 @@ interface AddRowProps {
   onAdd: (name: string) => void;
   onCancel: () => void;
   onOpen?: () => void;
+  /** When provided, surface image affordances (file picker + clipboard
+   *  paste button) alongside the "+ Add" text. */
+  onImage?: (file: File) => Promise<void> | void;
 }
 
-function AddRow({ startOpen, onAdd, onCancel, onOpen }: AddRowProps) {
+function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage }: AddRowProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -473,14 +451,65 @@ function AddRow({ startOpen, onAdd, onCancel, onOpen }: AddRowProps) {
   function cancel() { setDraft(""); setOpen(false); onCancel(); }
   if (!open) {
     return (
-      <button
-        type="button"
-        className="list-line list-line-add"
-        onClick={() => { setOpen(true); onOpen?.(); }}
-      >
-        <Plus size={14} strokeWidth={1.6} />
-        <span>New</span>
-      </button>
+      <div className="list-line list-line-add">
+        <button
+          type="button"
+          className="basecard-add-text"
+          onClick={() => { setOpen(true); onOpen?.(); }}
+          title="Add a wikilink list item"
+        >
+          <Plus size={14} strokeWidth={1.6} />
+          <span>Add</span>
+        </button>
+        {onImage && (
+          <span className="basecard-add-image-group">
+            <label
+              className="basecard-add-image-btn"
+              title="Pick an image to add as a new image item"
+            >
+              <ImageIcon size={14} strokeWidth={1.6} />
+              <span>Image</span>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  for (const f of files) {
+                    if (f.type.startsWith("image/")) await onImage(f);
+                  }
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              className="basecard-add-image-btn"
+              title="Paste image from clipboard"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard?.read) return;
+                  const items = await navigator.clipboard.read();
+                  for (const it of items) {
+                    const imageType = it.types.find((t) => t.startsWith("image/"));
+                    if (!imageType) continue;
+                    const blob = await it.getType(imageType);
+                    const ext = imageType.split("/")[1] ?? "png";
+                    const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: imageType });
+                    await onImage(file);
+                  }
+                } catch (err) {
+                  // eslint-disable-next-line no-console
+                  console.error("clipboard paste failed:", err);
+                }
+              }}
+            >
+              <ClipboardPaste size={14} strokeWidth={1.6} />
+              <span>Paste</span>
+            </button>
+          </span>
+        )}
+      </div>
     );
   }
   return (

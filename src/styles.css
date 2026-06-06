@@ -4130,6 +4130,10 @@ iframe.order-youtube-embed {
 }
 
 .list-line-add {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: var(--ink-faint);
   cursor: pointer;
   justify-content: center;
@@ -4265,17 +4269,45 @@ iframe.order-youtube-embed {
 }
 /* Slim variant — a single-line full-width add row instead of a full
    grid tile. Used at the top and bottom of card lists so the affordance
-   doesn't take a card-sized slot in the masonry. */
+   doesn't take a card-sized slot in the masonry. Holds a text "Add
+   note" button on the left and image-affordance buttons on the right. */
 .basecard-add.is-slim {
   grid-column: 1 / -1;
   aspect-ratio: auto;
   flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 6px 12px;
-  min-height: 32px;
+  padding: 4px 10px;
+  min-height: 30px;
 }
 .basecard-add.is-slim .basecard-add-label { letter-spacing: 0.02em; }
 .basecard-add.is-slim.is-input { padding: 6px 10px; align-items: center; }
+.basecard-add-text,
+.basecard-add-image-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.basecard-add-text:hover,
+.basecard-add-image-btn:hover {
+  color: var(--coral, #ff7f50);
+  background: var(--coral-soft, rgba(255, 127, 80, 0.06));
+}
+.basecard-add-image-group {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
 .basecard-add-label {
   font-family: var(--sans);
   font-size: 11px;

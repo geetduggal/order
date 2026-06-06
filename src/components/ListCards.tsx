@@ -10,7 +10,7 @@
 // the OS level, so drop events never reach in-page handlers.
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, X as XIcon } from "lucide-react";
+import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -108,15 +108,15 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     if (items.some((i) => i.ref.toLowerCase() === item.ref.toLowerCase())) return;
     onChange(position === "start" ? [item, ...items] : [...items, item]);
   }
-  // Paste / drop image → upload to the list folder's dir and add an
-  // image-only item at the end (same shape as `* ![[file.png]]`).
-  async function ingestImageFile(file: File) {
+  // Persist an image file as a new image-only list item.
+  // `position` controls whether it lands at the start or the end.
+  async function ingestImageFile(file: File, position: "start" | "end" = "end") {
     if (!onUploadImage) return;
     const url = await onUploadImage(file);
     const cleaned = url.split(/[?#]/)[0];
     let base = cleaned.split("/").pop() ?? cleaned;
     try { base = decodeURIComponent(base); } catch { /* keep raw */ }
-    addItem({ ref: base, image: base }, "end");
+    addItem({ ref: base, image: base }, position);
   }
 
   function updateMeta(index: number, meta: string) {
@@ -151,34 +151,11 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     <div
       ref={gridRef}
       className="basecard-grid"
-      tabIndex={hideControls ? undefined : -1}
-      onClick={hideControls ? undefined : (e) => {
-        // Focusing the container makes paste reach this onPaste —
-        // plain <div>s don't receive paste events otherwise. Click
-        // anywhere not on a child element transfers focus here.
-        if (e.target === e.currentTarget) e.currentTarget.focus();
-      }}
-      onPaste={hideControls || !onUploadImage ? undefined : (e) => {
-        // Use clipboardData.items, not .files — screenshot pastes from
-        // macOS / Windows screen-shot tools come through items only,
-        // and .files is empty in that case.
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        const files: File[] = [];
-        for (const it of Array.from(items)) {
-          if (it.kind === "file") {
-            const f = it.getAsFile();
-            if (f && f.type.startsWith("image/")) files.push(f);
-          }
-        }
-        if (files.length === 0) return;
-        e.preventDefault();
-        void Promise.all(files.map(ingestImageFile));
-      }}
     >
       {!hideControls && (
         <AddTile
           slim
+          onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
           startOpen={addingTop}
           onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
           onCancel={() => setAddingTop(false)}
@@ -250,6 +227,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       {!hideControls && (
         <AddTile
           slim
+          onImage={onUploadImage ? (f) => ingestImageFile(f, "end") : undefined}
           startOpen={adding}
           onAdd={(name) => { add(name); setAdding(false); }}
           onCancel={() => setAdding(false)}
@@ -465,9 +443,13 @@ interface AddTileProps {
   onAdd: (name: string) => void;
   onCancel: () => void;
   onOpen?: () => void;
+  /** When provided, the slim row exposes two image affordances:
+   *  a file picker (iOS Photos / desktop file dialog) and a clipboard
+   *  paste button (navigator.clipboard.read for screenshot pastes). */
+  onImage?: (file: File) => Promise<void> | void;
 }
 
-function AddTile({ startOpen, slim, onAdd, onCancel, onOpen }: AddTileProps) {
+function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage }: AddTileProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -487,15 +469,83 @@ function AddTile({ startOpen, slim, onAdd, onCancel, onOpen }: AddTileProps) {
   }
 
   if (!open) {
+    if (!slim) {
+      return (
+        <button
+          type="button"
+          className="basecard basecard-add"
+          onClick={() => { setOpen(true); onOpen?.(); }}
+        >
+          <Plus size={20} strokeWidth={1.6} />
+          <span className="basecard-add-label">New</span>
+        </button>
+      );
+    }
+    // Slim row: text "+ Add" button on the left, image affordances
+    // (file picker + clipboard paste) on the right. Both image
+    // controls are present on desktop AND iOS — the file picker maps
+    // to the Photos picker on iOS, and clipboard-read works in iOS
+    // WKWebView for screenshot pastes.
     return (
-      <button
-        type="button"
-        className={"basecard basecard-add" + (slim ? " is-slim" : "")}
-        onClick={() => { setOpen(true); onOpen?.(); }}
-      >
-        <Plus size={slim ? 14 : 20} strokeWidth={1.6} />
-        <span className="basecard-add-label">{slim ? "Add note (paste image to insert here)" : "New"}</span>
-      </button>
+      <div className="basecard basecard-add is-slim">
+        <button
+          type="button"
+          className="basecard-add-text"
+          onClick={() => { setOpen(true); onOpen?.(); }}
+          title="Add a wikilink list item"
+        >
+          <Plus size={14} strokeWidth={1.8} />
+          <span className="basecard-add-label">Add note</span>
+        </button>
+        {onImage && (
+          <span className="basecard-add-image-group">
+            <label
+              className="basecard-add-image-btn"
+              title="Pick an image to add as a new image item"
+            >
+              <ImageIcon size={14} strokeWidth={1.8} />
+              <span>Image</span>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  for (const f of files) {
+                    if (f.type.startsWith("image/")) await onImage(f);
+                  }
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              className="basecard-add-image-btn"
+              title="Paste image from clipboard"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard?.read) return;
+                  const items = await navigator.clipboard.read();
+                  for (const it of items) {
+                    const imageType = it.types.find((t) => t.startsWith("image/"));
+                    if (!imageType) continue;
+                    const blob = await it.getType(imageType);
+                    const ext = imageType.split("/")[1] ?? "png";
+                    const file = new File([blob], `pasted-${Date.now()}.${ext}`, { type: imageType });
+                    await onImage(file);
+                  }
+                } catch (err) {
+                  // eslint-disable-next-line no-console
+                  console.error("clipboard paste failed:", err);
+                }
+              }}
+            >
+              <ClipboardPaste size={14} strokeWidth={1.8} />
+              <span>Paste</span>
+            </button>
+          </span>
+        )}
+      </div>
     );
   }
   return (
