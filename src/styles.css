@@ -510,6 +510,23 @@ input, textarea, select { outline: none; box-shadow: none; }
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45),
               0 4px 12px rgba(0, 0, 0, 0.25);
 }
+
+/* Notable Folder Main Document — permanent coral highlight so the NF
+   cover reads as the section header it is. Border + subtle outer
+   coral glow, identical accent to the navigation pulse (.is-target),
+   just calmer for at-rest viewing. The folder-tint inline border is
+   skipped for these cards (see Card.tsx) so this rule wins without
+   `!important` games. */
+.order-card.is-main {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 1px var(--coral),
+              0 6px 18px rgba(255, 90, 72, 0.12);
+}
+:root[data-theme="dark"] .order-card.is-main,
+:root[data-theme="black"] .order-card.is-main {
+  box-shadow: 0 0 0 1px var(--coral),
+              0 6px 18px rgba(255, 138, 120, 0.18);
+}
 .order-card.is-loading {
   min-height: 100px;
   display: flex; align-items: center; justify-content: center;

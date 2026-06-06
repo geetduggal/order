@@ -813,8 +813,15 @@ export function Card(props: Props) {
     );
   }
 
+  // A Notable Folder Main Document is the "cover" of its folder. We
+  // mark its card so the chrome can show a permanent coral highlight
+  // (same accent as the navigation pulse) and the user always reads
+  // an NF cover at a glance — no need to remember which card you
+  // just navigated to.
+  const isMainDoc = isNotableFolder(state.frontmatter);
   const cardClass =
     "order-card" +
+    (isMainDoc ? " is-main" : "") +
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "") +
     (capActive && overflowing ? " is-capped" : "");
@@ -822,8 +829,9 @@ export function Card(props: Props) {
   // Subtle full-border tint in the card's folder color (≈33% alpha).
   // Skipped when no color is available so the default rule color
   // stays. `${color}55` works because folderColor returns a 6-digit
-  // hex string.
-  const cardStyle: React.CSSProperties | undefined = color
+  // hex string. Main Docs (NF covers) drop the folder tint so the
+  // permanent coral highlight defined in styles.css can take over.
+  const cardStyle: React.CSSProperties | undefined = (color && !isMainDoc)
     ? { borderColor: `${color}88` }
     : undefined;
 
