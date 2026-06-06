@@ -29,6 +29,24 @@ const EVENT_GAP_PX = 2;      // vertical gap between stacked bars
 const CELL_BOTTOM_PAD_PX = 4;
 const MIN_EVENT_ROWS = 2;    // baseline empty rows so cells aren't tiny
 
+/** Coerce a YAML date value (string or js-yaml-parsed Date) into a
+ *  local-midnight Date suitable for the linear-strip math. js-yaml
+ *  hands us a UTC-midnight Date for unquoted YYYY-MM-DD, which can
+ *  shift the calendar day in timezones west of UTC — normalize to
+ *  the YMD parts via getUTC* and rebuild as a local-midnight Date. */
+function toLocalDate(v: unknown): Date | null {
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return parseIsoDate(s.slice(0, 10));
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? new Date(t) : null;
+  }
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return new Date(v.getUTCFullYear(), v.getUTCMonth(), v.getUTCDate());
+  }
+  return null;
+}
+
 export interface NoteMeta {
   path: string;
   filename: string;
@@ -83,13 +101,12 @@ function packIntoMonth(
   };
   const raw: Raw[] = [];
   for (const note of notes) {
-    const dateStr = note.frontmatter.date;
-    if (typeof dateStr !== "string") continue;
-    const start = parseIsoDate(dateStr);
+    // js-yaml parses unquoted YYYY-MM-DD as Date — accept both string
+    // and Date here so Readwise-sync entries (unquoted) line up with
+    // manually-typed quoted dates.
+    const start = toLocalDate(note.frontmatter.date);
     if (!start) continue;
-    const endStr = note.frontmatter.endDate;
-    const explicitEnd = typeof endStr === "string" ? parseIsoDate(endStr) : null;
-    const end = explicitEnd ?? start;
+    const end = toLocalDate(note.frontmatter.endDate) ?? start;
 
     const clipStart = start < monthStart ? monthStart : start;
     const clipEnd = end > monthEnd ? monthEnd : end;
@@ -249,8 +266,7 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
     const note = notes.find((n) => n.path === path);
     if (!note) return;
 
-    const original = typeof note.frontmatter.date === "string"
-      ? parseIsoDate(note.frontmatter.date) : null;
+    const original = toLocalDate(note.frontmatter.date);
     const drop = parseIsoDate(dropDateStr);
     if (!original || !drop) return;
 

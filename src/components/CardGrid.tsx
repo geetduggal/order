@@ -2154,7 +2154,20 @@ export function CardGrid() {
   // The Stream is one recency-ordered timeline (newest first), keyed
   // off the note's date + startTime frontmatter.
   const sortKey = (n: LoadedNote): string => {
-    const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+    // Accept both string and js-yaml Date for `date` so unquoted
+    // YAML (Readwise sync, hand-typed bare dates) sorts alongside the
+    // quoted strings we emit via isoDate(). Without this Readwise
+    // entries sank to the bottom of every Stream view.
+    const raw = n.frontmatter.date;
+    let d = "0000-00-00";
+    if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      d = raw.slice(0, 10);
+    } else if (raw instanceof Date && !isNaN(raw.getTime())) {
+      const y = raw.getUTCFullYear();
+      const m = String(raw.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(raw.getUTCDate()).padStart(2, "0");
+      d = `${y}-${m}-${day}`;
+    }
     const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
     return `${d} ${t}`;
   };
