@@ -471,9 +471,13 @@ export function CardGrid() {
   const resetToDefault = useCallback(() => {
     // No more home-folder seeding: clearing filters clears them. The
     // calendar / Stream then show everything in scope (subject to the
-    // notes-only / public-only toggles).
+    // notes-only / public-only toggles). The default landing surface
+    // is Week — same as a cold launch — so clearing also resets the
+    // view there. The user can still tap a different view from the
+    // dock; this just means "start over" is one tap, not two.
     setFilters([]);
     setCollapseNonce((n) => n + 1);
+    setView("week");
   }, []);
   // Forward-ref binding for Cmd+' (declared earlier in the component).
   useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);

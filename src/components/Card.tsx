@@ -47,7 +47,8 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon } from "lucide-react";
+import { NotableFolderBackside } from "./NotableFolderBackside";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -328,6 +329,11 @@ export function Card(props: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  /** Notable Folder Main Documents only: flips the card to the folder
+   *  contents browser (see NotableFolderBackside). Desktop-only
+   *  feature; the calling card hides the flip button on iOS / viewer. */
+  const [flipped, setFlipped] = useState(false);
+  const [vaultRootForFlip, setVaultRootForFlip] = useState<string | null>(null);
   /** Newspaper height-cap state: `expanded` lifts the cap (Read more
    *  or, when editable, focusing the card); `overflowing` is whether
    *  the body actually exceeds the cap (only then do we show the
@@ -824,6 +830,18 @@ export function Card(props: Props) {
   // an NF cover at a glance — no need to remember which card you
   // just navigated to.
   const isMainDoc = isNotableFolder(state.frontmatter);
+
+  // Lazy-load the vault root once the user flips an NF card — needed
+  // to assemble absolute paths for the OS open / reveal / terminal
+  // commands. Skip on read-only (viewer) and non-main-doc cards.
+  useEffect(() => {
+    if (!flipped || vaultRootForFlip !== null || readOnly || !isMainDoc) return;
+    let cancelled = false;
+    void vaultRoot().then((r) => { if (!cancelled) setVaultRootForFlip(r); });
+    return () => { cancelled = true; };
+  }, [flipped, vaultRootForFlip, readOnly, isMainDoc]);
+  const folderRelForFlip = vaultDir(toVaultRel(pathRef.current));
+  const folderName = pathRef.current.split("/").pop()?.replace(/\.md$/i, "") ?? "";
   const cardClass =
     "order-card" +
     (isMainDoc ? " is-main" : "") +
@@ -849,6 +867,21 @@ export function Card(props: Props) {
       onMouseDown={onCardFocus}
     >
       <div className="order-card-controls" aria-hidden={false}>
+        {/* Folder flip — Notable Folder Main Docs only, desktop only.
+            The backside lazy-loads the folder's file list with sort /
+            drag-drop / reveal / terminal controls. */}
+        {isMainDoc && !readOnly && (
+          <button
+            type="button"
+            className={"order-card-flip" + (flipped ? " is-on" : "")}
+            onClick={() => setFlipped((f) => !f)}
+            title={flipped ? "Back to note" : "Folder contents"}
+            aria-label={flipped ? "Show note" : "Show folder contents"}
+            aria-pressed={flipped}
+          >
+            <FolderOpenIcon size={13} strokeWidth={2} />
+          </button>
+        )}
         {permalink && (
           <button
             type="button"
@@ -916,10 +949,22 @@ export function Card(props: Props) {
           </button>
         )}
       </div>
+      {flipped && isMainDoc && !readOnly && vaultRootForFlip && (
+        <NotableFolderBackside
+          vaultRoot={vaultRootForFlip}
+          folderRel={folderRelForFlip}
+          folderName={folderName}
+          onFlipBack={() => setFlipped(false)}
+        />
+      )}
       <div
         className="order-card-content"
         ref={contentRef}
-        style={capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined}
+        style={
+          flipped && isMainDoc && !readOnly
+            ? { display: "none" }
+            : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined
+        }
       >
         <MilkdownSurface
           initial={state.body}

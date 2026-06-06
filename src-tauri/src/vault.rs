@@ -490,6 +490,83 @@ pub fn open_path(path: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Reveal a path in the OS file browser (Finder on macOS, Explorer on
+/// Windows, default file manager on Linux). Mac uses `open -R`; Windows
+/// `explorer /select,`; Linux falls back to opening the parent dir via
+/// xdg-open since most file managers don't accept a "select" flag.
+#[tauri::command]
+pub fn reveal_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("not found: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("explorer")
+        .arg(format!("/select,{path}"))
+        .spawn();
+    #[cfg(target_os = "linux")]
+    let result = {
+        let parent = p.parent().map(|x| x.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
+        std::process::Command::new("xdg-open").arg(parent).spawn()
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "reveal_path is not supported on this platform",
+    ));
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Open a directory in the user's default terminal at that working
+/// directory. macOS uses Terminal.app via `open -a Terminal`; Windows
+/// launches `wt` (Windows Terminal) and falls back to `cmd`; Linux tries
+/// a short list of common terminal emulators. Errors are surfaced to
+/// the caller so the UI can hide the button when no terminal is found.
+#[tauri::command]
+pub fn open_terminal(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let r = std::process::Command::new("open")
+            .args(["-a", "Terminal"])
+            .arg(&path)
+            .spawn();
+        return r.map(|_| ()).map_err(|e| e.to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let r = std::process::Command::new("wt")
+            .current_dir(&path)
+            .spawn()
+            .or_else(|_| {
+                std::process::Command::new("cmd")
+                    .arg("/K")
+                    .current_dir(&path)
+                    .spawn()
+            });
+        return r.map(|_| ()).map_err(|e| e.to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for term in ["kitty", "alacritty", "wezterm", "gnome-terminal", "konsole", "xterm"] {
+            if let Ok(_) = std::process::Command::new(term).current_dir(&path).spawn() {
+                return Ok(());
+            }
+        }
+        return Err("no known terminal emulator found".into());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = path;
+        Err("open_terminal is not supported on this platform".into())
+    }
+}
+
 // Open an external URL (http/https/mailto/etc.) in the user's default
 // browser/handler. Distinct from open_path because URLs aren't paths —
 // no fs::exists() check, and we accept any scheme the OS opener knows

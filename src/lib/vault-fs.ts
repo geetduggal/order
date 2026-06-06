@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface VaultDirEntry { name: string; isDir: boolean }
+export interface VaultDirEntryStat { name: string; isDir: boolean; mtime: number; size: number }
 export interface VaultStat { mtime: number; size: number }
 export interface VaultFolder { path: string | null; name: string | null }
 
@@ -102,6 +103,23 @@ export const vaultFs = {
   readDir: (rel: string) =>
     invoke<{ name: string; is_dir: boolean }[]>("vault_read_dir", { rel }).then((es) =>
       es.map((e): VaultDirEntry => ({ name: e.name, isDir: e.is_dir })),
+    ),
+  /** Rich dir listing — name, is_dir, mtime, size — for the
+   *  folder-flip card. Hidden dotfiles + the folder's own Main Doc
+   *  are filtered server-side. */
+  listDir: (rel: string) =>
+    invoke<{ name: string; is_dir: boolean; mtime: number; size: number }[]>(
+      "vault_list_dir",
+      { rel },
+    ).then((es) =>
+      es.map(
+        (e): VaultDirEntryStat => ({
+          name: e.name,
+          isDir: e.is_dir,
+          mtime: e.mtime,
+          size: e.size,
+        }),
+      ),
     ),
   exists: (rel: string) => invoke<boolean>("vault_exists", { rel }),
   stat: (rel: string) => invoke<VaultStat>("vault_stat", { rel }),

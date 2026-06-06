@@ -207,6 +207,54 @@ pub fn vault_read_dir(
     Ok(out)
 }
 
+/// Richer dir listing for the folder-flip card: every entry's mtime +
+/// size so the JS side can sort by name or recency without round-
+/// tripping per-file. Hidden dotfiles are skipped; the Main Doc of the
+/// folder (`<Folder>.md` — same name as the directory) is also dropped
+/// since it's already rendered as the card's front.
+#[derive(serde::Serialize)]
+pub struct DirEntryStat {
+    pub name: String,
+    pub is_dir: bool,
+    pub mtime: u64,
+    pub size: u64,
+}
+#[tauri::command]
+pub fn vault_list_dir(
+    state: tauri::State<VaultState>,
+    rel: String,
+) -> Result<Vec<DirEntryStat>, String> {
+    let p = resolve(&state, &rel)?;
+    let folder_basename = p
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let main_doc = format!("{folder_basename}.md");
+    let mut out = Vec::new();
+    for e in fs::read_dir(&p).map_err(|e| e.to_string())? {
+        let e = e.map_err(|e| e.to_string())?;
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == main_doc {
+            continue;
+        }
+        let ft = e.file_type().map_err(|e| e.to_string())?;
+        let m = e.metadata().map_err(|e| e.to_string())?;
+        let mtime = m
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        out.push(DirEntryStat {
+            name,
+            is_dir: ft.is_dir(),
+            mtime,
+            size: m.len(),
+        });
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn vault_exists(state: tauri::State<VaultState>, rel: String) -> Result<bool, String> {
     Ok(resolve(&state, &rel)?.exists())

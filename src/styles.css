@@ -807,6 +807,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   right: calc(6px + env(safe-area-inset-right));
 }
 
+.order-card-flip,
+.order-card-permalink,
 .order-card-fullscreen,
 .order-card-delete,
 .order-card-dismiss {
@@ -821,7 +823,12 @@ input, textarea, select { outline: none; box-shadow: none; }
   justify-content: center;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.order-card-fullscreen:hover {
+.order-card-fullscreen:hover,
+.order-card-flip:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.order-card-flip.is-on {
   color: var(--royal);
   background: var(--royal-soft);
 }
@@ -4865,4 +4872,143 @@ iframe.order-youtube-embed {
   aspect-ratio: auto;
   object-fit: contain;
   max-width: 100%;
+}
+
+/* ---------- Notable Folder backside (flip-card) ---------- */
+/* Sits in place of the card's body when the user flips an NF Main
+   Doc. A toolbar pinned to the top with sort + reveal + terminal +
+   flip-back buttons; the file list scrolls inside the card. Drop a
+   file from the OS to add it; drag a row to lift the file. */
+.nf-flip-panel {
+  position: relative;
+  padding: 2px 0 4px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.nf-flip-panel.is-drop-hover {
+  outline: 2px dashed var(--coral);
+  outline-offset: -4px;
+  border-radius: 6px;
+}
+.nf-flip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 6px;
+  gap: 12px;
+}
+.nf-flip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nf-flip-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.nf-flip-sort,
+.nf-flip-tool,
+.nf-flip-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--ink-faint);
+  background: transparent;
+  transition: background-color 0.12s var(--ease-out),
+              color 0.12s var(--ease-out);
+  cursor: pointer;
+}
+.nf-flip-sort:hover,
+.nf-flip-tool:hover,
+.nf-flip-back:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.nf-flip-sort.is-on {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.nf-flip-back {
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 7px;
+}
+.nf-flip-error {
+  font-size: 11px;
+  color: var(--coral);
+  background: var(--coral-soft);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+}
+.nf-flip-empty {
+  font-size: 12px;
+  color: var(--ink-faint);
+  padding: 24px 8px;
+  text-align: center;
+  font-style: italic;
+}
+.nf-flip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.nf-flip-row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+.nf-flip-row:hover { background: var(--bg-elev); }
+.nf-flip-row.is-dir .nf-flip-row-name { color: var(--royal); }
+.nf-flip-row-icon { color: var(--ink-faint); }
+.nf-flip-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.nf-flip-row-meta,
+.nf-flip-row-mtime {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.nf-flip-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--coral-soft) 70%, transparent);
+  color: var(--coral);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  border-radius: 6px;
 }
