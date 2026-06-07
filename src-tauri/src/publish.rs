@@ -362,21 +362,28 @@ fn publish_via_http(
     let (user, repo, sub) = parse_target(&input.home_target)?;
     let repo_url = format!("https://github.com/{}/{}.git", user, repo);
 
-    // Viewer bundle lives in the iOS app's Resources/ directory at
-    // dist-viewer/ (declared via tauri.conf.json's bundle.resources).
-    // Resolve via Tauri's resource_dir() so the lookup works on every
-    // iOS device install.
-    let bundle = app
+    // Viewer bundle lives somewhere under the iOS app's resource dir.
+    // Tauri's resource shipping has historically placed files at
+    // different sub-paths depending on the directive used (a relative
+    // glob strips the leading prefix; an explicit dest preserves it).
+    // Probe the most likely spots and use the first one with a real
+    // index.html.
+    let res = app
         .path()
         .resource_dir()
-        .map_err(|e| format!("could not locate resource dir: {e}"))?
-        .join("dist-viewer");
-    if !bundle.join("index.html").is_file() {
-        return Err(format!(
-            "viewer bundle not found at {} — rebuild with `pnpm tauri ios build` so the dist-viewer/ resource is shipped inside the app",
-            bundle.display(),
-        ));
-    }
+        .map_err(|e| format!("could not locate resource dir: {e}"))?;
+    let candidates = [
+        res.join("dist-viewer"),
+        res.join("_up_").join("dist-viewer"),
+        res.clone(),
+    ];
+    let bundle = candidates
+        .into_iter()
+        .find(|p| p.join("index.html").is_file())
+        .ok_or_else(|| format!(
+            "viewer bundle not found under {} — rebuild with `pnpm tauri ios build`",
+            res.display(),
+        ))?;
 
     // Walk the bundle into commit files keyed at `<sub>/...`.
     let mut files: Vec<publish_ios::CommitFile> = Vec::new();
