@@ -21,9 +21,26 @@ struct OpenFileArgs: Decodable {
 // folder picker, mints a bookmark, and persists it; restore resolves that
 // bookmark on launch and opens scoped access for the session. The Rust FS
 // bridge then reads/writes under the returned path.
-class VaultPlugin: Plugin, UIDocumentPickerDelegate {
+class VaultPlugin: Plugin, UIDocumentPickerDelegate, UIDocumentInteractionControllerDelegate {
   static let bookmarkKey = "order.vaultBookmark"
   var pickInvoke: Invoke?
+  // Strong reference + the parent VC so the controller and its
+  // delegate callbacks live through the preview's full lifecycle.
+  var docInteraction: UIDocumentInteractionController?
+  var previewHost: UIViewController?
+
+  // MARK: UIDocumentInteractionControllerDelegate
+  public func documentInteractionControllerViewControllerForPreview(
+    _ controller: UIDocumentInteractionController
+  ) -> UIViewController {
+    return self.previewHost ?? UIViewController()
+  }
+  public func documentInteractionControllerDidEndPreview(
+    _ controller: UIDocumentInteractionController
+  ) {
+    self.docInteraction = nil
+    self.previewHost = nil
+  }
 
   @objc public func pickFolder(_ invoke: Invoke) throws {
     self.pickInvoke = invoke
@@ -101,11 +118,10 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
     let url = URL(fileURLWithPath: args.path)
     NSLog("[vault] openFile path=\(args.path) exists=\(FileManager.default.fileExists(atPath: args.path))")
     invoke.resolve([:])
-    DispatchQueue.main.async {
-      // Walk the responder chain via the key window's root VC so we
-      // present from whatever is on top, not whatever Tauri's plugin
-      // manager hands us — that can be a stale background VC if the
-      // WebView has presented anything (a modal, the keyboard, etc).
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      // Find the topmost VC so the Quick Look preview lands on top
+      // of whatever is on screen.
       let scenes = UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
       let keyWindow = scenes
@@ -118,19 +134,29 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
       }
       var top: UIViewController = root
       while let presented = top.presentedViewController { top = presented }
-      let activity = UIActivityViewController(
-        activityItems: [url], applicationActivities: nil)
-      if let pop = activity.popoverPresentationController {
-        pop.sourceView = top.view
-        pop.sourceRect = CGRect(
-          x: top.view.bounds.midX,
-          y: top.view.bounds.maxY - 1,
-          width: 1, height: 1)
-        pop.permittedArrowDirections = []
-      }
-      NSLog("[vault] openFile presenting on \(type(of: top))")
-      top.present(activity, animated: true) {
-        NSLog("[vault] openFile present completed")
+
+      let dic = UIDocumentInteractionController(url: url)
+      dic.delegate = self
+      self.docInteraction = dic
+      self.previewHost = top
+      // Quick Look — the file's default in-app viewer (Preview for
+      // PDFs / images, Pages-like renderer for docs, plain text for
+      // .md / .txt). Falls back to the OS share sheet via the options
+      // menu if Quick Look can't render the type.
+      NSLog("[vault] openFile presenting preview on \(type(of: top))")
+      if dic.presentPreview(animated: true) == false {
+        NSLog("[vault] openFile presentPreview returned false; falling back to share sheet")
+        let activity = UIActivityViewController(
+          activityItems: [url], applicationActivities: nil)
+        if let pop = activity.popoverPresentationController {
+          pop.sourceView = top.view
+          pop.sourceRect = CGRect(
+            x: top.view.bounds.midX,
+            y: top.view.bounds.maxY - 1,
+            width: 1, height: 1)
+          pop.permittedArrowDirections = []
+        }
+        top.present(activity, animated: true, completion: nil)
       }
     }
   }
