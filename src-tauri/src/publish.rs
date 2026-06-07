@@ -352,22 +352,28 @@ fn publish_site_inner(
 /// the message inline.
 #[cfg(target_os = "ios")]
 fn publish_via_http(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     input: PublishInput,
 ) -> Result<PublishResult, String> {
+    use tauri::Manager;
     let token = input.github_token.as_deref().filter(|t| !t.is_empty()).ok_or(
         "A GitHub Personal Access Token is required to publish from iOS. Tap the i icon next to the token field for how to create one.",
     )?;
     let (user, repo, sub) = parse_target(&input.home_target)?;
     let repo_url = format!("https://github.com/{}/{}.git", user, repo);
 
-    // Determine viewer bundle location. The frontend hands us the
-    // path of dist-viewer/, which on iOS is shipped as a Tauri
-    // resource in the app bundle.
-    let bundle = std::path::PathBuf::from(&input.viewer_bundle_path);
+    // Viewer bundle lives in the iOS app's Resources/ directory at
+    // dist-viewer/ (declared via tauri.conf.json's bundle.resources).
+    // Resolve via Tauri's resource_dir() so the lookup works on every
+    // iOS device install.
+    let bundle = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("could not locate resource dir: {e}"))?
+        .join("dist-viewer");
     if !bundle.join("index.html").is_file() {
         return Err(format!(
-            "viewer bundle not found at {} — publishing from iOS needs the bundle inside the app",
+            "viewer bundle not found at {} — rebuild with `pnpm tauri ios build` so the dist-viewer/ resource is shipped inside the app",
             bundle.display(),
         ));
     }
