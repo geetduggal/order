@@ -2619,16 +2619,18 @@ iframe.order-youtube-embed {
 .year-cell.weekend:not(.empty) {
   background: color-mix(in srgb, var(--ink) 6%, var(--bg));
 }
-/* Today: full coral fill + coral inner ring + bold inverse day
-   number. Reads from across the year strip at a glance, in every
-   theme, including when the cell is also a weekend. */
+/* Today: a coral-tinted cell with a hairline coral ring around
+   the day number. Visible at a glance without dominating the
+   strip. */
 .year-cell.today {
-  background: var(--coral) !important;
-  box-shadow: inset 0 0 0 2px var(--coral);
+  background: var(--coral-soft);
 }
 .year-cell.today .year-cell-day {
-  color: #fff;
-  font-weight: 700;
+  color: var(--coral);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--coral);
+  border-radius: 999px;
+  padding: 1px 5px;
 }
 
 /* Drag-to-create preview band. Overrides weekend / today shading
