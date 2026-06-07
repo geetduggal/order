@@ -24,8 +24,6 @@ struct OpenFileArgs: Decodable {
 class VaultPlugin: Plugin, UIDocumentPickerDelegate {
   static let bookmarkKey = "order.vaultBookmark"
   var pickInvoke: Invoke?
-  // Strong reference so the controller isn't deallocated mid-present.
-  var docInteraction: UIDocumentInteractionController?
 
   @objc public func pickFolder(_ invoke: Invoke) throws {
     self.pickInvoke = invoke
@@ -90,28 +88,35 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
     }
   }
 
-  // Present the system "open with..." sheet for an absolute file
-  // path. iOS shows the standard share menu; the user picks the app
-  // to view / edit the file in (Preview, Photos, Files, etc.) or
-  // copies it elsewhere. Far more useful than shareddocuments://
-  // which can't focus on a specific file. Resolves the invoke before
-  // presenting so the Rust caller doesn't block on the user.
+  // Present the system share sheet for an absolute file path. iOS
+  // shows the standard activity menu — the user picks the app to
+  // open the file in (Preview, Photos, Files, Quick Look, mail it,
+  // copy it elsewhere). We use UIActivityViewController instead of
+  // UIDocumentInteractionController because the latter silently
+  // refuses to present when no app claims the file's UTType (which
+  // is every .md note out of the box). The activity sheet always
+  // shows up, even for an unknown extension.
   @objc public func openFile(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(OpenFileArgs.self)
     let url = URL(fileURLWithPath: args.path)
     invoke.resolve([:])
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
-      let dic = UIDocumentInteractionController(url: url)
-      self.docInteraction = dic
-      // Anchor to the root view of the current window; iPad needs a
-      // valid rect or it asserts. Center bottom is the closest match
-      // to the iOS share-sheet's natural origin.
-      guard let host = self.manager.viewController?.view else { return }
-      let rect = CGRect(
-        x: host.bounds.midX, y: host.bounds.maxY - 1,
-        width: 1, height: 1)
-      _ = dic.presentOptionsMenu(from: rect, in: host, animated: true)
+      guard let host = self.manager.viewController else { return }
+      let activity = UIActivityViewController(
+        activityItems: [url], applicationActivities: nil)
+      // iPad needs a popover anchor or UIKit asserts. Center the
+      // popover at the bottom of the host view so the sheet feels
+      // like it comes from the touch point.
+      if let pop = activity.popoverPresentationController {
+        pop.sourceView = host.view
+        pop.sourceRect = CGRect(
+          x: host.view.bounds.midX,
+          y: host.view.bounds.maxY - 1,
+          width: 1, height: 1)
+        pop.permittedArrowDirections = []
+      }
+      host.present(activity, animated: true, completion: nil)
     }
   }
 
