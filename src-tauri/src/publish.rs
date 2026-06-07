@@ -444,7 +444,7 @@ fn publish_via_http(
 
     let commit_msg = input.commit_message.clone().unwrap_or_else(|| format!("Publish: {}", timestamp_label()));
     let branch = "main".to_string();
-    publish_ios::commit_files(&user, &repo, &branch, token, &commit_msg, &files)
+    publish_ios::commit_files(token, &user, &repo, &branch, &commit_msg, &files)
         .map_err(|e| format!("GitHub commit failed: {e}"))?;
 
     Ok(PublishResult {
