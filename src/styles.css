@@ -2496,7 +2496,8 @@ iframe.order-youtube-embed {
   background: var(--bg);
   padding: 6px 0;
 }
-.year-allday-toggle {
+.year-allday-toggle,
+.fc-allday-toggle {
   margin-left: auto;
   font-family: var(--sans);
   font-size: 11px;
@@ -2505,22 +2506,35 @@ iframe.order-youtube-embed {
   padding: 4px 10px;
   border-radius: 4px;
   border: 1px solid var(--rule);
+  background: transparent;
   cursor: pointer;
   transition: background-color 0.12s var(--ease-out),
               color 0.12s var(--ease-out),
               border-color 0.12s var(--ease-out);
 }
-.year-allday-toggle.is-on {
+.year-allday-toggle.is-on,
+.fc-allday-toggle.is-on {
   background: var(--royal-soft);
   border-color: var(--royal);
   color: var(--ink);
 }
-.year-allday-toggle.is-off {
+.year-allday-toggle.is-off,
+.fc-allday-toggle.is-off {
   background: transparent;
   color: var(--ink-faint);
   opacity: 0.75;
 }
-.year-allday-toggle:hover { border-color: var(--royal); color: var(--ink); }
+.year-allday-toggle:hover,
+.fc-allday-toggle:hover { border-color: var(--royal); color: var(--ink); }
+/* Anchor the FC all-day toggle inside the sticky chrome band next
+   to the view picker so both controls live on the same row. */
+.fc-allday-toggle {
+  position: sticky;
+  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 8px);
+  z-index: 7;
+  float: right;
+  margin: 0 6px -36px 0;
+}
 /* Day-of-week column header strip also sticks below the year-head so
    the M T W T F S labels stay anchored across all 12 month rows. */
 .year-strip-header {

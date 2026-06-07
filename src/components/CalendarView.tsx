@@ -305,7 +305,20 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const events = useMemo(() => notesToEvents(notes), [notes]);
+  // Month view defaults to all-day-only (matching the year strip) so
+  // a busy timed-event load doesn't crowd the cell grid. Day / Week
+  // default off — those scales have room for timed bars. Toggle is
+  // available in every view for symmetry.
+  const isMonth = initialView === "dayGridMonth";
+  const [allDayOnly, setAllDayOnly] = useState<boolean>(isMonth);
+  const visibleNotes = useMemo(() => {
+    if (!allDayOnly) return notes;
+    return notes.filter((n) => {
+      const allDay = n.frontmatter.allDay === true || !n.frontmatter.startTime;
+      return allDay;
+    });
+  }, [notes, allDayOnly]);
+  const events = useMemo(() => notesToEvents(visibleNotes), [visibleNotes]);
 
   // Week-view column visibility lives here so the desktop, iOS, and
   // published viewer all pick it up by mounting the same component.
@@ -428,6 +441,15 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           ))}
         </div>
       )}
+      <button
+        type="button"
+        className={"fc-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
+        onClick={() => setAllDayOnly((v) => !v)}
+        aria-pressed={allDayOnly}
+        title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
+      >
+        all-day only
+      </button>
       {isWeek && (
         <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
           {DAY_LABELS.map((label, d) => {
