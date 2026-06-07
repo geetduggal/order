@@ -732,33 +732,11 @@ export function CardGrid() {
      *  return true only if the content actually differs. mtime-only
      *  signals are very noisy on cloud-synced vaults (Dropbox / iCloud
      *  touch files during sync without changing content), and bumping
-     *  externalChangeVersion on every touch makes the Stream "jump
-     *  around" every few seconds as cards remount and masonry rejiggers.
-     *  Errors are conservatively treated as "no change" so we don't
-     *  thrash on transient read failures. */
-    async function bodyActuallyChanged(path: string): Promise<boolean> {
-      try {
-        const raw = await vaultFs.readText(toVaultRel(path));
-        const split = splitFrontmatter(raw);
-        // Prefer the per-path cache (populated by every Card mount +
-        // save) over notesRef, which never gets leaf-note bodies
-        // updated after the initial frontmatter walk.
-        const cached = readKnownBody(path);
-        if (cached !== undefined) {
-          if (split.body === cached) return false;
-          // Refresh the cache to the latest known content so a second
-          // touch on the same now-current body short-circuits.
-          markKnownBody(path, split.body);
-          return true;
-        }
-        const inMem = notesRef.current?.find((n) => n.path === path);
-        if (!inMem) return true; // new file the index doesn't know yet
-        if (inMem.body === "" && split.body !== "") return true;
-        return split.body !== inMem.body;
-      } catch {
-        return false;
-      }
-    }
+     *  No longer used as a filter — see reportExternal. Kept here in
+     *  case we want the comparison back as a "real-content" telemetry
+     *  signal later. */
+    void readKnownBody;
+    void markKnownBody;
     async function reportExternal(paths: string[]) {
       if (cancelled) return;
       // Drop our own writes from the change set; anything remaining is
@@ -766,25 +744,18 @@ export function CardGrid() {
       const external: string[] = [];
       for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
       // eslint-disable-next-line no-console
-      if (paths.length) console.log("[watcher] reportExternal", { incoming: paths.length, external: external.length });
+      console.log("[watcher] reportExternal", { incoming: paths.length, external: external.length, paths: external });
       if (external.length === 0) return;
-      // Content-aware filter: only paths whose bodies actually
-      // differ get a version bump (which would remount the Card).
-      // Pure mtime touches from Dropbox / iCloud sync (the dominant
-      // source of churn on a cloud-synced vault) drop here.
-      const changed: string[] = [];
-      for (const p of external) {
-        if (await bodyActuallyChanged(p)) changed.push(p);
-        if (cancelled) return;
-      }
-      // eslint-disable-next-line no-console
-      console.log("[watcher] changed bodies", changed);
-      if (changed.length === 0) return;
-      // Only reload when real content changed. The old path scheduled
-      // a reload on every mtime touch — which on iOS, where the bridge
-      // is slow and the reload re-reads every note body, produced a
-      // visible jump every poll cycle even when nothing changed.
-      bumpExternal(changed);
+      // Bump for every external mtime change. We used to filter via
+      // a body-comparison check to skip Dropbox / iCloud touches that
+      // change mtime without changing content — but that filter was
+      // also (silently) eating real edits whenever the body cache
+      // hadn't been populated for the path, leaving the user staring
+      // at stale content. Reliability over efficiency: bump always,
+      // and let the Card's remount re-read the disk. A spurious
+      // remount on a content-less touch is annoying but recoverable;
+      // a missed edit is invisible and infuriating.
+      bumpExternal(external);
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
     }
