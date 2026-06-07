@@ -275,7 +275,15 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       // native browser behavior so window.open / location does the right
       // thing (mailto/tel hand off to the OS; http(s) opens a tab).
       if (/^(https?|mailto|tel):/i.test(raw)) {
-        if (!isTauri()) return;
+        if (!isTauri()) {
+          // Published web viewer: force a new tab so the visitor
+          // doesn't lose the page they were reading. The bare anchor
+          // would otherwise navigate the current tab.
+          e.preventDefault();
+          e.stopPropagation();
+          window.open(raw, "_blank", "noopener,noreferrer");
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         // Fire-and-forget: awaiting `open_url` on iOS blocks the
