@@ -306,6 +306,22 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
 
   return (
     <div className="year-linear">
+      {onSelectView && currentView && (
+        <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
+          {(["day", "week", "month", "year"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={currentView === v}
+              className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
+              onClick={() => onSelectView(v)}
+            >
+              {v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       <header className="year-head">
         <div className="year-nav">
           <button className="year-nav-btn" onClick={goPrev} title="Previous year">‹</button>
@@ -313,22 +329,6 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
           <button className="year-nav-btn" onClick={goNext} title="Next year">›</button>
         </div>
         <h2 className="year-label">{year}</h2>
-        {onSelectView && currentView && (
-          <div className="fc-view-switch year-view-switch" role="tablist" aria-label="Calendar view">
-            {(["day", "week", "month", "year"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                role="tab"
-                aria-selected={currentView === v}
-                className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
-                onClick={() => onSelectView(v)}
-              >
-                {v[0].toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </div>
-        )}
         <button
           type="button"
           className={"year-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}

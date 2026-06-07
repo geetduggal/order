@@ -5264,24 +5264,27 @@ iframe.order-youtube-embed {
   border-radius: 2px;
 }
 
-/* ---------- Calendar in-shell view picker ---------- */
-/* Sits in the empty right slot of the FC sticky toolbar (or alongside
-   the year label in YearLinearView). Read-as-tabs, sticks to the
-   chrome band so it stays reachable while scrolling. */
+/* ---------- Calendar view picker (Day / Week / Month / Year) ----------
+   Anchored top-right of the calendar / year surface and sticky at the
+   top of the viewport so it stays reachable while you scroll. One
+   ruleset for every view — no per-view margin or position hacks. */
+.fc-shell,
+.year-linear {
+  position: relative;
+}
 .fc-view-switch {
   position: sticky;
-  top: var(--fc-safe-top, env(safe-area-inset-top, 0px));
-  z-index: 7;
+  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 8px);
+  z-index: 8;
+  float: right;
   display: inline-flex;
   gap: 2px;
-  margin: 4px 0 -28px auto;
+  margin: 0 0 -36px;
   padding: 2px;
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: var(--bg);
   width: max-content;
-  align-self: flex-end;
-  justify-self: flex-end;
 }
 .fc-view-tab {
   font-family: var(--sans);
@@ -5300,15 +5303,15 @@ iframe.order-youtube-embed {
   background: var(--royal-soft);
   font-weight: 500;
 }
-.year-view-switch {
-  position: static;
-  margin: 0 0 0 auto;
-  align-self: center;
-}
 @media (max-width: 768px) {
+  /* On phones the toolbar is narrow and the picker would overlap
+     the title. Tuck it under the title row but keep the sticky
+     behaviour so the user can swap views mid-scroll. */
   .fc-view-switch {
-    margin: 0 0 4px;
-    align-self: center;
-    top: calc(var(--fc-safe-top, 0px) + 4px);
+    float: none;
+    margin: 0 auto 6px;
+    display: flex;
+    justify-content: center;
+    width: max-content;
   }
 }
