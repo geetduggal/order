@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { RefAutocomplete } from "./RefAutocomplete";
 import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
 import { useTileDrag } from "../lib/use-tile-drag";
@@ -128,13 +129,27 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     onChange(next);
   }
 
+  // Autocomplete candidates: Notable Folder names from the vault
+  // index, filtered to those that aren't already in this list.
+  const notableFolderCandidates = vaultNotes
+    .filter((n) => isNotableFolder(n.frontmatter))
+    .map((n) => n.filename.replace(/\.md$/i, ""))
+    .sort((a, b) => a.localeCompare(b));
+  const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
+
   if (items.length === 0 && !adding) {
     if (hideControls) {
       return <div className="list-lines"><div className="list-line list-line-empty">No items match.</div></div>;
     }
     return (
       <div className="list-lines">
-        <AddRow startOpen onAdd={add} onCancel={() => setAdding(false)} />
+        <AddRow
+          startOpen
+          onAdd={add}
+          onCancel={() => setAdding(false)}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
+        />
       </div>
     );
   }
@@ -151,6 +166,8 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onCancel={() => setAddingTop(false)}
           onOpen={() => setAddingTop(true)}
           onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
         />
       )}
       {items.map((item, originalIdx) => {
@@ -276,6 +293,8 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onCancel={() => setAdding(false)}
           onOpen={() => setAdding(true)}
           onImage={onUploadImage ? (f) => ingestImageFile(f, "end") : undefined}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
         />
       )}
     </div>
@@ -435,20 +454,24 @@ interface AddRowProps {
   /** When provided, surface image affordances (file picker + clipboard
    *  paste button) alongside the "+ Add" text. */
   onImage?: (file: File) => Promise<void> | void;
+  /** Candidate refs for the autocomplete dropdown — typically every
+   *  Notable Folder name. */
+  candidates?: string[];
+  /** Refs already in the list — kept out of the autocomplete to avoid
+   *  proposing a duplicate item. */
+  excludeRefs?: Set<string>;
 }
 
-function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage }: AddRowProps) {
+function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, excludeRefs }: AddRowProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (startOpen) setOpen(true); }, [startOpen]);
-  useEffect(() => { if (open) requestAnimationFrame(() => inputRef.current?.focus()); }, [open]);
-  function commit() {
-    if (draft.trim()) onAdd(draft.trim());
+  function cancel() { setDraft(""); setOpen(false); onCancel(); }
+  function commitFinal(final: string) {
+    if (final.trim()) onAdd(final.trim());
     setDraft("");
     setOpen(false);
   }
-  function cancel() { setDraft(""); setOpen(false); onCancel(); }
   if (!open) {
     return (
       <div className="list-line list-line-add">
@@ -514,17 +537,16 @@ function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage }: AddRowProps) {
   }
   return (
     <div className="list-line list-line-add is-input">
-      <input
-        ref={inputRef}
-        className="lr-add-input"
+      <RefAutocomplete
+        autoFocus
         value={draft}
+        onChange={setDraft}
+        onCommit={commitFinal}
+        onCancel={cancel}
+        candidates={candidates ?? []}
+        exclude={excludeRefs}
+        className="lr-add-input"
         placeholder="Note name"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") { e.preventDefault(); cancel(); }
-        }}
       />
     </div>
   );

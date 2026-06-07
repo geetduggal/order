@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
+import { RefAutocomplete } from "./RefAutocomplete";
 import { resolveNoteRef } from "../lib/wikilink";
 import { useTileDrag } from "../lib/use-tile-drag";
 import { assetUrl } from "../lib/attachments";
@@ -136,13 +137,28 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     onChange(next);
   }
 
+  // Autocomplete candidates: Notable Folder names from the vault
+  // index, filtered to those that aren't already in this list.
+  const notableFolderCandidates = vaultNotes
+    .filter((n) => isNotableFolder(n.frontmatter))
+    .map((n) => n.filename.replace(/\.md$/i, ""))
+    .sort((a, b) => a.localeCompare(b));
+  const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
+
   if (items.length === 0 && !adding) {
     if (hideControls) {
       return <div className="basecard-grid"><div className="basecard-empty">No items match.</div></div>;
     }
     return (
       <div className="basecard-grid">
-        <AddTile slim onCancel={() => setAdding(false)} onAdd={add} startOpen />
+        <AddTile
+          slim
+          onCancel={() => setAdding(false)}
+          onAdd={add}
+          startOpen
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
+        />
       </div>
     );
   }
@@ -160,6 +176,8 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
           onCancel={() => setAddingTop(false)}
           onOpen={() => setAddingTop(true)}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
         />
       )}
       {items.map((item, originalIdx) => {
@@ -232,6 +250,8 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           onAdd={(name) => { add(name); setAdding(false); }}
           onCancel={() => setAdding(false)}
           onOpen={() => setAdding(true)}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
         />
       )}
       {inspectingIdx !== null && items[inspectingIdx]?.image && (() => {
@@ -447,9 +467,12 @@ interface AddTileProps {
    *  a file picker (iOS Photos / desktop file dialog) and a clipboard
    *  paste button (navigator.clipboard.read for screenshot pastes). */
   onImage?: (file: File) => Promise<void> | void;
+  /** Candidate refs for the autocomplete dropdown (NF names). */
+  candidates?: string[];
+  excludeRefs?: Set<string>;
 }
 
-function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage }: AddTileProps) {
+function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage, candidates, excludeRefs }: AddTileProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -550,17 +573,20 @@ function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage }: AddTileP
   }
   return (
     <div className={"basecard basecard-add is-input" + (slim ? " is-slim" : "")}>
-      <input
-        ref={inputRef}
-        className="basecard-add-input"
+      <RefAutocomplete
+        autoFocus
         value={draft}
-        placeholder="Note name"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") { e.preventDefault(); cancel(); }
+        onChange={setDraft}
+        onCommit={(final) => {
+          if (final.trim()) onAdd(final.trim());
+          setDraft("");
+          setOpen(false);
         }}
+        onCancel={cancel}
+        candidates={candidates ?? []}
+        exclude={excludeRefs}
+        className="basecard-add-input"
+        placeholder="Note name"
       />
     </div>
   );

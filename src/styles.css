@@ -4140,6 +4140,43 @@ iframe.order-youtube-embed {
 }
 .list-line-add:hover { color: var(--coral, #ff7f50); }
 .list-line-add.is-input { padding: 4px; }
+
+/* Autocomplete dropdown shared by ListLines and ListCards inputs.
+   Anchored relative to the input wrapper; positioned via .ref-ac so
+   the menu visually drops below the input. */
+.ref-ac { position: relative; width: 100%; }
+.ref-ac-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(20, 20, 40, 0.10);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.ref-ac-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-ac-item.is-on,
+.ref-ac-item:hover {
+  background: var(--royal-soft);
+  color: var(--ink);
+}
 .lr-add-input {
   width: 100%;
   padding: 4px 6px;
