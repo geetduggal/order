@@ -2308,6 +2308,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
+ "native-tls",
  "notify",
  "notify-debouncer-full",
  "percent-encoding",

@@ -14,9 +14,26 @@
 
 use base64::Engine;
 use serde_json::{json, Value};
+use std::sync::{Arc, OnceLock};
 
 const API: &str = "https://api.github.com";
 const UA: &str = "Order";
+
+/// Shared agent backed by native-tls (Secure Transport on iOS). ureq
+/// 2 with default-features off doesn't auto-wire a TLS backend, so
+/// we build one explicitly here.
+fn agent() -> ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT
+        .get_or_init(|| {
+            let connector = native_tls::TlsConnector::new()
+                .expect("native_tls connector init");
+            ureq::AgentBuilder::new()
+                .tls_connector(Arc::new(connector))
+                .build()
+        })
+        .clone()
+}
 
 /// One file to commit: a repo-relative path and its raw bytes.
 pub struct CommitFile {
@@ -25,7 +42,7 @@ pub struct CommitFile {
 }
 
 fn get(url: &str, token: &str) -> Result<Value, String> {
-    let body = ureq::get(url)
+    let body = agent().get(url)
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
@@ -42,9 +59,10 @@ fn get(url: &str, token: &str) -> Result<Value, String> {
 }
 
 fn send(method: &str, url: &str, token: &str, body: Value) -> Result<Value, String> {
+    let a = agent();
     let req = match method {
-        "POST" => ureq::post(url),
-        "PATCH" => ureq::request("PATCH", url),
+        "POST" => a.post(url),
+        "PATCH" => a.request("PATCH", url),
         other => return Err(format!("unsupported method {other}")),
     };
     let response_body = req

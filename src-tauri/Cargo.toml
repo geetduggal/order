@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 percent-encoding = "2"
 ureq = { version = "2", default-features = false, features = ["json", "native-tls", "gzip"] }
+native-tls = "0.2"
 base64 = "0.22"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
