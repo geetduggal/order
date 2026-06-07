@@ -52,6 +52,10 @@ export interface NoteMeta {
   filename: string;
   title: string;
   frontmatter: Frontmatter;
+  /** Optional notable-folder color, threaded from CardGrid /
+   *  ViewerApp so the linear strip tints each bar in the same
+   *  palette CalendarView uses. */
+  color?: string;
 }
 
 interface Props {
@@ -185,10 +189,14 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
   const [allDayOnly, setAllDayOnly] = useState(true);
 
   const visibleNotes = useMemo(() => {
-    if (!allDayOnly) return notes;
     return notes.filter((n) => {
-      const allDay = n.frontmatter.allDay === true || !n.frontmatter.startTime;
-      return allDay;
+      const explicitAllDay = n.frontmatter.allDay === true;
+      const hasStartTime = typeof n.frontmatter.startTime === "string";
+      // Skip date-only references (Readwise imports etc.) — they're
+      // not calendar events regardless of view.
+      if (!explicitAllDay && !hasStartTime) return false;
+      if (!allDayOnly) return true;
+      return explicitAllDay;
     });
   }, [notes, allDayOnly]);
 
@@ -306,22 +314,33 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
 
   return (
     <div className="year-linear">
-      {onSelectView && currentView && (
-        <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
-          {(["day", "week", "month", "year"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={currentView === v}
-              className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
-              onClick={() => onSelectView(v)}
-            >
-              {v[0].toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="fc-top-controls">
+        <button
+          type="button"
+          className={"fc-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
+          onClick={() => setAllDayOnly((v) => !v)}
+          aria-pressed={allDayOnly}
+          title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
+        >
+          all-day only
+        </button>
+        {onSelectView && currentView && (
+          <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
+            {(["day", "week", "month", "year"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={currentView === v}
+                className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
+                onClick={() => onSelectView(v)}
+              >
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <header className="year-head">
         <div className="year-nav">
           <button className="year-nav-btn" onClick={goPrev} title="Previous year">‹</button>
@@ -329,15 +348,6 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
           <button className="year-nav-btn" onClick={goNext} title="Next year">›</button>
         </div>
         <h2 className="year-label">{year}</h2>
-        <button
-          type="button"
-          className={"year-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
-          onClick={() => setAllDayOnly((v) => !v)}
-          aria-pressed={allDayOnly}
-          title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
-        >
-          all-day only
-        </button>
       </header>
 
       <div className="year-strip-header">
@@ -406,7 +416,14 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
                   "year-event" +
                   (continuesLeft ? " continues-left" : "") +
                   (continuesRight ? " continues-right" : "");
-                const isAllDay = note.frontmatter.allDay === true || !note.frontmatter.startTime;
+                const isAllDay = note.frontmatter.allDay === true;
+                // Use the note's folder color (matching CalendarView): a
+                // 29-alpha tint as background, full color as left
+                // accent. Without a color we fall back to the royal /
+                // coral default via CSS class.
+                const colorStyle: React.CSSProperties = note.color
+                  ? { backgroundColor: note.color + "29", borderLeftColor: note.color }
+                  : {};
                 return (
                   <div
                     key={note.path + ":" + startCell}
@@ -416,6 +433,7 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
                       width: `${widthPct}%`,
                       top: row * (EVENT_PX + EVENT_GAP_PX),
                       height: EVENT_PX,
+                      ...colorStyle,
                     }}
                     draggable
                     onDragStart={(e) => onEventDragStart(e, note.path)}

@@ -127,7 +127,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       ? { backgroundColor: note.color + "29", borderColor: note.color }
       : {};
 
-    if (allDay || !startTime) {
+    if (allDay) {
       events.push({
         id: note.path,
         title,
@@ -139,6 +139,11 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       });
       continue;
     }
+    // Date but no startTime AND no allDay flag: this is a "dated
+    // reference" (Readwise article, imported note, etc.), not a
+    // calendar event. Skip — otherwise hundreds of articles bunched
+    // at midnight crowd the all-day band on the same calendar day.
+    if (!startTime) continue;
 
     // Timed events. If `endDate` is set and differs from `date`, the
     // event spans multiple days — combine endDate with endTime (or
@@ -425,31 +430,33 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
 
   return (
     <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}`} ref={shellRef}>
-      {onSelectView && currentView && (
-        <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
-          {(["day", "week", "month", "year"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={currentView === v}
-              className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
-              onClick={() => onSelectView(v)}
-            >
-              {v[0].toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
-      )}
-      <button
-        type="button"
-        className={"fc-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
-        onClick={() => setAllDayOnly((v) => !v)}
-        aria-pressed={allDayOnly}
-        title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
-      >
-        all-day only
-      </button>
+      <div className="fc-top-controls">
+        <button
+          type="button"
+          className={"fc-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
+          onClick={() => setAllDayOnly((v) => !v)}
+          aria-pressed={allDayOnly}
+          title={allDayOnly ? "Show timed events too" : "Show only all-day events"}
+        >
+          all-day only
+        </button>
+        {onSelectView && currentView && (
+          <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
+            {(["day", "week", "month", "year"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={currentView === v}
+                className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
+                onClick={() => onSelectView(v)}
+              >
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {isWeek && (
         <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
           {DAY_LABELS.map((label, d) => {

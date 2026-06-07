@@ -2483,7 +2483,7 @@ iframe.order-youtube-embed {
 /* ---------- Year linear strip view (ported from Full Calendar Plus) ---------- */
 .year-linear {
   padding: 8px clamp(16px, 4vw, 40px) 80px;
-  max-width: 1400px;
+  max-width: none;
   margin: 0 auto;
   font-family: var(--sans);
 }
@@ -2526,15 +2526,8 @@ iframe.order-youtube-embed {
 }
 .year-allday-toggle:hover,
 .fc-allday-toggle:hover { border-color: var(--royal); color: var(--ink); }
-/* Anchor the FC all-day toggle inside the sticky chrome band next
-   to the view picker so both controls live on the same row. */
-.fc-allday-toggle {
-  position: sticky;
-  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 8px);
-  z-index: 7;
-  float: right;
-  margin: 0 6px -36px 0;
-}
+/* Inside fc-top-controls — no sticky / float of its own. */
+.fc-allday-toggle { margin: 0; }
 /* Day-of-week column header strip also sticks below the year-head so
    the M T W T F S labels stay anchored across all 12 month rows. */
 .year-strip-header {
@@ -5278,22 +5271,29 @@ iframe.order-youtube-embed {
   border-radius: 2px;
 }
 
-/* ---------- Calendar view picker (Day / Week / Month / Year) ----------
-   Anchored top-right of the calendar / year surface and sticky at the
-   top of the viewport so it stays reachable while you scroll. One
-   ruleset for every view — no per-view margin or position hacks. */
+/* ---------- Calendar in-shell control bar ----------
+   Single sticky row at the top-right of every calendar surface
+   holding the all-day toggle + view picker. One container, one set
+   of layout rules, no per-control float hacks. */
 .fc-shell,
 .year-linear {
   position: relative;
 }
-.fc-view-switch {
+.fc-top-controls {
   position: sticky;
   top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 8px);
   z-index: 8;
-  float: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 -36px;
+  pointer-events: none;
+}
+.fc-top-controls > * { pointer-events: auto; }
+.fc-view-switch {
   display: inline-flex;
   gap: 2px;
-  margin: 0 0 -36px;
   padding: 2px;
   border: 1px solid var(--rule);
   border-radius: 6px;
@@ -5318,15 +5318,12 @@ iframe.order-youtube-embed {
   font-weight: 500;
 }
 @media (max-width: 768px) {
-  /* On phones the toolbar is narrow and the picker would overlap
-     the title. Tuck it under the title row but keep the sticky
-     behaviour so the user can swap views mid-scroll. */
-  .fc-view-switch {
-    float: none;
-    margin: 0 auto 6px;
-    display: flex;
+  /* Center the control bar on phones so the toolbar's prev/next/
+     title above stays uncrowded. The bar still sticks at the top
+     of the viewport. */
+  .fc-top-controls {
     justify-content: center;
-    width: max-content;
+    flex-wrap: wrap;
   }
 }
 
