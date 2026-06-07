@@ -431,6 +431,37 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   return (
     <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}`} ref={shellRef}>
       <div className="fc-top-controls">
+        {isWeek && (
+          <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
+            {DAY_LABELS.map((label, d) => {
+              const hidden = weekHiddenSet.has(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  className={`fc-week-day-chip${hidden ? " is-off" : " is-on"}`}
+                  onClick={() => toggleWeekDay(d)}
+                  aria-pressed={!hidden}
+                  aria-label={`${hidden ? "Show" : "Hide"} ${DAY_NAMES[d]}`}
+                  title={DAY_NAMES[d]}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {weekHidden.length > 0 && (
+              <button
+                type="button"
+                className="fc-week-day-all"
+                onClick={showAllWeekDays}
+                aria-label="Show all days"
+                title="Show all days"
+              >
+                All
+              </button>
+            )}
+          </div>
+        )}
         <button
           type="button"
           className={"fc-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}
@@ -457,37 +488,6 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           </div>
         )}
       </div>
-      {isWeek && (
-        <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
-          {DAY_LABELS.map((label, d) => {
-            const hidden = weekHiddenSet.has(d);
-            return (
-              <button
-                key={d}
-                type="button"
-                className={`fc-week-day-chip${hidden ? " is-off" : " is-on"}`}
-                onClick={() => toggleWeekDay(d)}
-                aria-pressed={!hidden}
-                aria-label={`${hidden ? "Show" : "Hide"} ${DAY_NAMES[d]}`}
-                title={DAY_NAMES[d]}
-              >
-                {label}
-              </button>
-            );
-          })}
-          {weekHidden.length > 0 && (
-            <button
-              type="button"
-              className="fc-week-day-all"
-              onClick={showAllWeekDays}
-              aria-label="Show all days"
-              title="Show all days"
-            >
-              All
-            </button>
-          )}
-        </div>
-      )}
       <FullCalendar
         ref={(instance) => {
           apiRef.current = instance;

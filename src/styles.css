@@ -2409,26 +2409,12 @@ iframe.order-youtube-embed {
 }
 
 /* ---------- Week-view day-of-week picker ---------- */
-/* Floats over FullCalendar's empty `right:""` toolbar slot on desktop;
-   drops inline below the toolbar on phones so it never overlaps prev/
-   next/title at narrow widths. Reserved for the week view — day and
-   month views remount CalendarView without it. */
+/* Lives inline inside .fc-top-controls — that bar already handles
+   sticky / z-index / overlap. We just lay out the chips horizontally. */
 .fc-week-day-picker {
-  position: sticky;
-  top: calc(var(--fc-safe-top, 0px) + 8px);
-  z-index: 7;
-  display: flex;
+  display: inline-flex;
   gap: 4px;
   align-items: center;
-  justify-content: flex-end;
-  /* Sit alongside the sticky toolbar's empty right slot. We use
-     negative margins to overlap the toolbar's vertical space — the
-     picker reads as part of the same chrome band without forcing
-     extra height. */
-  margin: 0 0 -28px auto;
-  padding-right: 2px;
-  width: max-content;
-  pointer-events: auto;
 }
 .fc-week-day-chip {
   width: 22px;
@@ -2467,17 +2453,7 @@ iframe.order-youtube-embed {
 .fc-week-day-all:hover { border-color: var(--royal); color: var(--ink); }
 
 @media (max-width: 768px) {
-  /* On phones, the toolbar is narrower than the picker would need next
-     to it — drop the negative-margin trick and let the picker sit on
-     its own row above the toolbar. It still sticks alongside the
-     toolbar's sticky band so it stays visible while scrolling. */
-  .fc-week-day-picker {
-    justify-content: center;
-    margin: 0 0 4px;
-    padding: 0;
-    width: auto;
-    top: calc(var(--fc-safe-top, 0px) + 4px);
-  }
+  .fc-week-day-picker { justify-content: center; }
 }
 
 /* ---------- Year linear strip view (ported from Full Calendar Plus) ---------- */
