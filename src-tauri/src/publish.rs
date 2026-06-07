@@ -443,7 +443,11 @@ fn publish_via_http(
     }
 
     let commit_msg = input.commit_message.clone().unwrap_or_else(|| format!("Publish: {}", timestamp_label()));
-    let branch = "main".to_string();
+    // Look up the repo's default branch (gh-pages repos can be on
+    // main, master, gh-pages, …) so we commit to whatever the repo
+    // actually uses, not a hardcoded guess.
+    let branch = publish_ios::default_branch(&user, &repo, token)
+        .map_err(|e| format!("could not read default branch: {e}"))?;
     publish_ios::commit_files(token, &user, &repo, &branch, &commit_msg, &files)
         .map_err(|e| format!("GitHub commit failed: {e}"))?;
 

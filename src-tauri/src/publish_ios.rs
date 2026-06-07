@@ -57,6 +57,18 @@ fn sha(v: &Value, ptr: &str) -> Result<String, String> {
         .ok_or_else(|| format!("missing {ptr} in GitHub response: {v}"))
 }
 
+/// Look up the repo's default branch via the GitHub REST API. Used
+/// by the iOS publisher so we commit to whatever the user's repo
+/// actually uses (`main`, `master`, `gh-pages`, …) rather than a
+/// hardcoded guess.
+pub fn default_branch(owner: &str, repo: &str, token: &str) -> Result<String, String> {
+    let v = get(&format!("{API}/repos/{owner}/{repo}"), token)?;
+    v.get("default_branch")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("no default_branch in repo response: {v}"))
+}
+
 /// Commit `files` onto `owner/repo`'s `branch` in one commit and move the
 /// branch ref to it. Returns the new commit sha. Paths in `files` are
 /// repo-relative (already including any home subdirectory prefix).
