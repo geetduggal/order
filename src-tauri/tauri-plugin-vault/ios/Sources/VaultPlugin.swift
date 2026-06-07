@@ -99,24 +99,39 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
   @objc public func openFile(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(OpenFileArgs.self)
     let url = URL(fileURLWithPath: args.path)
+    NSLog("[vault] openFile path=\(args.path) exists=\(FileManager.default.fileExists(atPath: args.path))")
     invoke.resolve([:])
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self else { return }
-      guard let host = self.manager.viewController else { return }
+    DispatchQueue.main.async {
+      // Walk the responder chain via the key window's root VC so we
+      // present from whatever is on top, not whatever Tauri's plugin
+      // manager hands us — that can be a stale background VC if the
+      // WebView has presented anything (a modal, the keyboard, etc).
+      let scenes = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+      let keyWindow = scenes
+        .flatMap { $0.windows }
+        .first(where: { $0.isKeyWindow })
+        ?? scenes.flatMap { $0.windows }.first
+      guard let root = keyWindow?.rootViewController else {
+        NSLog("[vault] openFile: no root view controller")
+        return
+      }
+      var top: UIViewController = root
+      while let presented = top.presentedViewController { top = presented }
       let activity = UIActivityViewController(
         activityItems: [url], applicationActivities: nil)
-      // iPad needs a popover anchor or UIKit asserts. Center the
-      // popover at the bottom of the host view so the sheet feels
-      // like it comes from the touch point.
       if let pop = activity.popoverPresentationController {
-        pop.sourceView = host.view
+        pop.sourceView = top.view
         pop.sourceRect = CGRect(
-          x: host.view.bounds.midX,
-          y: host.view.bounds.maxY - 1,
+          x: top.view.bounds.midX,
+          y: top.view.bounds.maxY - 1,
           width: 1, height: 1)
         pop.permittedArrowDirections = []
       }
-      host.present(activity, animated: true, completion: nil)
+      NSLog("[vault] openFile presenting on \(type(of: top))")
+      top.present(activity, animated: true) {
+        NSLog("[vault] openFile present completed")
+      }
     }
   }
 
