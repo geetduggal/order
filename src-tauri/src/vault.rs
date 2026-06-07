@@ -469,10 +469,25 @@ pub fn rename_file(from: String, to: String) -> Result<(), String> {
 // webview. macOS uses `open`; Linux uses xdg-open; Windows uses the
 // cmd start verb.
 #[tauri::command]
-pub fn open_path(path: String) -> Result<(), String> {
+pub fn open_path(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    path: String,
+) -> Result<(), String> {
     let p = std::path::Path::new(&path);
     if !p.exists() {
         return Err(format!("not found: {path}"));
+    }
+    // iOS: route through the vault plugin's openFile, which presents
+    // a UIDocumentInteractionController "open with..." sheet so the
+    // user picks the default app for the file's type (Preview /
+    // Photos / Files / etc.). shareddocuments:// can't focus on a
+    // specific file in Files, so this is the only path that actually
+    // surfaces the chosen file rather than dumping the user at the
+    // app's root.
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_vault::VaultExt;
+        return app.vault().open_file(path).map_err(|e| e.to_string());
     }
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(&path).spawn();
@@ -482,7 +497,7 @@ pub fn open_path(path: String) -> Result<(), String> {
     let result = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn();
     // Desktop only. On mobile (iOS/Android) there's no shell to spawn,
     // so `result` would otherwise be undefined and fail to compile.
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows", target_os = "ios")))]
     let result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "open_path is not supported on this platform",

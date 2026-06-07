@@ -11,6 +11,11 @@ struct OpenUrlArgs: Decodable {
   let url: String
 }
 
+// Args for openFile — absolute path on disk.
+struct OpenFileArgs: Decodable {
+  let path: String
+}
+
 // Vault access on iOS. The app is sandboxed, so a vault folder is reached
 // only through a security-scoped bookmark: pickFolder opens the Files
 // folder picker, mints a bookmark, and persists it; restore resolves that
@@ -19,6 +24,8 @@ struct OpenUrlArgs: Decodable {
 class VaultPlugin: Plugin, UIDocumentPickerDelegate {
   static let bookmarkKey = "order.vaultBookmark"
   var pickInvoke: Invoke?
+  // Strong reference so the controller isn't deallocated mid-present.
+  var docInteraction: UIDocumentInteractionController?
 
   @objc public func pickFolder(_ invoke: Invoke) throws {
     self.pickInvoke = invoke
@@ -80,6 +87,31 @@ class VaultPlugin: Plugin, UIDocumentPickerDelegate {
     invoke.resolve([:])
     DispatchQueue.main.async {
       UIApplication.shared.open(url, options: [:]) { _ in }
+    }
+  }
+
+  // Present the system "open with..." sheet for an absolute file
+  // path. iOS shows the standard share menu; the user picks the app
+  // to view / edit the file in (Preview, Photos, Files, etc.) or
+  // copies it elsewhere. Far more useful than shareddocuments://
+  // which can't focus on a specific file. Resolves the invoke before
+  // presenting so the Rust caller doesn't block on the user.
+  @objc public func openFile(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(OpenFileArgs.self)
+    let url = URL(fileURLWithPath: args.path)
+    invoke.resolve([:])
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      let dic = UIDocumentInteractionController(url: url)
+      self.docInteraction = dic
+      // Anchor to the root view of the current window; iPad needs a
+      // valid rect or it asserts. Center bottom is the closest match
+      // to the iOS share-sheet's natural origin.
+      guard let host = self.manager.viewController?.view else { return }
+      let rect = CGRect(
+        x: host.bounds.midX, y: host.bounds.maxY - 1,
+        width: 1, height: 1)
+      _ = dic.presentOptionsMenu(from: rect, in: host, animated: true)
     }
   }
 

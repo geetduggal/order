@@ -129,20 +129,13 @@ export function NotableFolderBackside({
   const ios = isIosSync();
   const openFile = useCallback(async (name: string) => {
     const target = `${absPath}/${name}`;
-    if (ios) {
-      // iOS Files doesn't expose a "highlight this file" URL — the
-      // shareddocuments:// scheme just opens whichever path it's
-      // given. Passing the file path can drop you into a generic
-      // location. Open the PARENT folder instead so the file is
-      // visible in the directory listing and one tap away.
-      const url = `shareddocuments://${absPath.replace(/^\//, "")}`;
-      try { await invoke("open_url", { url }); return; }
-      catch (e) { console.error("open via Files failed:", e); }
-      return;
-    }
+    // open_path is now platform-aware: macOS / Linux / Windows shell
+    // out; iOS routes through the vault plugin's UIDocumentInteraction
+    // sheet so the user picks the default app for the file's type
+    // (Preview, Photos, Files, etc.). No more shareddocuments hack.
     try { await invoke("open_path", { path: target }); }
     catch (e) { console.error("open_path failed:", e); }
-  }, [absPath, ios]);
+  }, [absPath]);
 
   const revealFolder = useCallback(async () => {
     if (ios) {

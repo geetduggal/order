@@ -43,4 +43,15 @@ impl<R: Runtime> Vault<R> {
     struct Args { url: String }
     self.0.run_mobile_plugin("openUrl", Args { url }).map_err(Into::into)
   }
+
+  /// Present the iOS "open with..." sheet for a file path.
+  /// shareddocuments:// can't focus on a specific file in Files, so
+  /// for a tap on a row in the NF flip browser we hand the file to
+  /// UIDocumentInteractionController which lets the user pick the
+  /// default app (Preview, Photos, Files, etc.) or copy/share it.
+  pub fn open_file(&self, path: String) -> crate::Result<()> {
+    #[derive(serde::Serialize)]
+    struct Args { path: String }
+    self.0.run_mobile_plugin("openFile", Args { path }).map_err(Into::into)
+  }
 }
