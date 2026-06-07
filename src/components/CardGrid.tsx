@@ -16,6 +16,7 @@ import { vaultFs, consumeSelfWrite } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
 import { LazyCell } from "./LazyCell";
+import { FtsOverlay } from "./FtsOverlay";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { Sidebar, type NotableFolder } from "./Sidebar";
@@ -1255,6 +1256,7 @@ export function CardGrid() {
   const [creatorOpen, setCreatorOpen] = useState(false);
   // Cmd+O opens the sidebar; Cmd+K opens the centered command palette.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [ftsOpen, setFtsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
@@ -1329,6 +1331,13 @@ export function CardGrid() {
           setHelpOpen((o) => !o);
           return;
         }
+        if (e.key === "/" && !isTyping(e.target)) {
+          // Bare '/' opens full-text search (vim-style). Cmd+F is
+          // the same control with the platform-standard binding.
+          e.preventDefault();
+          setFtsOpen(true);
+          return;
+        }
         return;
       }
       if (e.key === "o" || e.key === "O") {
@@ -1342,6 +1351,13 @@ export function CardGrid() {
       if (e.key === "k" || e.key === "K") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        // Cmd+F: open the full-text search overlay (Cmd+K is the
+        // folder palette — Cmd+F searches NOTE BODIES).
+        e.preventDefault();
+        setFtsOpen((open) => !open);
         return;
       }
       if (e.key === "p" || e.key === "P") {
@@ -2729,6 +2745,16 @@ export function CardGrid() {
           recents={recentFolders}
         />
       )}
+
+      <FtsOverlay
+        open={ftsOpen}
+        onClose={() => setFtsOpen(false)}
+        titleForPath={(p) => {
+          const n = notes?.find((x) => x.path === p);
+          return n?.title || (p.split("/").pop() ?? p).replace(/\.md$/i, "");
+        }}
+        onPick={(path) => { navigateAndFocus(path); }}
+      />
 
       {publishOpen && (
         <PublishPanel

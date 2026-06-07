@@ -3,6 +3,7 @@ mod vault_fs;
 mod watcher;
 mod publish;
 mod publish_ios;
+mod fts;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -19,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_vault::init())
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(vault_fs::VaultState::default())
+        .manage(fts::FtsState::default())
         // Serve attachment images / videos from the vault via
         // vaultasset://localhost/<rel>. Resolves through the same
         // VaultState as the FS bridge so it works for an absolute
@@ -131,6 +133,9 @@ pub fn run() {
             vault::open_url,
             watcher::start_watcher,
             publish::publish_site,
+            fts::fts_build_index,
+            fts::fts_load_index,
+            fts::fts_search,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

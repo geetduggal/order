@@ -5096,3 +5096,103 @@ iframe.order-youtube-embed {
   pointer-events: none;
   border-radius: 6px;
 }
+
+/* ---------- Full-text search overlay (Cmd+F / '/') ---------- */
+.fts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(20, 20, 40, 0.35);
+  backdrop-filter: saturate(160%) blur(6px);
+  -webkit-backdrop-filter: saturate(160%) blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(40px, 10vh, 100px) 16px 16px;
+}
+.fts-panel {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(20, 20, 40, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.fts-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.fts-input-icon { color: var(--ink-faint); }
+.fts-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+}
+.fts-rebuild,
+.fts-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.fts-rebuild:hover,
+.fts-close:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
+.fts-rebuild.is-busy { color: var(--coral); }
+.fts-status {
+  padding: 10px 14px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+.fts-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.fts-hit {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.fts-hit:hover,
+.fts-hit.is-on { background: var(--royal-soft); }
+.fts-hit-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.fts-hit-snippet {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-faint);
+  line-height: 1.4;
+}
+.fts-mark {
+  background: var(--coral-soft);
+  color: var(--coral);
+  padding: 0 2px;
+  border-radius: 2px;
+}

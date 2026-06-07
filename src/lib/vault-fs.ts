@@ -128,6 +128,21 @@ export const vaultFs = {
    *  (with `-N` suffix if there was a name collision). */
   importFiles: (sources: string[], destRel: string) =>
     invoke<string[]>("vault_import_files", { sources, destRel }),
+  // ---------- Full-text search ----------
+  ftsBuild: () => invoke<number>("fts_build_index"),
+  ftsLoad: () => invoke<number>("fts_load_index"),
+  ftsSearch: (query: string, limit = 50) =>
+    invoke<{ path: string; snippet: string; match_offset: number; match_length: number }[]>(
+      "fts_search",
+      { query, limit },
+    ).then((hits) =>
+      hits.map((h) => ({
+        path: h.path,
+        snippet: h.snippet,
+        matchOffset: h.match_offset,
+        matchLength: h.match_length,
+      })),
+    ),
   exists: (rel: string) => invoke<boolean>("vault_exists", { rel }),
   stat: (rel: string) => invoke<VaultStat>("vault_stat", { rel }),
   rename: (from: string, to: string) => {
