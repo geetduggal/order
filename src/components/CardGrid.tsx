@@ -1260,7 +1260,6 @@ export function CardGrid() {
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   // Dock-view picker — pick a stream sub-mode or a calendar view
   // from a menu instead of cycling through them by repeated taps.
-  const [viewMenuOpen, setViewMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!creatorOpen) return;
@@ -1284,17 +1283,6 @@ export function CardGrid() {
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [toolsMenuOpen]);
-
-  useEffect(() => {
-    if (!viewMenuOpen) return;
-    function onDocClick(e: MouseEvent) {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (!t.closest(".dock-btn-view, .dock-view-popup")) setViewMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onDocClick);
-    return () => window.removeEventListener("mousedown", onDocClick);
-  }, [viewMenuOpen]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => {
@@ -2385,74 +2373,73 @@ export function CardGrid() {
         >
           +
         </button>
-        <button
-          type="button"
-          className={`dock-btn dock-btn-view is-${view}` + (viewMenuOpen ? " is-open" : "")}
-          onClick={() => setViewMenuOpen((o) => !o)}
-          title="Pick view"
-          aria-label="Pick view"
-          aria-haspopup="menu"
-          aria-expanded={viewMenuOpen}
-        >
-          {(() => {
-            // Show the icon for the currently active view so the dock
-            // button reads as a status indicator first, picker second.
-            if (view === "day") return <CalendarClock size={20} strokeWidth={2.1} />;
-            if (view === "week") return <CalendarRange size={20} strokeWidth={2.1} />;
-            if (view === "month") return <CalendarDays size={20} strokeWidth={2.1} />;
-            if (view === "year") return <CalendarIcon size={20} strokeWidth={2.1} />;
-            // Stream view — icon reflects the sub-mode.
-            if (streamMode === "folders") return <FolderIcon size={22} strokeWidth={2.1} />;
-            if (streamMode === "notes") return <FileText size={22} strokeWidth={2.1} />;
-            return <Files size={22} strokeWidth={2.1} />;
-          })()}
-        </button>
         {(() => {
-          // The button icon mirrors the current filter state at a
-          // glance: a Home icon when filtered to the home folder
-          // (the user is "at home"), a FilterX icon when no filters
-          // are active (no constraint — the whole vault is in view).
-          // Anything in between (a custom filter pile) lands on the
-          // neutral Home icon so the menu still feels like the home
-          // affordance.
+          // Show-mode cycle button: tap cycles all → notes → folders → all.
+          // Single-purpose so the dock control reads as a 3-state toggle,
+          // not a popover. View selection (Day/Week/Month/Year/Stream)
+          // moves to the keyboard (Cmd+S/D/W/M/Y).
+          const nextMode = streamMode === "all" ? "notes" : streamMode === "notes" ? "folders" : "all";
+          const Icon = streamMode === "folders" ? FolderIcon : streamMode === "notes" ? FileText : Files;
+          const label = streamMode === "all"
+            ? "Showing all · tap for notes only"
+            : streamMode === "notes"
+              ? "Showing notes only · tap for notable folders only"
+              : "Showing notable folders only · tap for all";
+          return (
+            <button
+              type="button"
+              className={`dock-btn dock-btn-stream-mode is-${streamMode}`}
+              onClick={() => {
+                setStreamMode(() => { writeStreamMode(nextMode); return nextMode; });
+              }}
+              title={label}
+              aria-label={label}
+            >
+              <Icon size={22} strokeWidth={2.1} />
+            </button>
+          );
+        })()}
+        {(() => {
+          // Explicit Home ⇄ Calendar toggle. State is read from
+          // (filters, view); the icon shows where the tap will take
+          // you (the TARGET state), not where you are, so the
+          // affordance reads as a control to act on rather than a
+          // passive status indicator.
           const home = homeFolderRef.current;
           const noFilters = filters.length === 0;
           const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
-          const stateClass = noFilters
-            ? " is-no-filters"
-            : homeFiltered
-              ? " is-at-home"
+          const isAtHome = homeFiltered && view === "stream";
+          const isAtCalendar = noFilters && view === "week";
+          const stateClass = isAtHome
+            ? " is-at-home"
+            : isAtCalendar
+              ? " is-at-calendar"
               : "";
-          const icon = noFilters
-            ? <FilterX size={20} strokeWidth={2.1} />
-            : <HomeIcon size={20} strokeWidth={2.1} />;
-          const tip = noFilters
-            ? "No filters — pick a home view"
-            : homeFiltered
-              ? `At home — ${home}`
-              : home
-                ? `Home — ${home}`
-                : "Home — clear filters";
-          // Single-tap toggle: when already at home, clear all filters;
-          // otherwise, jump to home-only. No popover — the icon swap
-          // (FilterX ⇄ HomeIcon) IS the affordance.
+          // Icon flips between the two destinations:
+          //   - at home → show Calendar icon (tap goes to Calendar)
+          //   - at calendar → show Home icon (tap goes to Home)
+          //   - any other state → tap brings the user home; show Home
+          const TargetIcon = isAtHome ? CalendarRange : HomeIcon;
+          const targetLabel = isAtHome ? "Calendar" : (home ?? "Home");
+          const currentLabel = isAtHome
+            ? `Home${home ? ` — ${home}` : ""}`
+            : isAtCalendar
+              ? "Calendar"
+              : "Custom filter";
+          const tip = `At ${currentLabel} · tap for ${targetLabel}`;
           const toggleHome = () => {
-            setViewMenuOpen(false);
-            if (homeFiltered) resetToDefault();
+            if (isAtHome) resetToDefault();
             else goHome();
           };
-          const ariaLabel = homeFiltered
-            ? "Clear all filters"
-            : (home ? `Filter to home — ${home}` : "Home");
           return (
             <button
               type="button"
               className={"dock-btn dock-btn-home" + stateClass}
               onClick={toggleHome}
               title={tip}
-              aria-label={ariaLabel}
+              aria-label={tip}
             >
-              {icon}
+              <TargetIcon size={20} strokeWidth={2.1} />
             </button>
           );
         })()}
@@ -2484,55 +2471,6 @@ export function CardGrid() {
           {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
         </button>
       </div>
-
-      {/* Tools popup — anchored above the settings dock button. Holds
-          the controls that used to live on the rail (publish, theme,
-          zoom) so the dock stays uncluttered. */}
-      {viewMenuOpen && (() => {
-        // Two independent selections:
-        //   View    — what surface the user is on (stream / day / week
-        //             / month / year). One always-active radio.
-        //   Show    — which notes that surface presents (all / notes /
-        //             notable folders). Applies to BOTH stream and
-        //             calendar surfaces. One always-active radio.
-        // Each pick changes only its own selection so the user can
-        // independently toggle "look at week" vs "look at stream"
-        // without losing their "notes only" preference, and vice versa.
-        const pickStream = (mode: StreamMode) => {
-          setStreamMode(() => { writeStreamMode(mode); return mode; });
-        };
-        const pickView = (v: View) => { setView(v); };
-        const opt = (
-          active: boolean,
-          icon: React.ReactNode,
-          label: string,
-          onClick: () => void,
-        ) => (
-          <button
-            type="button"
-            className={"dock-tools-item" + (active ? " is-on" : "")}
-            onClick={onClick}
-          >
-            {icon}
-            <span>{label}</span>
-            {active && <Check size={12} strokeWidth={2.4} className="dock-tools-check" />}
-          </button>
-        );
-        return (
-          <div className="dock-tools-popup dock-view-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="dock-tools-group-label">View</div>
-            {opt(view === "stream", <Files size={14} strokeWidth={2.1} />, "Stream", () => pickView("stream"))}
-            {opt(view === "day", <CalendarClock size={14} strokeWidth={2.1} />, "Day", () => pickView("day"))}
-            {opt(view === "week", <CalendarRange size={14} strokeWidth={2.1} />, "Week", () => pickView("week"))}
-            {opt(view === "month", <CalendarDays size={14} strokeWidth={2.1} />, "Month", () => pickView("month"))}
-            {opt(view === "year", <CalendarIcon size={14} strokeWidth={2.1} />, "Year", () => pickView("year"))}
-            <div className="dock-tools-group-label">Show</div>
-            {opt(streamMode === "all", <Files size={14} strokeWidth={2.1} />, "All notes + folders", () => pickStream("all"))}
-            {opt(streamMode === "notes", <FileText size={14} strokeWidth={2.1} />, "Notes only", () => pickStream("notes"))}
-            {opt(streamMode === "folders", <FolderIcon size={14} strokeWidth={2.1} />, "Notable folders only", () => pickStream("folders"))}
-          </div>
-        );
-      })()}
 
       {toolsMenuOpen && (
         <div className="dock-tools-popup" role="menu" onMouseDown={(e) => e.stopPropagation()}>
