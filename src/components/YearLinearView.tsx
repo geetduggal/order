@@ -61,6 +61,11 @@ interface Props {
   /** Pointer x/y forwarded so the parent can anchor an action menu at
    *  the click instead of jumping straight into the note. */
   onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
+  /** High-level calendar view picker — surfaced inside the year head
+   *  so users can switch to Day/Week/Month without round-tripping to
+   *  the sidebar. */
+  currentView?: "day" | "week" | "month" | "year";
+  onSelectView?: (v: "day" | "week" | "month" | "year") => void;
 }
 
 interface PositionedEvent {
@@ -151,7 +156,7 @@ export interface YearLinearViewHandle {
 }
 
 export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function YearLinearView(
-  { notes, onMoveEvent, onCreate, onEventClick },
+  { notes, onMoveEvent, onCreate, onEventClick, currentView, onSelectView },
   navRef,
 ) {
   const today = new Date();
@@ -308,6 +313,22 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
           <button className="year-nav-btn" onClick={goNext} title="Next year">›</button>
         </div>
         <h2 className="year-label">{year}</h2>
+        {onSelectView && currentView && (
+          <div className="fc-view-switch year-view-switch" role="tablist" aria-label="Calendar view">
+            {(["day", "week", "month", "year"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={currentView === v}
+                className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
+                onClick={() => onSelectView(v)}
+              >
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           className={"year-allday-toggle" + (allDayOnly ? " is-on" : " is-off")}

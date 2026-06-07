@@ -5263,3 +5263,52 @@ iframe.order-youtube-embed {
   background: var(--bg);
   border-radius: 2px;
 }
+
+/* ---------- Calendar in-shell view picker ---------- */
+/* Sits in the empty right slot of the FC sticky toolbar (or alongside
+   the year label in YearLinearView). Read-as-tabs, sticks to the
+   chrome band so it stays reachable while scrolling. */
+.fc-view-switch {
+  position: sticky;
+  top: var(--fc-safe-top, env(safe-area-inset-top, 0px));
+  z-index: 7;
+  display: inline-flex;
+  gap: 2px;
+  margin: 4px 0 -28px auto;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  width: max-content;
+  align-self: flex-end;
+  justify-self: flex-end;
+}
+.fc-view-tab {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 4px 9px;
+  border-radius: 4px;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.fc-view-tab:hover { color: var(--ink); background: var(--bg-elev); }
+.fc-view-tab.is-on {
+  color: var(--ink);
+  background: var(--royal-soft);
+  font-weight: 500;
+}
+.year-view-switch {
+  position: static;
+  margin: 0 0 0 auto;
+  align-self: center;
+}
+@media (max-width: 768px) {
+  .fc-view-switch {
+    margin: 0 0 4px;
+    align-self: center;
+    top: calc(var(--fc-safe-top, 0px) + 4px);
+  }
+}

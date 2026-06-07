@@ -130,11 +130,12 @@ export function NotableFolderBackside({
   const openFile = useCallback(async (name: string) => {
     const target = `${absPath}/${name}`;
     if (ios) {
-      // Open via the Files app at the file's location. iOS's
-      // shareddocuments:// scheme accepts an absolute path; the
-      // user lands on Files showing the directory with the file
-      // highlighted (when the OS supports it).
-      const url = `shareddocuments://${target.replace(/^\//, "")}`;
+      // iOS Files doesn't expose a "highlight this file" URL — the
+      // shareddocuments:// scheme just opens whichever path it's
+      // given. Passing the file path can drop you into a generic
+      // location. Open the PARENT folder instead so the file is
+      // visible in the directory listing and one tap away.
+      const url = `shareddocuments://${absPath.replace(/^\//, "")}`;
       try { await invoke("open_url", { url }); return; }
       catch (e) { console.error("open via Files failed:", e); }
       return;

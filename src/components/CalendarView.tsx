@@ -45,6 +45,12 @@ interface Props {
    *  next to the click instead of jumping straight into the note. */
   onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
   onCreate?: (patch: Frontmatter) => Promise<void>;
+  /** Currently-active high-level view ("day" | "week" | "month" | "year").
+   *  The in-shell picker uses this for the active-state highlight. */
+  currentView?: "day" | "week" | "month" | "year";
+  /** Switch to a different calendar view. Routed to the parent so
+   *  state stays in CardGrid / ViewerApp. */
+  onSelectView?: (v: "day" | "week" | "month" | "year") => void;
 }
 
 /** Add one day to a `YYYY-MM-DD` string (UTC-safe via the Date ctor).
@@ -402,9 +408,26 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   }
 
   const isWeek = initialView === "timeGridWeek";
+  const { currentView, onSelectView } = props;
 
   return (
     <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}`} ref={shellRef}>
+      {onSelectView && currentView && (
+        <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
+          {(["day", "week", "month", "year"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={currentView === v}
+              className={"fc-view-tab" + (currentView === v ? " is-on" : "")}
+              onClick={() => onSelectView(v)}
+            >
+              {v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       {isWeek && (
         <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">
           {DAY_LABELS.map((label, d) => {

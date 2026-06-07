@@ -2338,15 +2338,19 @@ export function CardGrid() {
 
   // Calendar events carry their folder's color so Week/Month/Year
   // events read at a glance.
-  // Calendar / Year feed: apply the include/exclude folder pile and
-  // the public-only toggle, but DON'T apply the streamMode (Show)
-  // filter. Show is about which cards belong in the Stream — calendar
-  // surfaces are about WHEN things happen, so an event should always
-  // appear if its parent folder passes the pile and its public flag
-  // satisfies the toggle.
+  // Calendar / Year feed: apply the include/exclude folder pile, the
+  // public-only toggle, AND the Show 3-state (all / notes /
+  // notable-folders-only). The dock's left button is now an explicit
+  // one-tap cycle, so applying it everywhere matches user
+  // expectation — what you toggle is what you see, on every surface.
   const calendarNotes: NoteMeta[] = streamCandidates
     .filter(filterMatches)
     .filter((n) => !publicOnly || n.frontmatter.public === true)
+    .filter((n) => {
+      if (streamMode === "all") return true;
+      const isNF = isNotableFolder(n.frontmatter);
+      return streamMode === "notes" ? !isNF : isNF;
+    })
     .map((n) => {
       const f = noteFolder(n.frontmatter);
       return {
@@ -2653,6 +2657,8 @@ export function CardGrid() {
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
             onCreate={promptCreate}
+            currentView="day"
+            onSelectView={setView}
           />
         )}
         {view === "week" && (
@@ -2664,6 +2670,8 @@ export function CardGrid() {
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
             onCreate={promptCreate}
+            currentView="week"
+            onSelectView={setView}
           />
         )}
         {view === "month" && (
@@ -2675,6 +2683,8 @@ export function CardGrid() {
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
             onCreate={promptCreate}
+            currentView="month"
+            onSelectView={setView}
           />
         )}
         {view === "year" && (
@@ -2685,6 +2695,8 @@ export function CardGrid() {
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
             onCreate={promptCreate}
+            currentView="year"
+            onSelectView={setView}
           />
         )}
       </main>

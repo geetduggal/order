@@ -21,14 +21,6 @@ import type { Frontmatter } from "../lib/frontmatter";
 
 export type View = "stream" | "day" | "week" | "month" | "year";
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: "stream", label: "Stream" },
-  { id: "day", label: "Day" },
-  { id: "week", label: "Week" },
-  { id: "month", label: "Month" },
-  { id: "year", label: "Year" },
-];
-
 const MAX_SLOTS = 10;
 const NO_AREA = "(unassigned)";
 const NO_CATEGORY = "(uncategorized)";
@@ -230,21 +222,10 @@ export function Sidebar({
   return (
     <aside className="pane-right">
       {header && <section className="sb-section sb-header-slot">{header}</section>}
-      <section className="sb-section">
-        <h2 className="sb-title">View</h2>
-        <div className="view-switch">
-          {VIEWS.map((v) => (
-            <button
-              type="button"
-              key={v.id}
-              className={view === v.id ? "active" : ""}
-              onClick={() => onSelectView(v.id)}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
-      </section>
+      {/* View picker is in the calendar surface itself now; Sidebar
+          stays focused on the taxonomy + filter pile. The view prop
+          is still threaded so callers don't need to know we moved
+          the UI. */}
       {filters && <section className="sb-section sb-filters-slot">{filters}</section>}
 
       <section className="sb-section sb-filters">

@@ -394,21 +394,20 @@ export function ViewerApp(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.notes, hidden, filters, focusedFolder, streamMode]);
 
-  // Calendar projection from the same filtered set.
-  // Calendar feed bypasses streamMode (Show: all/notes/folders) so
-  // the calendar always shows every dated note that passes the folder
-  // pile. Show is a Stream concept — a "what to render as cards"
-  // toggle — but a calendar is about WHEN things happen and should
-  // surface every dated event regardless of NF-vs-regular.
+  // Calendar projection from the same filtered set. The Show 3-state
+  // toggle now applies here too so the dock's left button drives
+  // both the Stream and the calendar.
   const calendarFeed = useMemo(
     () => data.notes.filter((n) => {
       if (hidden.has(n.ref.toLowerCase())) return false;
       if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
+      if (streamMode === "notes" && !!n.category) return false;
+      if (streamMode === "folders" && !n.category) return false;
       return true;
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.notes, hidden, filters],
+    [data.notes, hidden, filters, streamMode],
   );
   const calendarNotes: NoteMeta[] = useMemo(
     () => calendarFeed.map((n) => ({
@@ -678,19 +677,23 @@ export function ViewerApp(
         )}
         {view === "day" && (
           <CalendarView key="day" notes={calendarNotes} initialView="timeGridDay"
-            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop}
+            currentView="day" onSelectView={(v) => setView(v)} />
         )}
         {view === "week" && (
           <CalendarView key="week" notes={calendarNotes} initialView="timeGridWeek"
-            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop}
+            currentView="week" onSelectView={(v) => setView(v)} />
         )}
         {view === "month" && (
           <CalendarView key="month" notes={calendarNotes} initialView="dayGridMonth"
-            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop}
+            currentView="month" onSelectView={(v) => setView(v)} />
         )}
         {view === "year" && (
           <YearLinearView key="year" notes={calendarNotes}
-            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop} />
+            onMoveEvent={noop} onEventClick={onEventClick} onCreate={noop}
+            currentView="year" onSelectView={(v) => setView(v)} />
         )}
       </main>
 
