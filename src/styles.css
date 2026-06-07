@@ -2606,22 +2606,29 @@ iframe.order-youtube-embed {
   cursor: pointer;
 }
 .year-cell:hover:not(.empty) {
-  background: rgba(232, 240, 254, 0.4);
+  background: var(--royal-soft);
 }
 .year-cell.empty {
   background: var(--rule-soft);
   opacity: 0.4;
   cursor: default;
 }
+/* Weekend tint: ink at very low alpha so it darkens on light themes
+   and brightens on dark themes without ever clashing — the same
+   surface acts as both shading and theme indicator. */
 .year-cell.weekend:not(.empty) {
-  background: rgba(244, 243, 241, 0.55);
+  background: color-mix(in srgb, var(--ink) 6%, var(--bg));
 }
+/* Today: full coral fill + coral inner ring + bold inverse day
+   number. Reads from across the year strip at a glance, in every
+   theme, including when the cell is also a weekend. */
 .year-cell.today {
-  background: var(--coral-soft);
+  background: var(--coral) !important;
+  box-shadow: inset 0 0 0 2px var(--coral);
 }
 .year-cell.today .year-cell-day {
-  color: var(--coral);
-  font-weight: 600;
+  color: #fff;
+  font-weight: 700;
 }
 
 /* Drag-to-create preview band. Overrides weekend / today shading
