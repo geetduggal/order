@@ -473,24 +473,25 @@ pub fn open_path(
     #[allow(unused_variables)] app: tauri::AppHandle,
     path: String,
 ) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
-        return Err(format!("not found: {path}"));
-    }
-    // iOS: route through the vault plugin's openFile, which presents
-    // a UIDocumentInteractionController "open with..." sheet so the
-    // user picks the default app for the file's type (Preview /
-    // Photos / Files / etc.). shareddocuments:// can't focus on a
-    // specific file in Files, so this is the only path that actually
-    // surfaces the chosen file rather than dumping the user at the
-    // app's root.
+    // iOS: route through the vault plugin's openFile (presents the
+    // standard share sheet for whatever app handles the file's type).
+    // Skip the std::fs exists() check here — the security-scoped
+    // bookmark grants access via Swift, but Rust's path probing can
+    // race with the sandbox lookup and return false even for a file
+    // that's perfectly readable. The Swift side handles a missing
+    // path with a logged no-op, which is what we want.
     #[cfg(target_os = "ios")]
     {
+        eprintln!("[vault] open_path → open_file path={}", path);
         use tauri_plugin_vault::VaultExt;
         return app.vault().open_file(path).map_err(|e| e.to_string());
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let p = std::path::Path::new(&path);
+        if !p.exists() {
+            return Err(format!("not found: {path}"));
+        }
         #[cfg(target_os = "macos")]
         let result = std::process::Command::new("open").arg(&path).spawn();
         #[cfg(target_os = "linux")]
