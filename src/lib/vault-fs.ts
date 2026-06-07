@@ -60,6 +60,24 @@ export function consumeSelfWrite(absOrRel: string): boolean {
   return false;
 }
 
+// ----- Per-path last-known body cache -----
+// CardGrid loads leaf bodies lazily (notes[].body === "" for unloaded
+// leaves), so the content-aware change detector can't compare disk
+// content against the right baseline by reading notesRef alone. The
+// Card pushes its current body into this cache on mount and after
+// save; the watcher then reads from it to tell a real external edit
+// from a Dropbox / iCloud touch.
+const knownBodies = new Map<string, string>();
+export function markKnownBody(path: string, body: string): void {
+  knownBodies.set(path, body);
+}
+export function readKnownBody(path: string): string | undefined {
+  return knownBodies.get(path);
+}
+export function forgetKnownBody(path: string): void {
+  knownBodies.delete(path);
+}
+
 export const vaultFs = {
   setRoot: (path: string) => invoke<void>("vault_set_root", { path }),
   isIos: () => invoke<boolean>("vault_is_ios"),

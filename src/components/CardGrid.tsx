@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
-import { vaultFs, consumeSelfWrite } from "../lib/vault-fs";
+import { vaultFs, consumeSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
 import { LazyCell } from "./LazyCell";
@@ -739,14 +739,20 @@ export function CardGrid() {
     async function bodyActuallyChanged(path: string): Promise<boolean> {
       try {
         const raw = await vaultFs.readText(toVaultRel(path));
+        const split = splitFrontmatter(raw);
+        // Prefer the per-path cache (populated by every Card mount +
+        // save) over notesRef, which never gets leaf-note bodies
+        // updated after the initial frontmatter walk.
+        const cached = readKnownBody(path);
+        if (cached !== undefined) {
+          if (split.body === cached) return false;
+          // Refresh the cache to the latest known content so a second
+          // touch on the same now-current body short-circuits.
+          markKnownBody(path, split.body);
+          return true;
+        }
         const inMem = notesRef.current?.find((n) => n.path === path);
         if (!inMem) return true; // new file the index doesn't know yet
-        const split = splitFrontmatter(raw);
-        // Loaded-on-demand leaf notes have inMem.body === "" because
-        // bodies are read by Card on mount, not eagerly. Treat that as
-        // "unknown" — accept the change so the Card remounts with the
-        // current disk contents instead of comparing against an empty
-        // baseline (which would falsely flag every sync touch).
         if (inMem.body === "" && split.body !== "") return true;
         return split.body !== inMem.body;
       } catch {
@@ -2602,13 +2608,15 @@ export function CardGrid() {
               <div className="card-grid" ref={setGridEl}>
                 {sortedNotes.map((n) => {
                   // Per-Card external-change version is folded into the key:
-                  // a true external edit (not one of our own writes) bumps it,
-                  // remounting the Card with fresh content from disk. Same-id
-                  // reloads (chain mutations, our autosaves) keep the same key
-                  // and don't remount. The focused card is held stable across
-                  // version bumps so editing it isn't interrupted by sync.
+                  // a true external edit (not one of our own writes) bumps
+                  // it, remounting the Card with fresh content from disk.
+                  // The per-path body cache in vault-fs.ts ensures the
+                  // version only bumps when content TRULY differs, so the
+                  // focused card no longer needs special remount protection
+                  // — Dropbox / iCloud touches that don't change content
+                  // are filtered upstream.
                   const v = externalChangeVersion[n.path] ?? 0;
-                  const key = n.path === focusedPath ? n.id : `${n.id}:${v}`;
+                  const key = `${n.id}:${v}`;
                   return (
                     <LazyCell
                       key={key}

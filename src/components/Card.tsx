@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { dirname, join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot, toVaultRel } from "../lib/vault";
-import { vaultFs } from "../lib/vault-fs";
+import { vaultFs, markKnownBody } from "../lib/vault-fs";
 import { MilkdownSurface } from "./MilkdownSurface";
 import {
   basenameForEvent,
@@ -437,6 +437,10 @@ export function Card(props: Props) {
           const split = splitFrontmatter(raw);
           frontmatter = split.frontmatter;
           body = split.body;
+          // Seed the per-path body cache so the watcher can tell a
+          // real external edit from a Dropbox / iCloud touch on a
+          // leaf note (CardGrid's notes[].body stays "" for leaves).
+          markKnownBody(initialPath, body);
           // Strip the `---` fence lines for display in the YAML peek
           // popover — the panel header already implies "frontmatter".
           rawFm = split.raw.replace(/^---\r?\n/, "").replace(/\r?\n---\r?\n?$/, "");
@@ -566,6 +570,11 @@ export function Card(props: Props) {
       );
       const content = joinFrontmatter(outFrontmatter, persistedBody);
       await vaultFs.writeText(toVaultRel(path), content);
+      // Update the per-path body cache so a notify event triggered by
+      // our own write (within the self-write TTL but possibly outside
+      // it after slow-sync delays) is correctly identified as a
+      // no-op when the on-disk content matches what we just wrote.
+      markKnownBody(path, persistedBody);
 
       // Auto-rename whenever the body's first line of text changes —
       // heading or not. firstLineTitle strips leading markdown markers
