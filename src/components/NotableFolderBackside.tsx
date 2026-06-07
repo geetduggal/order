@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ArrowDownAZ, Clock4, FolderOpen, Terminal, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
 import { vaultFs, type VaultDirEntryStat } from "../lib/vault-fs";
+import { isIosSync } from "../lib/vault";
 
 type SortMode = "name" | "mtime";
 
@@ -125,16 +126,37 @@ export function NotableFolderBackside({
     return xs;
   }, [entries, sort]);
 
+  const ios = isIosSync();
   const openFile = useCallback(async (name: string) => {
-    const target = folderRel ? `${absPath}/${name}` : `${absPath}/${name}`;
+    const target = `${absPath}/${name}`;
+    if (ios) {
+      // Open via the Files app at the file's location. iOS's
+      // shareddocuments:// scheme accepts an absolute path; the
+      // user lands on Files showing the directory with the file
+      // highlighted (when the OS supports it).
+      const url = `shareddocuments://${target.replace(/^\//, "")}`;
+      try { await invoke("open_url", { url }); return; }
+      catch (e) { console.error("open via Files failed:", e); }
+      return;
+    }
     try { await invoke("open_path", { path: target }); }
     catch (e) { console.error("open_path failed:", e); }
-  }, [absPath, folderRel]);
+  }, [absPath, ios]);
 
   const revealFolder = useCallback(async () => {
+    if (ios) {
+      // iOS Files app accepts a shareddocuments:// URL that points to
+      // the same location as the absolute filesystem path (the
+      // security-scoped bookmark's resolved path). Stripping the
+      // leading slash yields the path the URL scheme expects.
+      const url = `shareddocuments://${absPath.replace(/^\//, "")}`;
+      try { await invoke("open_url", { url }); }
+      catch (e) { console.error("open Files failed:", e); }
+      return;
+    }
     try { await invoke("reveal_path", { path: absPath }); }
     catch (e) { console.error("reveal_path failed:", e); }
-  }, [absPath]);
+  }, [absPath, ios]);
 
   const openTerminal = useCallback(async () => {
     try { await invoke("open_terminal", { path: absPath }); }
@@ -255,18 +277,20 @@ export function NotableFolderBackside({
             type="button"
             className="nf-flip-tool"
             onClick={() => { void revealFolder(); }}
-            title="Reveal folder in Finder"
+            title={ios ? "Open in Files" : "Reveal folder in Finder"}
           >
             <FolderOpen size={13} strokeWidth={2.2} />
           </button>
-          <button
-            type="button"
-            className="nf-flip-tool"
-            onClick={() => { void openTerminal(); }}
-            title="Open in Terminal"
-          >
-            <Terminal size={13} strokeWidth={2.2} />
-          </button>
+          {!ios && (
+            <button
+              type="button"
+              className="nf-flip-tool"
+              onClick={() => { void openTerminal(); }}
+              title="Open in Terminal"
+            >
+              <Terminal size={13} strokeWidth={2.2} />
+            </button>
+          )}
           <button
             type="button"
             className="nf-flip-back"
