@@ -90,6 +90,16 @@ export function vaultDir(relPath: string): string {
 // survives the round-trip.
 const IMG_EMBED_RE = /!\[\[\s*([^\]\n|]+?)\s*(?:\|\s*([^\]\n]*?)\s*)?\]\]/g;
 
+// Bare `[[file.png]]` — wikilink form (NO `!` prefix). Some import
+// pipelines (Apple Notes export, Readwise, etc.) emit this thinking it
+// will render inline; Obsidian treats it as a regular link instead. We
+// upgrade any bare wikilink whose target has an image / video extension
+// to the embed form so the picture renders in place. Plain note-name
+// wikilinks (`[[Some Note]]`) skip because they don't carry an image
+// extension. The leading negative lookbehind guards against double-
+// matching the `[[` that already follows a `!` from the embed form.
+const BARE_MEDIA_WIKI_RE = /(?<!!)\[\[\s*([^\]\n|]+?\.(?:png|jpe?g|gif|webp|svg|avif|bmp|tiff?|heic|heif|mov|mp4|m4v|webm))\s*(?:\|\s*([^\]\n]*?)\s*)?\]\]/gi;
+
 // Crepe stores image size as a container-relative `ratio` (in the image's
 // alt); Obsidian stores an absolute pixel width. We bridge with
 // width = round(ratio * REF) on save and ratio = width / REF on load. The
@@ -113,6 +123,11 @@ export function parseEmbedWidth(token: string | undefined): number | null {
  *  left untouched. */
 export function inflateImageEmbeds(body: string, noteDir: string): string {
   const dir = noteDir ? `${noteDir.replace(/\/+$/, "")}/` : "";
+  // First pass: upgrade bare wikilinks pointing at media files to the
+  // embed form so the second pass (`![[…]]` → vaultasset URL) catches
+  // them too. Inside fenced code blocks, leave the source verbatim so
+  // a literal `[[image.png]]` snippet doesn't get rewritten.
+  body = upgradeBareMediaWikilinks(body);
   return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
     const target = name.trim();
     if (isVideoPath(target)) {
@@ -135,6 +150,26 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
     const alt = size?.trim() ?? "";
     return alt ? `![${alt}](${url})` : `![](${url})`;
   });
+}
+
+/** Rewrites every bare `[[file.png]]` outside fenced code into the
+ *  embed form `![[file.png]]`. Skips code fences so a literal source-
+ *  code excerpt isn't rewritten. */
+function upgradeBareMediaWikilinks(body: string): string {
+  const out: string[] = [];
+  let inFence = false;
+  for (const line of body.split("\n")) {
+    if (/^```/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) { out.push(line); continue; }
+    out.push(line.replace(BARE_MEDIA_WIKI_RE, (_full, name: string, size?: string) =>
+      size ? `![[${name}|${size}]]` : `![[${name}]]`,
+    ));
+  }
+  return out.join("\n");
 }
 
 /** Image AND video filenames referenced by `![[file]]` embeds (same-
