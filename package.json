@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && pnpm build:viewer && rm -rf dist/dist-viewer && cp -R dist-viewer dist/dist-viewer",
     "build:viewer": "vite build --config vite.viewer.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
