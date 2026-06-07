@@ -41,20 +41,36 @@ pub struct CommitFile {
     pub bytes: Vec<u8>,
 }
 
+/// Convert a ureq response (success OR error) into (status, body).
+/// On a 4xx/5xx the body has GitHub's structured error message, which
+/// is exactly what we need to surface — ureq's Error::Status holds
+/// the response so we don't lose it on non-2xx.
+fn drain(result: Result<ureq::Response, ureq::Error>) -> Result<(u16, String), String> {
+    match result {
+        Ok(resp) => {
+            let status = resp.status();
+            let body = resp.into_string().map_err(|e| format!("read body: {e}"))?;
+            Ok((status, body))
+        }
+        Err(ureq::Error::Status(status, resp)) => {
+            let body = resp.into_string().unwrap_or_default();
+            Ok((status, body))
+        }
+        Err(other) => Err(format!("transport: {other}")),
+    }
+}
+
 fn get(url: &str, token: &str) -> Result<Value, String> {
-    let body = agent().get(url)
+    let resp = agent().get(url)
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
-        // ureq 2's json feature doesn't pull in gzip — if GitHub
-        // sends a compressed response (which it sometimes does
-        // unbidden) the body decodes as binary garbage. Asking for
-        // identity encoding skips the trip altogether.
         .set("Accept-Encoding", "identity")
-        .call()
-        .map_err(|e| format!("GET {url}: {e}"))?
-        .into_string()
-        .map_err(|e| format!("GET {url} read: {e}"))?;
+        .call();
+    let (status, body) = drain(resp).map_err(|e| format!("GET {url}: {e}"))?;
+    if !(200..300).contains(&status) {
+        return Err(format!("GET {url}: status {status}; body: {body}"));
+    }
     serde_json::from_str(&body).map_err(|e| format!("GET {url} decode: {e}; body: {body}"))
 }
 
@@ -65,15 +81,16 @@ fn send(method: &str, url: &str, token: &str, body: Value) -> Result<Value, Stri
         "PATCH" => a.request("PATCH", url),
         other => return Err(format!("unsupported method {other}")),
     };
-    let response_body = req
+    let resp = req
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
         .set("Accept-Encoding", "identity")
-        .send_json(body)
-        .map_err(|e| format!("{method} {url}: {e}"))?
-        .into_string()
-        .map_err(|e| format!("{method} {url} read: {e}"))?;
+        .send_json(body);
+    let (status, response_body) = drain(resp).map_err(|e| format!("{method} {url}: {e}"))?;
+    if !(200..300).contains(&status) {
+        return Err(format!("{method} {url}: status {status}; body: {response_body}"));
+    }
     serde_json::from_str(&response_body)
         .map_err(|e| format!("{method} {url} decode: {e}; body: {response_body}"))
 }
