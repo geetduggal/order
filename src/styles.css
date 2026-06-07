@@ -5196,3 +5196,70 @@ iframe.order-youtube-embed {
   padding: 0 2px;
   border-radius: 2px;
 }
+
+/* ---------- Publish panel · iOS auth ---------- */
+.publish-ios {
+  margin: 12px 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.publish-ios-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.publish-ios-row:last-child { margin-bottom: 0; }
+.publish-ios-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.publish-ios-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+}
+.publish-ios-help:hover { color: var(--royal); background: var(--royal-soft); }
+.publish-ios-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.publish-ios-input:focus { border-color: var(--royal); }
+.publish-ios-help-text {
+  margin: 4px 0 8px;
+  padding: 8px;
+  border-left: 2px solid var(--royal);
+  background: var(--royal-soft);
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.publish-ios-help-text a { color: var(--royal); text-decoration: underline; }
+.publish-ios-help-text code {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 3px;
+  background: var(--bg);
+  border-radius: 2px;
+}

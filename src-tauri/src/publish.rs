@@ -10,6 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(target_os = "ios")]
+use crate::publish_ios;
 
 const CLONES_SUBDIR: &str = "publish-clones";
 
@@ -31,6 +33,16 @@ pub struct PublishInput {
     /// Same-folder note images to copy next to their published page.
     #[serde(default)]
     pub assets: Vec<AssetCopy>,
+    /// GitHub Personal Access Token. Required on iOS (no `git` CLI in
+    /// the sandbox) so the HTTP-based publisher in publish_ios.rs can
+    /// authenticate. Optional on desktop where the local git auth is
+    /// used by `git clone / git push`.
+    #[serde(default)]
+    pub github_token: Option<String>,
+    /// Optional commit message override (UI affordance for iOS, where
+    /// the user types it inline). When None, a Unix timestamp is used.
+    #[serde(default)]
+    pub commit_message: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -165,6 +177,14 @@ fn publish_site_inner(
     let (user, repo, sub) = parse_target(&input.home_target)?;
     let repo_url = format!("https://github.com/{}/{}.git", user, repo);
 
+    // iOS has no `git` CLI in the sandbox; route through the HTTP
+    // commit path. Token is required up front and surfaced to the
+    // user via PublishPanel.
+    #[cfg(target_os = "ios")]
+    {
+        return publish_via_http(app, input);
+    }
+    #[cfg_attr(target_os = "ios", allow(unreachable_code))]
     let app_dir = app
         .path()
         .app_data_dir()
@@ -322,4 +342,131 @@ fn publish_site_inner(
         commit_message: commit_msg,
         had_changes: true,
     })
+}
+
+/// iOS publish via the GitHub HTTP commit API. Same data shape as the
+/// desktop path: the JS side serializes the viewer bundle (or we
+/// resolve it from a bundled resource dir), writes pages + data.json
+/// + assets, and we POST one commit to the user's repo. Falls back
+/// to a clear error if the token is missing — PublishPanel surfaces
+/// the message inline.
+#[cfg(target_os = "ios")]
+fn publish_via_http(
+    _app: tauri::AppHandle,
+    input: PublishInput,
+) -> Result<PublishResult, String> {
+    let token = input.github_token.as_deref().filter(|t| !t.is_empty()).ok_or(
+        "A GitHub Personal Access Token is required to publish from iOS. Tap the i icon next to the token field for how to create one.",
+    )?;
+    let (user, repo, sub) = parse_target(&input.home_target)?;
+    let repo_url = format!("https://github.com/{}/{}.git", user, repo);
+
+    // Determine viewer bundle location. The frontend hands us the
+    // path of dist-viewer/, which on iOS is shipped as a Tauri
+    // resource in the app bundle.
+    let bundle = std::path::PathBuf::from(&input.viewer_bundle_path);
+    if !bundle.join("index.html").is_file() {
+        return Err(format!(
+            "viewer bundle not found at {} — publishing from iOS needs the bundle inside the app",
+            bundle.display(),
+        ));
+    }
+
+    // Walk the bundle into commit files keyed at `<sub>/...`.
+    let mut files: Vec<publish_ios::CommitFile> = Vec::new();
+    walk_into_files(&bundle, &sub, &mut files)?;
+
+    // Inject data.json.
+    files.push(publish_ios::CommitFile {
+        path: format!("{}/data.json", sub),
+        bytes: input.data_json.as_bytes().to_vec(),
+    });
+
+    // Same-folder note assets.
+    for asset in &input.assets {
+        let src = std::path::PathBuf::from(&input.vault_path).join(&asset.from);
+        if !src.is_file() { continue; }
+        if let Ok(bytes) = std::fs::read(&src) {
+            files.push(publish_ios::CommitFile {
+                path: format!("{}/{}", sub, asset.to),
+                bytes,
+            });
+        }
+    }
+
+    // Prerendered pages — same shell-template substitution as desktop.
+    if !input.pages.is_empty() {
+        let shell_bytes = std::fs::read_to_string(bundle.join("index.html"))
+            .map_err(|e| format!("read bundle index.html: {e}"))?;
+        let root_abs = format!("/{}/", sub);
+        let shell = shell_bytes
+            .replace("./assets/", &format!("{}assets/", root_abs))
+            .replace("./data.json", &format!("{}data.json", root_abs))
+            .replace("href=\"./", &format!("href=\"{}", root_abs));
+        let data_url = format!("{}data.json", root_abs);
+        for page in &input.pages {
+            let slug = page.path.trim_end_matches("/index.html");
+            let order_global = format!(
+                "<script>window.__ORDER__={{\"slug\":{},\"dataUrl\":{}}}</script>",
+                serde_json::to_string(slug).unwrap_or_else(|_| "\"\"".into()),
+                serde_json::to_string(&data_url).unwrap_or_else(|_| "\"\"".into()),
+            );
+            let injected = format!(
+                "<div id=\"viewer-root\"><article class=\"prerendered\">{}</article></div>{}",
+                page.content_html, order_global,
+            );
+            let title_tag = format!(
+                "<title>{}</title>",
+                page.title.replace('<', "&lt;").replace('>', "&gt;"),
+            );
+            let html = shell
+                .replacen("<div id=\"viewer-root\"></div>", &injected, 1)
+                .replacen("<title>Order</title>", &title_tag, 1);
+            files.push(publish_ios::CommitFile {
+                path: format!("{}/{}", sub, page.path),
+                bytes: html.into_bytes(),
+            });
+        }
+    }
+
+    let commit_msg = input.commit_message.clone().unwrap_or_else(|| format!("Publish: {}", timestamp_label()));
+    let branch = "main".to_string();
+    publish_ios::commit_files(&user, &repo, &branch, token, &commit_msg, &files)
+        .map_err(|e| format!("GitHub commit failed: {e}"))?;
+
+    Ok(PublishResult {
+        repo_url,
+        branch,
+        pushed_to: format!("{}/{}/{}", user, repo, sub),
+        commit_message: commit_msg,
+        had_changes: true,
+    })
+}
+
+#[cfg(target_os = "ios")]
+fn walk_into_files(
+    root: &std::path::Path,
+    prefix: &str,
+    out: &mut Vec<publish_ios::CommitFile>,
+) -> Result<(), String> {
+    fn inner(dir: &std::path::Path, base: &std::path::Path, prefix: &str, out: &mut Vec<publish_ios::CommitFile>) -> Result<(), String> {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let p = entry.path();
+            if p.is_dir() {
+                inner(&p, base, prefix, out)?;
+            } else if p.is_file() {
+                let rel = p.strip_prefix(base).map_err(|e| e.to_string())?;
+                let path = if prefix.is_empty() {
+                    rel.to_string_lossy().to_string()
+                } else {
+                    format!("{}/{}", prefix, rel.to_string_lossy())
+                };
+                let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+                out.push(publish_ios::CommitFile { path, bytes });
+            }
+        }
+        Ok(())
+    }
+    inner(root, root, prefix, out)
 }

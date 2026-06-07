@@ -959,7 +959,7 @@ export function CardGrid() {
    *  clone → write → commit → push dance. Called by PublishPanel
    *  when the user confirms. Resolves with the Rust outcome (errors
    *  string-flow back to the panel which surfaces them inline). */
-  const handlePublish = useCallback(async (home: HomeFolder): Promise<PublishOutcome> => {
+  const handlePublish = useCallback(async (home: HomeFolder, extras?: { githubToken?: string; commitMessage?: string }): Promise<PublishOutcome> => {
     if (!notes) throw "Notes not loaded";
     // Re-read every note fresh from disk before building the payload.
     // CardGrid's in-memory `notes[].body` is only set at load time —
@@ -1028,6 +1028,8 @@ export function CardGrid() {
         pages,
         // Same-folder images to copy next to each note's published page.
         assets,
+        github_token: extras?.githubToken,
+        commit_message: extras?.commitMessage,
       },
     });
   }, [notes]);

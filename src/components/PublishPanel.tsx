@@ -5,7 +5,8 @@
 // Phase 3).
 
 import { useEffect, useMemo, useState } from "react";
-import { X as XIcon } from "lucide-react";
+import { X as XIcon, Info } from "lucide-react";
+import { isIosSync } from "../lib/vault";
 
 export interface PublishableNote {
   filename: string;       // no .md
@@ -35,11 +36,23 @@ interface Props {
   publishableNotes: PublishableNote[];
   /** Kicks off the build + push for a chosen home. Resolves with the
    *  Rust-side outcome; rejects with a string error message. */
-  onPublish: (home: HomeFolder) => Promise<PublishOutcome>;
+  onPublish: (home: HomeFolder, extras: { githubToken?: string; commitMessage?: string }) => Promise<PublishOutcome>;
   onClose: () => void;
 }
 
+const TOKEN_KEY = "order.githubToken";
+
 export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Props) {
+  const ios = isIosSync();
+  const [token, setToken] = useState<string>(() => {
+    try { return localStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; }
+  });
+  const [commitMsg, setCommitMsg] = useState<string>("");
+  const [tokenHelpOpen, setTokenHelpOpen] = useState(false);
+  function persistToken(next: string) {
+    setToken(next);
+    try { localStorage.setItem(TOKEN_KEY, next); } catch { /* non-fatal */ }
+  }
   const [selectedHome, setSelectedHome] = useState<string | null>(
     homes[0]?.name ?? null,
   );
@@ -65,9 +78,16 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
 
   async function runPublish() {
     if (!current) return;
+    if (ios && !token.trim()) {
+      setStatus({ kind: "error", message: "A GitHub Personal Access Token is required for iOS publishing." });
+      return;
+    }
     setStatus({ kind: "publishing" });
     try {
-      const outcome = await onPublish(current);
+      const outcome = await onPublish(current, {
+        githubToken: token.trim() || undefined,
+        commitMessage: commitMsg.trim() || undefined,
+      });
       setStatus({ kind: "ok", outcome });
     } catch (err) {
       setStatus({ kind: "error", message: typeof err === "string" ? err : (err instanceof Error ? err.message : String(err)) });
@@ -150,6 +170,59 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
               </ul>
             )}
 
+            {ios && (
+              <div className="publish-ios">
+                <div className="publish-ios-row">
+                  <label className="publish-ios-label" htmlFor="publish-token">
+                    GitHub token
+                    <button
+                      type="button"
+                      className="publish-ios-help"
+                      onClick={() => setTokenHelpOpen((o) => !o)}
+                      title="How to create a token"
+                      aria-label="How to create a token"
+                    >
+                      <Info size={12} strokeWidth={2.2} />
+                    </button>
+                  </label>
+                  <input
+                    id="publish-token"
+                    type="password"
+                    className="publish-ios-input"
+                    value={token}
+                    placeholder="ghp_…"
+                    onChange={(e) => persistToken(e.target.value)}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                </div>
+                {tokenHelpOpen && (
+                  <div className="publish-ios-help-text">
+                    Create a fine-grained token at{" "}
+                    <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">
+                      github.com/settings/personal-access-tokens
+                    </a>{" "}
+                    with <strong>Repository · Contents · Read &amp; Write</strong>{" "}
+                    permissions on{" "}
+                    <code>{current.target.split("/").slice(0, 2).join("/")}</code>.
+                    Paste it above — Order stores it in this device's local
+                    storage so you only need to enter it once.
+                  </div>
+                )}
+                <div className="publish-ios-row">
+                  <label className="publish-ios-label" htmlFor="publish-commit">Commit message</label>
+                  <input
+                    id="publish-commit"
+                    type="text"
+                    className="publish-ios-input"
+                    value={commitMsg}
+                    placeholder="Publish from iOS"
+                    onChange={(e) => setCommitMsg(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
             <div className="publish-actions">
               {status.kind === "ok" && (
                 <span className="publish-status is-ok">
