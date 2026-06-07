@@ -5315,3 +5315,75 @@ iframe.order-youtube-embed {
     width: max-content;
   }
 }
+
+/* ---------- Notable Folder "Notable update" affordance ---------- */
+/* A small subtle button at the top of an NF Main Doc card. Tap to
+   expand a one-line input; submit creates a new all-day note in the
+   folder dated today. Sits above the editor body, padded to match. */
+.nf-update-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 3px 10px;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out),
+              border-color 0.12s var(--ease-out),
+              background-color 0.12s var(--ease-out);
+}
+.nf-update-toggle:hover {
+  color: var(--coral);
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+.nf-update-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--coral);
+  border-radius: 4px;
+  background: var(--coral-soft);
+}
+.nf-update-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+.nf-update-save,
+.nf-update-cancel {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.nf-update-save {
+  text-transform: uppercase;
+  background: var(--coral);
+  color: #fff;
+}
+.nf-update-save:disabled { opacity: 0.4; cursor: not-allowed; }
+.nf-update-cancel {
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 8px;
+}
+.nf-update-cancel:hover { color: var(--ink); }

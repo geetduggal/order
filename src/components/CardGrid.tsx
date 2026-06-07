@@ -2258,6 +2258,19 @@ export function CardGrid() {
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
         onDelete={(path) => handleCardDelete(n.id, path)}
+        onCreateUpdate={isMain ? async (description) => {
+          // Notable Update: stamp an all-day note in this folder for
+          // today with the description as both the H1 title and the
+          // body lead. Filename: "<date> <description>.md", same
+          // shape as the calendar quick-create.
+          const title = description.trim().slice(0, 120);
+          await createNote({
+            date: isoDate(),
+            allDay: true,
+            folder: `[[${ref}]]`,
+            title,
+          });
+        } : undefined}
       />
     );
   };

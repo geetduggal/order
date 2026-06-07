@@ -178,6 +178,11 @@ interface Props {
    *  coral highlight back to a hairline once a folder is no longer
    *  novel, so unvisited NF covers stand out and visited ones recede. */
   visited?: boolean;
+  /** Notable Folder Main Documents only: when present, the card
+   *  surfaces a "Notable Update" affordance at the top of the body.
+   *  Tapping it expands a short prompt; submitting creates a new
+   *  all-day note in the folder dated today with the user's text. */
+  onCreateUpdate?: (description: string) => Promise<void> | void;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -324,6 +329,7 @@ export function Card(props: Props) {
     readOnly,
     capHeight,
     permalink,
+    onCreateUpdate,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -968,6 +974,9 @@ export function Card(props: Props) {
           onFlipBack={() => setFlipped(false)}
         />
       )}
+      {isMainDoc && !readOnly && !flipped && onCreateUpdate && (
+        <NotableUpdateBar onSubmit={onCreateUpdate} />
+      )}
       <div
         className="order-card-content"
         ref={contentRef}
@@ -1251,5 +1260,80 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
         document.body,
       )}
     </span>
+  );
+}
+
+/** "Notable Update" affordance shown at the top of a Notable Folder
+ *  Main Document's body. Tap to expand a short prompt; Enter (or Save)
+ *  hands the description back to the parent which creates a new all-day
+ *  note dated today in the folder. Esc cancels. */
+function NotableUpdateBar({ onSubmit }: { onSubmit: (description: string) => Promise<void> | void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => inputRef.current?.focus());
+  }, [open]);
+
+  async function commit() {
+    const t = text.trim();
+    if (!t) { setOpen(false); return; }
+    setBusy(true);
+    try { await onSubmit(t); }
+    finally {
+      setBusy(false);
+      setText("");
+      setOpen(false);
+    }
+  }
+  function cancel() { setText(""); setOpen(false); }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="nf-update-toggle"
+        onClick={() => setOpen(true)}
+        title="Log a brief update for this folder as an all-day note"
+      >
+        + Notable update
+      </button>
+    );
+  }
+  return (
+    <div className="nf-update-bar">
+      <input
+        ref={inputRef}
+        type="text"
+        className="nf-update-input"
+        placeholder="Brief description…"
+        value={text}
+        disabled={busy}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); void commit(); }
+          if (e.key === "Escape") { e.preventDefault(); cancel(); }
+        }}
+      />
+      <button
+        type="button"
+        className="nf-update-save"
+        onClick={() => { void commit(); }}
+        disabled={busy || !text.trim()}
+      >
+        {busy ? "…" : "Save"}
+      </button>
+      <button
+        type="button"
+        className="nf-update-cancel"
+        onClick={cancel}
+        disabled={busy}
+        aria-label="Cancel"
+      >
+        ×
+      </button>
+    </div>
   );
 }
