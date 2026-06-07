@@ -449,7 +449,18 @@ fn publish_via_http(
     let branch = publish_ios::default_branch(&user, &repo, token)
         .map_err(|e| format!("could not read default branch: {e}"))?;
     publish_ios::commit_files(token, &user, &repo, &branch, &commit_msg, &files)
-        .map_err(|e| format!("GitHub commit failed: {e}"))?;
+        .map_err(|e| {
+            // Surface the most common cause inline: a fine-grained PAT
+            // with Contents: Read but not Read+Write succeeds at the
+            // repo lookup but fails at /git/blobs with a 401.
+            if e.contains("status 401") {
+                format!(
+                    "GitHub rejected the write (401). Your token can READ the repo but not WRITE — open https://github.com/settings/personal-access-tokens, find the token, and set Repository permissions → Contents to 'Read and write'."
+                )
+            } else {
+                format!("GitHub commit failed: {e}")
+            }
+        })?;
 
     Ok(PublishResult {
         repo_url,
