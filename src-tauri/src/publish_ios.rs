@@ -25,14 +25,20 @@ pub struct CommitFile {
 }
 
 fn get(url: &str, token: &str) -> Result<Value, String> {
-    ureq::get(url)
+    let body = ureq::get(url)
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
+        // ureq 2's json feature doesn't pull in gzip — if GitHub
+        // sends a compressed response (which it sometimes does
+        // unbidden) the body decodes as binary garbage. Asking for
+        // identity encoding skips the trip altogether.
+        .set("Accept-Encoding", "identity")
         .call()
         .map_err(|e| format!("GET {url}: {e}"))?
-        .into_json::<Value>()
-        .map_err(|e| format!("GET {url} decode: {e}"))
+        .into_string()
+        .map_err(|e| format!("GET {url} read: {e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("GET {url} decode: {e}; body: {body}"))
 }
 
 fn send(method: &str, url: &str, token: &str, body: Value) -> Result<Value, String> {
@@ -41,13 +47,17 @@ fn send(method: &str, url: &str, token: &str, body: Value) -> Result<Value, Stri
         "PATCH" => ureq::request("PATCH", url),
         other => return Err(format!("unsupported method {other}")),
     };
-    req.set("Authorization", &format!("Bearer {token}"))
+    let response_body = req
+        .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
+        .set("Accept-Encoding", "identity")
         .send_json(body)
         .map_err(|e| format!("{method} {url}: {e}"))?
-        .into_json::<Value>()
-        .map_err(|e| format!("{method} {url} decode: {e}"))
+        .into_string()
+        .map_err(|e| format!("{method} {url} read: {e}"))?;
+    serde_json::from_str(&response_body)
+        .map_err(|e| format!("{method} {url} decode: {e}; body: {response_body}"))
 }
 
 fn sha(v: &Value, ptr: &str) -> Result<String, String> {
