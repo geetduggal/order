@@ -11,6 +11,38 @@ desktop and iOS.
 
 **Demo videos:** [Basics](https://drive.google.com/file/d/1H2Yv9Jf59Og1bimFuDhJmIlOvjCA4iDp/view?usp=sharing) · [Lists](https://drive.google.com/file/d/1TdWU6fPFFOTDnodDT3AWenjyuuMRjffg/view?usp=sharing)
 
+---
+
+## Build from source
+
+**v0.1.0** is here as source. Build it yourself in a few minutes — packaged
+desktop and iOS releases are next.
+
+**Prerequisites**
+- Node.js 20+ and pnpm 9+
+- Rust 1.77+ (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- For iOS: Xcode 15+ with the iOS 14 SDK or newer, plus `xcode-select --install`
+
+**Desktop (macOS, Linux, Windows)**
+```bash
+git clone https://github.com/geetduggal/order.git
+cd order
+pnpm install
+pnpm tauri:dev      # dev window with hot reload
+pnpm tauri:build    # signed app bundle in src-tauri/target/release/bundle
+```
+
+**iOS**
+```bash
+pnpm tauri:ios:init   # one-time; generates the Xcode project under src-tauri/gen/apple
+pnpm tauri:ios:dev    # opens the iOS Simulator
+pnpm tauri:ios:build  # device build (.ipa under src-tauri/gen/apple/build)
+```
+
+On desktop, first launch reads `~/Documents/Dropbox/Home/` as the vault root.
+On iOS it prompts you once to pick a vault folder and keeps a security-scoped
+bookmark to it.
+
 > **A twenty-year through line.** The impulse behind Order is old. It first
 > surfaced around 2004 in [*PileTiddly*](https://geetduggal.com/PileTiddly.html) —
 > a TiddlyWiki experiment, preserved here for nostalgia — built on the idea that
@@ -762,31 +794,11 @@ publish; subsequent publishes reuse it.
 
 ---
 
-## Run it
+## First launch
 
-**Prereqs**
-- Node 20+, pnpm
-- Rust toolchain (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- Xcode + command-line tools (for iOS)
-
-**Desktop**
-```bash
-pnpm install
-pnpm tauri:dev      # dev window with HMR
-pnpm tauri:build    # signed app bundle
-```
-
-**iOS**
-```bash
-pnpm tauri:ios:init   # one-time; generates the Xcode project
-pnpm tauri:ios:dev    # opens iOS Simulator
-pnpm tauri:ios:build  # device build
-```
-
-On desktop, first launch reads `~/Documents/Dropbox/Home/` (the vault root); on
-iOS — where there's no `$HOME` — it prompts you to pick the vault folder once and
-keeps a security-scoped bookmark to it. From there Order walks **every** `.md`
-file recursively — depth is arbitrary, since the chain encodes the hierarchy.
+See [Build from source](#build-from-source) for setup. Once Order is running, it
+walks **every** `.md` file recursively — depth is arbitrary, since the chain
+encodes the hierarchy.
 Areas.md and the per-level directories (with their Main Docs) are written on
 first run if absent; otherwise a one-shot migration generates the Areas /
 Categories / Notable Folder files from any notes with `category:` set and the
