@@ -2172,12 +2172,19 @@ iframe.order-youtube-embed {
    island) so the toolbar reads as a real chrome strip, not a row
    clipped under the notch. Background is opaque so events don't bleed
    through underneath. */
-.fc-shell {
+.fc-shell,
+.year-linear {
   --fc-safe-top: env(safe-area-inset-top, 0px);
   /* Approximate height of the .fc-top-controls row that sits ABOVE the
-     FC toolbar. Used by the toolbar and col-header sticky offsets so
-     each chrome strip stacks cleanly on top of the next. */
+     title bar (FC toolbar for day/week/month, year-head for year).
+     Downstream stickies chain through this so every chrome strip
+     stacks cleanly above the next on every view. */
   --fc-controls-h: 40px;
+  /* Height reserved for the title bar (prev/next/today + range or
+     year label). The FC toolbar and the custom year-head land on
+     the same offset so day/week/month/year all read as the same
+     two-strip chrome. */
+  --fc-title-h: 46px;
 }
 .fc-shell .fc-toolbar.fc-header-toolbar {
   margin-bottom: 14px;
@@ -2186,15 +2193,18 @@ iframe.order-youtube-embed {
   z-index: 6;
   background: var(--bg);
   padding-top: 4px;
+  min-height: var(--fc-title-h);
 }
 /* The day-of-week / month-column header row sticks just below the toolbar
    so the date labels stay anchored while the calendar body scrolls. FC
    v6 puts the header inside a scrollgrid section; the visible cushion is
-   `.fc-col-header`, which we lift via sticky on its container <td>. */
+   `.fc-col-header`, which we lift via sticky on its container <td>. Same
+   offset shape as the year view's column header so every view stacks
+   identically. */
 .fc-shell .fc-scrollgrid-section-header,
 .fc-shell .fc-scrollgrid-section-header > * {
   position: sticky;
-  top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-sticky-col-header-top, 46px));
+  top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h));
   z-index: 5;
   background: var(--bg);
 }
@@ -2469,12 +2479,14 @@ iframe.order-youtube-embed {
 }
 .year-head {
   display: flex; align-items: center; gap: 16px;
-  margin: 4px 0 16px;
+  margin: 0 0 16px;
   position: sticky;
-  top: var(--fc-safe-top, env(safe-area-inset-top, 0px));
+  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + var(--fc-controls-h));
   z-index: 6;
   background: var(--bg);
   padding: 6px 0;
+  min-height: var(--fc-title-h);
+  box-sizing: border-box;
 }
 .year-allday-toggle,
 .fc-allday-toggle {
@@ -2508,11 +2520,13 @@ iframe.order-youtube-embed {
 .fc-allday-toggle:hover { border-color: var(--royal); color: var(--ink); }
 /* Inside fc-top-controls — no sticky / float of its own. */
 .fc-allday-toggle { margin: 0; }
-/* Day-of-week column header strip also sticks below the year-head so
-   the M T W T F S labels stay anchored across all 12 month rows. */
+/* Day-of-week column header strip sticks below the year-head — same
+   offset shape as the FC col-header on day/week/month, so the three
+   chrome strips (controls + title + column row) stack identically
+   regardless of which time scale you're on. */
 .year-strip-header {
   position: sticky;
-  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + 40px);
+  top: calc(var(--fc-safe-top, env(safe-area-inset-top, 0px)) + var(--fc-controls-h) + var(--fc-title-h));
   z-index: 5;
   background: var(--bg);
 }
@@ -5280,6 +5294,8 @@ iframe.order-youtube-embed {
   padding: 6px 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--rule);
+  min-height: var(--fc-controls-h);
+  box-sizing: border-box;
 }
 .fc-view-switch {
   display: inline-flex;
@@ -5308,13 +5324,20 @@ iframe.order-youtube-embed {
   font-weight: 500;
 }
 @media (max-width: 768px) {
-  /* Center the control bar on phones so the toolbar's prev/next/
-     title above stays uncrowded. The bar still sticks at the top
-     of the viewport. */
+  /* On phones the week's S/M/T/W/T/F/S chip row + all-day toggle +
+     Day/Week/Month/Year switch overflow a single row. Keep nowrap +
+     overflow-x: auto so the bar stays one row tall (--fc-controls-h
+     is unchanged, so the title bar below stays anchored) and the
+     extra controls become horizontally scrollable inside the bar. */
   .fc-top-controls {
-    justify-content: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .fc-top-controls::-webkit-scrollbar { display: none; }
+  .fc-top-controls > * { flex: 0 0 auto; }
 }
 
 /* ---------- Notable Folder affordance row ---------- */
