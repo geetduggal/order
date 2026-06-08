@@ -357,6 +357,17 @@ export function CardGrid() {
   // Wipe any persisted view from earlier builds — Order now always opens
   // on the viewport-default (Week on desktop, Day on phones).
   useEffect(() => { try { localStorage.removeItem("order.view"); } catch { /* non-fatal */ } }, []);
+  // Every time the user switches to a calendar surface (Day / Week /
+  // Month / Year), drop all filters so the calendar lands on the full
+  // vault by default. The effect re-runs only when `view` changes, so
+  // filters the user adds AFTER landing on a calendar view persist
+  // until they leave or pick another scale. Stream / newspaper mode
+  // is unaffected — its filters belong to its own context.
+  useEffect(() => {
+    if (view === "day" || view === "week" || view === "month" || view === "year") {
+      setFilters([]);
+    }
+  }, [view]);
   // Imperative handles for Cmd+arrow nav inside the active calendar view.
   // Only one of the two is "live" at a time (the mounted view sets it; the
   // other stays null), so the key handler can blindly call .current.
