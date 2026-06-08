@@ -5312,6 +5312,53 @@ iframe.order-youtube-embed {
   }
 }
 
+/* ---------- Notable Folder affordance row ---------- */
+/* The control strip above an NF Main Doc body: Notable Update on the
+   left, the home-marker star on the right. Both children stay small;
+   the row only shows up when at least one of them is wired. */
+.nf-affordance-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.nf-affordance-row > .nf-update-toggle,
+.nf-affordance-row > .nf-update-bar { margin: 0; }
+.nf-affordance-row > .nf-update-bar { flex: 1; min-width: 0; }
+
+/* Tiny home-toggle. Hairline outline when off, filled royal when on —
+   subtle enough to disappear visually until the user looks for it. */
+.nf-home-toggle {
+  margin-left: auto;
+  width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--rule);
+  background: transparent;
+  color: var(--ink-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out),
+              border-color 0.12s var(--ease-out),
+              background-color 0.12s var(--ease-out);
+}
+.nf-home-toggle:hover {
+  color: var(--royal);
+  border-color: var(--royal);
+}
+.nf-home-toggle.is-on {
+  color: #fff;
+  background: var(--royal);
+  border-color: var(--royal);
+  border-style: solid;
+}
+.nf-home-toggle.is-on:hover {
+  background: #182f80;
+  border-color: #182f80;
+}
+
 /* ---------- Notable Folder "Notable update" affordance ---------- */
 /* A small subtle button at the top of an NF Main Doc card. Tap to
    expand a one-line input; submit creates a new all-day note in the

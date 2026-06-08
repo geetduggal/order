@@ -47,7 +47,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { isIosSync } from "../lib/vault";
 
@@ -183,6 +183,14 @@ interface Props {
    *  Tapping it expands a short prompt; submitting creates a new
    *  all-day note in the folder dated today with the user's text. */
   onCreateUpdate?: (description: string) => Promise<void> | void;
+  /** Notable Folder Main Documents only: is THIS folder marked as the
+   *  vault's home? Used to render a small filled-star toggle in the
+   *  card's control strip. */
+  isHome?: boolean;
+  /** Notable Folder Main Documents only: tap to mark / unmark this
+   *  folder as home. The parent writes `homeNote: true` to this note's
+   *  YAML and clears it from any other note that previously held it. */
+  onToggleHome?: () => Promise<void> | void;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -330,6 +338,8 @@ export function Card(props: Props) {
     capHeight,
     permalink,
     onCreateUpdate,
+    isHome,
+    onToggleHome,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -974,8 +984,13 @@ export function Card(props: Props) {
           onFlipBack={() => setFlipped(false)}
         />
       )}
-      {isMainDoc && !readOnly && !flipped && onCreateUpdate && (
-        <NotableUpdateBar onSubmit={onCreateUpdate} />
+      {isMainDoc && !readOnly && !flipped && (onCreateUpdate || onToggleHome) && (
+        <div className="nf-affordance-row">
+          {onCreateUpdate && <NotableUpdateBar onSubmit={onCreateUpdate} />}
+          {onToggleHome && (
+            <HomeMarkButton isHome={!!isHome} onToggle={onToggleHome} />
+          )}
+        </div>
       )}
       <div
         className="order-card-content"
@@ -1260,6 +1275,33 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
         document.body,
       )}
     </span>
+  );
+}
+
+/** Tiny "mark as home" toggle shown alongside the Notable Update bar
+ *  on a Notable Folder Main Document. A single tap flips this folder's
+ *  `homeNote: true` flag (and clears it from any other folder) so the
+ *  dock's Home button jumps here. Filled when this folder IS home,
+ *  hairline outline otherwise — quiet enough to ignore until you want it. */
+function HomeMarkButton({ isHome, onToggle }: { isHome: boolean; onToggle: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState(false);
+  async function click() {
+    if (busy) return;
+    setBusy(true);
+    try { await onToggle(); } finally { setBusy(false); }
+  }
+  return (
+    <button
+      type="button"
+      className={"nf-home-toggle" + (isHome ? " is-on" : "")}
+      onClick={click}
+      disabled={busy}
+      title={isHome ? "This is your home folder — tap to unset" : "Mark this as your home folder"}
+      aria-pressed={isHome}
+      aria-label={isHome ? "Unset home folder" : "Mark as home folder"}
+    >
+      <HomeIcon size={13} strokeWidth={2.1} />
+    </button>
   );
 }
 

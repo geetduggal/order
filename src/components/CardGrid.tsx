@@ -495,6 +495,11 @@ export function CardGrid() {
     setFilters([]);
     setCollapseNonce((n) => n + 1);
     setView("week");
+    // The home ⇄ week toggle leaves Week with a clean slate — drop
+    // the Show 3-state back to "all" so a leftover "notes only" or
+    // "folders only" from the home view doesn't carry over and hide
+    // half the calendar.
+    setStreamMode(() => { writeStreamMode("all"); return "all"; });
   }, []);
   // Forward-ref binding for Cmd+' (declared earlier in the component).
   useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);
@@ -598,6 +603,11 @@ export function CardGrid() {
   const goHome = useCallback(() => {
     setView("stream");
     setCollapseNonce((n) => n + 1);
+    // Home is a notes-only surface — the orbit around the Main Doc is
+    // what makes the newspaper layout read. Force the Show 3-state to
+    // "notes" so a folders-only or all-cards mode left over from a
+    // previous session doesn't drown the centerpiece.
+    setStreamMode(() => { writeStreamMode("notes"); return "notes"; });
     const home = homeFolderRef.current;
     if (!home) { setFilters([]); return; }
     setFilters([{ kind: "include", ref: home }]);
@@ -884,8 +894,23 @@ export function CardGrid() {
     return out;
   }, [notes]);
 
-  /** Filename (no .md) of the Notable Folder marked `home:` in its
-   *  YAML. New captures default their `folder:` to this so they land
+  /** Filename (no .md) of the Notable Folder the user has marked as
+   *  home for navigation purposes — `homeNote: true` in YAML. This is
+   *  decoupled from the publish target (`home: "user/repo/path"`) so
+   *  marking a folder as home from the card UI doesn't have to invent
+   *  a publish target. Falls back to the first publish-home folder for
+   *  backward compat with vaults predating the `homeNote` flag. */
+  const homeNoteFolder = useMemo(() => {
+    if (!notes) return null;
+    for (const n of notes) {
+      if (!isNotableFolder(n.frontmatter)) continue;
+      const v = n.frontmatter.homeNote;
+      if (v === true || v === "true") return n.filename.replace(/\.md$/i, "");
+    }
+    return null;
+  }, [notes]);
+  /** Filename (no .md) of the Notable Folder marked as the navigation
+   *  home. New captures default their `folder:` to this so they land
    *  in the catch-all rather than at vault root. Held as a ref so
    *  createNote can read the latest value without re-running on
    *  every notes change. */
@@ -894,9 +919,9 @@ export function CardGrid() {
   // default exclude set from this.
   const homeFoldersRef = useRef<string[]>([]);
   useEffect(() => {
-    homeFolderRef.current = homeFolders[0]?.name ?? null;
+    homeFolderRef.current = homeNoteFolder ?? homeFolders[0]?.name ?? null;
     homeFoldersRef.current = homeFolders.map((h) => h.name);
-  }, [homeFolders]);
+  }, [homeNoteFolder, homeFolders]);
   // Refs the Cmd+arrow keyboard handler reads — it sits in a useEffect
   // with an empty-ish dep array, so the latest filters / notable-folder
   // order need to flow in via a mutable ref.
@@ -2270,6 +2295,39 @@ export function CardGrid() {
             folder: `[[${ref}]]`,
             title,
           });
+        } : undefined}
+        isHome={isMain ? n.filename.replace(/\.md$/i, "") === homeFolderRef.current : undefined}
+        onToggleHome={isMain ? async () => {
+          // Toggle the `homeNote: true` flag for THIS NF Main Doc.
+          // If another NF currently holds the flag, clear it there
+          // (one home at a time). We rewrite YAML directly via
+          // split/join so we don't have to round-trip the whole card
+          // body — the body stays byte-identical, only frontmatter
+          // changes. The watcher will re-load both files.
+          const willBeHome = n.filename.replace(/\.md$/i, "") !== homeFolderRef.current;
+          const currentHomePath = (() => {
+            const cur = homeFolderRef.current;
+            if (!cur) return null;
+            const match = (notesRef.current ?? []).find(
+              (other) => other.filename.replace(/\.md$/i, "") === cur,
+            );
+            return match?.path ?? null;
+          })();
+          // Clear the previous home (if any, and if it's not this note).
+          if (currentHomePath && currentHomePath !== n.path) {
+            const raw = await vaultFs.readText(toVaultRel(currentHomePath));
+            const split = splitFrontmatter(raw);
+            const fm = { ...split.frontmatter };
+            delete fm.homeNote;
+            await writeVault(currentHomePath, joinFrontmatter(fm, split.body));
+          }
+          // Set / clear on THIS note.
+          const raw = await vaultFs.readText(toVaultRel(n.path));
+          const split = splitFrontmatter(raw);
+          const fm = { ...split.frontmatter };
+          if (willBeHome) fm.homeNote = true;
+          else delete fm.homeNote;
+          await writeVault(n.path, joinFrontmatter(fm, split.body));
         } : undefined}
       />
     );
