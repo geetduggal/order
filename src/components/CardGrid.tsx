@@ -722,6 +722,23 @@ export function CardGrid() {
       return next;
     });
   }, []);
+  // Snapshot of externalChangeVersion at the moment a card became
+  // focused. Held in a ref so reads + writes don't trigger renders.
+  // The keyFor below freezes the focused card's key at this snapshot
+  // so a subsequent watcher bump (e.g. our own write re-entering via
+  // slow-sync) doesn't change the key and remount the card mid-edit.
+  //
+  // Just as important: the snapshot is captured LAZILY during the
+  // first keyFor read after focus flips, not in a useEffect that runs
+  // after the consuming render. That window is exactly where the
+  // "first tap does nothing, second tap works" bug used to live —
+  // the old keyFor returned `${id}` (no version suffix) for the
+  // focused card and `${id}:0` for everyone else, so the very first
+  // mousedown changed the key, React unmounted the card, and the
+  // matching click event landed on a detached DOM node. With the
+  // lazy snapshot, the key stays at `${id}:${cur}` across the focus
+  // flip, no remount happens, and the click delivers normally. */
+  const focusedKeyVersionRef = useRef<Record<string, number>>({});
 
   // Live file watching: start the Rust-side notify watcher once we know
   // the vault root, listen for `vault-changed`, filter out paths that
@@ -2362,14 +2379,27 @@ export function CardGrid() {
         const sectionNotes = filteredNotes
           .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
-        const keyFor = (n: LoadedNote) =>
-          // The focused card's key omits the external-change version
-          // so a watcher event on its file (incl. our own self-write
-          // bouncing back through slow-sync) doesn't remount it and
-          // wipe Milkdown state / focus mid-edit.
-          n.path === focusedPath
-            ? n.id
-            : `${n.id}:${externalChangeVersion[n.path] ?? 0}`;
+        const keyFor = (n: LoadedNote) => {
+          const cur = externalChangeVersion[n.path] ?? 0;
+          if (n.path === focusedPath) {
+            // First read after focus flips: snapshot the current
+            // version. Subsequent bumps to externalChangeVersion
+            // (a self-write bouncing back through slow-sync, an
+            // external edit while the user is typing, …) are
+            // ignored — we keep returning the snapshot so the
+            // card doesn't remount mid-edit.
+            const snap = focusedKeyVersionRef.current[n.path];
+            const frozen = snap === undefined ? cur : snap;
+            if (snap === undefined) focusedKeyVersionRef.current[n.path] = cur;
+            return `${n.id}:${frozen}`;
+          }
+          // Not focused: drop any stale snapshot so the next time
+          // this card gains focus we capture a fresh one.
+          if (focusedKeyVersionRef.current[n.path] !== undefined) {
+            delete focusedKeyVersionRef.current[n.path];
+          }
+          return `${n.id}:${cur}`;
+        };
         const centerpiece: SectionCell | null = mainNote
           ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
