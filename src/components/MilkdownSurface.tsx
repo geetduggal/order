@@ -23,6 +23,7 @@ function isTauri(): boolean {
 }
 import { join } from "@tauri-apps/api/path";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
+import { linkKeymapPlugin } from "../lib/milkdown-link-keymap";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
 import { videoEmbedPlugin } from "../lib/milkdown-video";
 import { youtubeId } from "../lib/youtube";
@@ -112,6 +113,12 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
       }
     } catch (err) {
       console.warn("wikilink plugin registration failed:", err);
+    }
+    try {
+      // Cmd+K with a selection → wrap in markdown link mark.
+      if (!readOnly) crepe.editor.use(linkKeymapPlugin());
+    } catch (err) {
+      console.warn("link keymap registration failed:", err);
     }
     try {
       crepe.editor.use(youtubeEmbedPlugin());

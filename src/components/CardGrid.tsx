@@ -2376,7 +2376,12 @@ export function CardGrid() {
           // Self-writes are filtered by the watcher to dodge our own
           // bounce-backs, so we have to reload manually for the
           // parent state (and downstream Card props like listMode /
-          // isHome) to reflect the new YAML.
+          // isHome) to reflect the new YAML. Bump the version and
+          // drop the focused-key snapshot too — Card captures
+          // frontmatter in state at mount-time, so a prop change
+          // alone isn't enough; remount forces a fresh state seed.
+          bumpExternal([n.path]);
+          delete focusedKeyVersionRef.current[n.path];
           await reloadNotes();
         } : undefined}
         listMode={isMain
@@ -2395,10 +2400,16 @@ export function CardGrid() {
           else if (cur === "cards") fm.list = "lines";
           else delete fm.list;
           await writeVault(n.path, joinFrontmatter(fm, split.body));
-          // See onSetHome — vaultFs.writeText marks the path as a
-          // self-write so the watcher's reportExternal drops the
-          // event. Force a reload so the parent picks up the new
-          // YAML and re-renders the button with the new icon.
+          // Self-writes are filtered by the watcher, so reload by
+          // hand. AND: this is a STRUCTURAL frontmatter change
+          // (list mode flips how Card splits prose vs. items), so
+          // we need the Card to fully remount with the new
+          // frontmatter rather than just receive a new prop —
+          // Card captures frontmatter in state at mount-time. Bump
+          // the version and drop the focused-key snapshot so the
+          // computed key changes on next render.
+          bumpExternal([n.path]);
+          delete focusedKeyVersionRef.current[n.path];
           await reloadNotes();
         } : undefined}
       />
