@@ -136,6 +136,24 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     next[index] = { ...next[index], ref: trimmed };
     onChange(next);
   }
+  /** Title commit aware of wikilink vs text. Mirror of ListLines's
+   *  updateTitle — picking an NF from autocomplete writes back a
+   *  wikilink item; raw text becomes a text bullet so it round-trips
+   *  through the serializer as `- text` instead of `- [[text]]`. */
+  function updateTitle(index: number, value: string, asWikilink: boolean) {
+    const t = value.trim();
+    if (!t) return;
+    const lower = t.toLowerCase();
+    if (items.some((it, i) => i !== index && it.ref.toLowerCase() === lower)) return;
+    const next = items.slice();
+    if (asWikilink) {
+      const { text: _drop, ...rest } = next[index];
+      next[index] = { ...rest, ref: t };
+    } else {
+      next[index] = { ref: t, text: t };
+    }
+    onChange(next);
+  }
 
   // Autocomplete candidates: Notable Folder names from the vault
   // index, filtered to those that aren't already in this list.
@@ -249,6 +267,15 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
             onRefChange={(r) => updateRef(originalIdx, r)}
+            onTitleChange={(value, asWikilink) => updateTitle(originalIdx, value, asWikilink)}
+            candidates={notableFolderCandidates}
+            excludeCandidates={(() => {
+              // Exclude every existing ref except this row's own, so
+              // re-confirming the same name isn't flagged as a dup.
+              const ex = new Set(existingRefsLower);
+              ex.delete(item.ref.toLowerCase());
+              return ex;
+            })()}
           />
         );
       })}
@@ -316,12 +343,23 @@ interface BaseCardProps {
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
   onRefChange: (ref: string) => void;
+  /** Title commit aware of the wikilink-vs-text split. Wired up for the
+   *  full-fat ListCards render; the image-only and other compact uses
+   *  fall back to onRefChange when this is absent. */
+  onTitleChange?: (value: string, asWikilink: boolean) => void;
+  /** NF refs available to the autocomplete. Empty disables the
+   *  dropdown but the plain-text fallback still works. */
+  candidates?: string[];
+  /** Lowercase refs in this list (excluding self) — fed to the
+   *  autocomplete so already-used folders don't appear again. */
+  excludeCandidates?: Set<string>;
 }
 
 function BaseCard({
   item, Icon, image, tintCls, displayTitle, metaSuggestion,
   dragging, draggable, readOnly, imageOnly, onNavigate,
   onTilePointerDown, onDelete, onMetaChange, onRefChange,
+  onTitleChange, candidates, excludeCandidates,
 }: BaseCardProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [draft, setDraft] = useState("");
@@ -338,16 +376,8 @@ function BaseCard({
   }, [editingMeta, metaSuggestion]);
 
   useEffect(() => {
-    if (editingTitle) {
-      setTitleDraft(item.ref);
-      requestAnimationFrame(() => {
-        const el = titleInputRef.current;
-        if (!el) return;
-        el.focus();
-        el.select();
-      });
-    }
-  }, [editingTitle, item.ref]);
+    if (editingTitle) setTitleDraft(item.text ?? item.ref);
+  }, [editingTitle, item.text, item.ref]);
 
   function commitMeta() {
     if (draft !== metaSuggestion) onMetaChange(draft);
@@ -410,16 +440,31 @@ function BaseCard({
         ) : (
         <div className="basecard-body">
           {editingTitle ? (
-            <input
-              ref={titleInputRef}
-              className="basecard-title-input"
+            <RefAutocomplete
+              autoFocus
               value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
-                if (e.key === "Escape") { e.preventDefault(); setEditingTitle(false); }
+              onChange={setTitleDraft}
+              onCommit={(final) => {
+                const t = final.trim();
+                if (t) {
+                  if (onTitleChange) {
+                    // Match against autocomplete candidates → decide
+                    // wikilink vs text. Same rule as ListLines so cards
+                    // and lines behave identically when you swap modes.
+                    const lower = t.toLowerCase();
+                    const isWikilink = (candidates ?? []).some((c) => c.toLowerCase() === lower);
+                    onTitleChange(t, isWikilink);
+                  } else if (t !== item.ref) {
+                    onRefChange(t);
+                  }
+                }
+                setEditingTitle(false);
               }}
+              onCancel={() => setEditingTitle(false)}
+              candidates={candidates ?? []}
+              exclude={excludeCandidates}
+              className="basecard-title-input"
+              placeholder="Name or pick a folder"
             />
           ) : (
             <button

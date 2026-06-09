@@ -7,7 +7,7 @@
 // Mirrors ListCards.tsx semantics so the dispatcher can swap freely.
 
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
@@ -126,6 +126,24 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     if (items.some((it, i) => i !== index && it.ref.toLowerCase() === lower)) return;
     const next = items.slice();
     next[index] = { ...next[index], ref: t };
+    onChange(next);
+  }
+  /** Title commit that knows whether to write the value back as a
+   *  wikilink (an NF the user picked from autocomplete) or as a plain
+   *  text bullet. Wikilinks drop the text field; text items strip the
+   *  meta because plain bullets don't carry the ` · meta` suffix. */
+  function updateTitle(index: number, value: string, asWikilink: boolean) {
+    const t = value.trim();
+    if (!t) return;
+    const lower = t.toLowerCase();
+    if (items.some((it, i) => i !== index && it.ref.toLowerCase() === lower)) return;
+    const next = items.slice();
+    if (asWikilink) {
+      const { text: _drop, ...rest } = next[index];
+      next[index] = { ...rest, ref: t };
+    } else {
+      next[index] = { ref: t, text: t };
+    }
     onChange(next);
   }
 
@@ -280,7 +298,9 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             onTilePointerDown={onTilePointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}
-            onRefChange={(r) => updateRef(originalIdx, r)}
+            onTitleChange={(value, asWikilink) => updateTitle(originalIdx, value, asWikilink)}
+            candidates={notableFolderCandidates}
+            existingRefsLower={existingRefsLower}
           />
         );
       })}
@@ -319,19 +339,27 @@ interface LineRowProps {
   onTilePointerDown: (e: React.PointerEvent, ref: string) => void;
   onDelete: () => void;
   onMetaChange: (meta: string) => void;
-  onRefChange: (ref: string) => void;
+  /** Title commit. `asWikilink` is true when the user picked a Notable
+   *  Folder name from the autocomplete; false when they typed plain
+   *  text. The parent maps the two into ref-only vs ref+text items. */
+  onTitleChange: (value: string, asWikilink: boolean) => void;
+  /** NF refs available for autocomplete. Empty array disables the
+   *  dropdown but the input still accepts plain-text edits. */
+  candidates: string[];
+  /** Lowercase refs already in the list — excluded from suggestions
+   *  to avoid offering a duplicate. */
+  existingRefsLower: Set<string>;
 }
 
 function LineRow({
   item, color, Icon, displayTitle, metaSuggestion, dragging, draggable, readOnly, expansion, onNavigate,
-  onTilePointerDown, onDelete, onMetaChange, onRefChange,
+  onTilePointerDown, onDelete, onMetaChange, onTitleChange, candidates, existingRefsLower,
 }: LineRowProps) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const metaInputRef = useRef<HTMLInputElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingMeta) {
@@ -339,25 +367,26 @@ function LineRow({
       requestAnimationFrame(() => metaInputRef.current?.focus());
     }
   }, [editingMeta, metaSuggestion]);
+  // Seed the title draft with the visible label (text bullets) or the
+  // ref (wikilinks). When the user picks an NF from autocomplete the
+  // commit fires with `asWikilink: true`; bare-typed text commits with
+  // `asWikilink: false`. Either way the parent owns the on-disk shape.
   useEffect(() => {
-    if (editingTitle) {
-      setTitleDraft(item.ref);
-      requestAnimationFrame(() => {
-        titleInputRef.current?.focus();
-        titleInputRef.current?.select();
-      });
-    }
-  }, [editingTitle, item.ref]);
+    if (editingTitle) setTitleDraft(item.text ?? item.ref);
+  }, [editingTitle, item.text, item.ref]);
 
   function commitMeta() {
     if (metaDraft !== metaSuggestion) onMetaChange(metaDraft);
     setEditingMeta(false);
   }
-  function commitTitle() {
-    const next = titleDraft.trim();
-    if (next && next !== item.ref) onRefChange(next);
-    setEditingTitle(false);
-  }
+  // Exclude THIS row's own ref from the autocomplete-dup set so the
+  // user can re-confirm the same name without it being treated as a
+  // collision.
+  const candidateExclude = useMemo(() => {
+    const ex = new Set(existingRefsLower);
+    ex.delete(item.ref.toLowerCase());
+    return ex;
+  }, [existingRefsLower, item.ref]);
 
   // When an expansion is present, wrap header row + expansion in a
   // section so the whole unit is the drag cell and the expansion
@@ -377,16 +406,28 @@ function LineRow({
       )}
       <Icon size={14} strokeWidth={1.7} style={{ color, flexShrink: 0 }} />
       {editingTitle ? (
-        <input
-          ref={titleInputRef}
-          className="lr-title-input"
+        <RefAutocomplete
+          autoFocus
           value={titleDraft}
-          onChange={(e) => setTitleDraft(e.target.value)}
-          onBlur={commitTitle}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
-            if (e.key === "Escape") { e.preventDefault(); setEditingTitle(false); }
+          onChange={setTitleDraft}
+          onCommit={(final) => {
+            const t = final.trim();
+            if (t) {
+              // If the typed/picked value matches an NF candidate
+              // (case-insensitive), persist as a wikilink. Anything
+              // else (free text the user just typed) persists as a
+              // plain text bullet so it round-trips as `- text`.
+              const lower = t.toLowerCase();
+              const isWikilink = candidates.some((c) => c.toLowerCase() === lower);
+              onTitleChange(t, isWikilink);
+            }
+            setEditingTitle(false);
           }}
+          onCancel={() => setEditingTitle(false)}
+          candidates={candidates}
+          exclude={candidateExclude}
+          className="lr-title-input"
+          placeholder="Name or pick a folder"
         />
       ) : (
         <button
