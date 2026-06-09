@@ -3222,7 +3222,16 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  // Focus AFTER the first paint so the overlay's dvh-based sizing
+  // has a chance to land its real height before iOS opens the soft
+  // keyboard. Without the rAF gap the focus + keyboard show can
+  // race the layout and the prompt briefly renders against the
+  // pre-keyboard viewport — the "popup off-screen until it
+  // recenters" jitter the user reported.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
   const submit = () => onSubmit(title.trim(), folder);
   return (
     <div
