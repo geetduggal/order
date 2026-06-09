@@ -159,17 +159,9 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       ref={gridRef}
       className="list-lines"
     >
-      {!hideControls && (
-        <AddRow
-          startOpen={addingTop}
-          onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
-          onCancel={() => setAddingTop(false)}
-          onOpen={() => setAddingTop(true)}
-          onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
-          candidates={notableFolderCandidates}
-          excludeRefs={existingRefsLower}
-        />
-      )}
+      {/* No top Add row in lines mode — one Add affordance at the bottom is
+          enough. The lines render is meant to be dense; two chrome bars
+          around six rows ate more vertical space than the rows themselves. */}
       {items.map((item, originalIdx) => {
         // Plain-text bullet — display its text, no navigation, no
         // resolve. The parser surfaces these so plain `- foo` bullets

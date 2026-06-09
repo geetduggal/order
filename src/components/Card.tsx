@@ -967,7 +967,7 @@ export function Card(props: Props) {
             <HomeIcon size={14} strokeWidth={2} />
           </button>
         )}
-        {isMainDoc && !readOnly && onCycleList && (
+        {!readOnly && onCycleList && (
           <button
             type="button"
             className={"order-card-btn order-card-list is-" + effectiveListMode}

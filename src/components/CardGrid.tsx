@@ -2384,12 +2384,12 @@ export function CardGrid() {
           delete focusedKeyVersionRef.current[n.path];
           await reloadNotes();
         } : undefined}
-        listMode={isMain
-          ? (n.frontmatter.list === "cards" ? "cards"
+        listMode={
+          (n.frontmatter.list === "cards" ? "cards"
             : n.frontmatter.list === "lines" ? "lines"
             : "none")
-          : undefined}
-        onCycleList={isMain ? async () => {
+        }
+        onCycleList={async () => {
           // Cycle the `list:` YAML through none → cards → lines →
           // none. Body untouched — the renderer reacts on next load.
           const raw = await vaultFs.readText(toVaultRel(n.path));
@@ -2411,7 +2411,7 @@ export function CardGrid() {
           bumpExternal([n.path]);
           delete focusedKeyVersionRef.current[n.path];
           await reloadNotes();
-        } : undefined}
+        }}
       />
     );
   };
