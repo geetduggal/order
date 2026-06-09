@@ -400,6 +400,28 @@ export function Card(props: Props) {
   /** Inline Notable Update prompt visibility — opened from the chrome
    *  row's + button, dismissed on submit / Esc / × . NF Main Doc only. */
   const [updateOpen, setUpdateOpen] = useState(false);
+  /** Optimistic mirrors of listMode / isHome so the icon flips the
+   *  instant the user taps. The parent owns the canonical YAML write
+   *  and a reload; until the new prop arrives back here, we render
+   *  the pending value so feedback is immediate. Setting the pending
+   *  value to null lets the prop win again. */
+  const [pendingListMode, setPendingListMode] = useState<"none" | "cards" | "lines" | null>(null);
+  const [pendingHome, setPendingHome] = useState<boolean | null>(null);
+  // When the prop catches up to the optimistic value, clear the pending
+  // override so further external changes (a vault edit on disk) flow
+  // through normally.
+  useEffect(() => {
+    if (pendingListMode !== null && listMode === pendingListMode) {
+      setPendingListMode(null);
+    }
+  }, [listMode, pendingListMode]);
+  useEffect(() => {
+    if (pendingHome !== null && isHome === pendingHome) {
+      setPendingHome(null);
+    }
+  }, [isHome, pendingHome]);
+  const effectiveListMode = pendingListMode ?? listMode ?? "none";
+  const effectiveIsHome = pendingHome !== null ? pendingHome : !!isHome;
   const copyBodyText = useCallback(() => {
     // editorBodyRef is populated both on load (setEditorBody during
     // the read effect) and on every editor change, so it's the
@@ -929,11 +951,18 @@ export function Card(props: Props) {
         {isMainDoc && !readOnly && onSetHome && (
           <button
             type="button"
-            className={"order-card-btn order-card-home" + (isHome ? " is-on" : "")}
-            onClick={() => { void onSetHome(); }}
-            title={isHome ? "This is the home folder — tap to clear" : "Mark as home folder (will prompt for publish URL)"}
-            aria-label={isHome ? "Clear home folder" : "Mark as home folder"}
-            aria-pressed={!!isHome}
+            className={"order-card-btn order-card-home" + (effectiveIsHome ? " is-on" : "")}
+            onClick={() => {
+              // Optimistically toggle so the icon flips immediately.
+              // If the parent's confirm/prompt is cancelled the prop
+              // never advances, the pending value lingers harmless,
+              // and the next render after a real change clears it.
+              setPendingHome(!effectiveIsHome);
+              void onSetHome();
+            }}
+            title={effectiveIsHome ? "This is the home folder — tap to clear" : "Mark as home folder (will prompt for publish URL)"}
+            aria-label={effectiveIsHome ? "Clear home folder" : "Mark as home folder"}
+            aria-pressed={effectiveIsHome}
           >
             <HomeIcon size={14} strokeWidth={2} />
           </button>
@@ -941,18 +970,26 @@ export function Card(props: Props) {
         {isMainDoc && !readOnly && onCycleList && (
           <button
             type="button"
-            className={"order-card-btn order-card-list is-" + (listMode ?? "none")}
-            onClick={() => { void onCycleList(); }}
+            className={"order-card-btn order-card-list is-" + effectiveListMode}
+            onClick={() => {
+              // Same optimistic pattern — flip locally on tap so the
+              // icon swaps the moment the user touches the button.
+              const next = effectiveListMode === "none" ? "cards"
+                : effectiveListMode === "cards" ? "lines"
+                : "none";
+              setPendingListMode(next);
+              void onCycleList();
+            }}
             title={
-              listMode === "cards" ? "List: cards — tap for lines" :
-              listMode === "lines" ? "List: lines — tap to drop" :
+              effectiveListMode === "cards" ? "List: cards — tap for lines" :
+              effectiveListMode === "lines" ? "List: lines — tap to drop" :
               "Make this a list folder (cards)"
             }
             aria-label="Cycle list mode"
           >
-            {listMode === "cards"
+            {effectiveListMode === "cards"
               ? <LayoutGridIcon size={14} strokeWidth={2} />
-              : listMode === "lines"
+              : effectiveListMode === "lines"
                 ? <AlignJustifyIcon size={14} strokeWidth={2} />
                 : <ListIcon size={14} strokeWidth={2} />}
           </button>
