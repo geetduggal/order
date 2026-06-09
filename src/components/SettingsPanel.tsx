@@ -6,7 +6,8 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon } from "lucide-react";
-import { vaultRoot, defaultVaultRoot, getVaultOverride } from "../lib/vault";
+import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos } from "../lib/vault";
+import { vaultFs } from "../lib/vault-fs";
 
 export function SettingsPanel({
   onChangeVault, onClose,
@@ -36,8 +37,29 @@ export function SettingsPanel({
   const choose = async () => {
     setBusy(true);
     try {
-      const picked = await open({ directory: true, multiple: false, defaultPath: current || undefined });
-      if (typeof picked === "string") {
+      let picked: string | null = null;
+      // iOS: Tauri's dialog plugin can't open a directory picker, so
+      // the desktop `open({ directory: true })` call returns null and
+      // the Change button looks broken. Route through the vault
+      // plugin's iOS bridge instead — it pops a native
+      // UIDocumentPickerViewController in folder-pick mode and stashes
+      // a security-scoped bookmark for the chosen folder.
+      if (await isIos()) {
+        try {
+          const v = await vaultFs.pickFolder();
+          picked = v?.path ?? null;
+        } catch (err) {
+          console.error("iOS pick failed:", err);
+        }
+      } else {
+        const result = await open({
+          directory: true,
+          multiple: false,
+          defaultPath: current || undefined,
+        });
+        if (typeof result === "string") picked = result;
+      }
+      if (picked) {
         await onChangeVault(picked);
         setCurrent(picked);
         setOverridden(true);
