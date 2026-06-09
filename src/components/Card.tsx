@@ -615,6 +615,19 @@ export function Card(props: Props) {
         if (bullets) {
           outBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
         }
+      } else if (listItemsRef.current.length > 0) {
+        // Not a list folder right now, but we still hold items from the
+        // last load. This is the data-loss window the list-mode toggle
+        // used to open: cards → none flipped the YAML, the next save
+        // saw frontmatter.list missing, and dropped every bullet
+        // because the editor body only carried the prose. Append the
+        // items back as a plain markdown list so toggling off
+        // preserves them; the next load (now without `list:`) just
+        // renders them as a normal bulleted list in the editor.
+        const bullets = serializeListItems(listItemsRef.current);
+        if (bullets) {
+          outBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
+        }
       }
 
       // Collapse runtime asset:// URLs back to on-disk form so the file
