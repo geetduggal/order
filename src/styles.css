@@ -2209,10 +2209,13 @@ iframe.order-youtube-embed {
    day-of-week column header so all-day events stay visible while the
    timed body scrolls. FC v6 renders the strip as a non-liquid body
    section inside .fc-timegrid (the liquid one is the timed body, the
-   one without -body is the divider). Background on the <td> children
-   so timed events can't bleed through underneath when scrolling. */
-.fc-shell .fc-timegrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid),
-.fc-shell .fc-timegrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid) > * {
+   one without -body is the divider). Sticky on the <td> only (not
+   the parent <tr>) because position: sticky on <tr> is unreliable in
+   WebKit; the <td> is the visible content holder and its sticky
+   reference is the same scrollport as the rest of the chrome chain.
+   Background on the <td> so timed events can't bleed through
+   underneath when scrolling. */
+.fc-shell .fc-timegrid > .fc-scrollgrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid) > td {
   position: sticky;
   top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h) + var(--fc-colhdr-h));
   z-index: 4;
