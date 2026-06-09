@@ -8,7 +8,7 @@
 
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
+import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { RefAutocomplete } from "./RefAutocomplete";
@@ -169,11 +169,16 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         const isText = !!item.text;
         const note = isText ? null : resolveNoteRef(item.ref, vaultNotes);
         const color = folderColor(item.ref, note?.frontmatter.color);
-        const Icon = folderIcon(item.ref, note?.frontmatter.icon);
+        // Folder icon means "this row links to a Notable Folder" — for a
+        // plain-text bullet or a wikilink that points to something other
+        // than an NF, use a neutral dot so the chrome doesn't promise
+        // navigation the row can't deliver.
+        const isNFRow = !!(note && isNotableFolder(note.frontmatter));
+        const Icon = isNFRow ? folderIcon(item.ref, note?.frontmatter.icon) : DotIcon;
         const dragging = item.ref === draggingRef;
         const isNF = !!(note && isNotableFolder(note.frontmatter));
         const titleHandler = note
-          ? (isNF && onAddFilter ? () => onAddFilter(item.ref)
+          ? (isNFRow && onAddFilter ? () => onAddFilter(item.ref)
               : onNavigate ? () => onNavigate(item.ref)
               : undefined)
           : undefined;

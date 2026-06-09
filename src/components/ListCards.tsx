@@ -10,7 +10,7 @@
 // the OS level, so drop events never reach in-page handlers.
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
+import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { RefAutocomplete } from "./RefAutocomplete";
@@ -213,7 +213,6 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         const image = note && typeof note.frontmatter.image === "string"
           ? note.frontmatter.image as string
           : undefined;
-        const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const tintCls = originalIdx % 2 === 0 ? "is-royal" : "is-coral";
         const dragging = item.ref === draggingRef;
         // Plain-text bullet — the parser surfaced it as a list item so
@@ -221,6 +220,12 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         // backing note to navigate to. Render the text as the title,
         // no nav, no resolve-by-name machinery.
         const isText = !!item.text;
+        // Folder glyph only when the row actually points at a Notable
+        // Folder — otherwise a neutral dot, so the icon doesn't promise
+        // navigation the row can't deliver. (Plain text bullets +
+        // wikilinks to non-NF notes both fall through here.)
+        const isNFRow = !!(note && isNotableFolder(note.frontmatter));
+        const Icon = isNFRow ? folderIcon(item.ref, note?.frontmatter.icon) : DotIcon;
         return (
           <BaseCard
             key={item.ref}
@@ -236,8 +241,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             onNavigate={(() => {
               if (isText) return undefined;
               if (!note) return undefined;
-              const isNF = isNotableFolder(note.frontmatter);
-              if (isNF && onAddFilter) return () => onAddFilter(item.ref);
+              if (isNFRow && onAddFilter) return () => onAddFilter(item.ref);
               if (onNavigate) return () => onNavigate(item.ref);
               return undefined;
             })()}
