@@ -2336,6 +2336,7 @@ export function CardGrid() {
             const fm = { ...split.frontmatter };
             delete fm.home;
             await writeVault(n.path, joinFrontmatter(fm, split.body));
+            await reloadNotes();
             return;
           }
           // Setting home on this folder. If another folder already
@@ -2372,6 +2373,11 @@ export function CardGrid() {
           const split = splitFrontmatter(raw);
           const fm = { ...split.frontmatter, home: target.trim() };
           await writeVault(n.path, joinFrontmatter(fm, split.body));
+          // Self-writes are filtered by the watcher to dodge our own
+          // bounce-backs, so we have to reload manually for the
+          // parent state (and downstream Card props like listMode /
+          // isHome) to reflect the new YAML.
+          await reloadNotes();
         } : undefined}
         listMode={isMain
           ? (n.frontmatter.list === "cards" ? "cards"
@@ -2389,6 +2395,11 @@ export function CardGrid() {
           else if (cur === "cards") fm.list = "lines";
           else delete fm.list;
           await writeVault(n.path, joinFrontmatter(fm, split.body));
+          // See onSetHome — vaultFs.writeText marks the path as a
+          // self-write so the watcher's reportExternal drops the
+          // event. Force a reload so the parent picks up the new
+          // YAML and re-renders the button with the new icon.
+          await reloadNotes();
         } : undefined}
       />
     );
