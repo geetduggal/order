@@ -12,6 +12,7 @@ import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { RefAutocomplete } from "./RefAutocomplete";
+import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
 import { useTileDrag } from "../lib/use-tile-drag";
@@ -406,20 +407,21 @@ function LineRow({
       )}
       <Icon size={14} strokeWidth={1.7} style={{ color, flexShrink: 0 }} />
       {editingTitle ? (
-        <RefAutocomplete
+        <WikiRefInput
           autoFocus
           value={titleDraft}
           onChange={setTitleDraft}
           onCommit={(final) => {
             const t = final.trim();
             if (t) {
-              // If the typed/picked value matches an NF candidate
-              // (case-insensitive), persist as a wikilink. Anything
-              // else (free text the user just typed) persists as a
-              // plain text bullet so it round-trips as `- text`.
-              const lower = t.toLowerCase();
-              const isWikilink = candidates.some((c) => c.toLowerCase() === lower);
-              onTitleChange(t, isWikilink);
+              // The whole row commits as a wikilink ONLY if the value
+              // is exactly `[[Name]]` — the Milkdown-style trigger
+              // model: free text stays free text; typing `[[…]]`
+              // turns the row into a link. Anything else (text with
+              // stray brackets, prose) saves as a plain text bullet.
+              const wiki = t.match(/^\[\[([^\]\n]+)\]\]$/);
+              if (wiki) onTitleChange(wiki[1].trim(), true);
+              else onTitleChange(t, false);
             }
             setEditingTitle(false);
           }}
@@ -427,7 +429,7 @@ function LineRow({
           candidates={candidates}
           exclude={candidateExclude}
           className="lr-title-input"
-          placeholder="Name or pick a folder"
+          placeholder="Text or [[Folder]]"
         />
       ) : (
         <button

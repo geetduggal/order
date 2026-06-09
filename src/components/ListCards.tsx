@@ -14,6 +14,7 @@ import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } 
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { RefAutocomplete } from "./RefAutocomplete";
+import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { useTileDrag } from "../lib/use-tile-drag";
 import { assetUrl } from "../lib/attachments";
@@ -440,7 +441,7 @@ function BaseCard({
         ) : (
         <div className="basecard-body">
           {editingTitle ? (
-            <RefAutocomplete
+            <WikiRefInput
               autoFocus
               value={titleDraft}
               onChange={setTitleDraft}
@@ -448,12 +449,12 @@ function BaseCard({
                 const t = final.trim();
                 if (t) {
                   if (onTitleChange) {
-                    // Match against autocomplete candidates → decide
-                    // wikilink vs text. Same rule as ListLines so cards
-                    // and lines behave identically when you swap modes.
-                    const lower = t.toLowerCase();
-                    const isWikilink = (candidates ?? []).some((c) => c.toLowerCase() === lower);
-                    onTitleChange(t, isWikilink);
+                    // Same Milkdown-style rule as ListLines: a value
+                    // that is exactly `[[Name]]` saves as wikilink;
+                    // anything else saves as plain text.
+                    const wiki = t.match(/^\[\[([^\]\n]+)\]\]$/);
+                    if (wiki) onTitleChange(wiki[1].trim(), true);
+                    else onTitleChange(t, false);
                   } else if (t !== item.ref) {
                     onRefChange(t);
                   }
@@ -464,7 +465,7 @@ function BaseCard({
               candidates={candidates ?? []}
               exclude={excludeCandidates}
               className="basecard-title-input"
-              placeholder="Name or pick a folder"
+              placeholder="Text or [[Folder]]"
             />
           ) : (
             <button
