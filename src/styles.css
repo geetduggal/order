@@ -2178,6 +2178,10 @@ iframe.order-youtube-embed {
      the same offset so day/week/month/year all read as the same
      two-strip chrome. */
   --fc-title-h: 46px;
+  /* Approximate height of FC's day-of-week column header row. Used
+     to chain the all-day strip's sticky offset so it pins just
+     below the column header in day/week views. */
+  --fc-colhdr-h: 30px;
 }
 .fc-shell .fc-toolbar.fc-header-toolbar {
   margin-bottom: 14px;
@@ -2199,6 +2203,19 @@ iframe.order-youtube-embed {
   position: sticky;
   top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h));
   z-index: 5;
+  background: var(--bg);
+}
+/* All-day strip in day/week timeGrid views — pin it just below the
+   day-of-week column header so all-day events stay visible while the
+   timed body scrolls. FC v6 renders the strip as a non-liquid body
+   section inside .fc-timegrid (the liquid one is the timed body, the
+   one without -body is the divider). Background on the <td> children
+   so timed events can't bleed through underneath when scrolling. */
+.fc-shell .fc-timegrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid),
+.fc-shell .fc-timegrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid) > * {
+  position: sticky;
+  top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h) + var(--fc-colhdr-h));
+  z-index: 4;
   background: var(--bg);
 }
 /* Day-grid (month) cells share the same .fc-col-header element under the
