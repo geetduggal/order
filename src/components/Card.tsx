@@ -47,7 +47,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { isIosSync } from "../lib/vault";
 
@@ -178,19 +178,23 @@ interface Props {
    *  coral highlight back to a hairline once a folder is no longer
    *  novel, so unvisited NF covers stand out and visited ones recede. */
   visited?: boolean;
-  /** Notable Folder Main Documents only: when present, the card
-   *  surfaces a "Notable Update" affordance at the top of the body.
-   *  Tapping it expands a short prompt; submitting creates a new
-   *  all-day note in the folder dated today with the user's text. */
+  /** Notable Folder Main Documents only: tapped from the card chrome
+   *  to log a brief all-day note in the folder dated today. The card
+   *  surfaces a one-line prompt inline; submitting hands the text to
+   *  the parent which performs the actual createNote. */
   onCreateUpdate?: (description: string) => Promise<void> | void;
-  /** Notable Folder Main Documents only: is THIS folder marked as the
-   *  vault's home? Used to render a small filled-star toggle in the
-   *  card's control strip. */
+  /** Notable Folder Main Documents only: is THIS folder the vault's
+   *  home (its YAML carries `home: "<user>/<repo>/<path>"`)? Drives
+   *  the filled vs. outline state of the home icon in the chrome. */
   isHome?: boolean;
-  /** Notable Folder Main Documents only: tap to mark / unmark this
-   *  folder as home. The parent writes `homeNote: true` to this note's
-   *  YAML and clears it from any other note that previously held it. */
-  onToggleHome?: () => Promise<void> | void;
+  /** Notable Folder Main Documents only: tap to mark this folder as
+   *  the home (or, when already home, clear it). The parent owns the
+   *  confirm-replace + URL prompt and the YAML write. */
+  onSetHome?: () => Promise<void> | void;
+  /** Notable Folder Main Documents only: cycle the `list:` YAML key
+   *  through {none → cards → lines → none}. Parent writes YAML. */
+  listMode?: "none" | "cards" | "lines";
+  onCycleList?: () => Promise<void> | void;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -339,7 +343,9 @@ export function Card(props: Props) {
     permalink,
     onCreateUpdate,
     isHome,
-    onToggleHome,
+    onSetHome,
+    listMode,
+    onCycleList,
   } = props;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
@@ -386,6 +392,24 @@ export function Card(props: Props) {
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 1400);
   }, [permalink]);
+  /** "Copy text" chrome — pushes the current note body to the
+   *  clipboard as raw markdown. Editor state is the source of
+   *  truth, so we read from the latest `editorBody` mirror; if the
+   *  card hasn't loaded yet we fall back to whatever's on disk. */
+  const [copiedText, setCopiedText] = useState(false);
+  /** Inline Notable Update prompt visibility — opened from the chrome
+   *  row's + button, dismissed on submit / Esc / × . NF Main Doc only. */
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const copyBodyText = useCallback(() => {
+    // editorBodyRef is populated both on load (setEditorBody during
+    // the read effect) and on every editor change, so it's the
+    // single source of truth even before the user has typed.
+    const src = editorBodyRef.current;
+    if (!src) return;
+    void navigator.clipboard?.writeText(src);
+    setCopiedText(true);
+    setTimeout(() => setCopiedText(false), 1400);
+  }, []);
   /** Mirrors the editor body so saves can fold the current prose
    *  with the structured list items below. Milkdown stays uncontrolled
    *  — this state is downstream-only. */
@@ -890,50 +914,93 @@ export function Card(props: Props) {
       ref={articleRef}
       onMouseDown={onCardFocus}
     >
+      {/* Unified card chrome — single sticky row of icons in the top
+          right. Order (left → right):
+            1. Home toggle (NF Main Doc only)
+            2. List cycle (NF Main Doc only): no list ↔ cards ↔ lines
+            3. Notable update (NF Main Doc only) — opens inline prompt
+            4. Permalink (when set; applies to ANY note)
+            5. Copy text (any note — copies the body to clipboard)
+            6. Folder contents flip (NF Main Doc, editable, desktop)
+            7. Delete (editable only)
+            8. Fullscreen toggle
+            9. × close (dismiss from filtered view) */}
       <div className="order-card-controls" aria-hidden={false}>
-        {/* Folder flip — Notable Folder Main Docs only, desktop only.
-            iOS has no Finder / Terminal to point at and HTML5 drag-out
-            via DownloadURL is a desktop concept, so the flip control
-            is hidden under the sandbox there. The backside lazy-loads
-            the folder's file list with sort / drag-drop / reveal /
-            terminal controls. */}
-        {isMainDoc && !readOnly && (
+        {isMainDoc && !readOnly && onSetHome && (
           <button
             type="button"
-            className={"order-card-flip" + (flipped ? " is-on" : "")}
-            onClick={() => setFlipped((f) => !f)}
-            title={flipped ? "Back to note" : "Folder contents"}
-            aria-label={flipped ? "Show note" : "Show folder contents"}
-            aria-pressed={flipped}
+            className={"order-card-btn order-card-home" + (isHome ? " is-on" : "")}
+            onClick={() => { void onSetHome(); }}
+            title={isHome ? "This is the home folder — tap to clear" : "Mark as home folder (will prompt for publish URL)"}
+            aria-label={isHome ? "Clear home folder" : "Mark as home folder"}
+            aria-pressed={!!isHome}
           >
-            <FolderOpenIcon size={13} strokeWidth={2} />
+            <HomeIcon size={14} strokeWidth={2} />
+          </button>
+        )}
+        {isMainDoc && !readOnly && onCycleList && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-list is-" + (listMode ?? "none")}
+            onClick={() => { void onCycleList(); }}
+            title={
+              listMode === "cards" ? "List: cards — tap for lines" :
+              listMode === "lines" ? "List: lines — tap to drop" :
+              "Make this a list folder (cards)"
+            }
+            aria-label="Cycle list mode"
+          >
+            {listMode === "cards"
+              ? <LayoutGridIcon size={14} strokeWidth={2} />
+              : listMode === "lines"
+                ? <AlignJustifyIcon size={14} strokeWidth={2} />
+                : <ListIcon size={14} strokeWidth={2} />}
+          </button>
+        )}
+        {isMainDoc && !readOnly && onCreateUpdate && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-update" + (updateOpen ? " is-on" : "")}
+            onClick={() => setUpdateOpen((v) => !v)}
+            title={updateOpen ? "Close notable update" : "Log a notable update"}
+            aria-label="Notable update"
+            aria-pressed={updateOpen}
+          >
+            <PlusIcon size={14} strokeWidth={2} />
           </button>
         )}
         {permalink && (
           <button
             type="button"
-            className={"order-card-permalink" + (copiedLink ? " is-copied" : "")}
+            className={"order-card-btn order-card-permalink" + (copiedLink ? " is-copied" : "")}
             onClick={copyPermalink}
             title={copiedLink ? "Permalink copied" : "Copy permalink"}
             aria-label="Copy permalink"
           >
-            {copiedLink ? <Check size={13} strokeWidth={2.4} /> : <Link2 size={13} strokeWidth={2} />}
+            {copiedLink ? <Check size={14} strokeWidth={2.4} /> : <Link2 size={14} strokeWidth={2} />}
           </button>
         )}
         <button
           type="button"
-          className="order-card-fullscreen"
-          onClick={toggleFullscreen}
-          title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
-          aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          className={"order-card-btn order-card-copy" + (copiedText ? " is-copied" : "")}
+          onClick={copyBodyText}
+          title={copiedText ? "Text copied" : "Copy text"}
+          aria-label="Copy text"
         >
-          {fullscreen ? "⤡" : "⤢"}
+          {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}
         </button>
-        {/* Delete sits to the LEFT of the dismiss/close × so the
-            destructive action isn't right next to the most-frequent
-            close-this-card affordance. Delete chrome is editor-only;
-            the dismiss × stays available even when read-only because
-            it's navigation, not mutation. */}
+        {isMainDoc && !readOnly && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-flip" + (flipped ? " is-on" : "")}
+            onClick={() => setFlipped((f) => !f)}
+            title={flipped ? "Back to note" : "Folder contents"}
+            aria-label={flipped ? "Show note" : "Show folder contents"}
+            aria-pressed={flipped}
+          >
+            <FolderOpenIcon size={14} strokeWidth={2} />
+          </button>
+        )}
         {!readOnly && (confirmingDelete ? (
           <span className="order-card-delete-confirm">
             <button
@@ -956,26 +1023,44 @@ export function Card(props: Props) {
         ) : (
           <button
             type="button"
-            className="order-card-delete"
+            className="order-card-btn order-card-delete"
             onClick={startDeleteConfirm}
             title="Delete this note"
             aria-label="Delete note"
           >
-            <Trash2 size={15} strokeWidth={2} />
+            <Trash2 size={14} strokeWidth={2} />
           </button>
         ))}
+        <button
+          type="button"
+          className="order-card-btn order-card-fullscreen"
+          onClick={toggleFullscreen}
+          title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+          aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {fullscreen ? <Minimize2Icon size={14} strokeWidth={2} /> : <Maximize2Icon size={14} strokeWidth={2} />}
+        </button>
         {onRemoveFromFilter && !confirmingDelete && (
           <button
             type="button"
-            className="order-card-dismiss"
+            className="order-card-btn order-card-dismiss"
             onClick={onRemoveFromFilter}
             title="Remove from filtered view"
             aria-label="Remove from filtered view"
           >
-            <XIcon size={15} strokeWidth={2.4} />
+            <XIcon size={14} strokeWidth={2.4} />
           </button>
         )}
       </div>
+      {isMainDoc && !readOnly && !flipped && onCreateUpdate && updateOpen && (
+        <NotableUpdateBar
+          onSubmit={async (description) => {
+            await onCreateUpdate(description);
+            setUpdateOpen(false);
+          }}
+          onCancel={() => setUpdateOpen(false)}
+        />
+      )}
       {flipped && isMainDoc && !readOnly && vaultRootForFlip && (
         <NotableFolderBackside
           vaultRoot={vaultRootForFlip}
@@ -983,14 +1068,6 @@ export function Card(props: Props) {
           folderName={folderName}
           onFlipBack={() => setFlipped(false)}
         />
-      )}
-      {isMainDoc && !readOnly && !flipped && (onCreateUpdate || onToggleHome) && (
-        <div className="nf-affordance-row">
-          {onCreateUpdate && <NotableUpdateBar onSubmit={onCreateUpdate} />}
-          {onToggleHome && (
-            <HomeMarkButton isHome={!!isHome} onToggle={onToggleHome} />
-          )}
-        </div>
       )}
       <div
         className="order-card-content"
@@ -1278,71 +1355,29 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
   );
 }
 
-/** Tiny "mark as home" toggle shown alongside the Notable Update bar
- *  on a Notable Folder Main Document. A single tap flips this folder's
- *  `homeNote: true` flag (and clears it from any other folder) so the
- *  dock's Home button jumps here. Filled when this folder IS home,
- *  hairline outline otherwise — quiet enough to ignore until you want it. */
-function HomeMarkButton({ isHome, onToggle }: { isHome: boolean; onToggle: () => Promise<void> | void }) {
-  const [busy, setBusy] = useState(false);
-  async function click() {
-    if (busy) return;
-    setBusy(true);
-    try { await onToggle(); } finally { setBusy(false); }
-  }
-  return (
-    <button
-      type="button"
-      className={"nf-home-toggle" + (isHome ? " is-on" : "")}
-      onClick={click}
-      disabled={busy}
-      title={isHome ? "This is your home folder — tap to unset" : "Mark this as your home folder"}
-      aria-pressed={isHome}
-      aria-label={isHome ? "Unset home folder" : "Mark as home folder"}
-    >
-      <HomeIcon size={13} strokeWidth={2.1} />
-    </button>
-  );
-}
-
-/** "Notable Update" affordance shown at the top of a Notable Folder
- *  Main Document's body. Tap to expand a short prompt; Enter (or Save)
- *  hands the description back to the parent which creates a new all-day
- *  note dated today in the folder. Esc cancels. */
-function NotableUpdateBar({ onSubmit }: { onSubmit: (description: string) => Promise<void> | void }) {
-  const [open, setOpen] = useState(false);
+/** Inline "notable update" prompt that drops below the card chrome
+ *  when the user taps the + icon in the control strip. Parent owns
+ *  the open/close state so it's driven by the same button that
+ *  rendered the icon; we just show the input + buttons. */
+function NotableUpdateBar({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (description: string) => Promise<void> | void;
+  onCancel: () => void;
+}) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
-    if (open) requestAnimationFrame(() => inputRef.current?.focus());
-  }, [open]);
-
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
   async function commit() {
     const t = text.trim();
-    if (!t) { setOpen(false); return; }
+    if (!t) { onCancel(); return; }
     setBusy(true);
     try { await onSubmit(t); }
-    finally {
-      setBusy(false);
-      setText("");
-      setOpen(false);
-    }
-  }
-  function cancel() { setText(""); setOpen(false); }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="nf-update-toggle"
-        onClick={() => setOpen(true)}
-        title="Log a brief update for this folder as an all-day note"
-      >
-        + Notable update
-      </button>
-    );
+    finally { setBusy(false); setText(""); }
   }
   return (
     <div className="nf-update-bar">
@@ -1356,7 +1391,7 @@ function NotableUpdateBar({ onSubmit }: { onSubmit: (description: string) => Pro
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") { e.preventDefault(); void commit(); }
-          if (e.key === "Escape") { e.preventDefault(); cancel(); }
+          if (e.key === "Escape") { e.preventDefault(); onCancel(); }
         }}
       />
       <button
@@ -1370,7 +1405,7 @@ function NotableUpdateBar({ onSubmit }: { onSubmit: (description: string) => Pro
       <button
         type="button"
         className="nf-update-cancel"
-        onClick={cancel}
+        onClick={onCancel}
         disabled={busy}
         aria-label="Cancel"
       >

@@ -924,34 +924,21 @@ export function CardGrid() {
     return out;
   }, [notes]);
 
-  /** Filename (no .md) of the Notable Folder the user has marked as
-   *  home for navigation purposes — `homeNote: true` in YAML. This is
-   *  decoupled from the publish target (`home: "user/repo/path"`) so
-   *  marking a folder as home from the card UI doesn't have to invent
-   *  a publish target. Falls back to the first publish-home folder for
-   *  backward compat with vaults predating the `homeNote` flag. */
-  const homeNoteFolder = useMemo(() => {
-    if (!notes) return null;
-    for (const n of notes) {
-      if (!isNotableFolder(n.frontmatter)) continue;
-      const v = n.frontmatter.homeNote;
-      if (v === true || v === "true") return n.filename.replace(/\.md$/i, "");
-    }
-    return null;
-  }, [notes]);
-  /** Filename (no .md) of the Notable Folder marked as the navigation
-   *  home. New captures default their `folder:` to this so they land
-   *  in the catch-all rather than at vault root. Held as a ref so
-   *  createNote can read the latest value without re-running on
-   *  every notes change. */
+  /** Filename (no .md) of the Notable Folder marked as home — the
+   *  one whose YAML carries `home: "<user>/<repo>/<path>"`. Single
+   *  source of truth for both navigation and publishing now that the
+   *  card-chrome home toggle writes the same key (and the parent
+   *  enforces "one home at a time" by clearing any previous holder).
+   *  Held as a ref so createNote can read the latest value without
+   *  re-running on every notes change. */
   const homeFolderRef = useRef<string | null>(null);
   // All home Notable Folder names — resetToDefault rebuilds the
   // default exclude set from this.
   const homeFoldersRef = useRef<string[]>([]);
   useEffect(() => {
-    homeFolderRef.current = homeNoteFolder ?? homeFolders[0]?.name ?? null;
+    homeFolderRef.current = homeFolders[0]?.name ?? null;
     homeFoldersRef.current = homeFolders.map((h) => h.name);
-  }, [homeNoteFolder, homeFolders]);
+  }, [homeFolders]);
   // Refs the Cmd+arrow keyboard handler reads — it sits in a useEffect
   // with an empty-ish dep array, so the latest filters / notable-folder
   // order need to flow in via a mutable ref.
@@ -1375,14 +1362,21 @@ export function CardGrid() {
         return;
       }
       if (e.key === "o" || e.key === "O") {
+        // Cmd+O — "open a Notable Folder". Pops the centered folder
+        // palette (was Cmd+K). The palette is the single way the
+        // user opens a folder by name now that the dock no longer
+        // carries a folder-marker affordance.
         e.preventDefault();
-        if (!sidebarOpen) {
-          setSidebarOpen(true);
-          writeSidebarOpen(true);
-        }
+        setPaletteOpen((open) => !open);
         return;
       }
       if (e.key === "k" || e.key === "K") {
+        // Cmd+K is owned by Milkdown's link tooltip when typing
+        // inside an editor — selected text → link prompt. We only
+        // intercept it OUTSIDE the editor (where it would otherwise
+        // be inert), as a no-op alias for Cmd+O so muscle memory
+        // from the old binding doesn't pop a missing surface.
+        if (isTyping(e.target)) return;
         e.preventDefault();
         setPaletteOpen((open) => !open);
         return;
@@ -2327,36 +2321,73 @@ export function CardGrid() {
           });
         } : undefined}
         isHome={isMain ? n.filename.replace(/\.md$/i, "") === homeFolderRef.current : undefined}
-        onToggleHome={isMain ? async () => {
-          // Toggle the `homeNote: true` flag for THIS NF Main Doc.
-          // If another NF currently holds the flag, clear it there
-          // (one home at a time). We rewrite YAML directly via
-          // split/join so we don't have to round-trip the whole card
-          // body — the body stays byte-identical, only frontmatter
-          // changes. The watcher will re-load both files.
-          const willBeHome = n.filename.replace(/\.md$/i, "") !== homeFolderRef.current;
-          const currentHomePath = (() => {
-            const cur = homeFolderRef.current;
-            if (!cur) return null;
-            const match = (notesRef.current ?? []).find(
-              (other) => other.filename.replace(/\.md$/i, "") === cur,
-            );
-            return match?.path ?? null;
-          })();
-          // Clear the previous home (if any, and if it's not this note).
-          if (currentHomePath && currentHomePath !== n.path) {
-            const raw = await vaultFs.readText(toVaultRel(currentHomePath));
+        onSetHome={isMain ? async () => {
+          // Toggle the publishing/home key `home: "<user>/<repo>/<path>"`
+          // for THIS NF Main Doc. There is at most one home at a time —
+          // if another NF currently holds it, we confirm replacement
+          // with the user before clearing the old one.
+          const thisRef = n.filename.replace(/\.md$/i, "");
+          const current = homeFolderRef.current;
+          const isThisHome = current === thisRef;
+          if (isThisHome) {
+            // Already home → tap clears it. No prompt.
+            const raw = await vaultFs.readText(toVaultRel(n.path));
             const split = splitFrontmatter(raw);
             const fm = { ...split.frontmatter };
-            delete fm.homeNote;
-            await writeVault(currentHomePath, joinFrontmatter(fm, split.body));
+            delete fm.home;
+            await writeVault(n.path, joinFrontmatter(fm, split.body));
+            return;
           }
-          // Set / clear on THIS note.
+          // Setting home on this folder. If another folder already
+          // holds `home:`, confirm the takeover first.
+          if (current) {
+            const ok = window.confirm(
+              `${current} is currently the home folder. Replace it with ${thisRef}?`,
+            );
+            if (!ok) return;
+          }
+          // Prompt for the publish URL/string. Suggest the current
+          // value (if any) on this note, else a sensible scaffold.
+          const existing = typeof n.frontmatter.home === "string" ? n.frontmatter.home : "";
+          const target = window.prompt(
+            "Publish target for this home (e.g. user/repo/path):",
+            existing || "user/repo/path",
+          );
+          if (!target || !target.trim()) return;
+          // Clear `home:` from the previous holder, if any.
+          if (current) {
+            const prevPath = (notesRef.current ?? []).find(
+              (other) => other.filename.replace(/\.md$/i, "") === current,
+            )?.path;
+            if (prevPath && prevPath !== n.path) {
+              const raw = await vaultFs.readText(toVaultRel(prevPath));
+              const split = splitFrontmatter(raw);
+              const fm = { ...split.frontmatter };
+              delete fm.home;
+              await writeVault(prevPath, joinFrontmatter(fm, split.body));
+            }
+          }
+          // Write `home:` on this folder.
+          const raw = await vaultFs.readText(toVaultRel(n.path));
+          const split = splitFrontmatter(raw);
+          const fm = { ...split.frontmatter, home: target.trim() };
+          await writeVault(n.path, joinFrontmatter(fm, split.body));
+        } : undefined}
+        listMode={isMain
+          ? (n.frontmatter.list === "cards" ? "cards"
+            : n.frontmatter.list === "lines" ? "lines"
+            : "none")
+          : undefined}
+        onCycleList={isMain ? async () => {
+          // Cycle the `list:` YAML through none → cards → lines →
+          // none. Body untouched — the renderer reacts on next load.
           const raw = await vaultFs.readText(toVaultRel(n.path));
           const split = splitFrontmatter(raw);
           const fm = { ...split.frontmatter };
-          if (willBeHome) fm.homeNote = true;
-          else delete fm.homeNote;
+          const cur = fm.list === "cards" ? "cards" : fm.list === "lines" ? "lines" : "none";
+          if (cur === "none") fm.list = "cards";
+          else if (cur === "cards") fm.list = "lines";
+          else delete fm.list;
           await writeVault(n.path, joinFrontmatter(fm, split.body));
         } : undefined}
       />
@@ -2560,7 +2591,7 @@ export function CardGrid() {
           type="button"
           className="dock-btn dock-btn-search"
           onClick={() => setPaletteOpen(true)}
-          title="Search (Cmd+K)"
+          title="Open Notable Folder (Cmd+O)"
           aria-label="Search"
         >
           <SearchIcon size={20} strokeWidth={2.1} />

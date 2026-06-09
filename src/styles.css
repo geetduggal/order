@@ -797,11 +797,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   right: calc(6px + env(safe-area-inset-right));
 }
 
-.order-card-flip,
-.order-card-permalink,
-.order-card-fullscreen,
-.order-card-delete,
-.order-card-dismiss {
+/* Unified chrome button — every icon in the top-right strip uses this
+   base. State (filled, hover-coral for destructive, hover-royal for
+   constructive) is handled by per-class overrides below. */
+.order-card-btn {
   font-size: 16px;
   line-height: 1;
   color: var(--ink-faint);
@@ -813,15 +812,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   justify-content: center;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.order-card-fullscreen:hover,
-.order-card-flip:hover {
+.order-card-btn:hover { color: var(--royal); background: var(--royal-soft); }
+.order-card-btn:active { transform: scale(0.9); }
+
+/* Filled state — a button that's currently "on" reads as royal-soft
+   filled regardless of its specific role. */
+.order-card-home.is-on,
+.order-card-flip.is-on,
+.order-card-update.is-on,
+.order-card-list.is-cards,
+.order-card-list.is-lines {
   color: var(--royal);
   background: var(--royal-soft);
 }
-.order-card-flip.is-on {
-  color: var(--royal);
-  background: var(--royal-soft);
-}
+
+/* Coral hover for destructive actions only — delete + dismiss × . */
 .order-card-delete:hover {
   color: var(--coral);
   background: var(--coral-soft);
@@ -830,9 +835,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   color: var(--ink);
   background: var(--bg-elev);
 }
-.order-card-fullscreen:active,
-.order-card-delete:active,
-.order-card-dismiss:active { transform: scale(0.9); }
+
+/* Copied flash — same visual cue as the permalink already has, shared
+   with the new copy-text button. */
+.order-card-permalink.is-copied,
+.order-card-copy.is-copied {
+  color: var(--royal);
+  background: var(--royal-soft);
+}
 
 /* Inline frontmatter strip at the bottom of every card. Always
    visible, very small font, key:value pairs flowing horizontally and
@@ -934,24 +944,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .order-card-fm-link:hover { border-bottom-style: solid; }
 
-.order-card-permalink {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-faint);
-  background: transparent;
-  padding: 4px 6px;
-  border-radius: 3px;
-  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
-}
-.order-card-permalink:hover {
-  color: var(--royal);
-  background: var(--royal-soft);
-}
-.order-card-permalink.is-copied {
-  color: #2e7d52; /* brief confirmation green */
-}
-.order-card-permalink:active { transform: scale(0.9); }
+/* Permalink + copy buttons inherit .order-card-btn — see unified strip. */
 
 .order-card-delete-confirm {
   display: inline-flex;
@@ -5340,80 +5333,8 @@ iframe.order-youtube-embed {
   .fc-top-controls > * { flex: 0 0 auto; }
 }
 
-/* ---------- Notable Folder affordance row ---------- */
-/* The control strip above an NF Main Doc body: Notable Update on the
-   left, the home-marker star on the right. Both children stay small;
-   the row only shows up when at least one of them is wired. */
-.nf-affordance-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 8px;
-}
-.nf-affordance-row > .nf-update-toggle,
-.nf-affordance-row > .nf-update-bar { margin: 0; }
-.nf-affordance-row > .nf-update-bar { flex: 1; min-width: 0; }
-
-/* Tiny home-toggle. Hairline outline when off, filled royal when on —
-   subtle enough to disappear visually until the user looks for it. */
-.nf-home-toggle {
-  margin-left: auto;
-  width: 24px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--rule);
-  background: transparent;
-  color: var(--ink-faint);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.12s var(--ease-out),
-              border-color 0.12s var(--ease-out),
-              background-color 0.12s var(--ease-out);
-}
-.nf-home-toggle:hover {
-  color: var(--royal);
-  border-color: var(--royal);
-}
-.nf-home-toggle.is-on {
-  color: #fff;
-  background: var(--royal);
-  border-color: var(--royal);
-  border-style: solid;
-}
-.nf-home-toggle.is-on:hover {
-  background: #182f80;
-  border-color: #182f80;
-}
-
-/* ---------- Notable Folder "Notable update" affordance ---------- */
-/* A small subtle button at the top of an NF Main Doc card. Tap to
-   expand a one-line input; submit creates a new all-day note in the
-   folder dated today. Sits above the editor body, padded to match. */
-.nf-update-toggle {
-  display: inline-flex;
-  align-items: center;
-  margin: 0 0 8px;
-  padding: 3px 10px;
-  border: 1px dashed var(--rule);
-  border-radius: 4px;
-  font-family: var(--sans);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  background: transparent;
-  cursor: pointer;
-  transition: color 0.12s var(--ease-out),
-              border-color 0.12s var(--ease-out),
-              background-color 0.12s var(--ease-out);
-}
-.nf-update-toggle:hover {
-  color: var(--coral);
-  border-color: var(--coral);
-  background: var(--coral-soft);
-}
+/* ---------- Notable Folder "Notable update" inline prompt ---------- */
+/* The chrome row's + button toggles this bar open below the strip. */
 .nf-update-bar {
   display: flex;
   align-items: center;
