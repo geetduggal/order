@@ -115,8 +115,12 @@ export function useTileDrag(
         const sameRow = before && after && Math.abs(before.top - after.top) < 4;
         let x: number, top: number, h: number;
         if (sameRow) {
-          // Centered in the gutter between two tiles on the same row.
-          x = (before!.right + after!.left) / 2; top = before!.top; h = before!.height;
+          // Hug the right edge of the "before" card — reads as "you'll
+          // land right after this card." Centering in the gutter looks
+          // dead-center between two adjacent cards (especially when the
+          // gutter is wide because the dragged tile vacated that slot),
+          // which is the awkward placement we're avoiding.
+          x = before!.right + 3; top = before!.top; h = before!.height;
         } else {
           // Pick the flanking tile in the cursor's row, draw on its near side.
           const dB = before ? Math.abs(py - (before.top + before.height / 2)) : Infinity;
