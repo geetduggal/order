@@ -91,7 +91,10 @@ const SIZE_SUFFIX_RE = /^\d+(?:x\d+)?$/;
 // brackets (they aren't standard markdown). Strip those escapes
 // before regex matching so `\[\[Name]]` and `[[Name]]` both parse.
 function unescapeBrackets(s: string): string {
-  return s.replace(/\\([\[\]])/g, "$1");
+  // Cover `\!` too — Milkdown sometimes escapes the leading `!`
+  // when serializing an image-shaped sequence it didn't parse as a
+  // proper image (e.g. our `![[X]]` Obsidian embed form).
+  return s.replace(/\\([\[\]!])/g, "$1");
 }
 
 function parseLine(line: string): ListItem | null {

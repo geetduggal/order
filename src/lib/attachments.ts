@@ -128,28 +128,48 @@ export function inflateImageEmbeds(body: string, noteDir: string): string {
   // them too. Inside fenced code blocks, leave the source verbatim so
   // a literal `[[image.png]]` snippet doesn't get rewritten.
   body = upgradeBareMediaWikilinks(body);
-  return body.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
-    const target = name.trim();
-    if (isVideoPath(target)) {
-      // Emit a bare HTML video block — Milkdown's commonmark turns
-      // the open + close tag into one or two `html` schema nodes
-      // whose value is the raw text. The video-embed PM plugin
-      // (lib/milkdown-video.ts) finds those nodes, hides their
-      // literal-text rendering via a node decoration, and mounts a
-      // real <video controls playsinline> widget at the same spot.
-      // Blank lines above and below make it a CommonMark type-7
-      // HTML block so the parser keeps it intact instead of
-      // shredding it into inline fragments.
-      const url = assetUrl(`${dir}${target}`);
-      return `\n\n<video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video>\n\n`;
-    }
-    if (!isImagePath(target)) return full;
-    const url = assetUrl(`${dir}${target}`);
-    const width = parseEmbedWidth(size);
-    if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
-    const alt = size?.trim() ?? "";
-    return alt ? `![${alt}](${url})` : `![](${url})`;
-  });
+  // Process line by line so we can SKIP inflation for image embeds
+  // that sit inside a bullet. Why: Milkdown's CommonMark serializer
+  // round-trips `- ![alt](url)` (a list item containing an inline
+  // image) as `- ` + a standalone `![alt](url)` block — splitting
+  // the list item from its image. Once corrupted, the file's next
+  // load reads the empty bullet as a text item (`<br />`) and the
+  // standalone image as prose; every subsequent toggle compounds
+  // the damage.
+  // Keeping the bulleted form as raw `![[X]]` text sidesteps the
+  // breakage: Milkdown sees `![[…]]` as text (no valid CommonMark
+  // image construct), serializes it back unchanged. List-mode's
+  // parseLine already handles both `- ![[X]]` and `- ![](url)`,
+  // so cards/lines rendering still works.
+  const BULLET_IMG = /^[ \t]*[-*+]\s+!\[\[/;
+  return body
+    .split("\n")
+    .map((line) => {
+      if (BULLET_IMG.test(line)) return line;
+      return line.replace(IMG_EMBED_RE, (full, name: string, size?: string) => {
+        const target = name.trim();
+        if (isVideoPath(target)) {
+          // Emit a bare HTML video block — Milkdown's commonmark turns
+          // the open + close tag into one or two `html` schema nodes
+          // whose value is the raw text. The video-embed PM plugin
+          // (lib/milkdown-video.ts) finds those nodes, hides their
+          // literal-text rendering via a node decoration, and mounts a
+          // real <video controls playsinline> widget at the same spot.
+          // Blank lines above and below make it a CommonMark type-7
+          // HTML block so the parser keeps it intact instead of
+          // shredding it into inline fragments.
+          const url = assetUrl(`${dir}${target}`);
+          return `\n\n<video class="order-vault-video" src="${url}" controls playsinline preload="metadata"></video>\n\n`;
+        }
+        if (!isImagePath(target)) return full;
+        const url = assetUrl(`${dir}${target}`);
+        const width = parseEmbedWidth(size);
+        if (width) return `![${(width / EMBED_REF_WIDTH).toFixed(2)}](${url})`;
+        const alt = size?.trim() ?? "";
+        return alt ? `![${alt}](${url})` : `![](${url})`;
+      });
+    })
+    .join("\n");
 }
 
 /** Rewrites every bare `[[file.png]]` outside fenced code into the
