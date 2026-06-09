@@ -2207,18 +2207,31 @@ iframe.order-youtube-embed {
 }
 /* All-day strip in day/week timeGrid views — pin it just below the
    day-of-week column header so all-day events stay visible while the
-   timed body scrolls. FC v6 renders the strip as a non-liquid body
-   section inside .fc-timegrid (the liquid one is the timed body, the
-   one without -body is the divider). Sticky on the <td> only (not
-   the parent <tr>) because position: sticky on <tr> is unreliable in
-   WebKit; the <td> is the visible content holder and its sticky
-   reference is the same scrollport as the rest of the chrome chain.
-   Background on the <td> so timed events can't bleed through
-   underneath when scrolling. */
-.fc-shell .fc-timegrid > .fc-scrollgrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid) > td {
+   timed body scrolls.
+   WebKit (Safari / iOS) has a long-standing bug where position: sticky
+   on table cells inside <tbody> doesn't track the viewport — the
+   col-header above works because it's in <thead>, where sticky on
+   <th> is honored. The body all-day section is in <tbody>, where the
+   same rule on its <td> silently fails.
+   Fix: target the .fc-scroller-harness div FC nests inside the td (a
+   normal block element, not a table cell), and make THAT sticky. The
+   visible all-day content lives entirely inside this div, so pinning
+   it pins the events. Background on the harness so timed events
+   don't bleed through. */
+.fc-shell .fc-timegrid > .fc-scrollgrid tr.fc-scrollgrid-section-body:not(.fc-scrollgrid-section-liquid) > td > .fc-scroller-harness {
   position: sticky;
   top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h) + var(--fc-colhdr-h));
   z-index: 4;
+  background: var(--bg);
+}
+/* Also pin the divider that FC renders between the all-day strip and
+   the timed grid (a 1-row tr with a class of fc-scrollgrid-section,
+   no -body). Without this it scrolls under the sticky harness and
+   then re-emerges below it — visible flicker on slow scrolls. */
+.fc-shell .fc-timegrid > .fc-scrollgrid tr.fc-scrollgrid-section:not(.fc-scrollgrid-section-body):not(.fc-scrollgrid-section-header) > td {
+  position: sticky;
+  top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h) + var(--fc-colhdr-h));
+  z-index: 3;
   background: var(--bg);
 }
 /* Day-grid (month) cells share the same .fc-col-header element under the
