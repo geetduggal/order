@@ -22,6 +22,12 @@ export interface ListItem {
    *  trips with Obsidian — when present and non-numeric, Obsidian
    *  treats the suffix as alt text. */
   caption?: string;
+  /** Plain-text bullets (`- hello world`) that aren't wikilinks. The
+   *  renderer treats these as display-only items — text as title,
+   *  no navigation, no note resolve. `ref` mirrors the text so
+   *  dedup/drag-tracking still works. Round-trips on save as the
+   *  original `- text` bullet rather than a wikilink. */
+  text?: string;
 }
 
 /** Minimal vault index entry the list renderers + base evaluator
@@ -59,6 +65,13 @@ export function isListFolder(frontmatter: Frontmatter): boolean {
 
 const WIKI_BULLET_RE =
   /^\s*[-*+]\s+\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]\s*(.*)$/;
+
+// Plain-text bullets: `- some text`, `* anything`, `+ etc`. Captures
+// the bullet content so we can echo it back on save and use it as the
+// display title. Excludes empty bullets so a stray `- ` doesn't become
+// a phantom item. Wikilink + image bullets are matched FIRST below, so
+// only bullets that aren't either of those reach this regex.
+const PLAIN_BULLET_RE = /^\s*[-*+]\s+(\S.*?)\s*$/;
 
 // Image-embed bullet, accepting two equivalent forms:
 //   * ![[file.png]]                  ← on-disk Obsidian-style embed
@@ -104,11 +117,21 @@ function parseLine(line: string): ListItem | null {
     return { ref: base, image: url, ...(caption ? { caption } : {}) };
   }
   const m = unescaped.match(WIKI_BULLET_RE);
-  if (!m) return null;
-  const ref = (m[2] ?? m[1]).trim();
-  const trailing = m[3]?.trim() ?? "";
-  const meta = trailing.replace(/^[·•|\-–—]+\s*/, "").trim();
-  return { ref, meta: meta || undefined };
+  if (m) {
+    const ref = (m[2] ?? m[1]).trim();
+    const trailing = m[3]?.trim() ?? "";
+    const meta = trailing.replace(/^[·•|\-–—]+\s*/, "").trim();
+    return { ref, meta: meta || undefined };
+  }
+  // Plain bullet — make it a display-only item so the list-folder
+  // render shows it as a card (or line) titled by its text. The user
+  // can later promote it to a real wikilink-backed note if they want.
+  const pb = unescaped.match(PLAIN_BULLET_RE);
+  if (pb) {
+    const text = pb[1].trim();
+    if (text) return { ref: text, text };
+  }
+  return null;
 }
 
 export function parseListItems(body: string): ListItem[] {
@@ -164,6 +187,10 @@ export function serializeListItems(items: ListItem[]): string {
         const caption = item.caption?.trim();
         return caption ? `- ![[${item.ref}|${caption}]]` : `- ![[${item.ref}]]`;
       }
+      // Plain text bullet — emit verbatim. No wikilink wrap, so a
+      // round-trip through Order doesn't silently turn user text into
+      // a wikilink to a nonexistent note.
+      if (item.text) return `- ${item.text}`;
       return `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`;
     })
     .join("\n");

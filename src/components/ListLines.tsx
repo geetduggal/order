@@ -171,13 +171,14 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         />
       )}
       {items.map((item, originalIdx) => {
-        const note = resolveNoteRef(item.ref, vaultNotes);
+        // Plain-text bullet — display its text, no navigation, no
+        // resolve. The parser surfaces these so plain `- foo` bullets
+        // become rows in the lines view alongside any wikilink rows.
+        const isText = !!item.text;
+        const note = isText ? null : resolveNoteRef(item.ref, vaultNotes);
         const color = folderColor(item.ref, note?.frontmatter.color);
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggingRef;
-        // Click semantics: an NF target accumulates into the active
-        // filter set (so multi-folder views build up by drilling);
-        // any other resolved note replaces with a single-ref filter.
         const isNF = !!(note && isNotableFolder(note.frontmatter));
         const titleHandler = note
           ? (isNF && onAddFilter ? () => onAddFilter(item.ref)
@@ -272,13 +273,13 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             item={item}
             color={color}
             Icon={Icon}
-            displayTitle={displayTitleFor(item, note)}
-            metaSuggestion={pickMeta(item, note)}
+            displayTitle={isText ? item.text! : displayTitleFor(item, note ?? undefined)}
+            metaSuggestion={isText ? "" : pickMeta(item, note ?? undefined)}
             dragging={dragging}
             draggable={!readOnly}
             readOnly={hideControls}
             expansion={expansion}
-            onNavigate={titleHandler}
+            onNavigate={isText ? undefined : titleHandler}
             onTilePointerDown={onTilePointerDown}
             onDelete={() => remove(originalIdx)}
             onMetaChange={(m) => updateMeta(originalIdx, m)}

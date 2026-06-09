@@ -216,6 +216,11 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         const Icon = folderIcon(item.ref, note?.frontmatter.icon);
         const tintCls = originalIdx % 2 === 0 ? "is-royal" : "is-coral";
         const dragging = item.ref === draggingRef;
+        // Plain-text bullet — the parser surfaced it as a list item so
+        // the user's `- foo` bullets show as cards, but there's no
+        // backing note to navigate to. Render the text as the title,
+        // no nav, no resolve-by-name machinery.
+        const isText = !!item.text;
         return (
           <BaseCard
             key={item.ref}
@@ -223,12 +228,13 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             Icon={Icon}
             image={image}
             tintCls={tintCls}
-            displayTitle={displayTitleFor(item, note)}
-            metaSuggestion={pickMeta(item, note)}
+            displayTitle={isText ? item.text! : displayTitleFor(item, note)}
+            metaSuggestion={isText ? "" : pickMeta(item, note)}
             dragging={dragging}
             draggable={!readOnly}
             readOnly={hideControls}
             onNavigate={(() => {
+              if (isText) return undefined;
               if (!note) return undefined;
               const isNF = isNotableFolder(note.frontmatter);
               if (isNF && onAddFilter) return () => onAddFilter(item.ref);
