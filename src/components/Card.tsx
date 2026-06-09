@@ -611,9 +611,40 @@ export function Card(props: Props) {
           outFrontmatter = rest;
         }
       } else if (isListFolder(frontmatter)) {
-        const bullets = serializeListItems(listItemsRef.current);
+        // Drop "empty" items before serializing — Milkdown's CommonMark
+        // serializer can leave a `- <br />` artifact behind when a
+        // list-item-with-image gets round-tripped (the image becomes a
+        // standalone block, the list item is emptied). Without the
+        // filter those empties get parsed back as text items on next
+        // load and the file slowly self-corrupts on every save.
+        const cleanItems = listItemsRef.current.filter(
+          (i) => i.image || (i.text && i.text.trim() && i.text.trim() !== "<br />") || (i.ref && i.ref.trim() && i.ref.trim() !== "<br />"),
+        );
+        // Scrub the editor body of standalone image embeds whose base
+        // matches a listItem's image — Milkdown's split-out copies. The
+        // list is the source of truth for image items; the body should
+        // hold prose only.
+        const imageRefs = new Set(
+          cleanItems
+            .filter((i) => i.image)
+            .map((i) => i.ref.toLowerCase()),
+        );
+        let scrubbed = body;
+        if (imageRefs.size > 0) {
+          scrubbed = scrubbed.replace(
+            /^[ \t]*!\[[^\]]*\]\(([^)\s]+)\)[ \t]*$/gm,
+            (full, url: string) => {
+              const base = (url.split(/[?#]/)[0].split("/").pop() ?? "").toLowerCase();
+              try {
+                return imageRefs.has(decodeURIComponent(base)) || imageRefs.has(base) ? "" : full;
+              } catch { return imageRefs.has(base) ? "" : full; }
+            },
+          );
+          scrubbed = scrubbed.replace(/\n{3,}/g, "\n\n");
+        }
+        const bullets = serializeListItems(cleanItems);
         if (bullets) {
-          outBody = `${body.replace(/\n+$/, "")}\n\n${bullets}\n`;
+          outBody = `${scrubbed.replace(/\n+$/, "")}\n\n${bullets}\n`;
         }
       } else if (listItemsRef.current.length > 0) {
         // Not a list folder right now, but we still hold items from the
