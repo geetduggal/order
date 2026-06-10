@@ -260,8 +260,9 @@ CardGrid                 # top: loads notes, owns view + filter state
 ├── Card[]               # Stream view; each card owns its file
 │   ├── MilkdownSurface  # editor (or readonly Crepe in the viewer)
 │   └── ListView         # ListCards / ListLines for any list folder
-├── CalendarView         # Week / Month
+├── CalendarView         # Day / Week / Month
 ├── YearLinearView       # Year — 12 rows × 37 cells
+├── SeasonView           # Season — Areas grid filtered by a date range
 └── CommandPalette       # Cmd+K folder picker
 ```
 
@@ -513,6 +514,58 @@ three independent sources:
   (`order.calendar.week-hidden-days`) so it survives reloads on desktop,
   iOS, and the published viewer.
 
+### Seasons
+
+A **season** is a user defined date range, a sibling to Day / Week / Month /
+Year in the calendar tabs. Where the other scopes fix the unit (one day, one
+week, one month, one year) and let you walk through them in lockstep, a season
+is your own unit: a stretch of life with a beginning and (usually) an end. Use
+it for a school term, a sabbatical, a quarter at work, a baby's first six
+months, the stretch between two surgeries. Order doesn't try to infer it. You
+write it.
+
+The motivation borrows from atlas journaling: the rhythms that matter to a
+person are rarely a calendar's. A weekly review is too frequent to see the
+shape of a project; a yearly review is too coarse to see the shape of a
+season of life. The Season scope is the rhythm you actually live in.
+
+**On disk**, a season list is a single file at the vault root, by convention
+`Seasons.md`, identified by `role: seasons` in its YAML (the same shape
+`Areas.md` uses with `role: areas`). The body is a bullet list of ISO 8601
+ranges, one season per line:
+
+```yaml
+---
+role: seasons
+---
+# Seasons
+
+- 2026-01-27 - 2026-05-24 · Spring 2026
+- 2026-06-01 -  · Current
+```
+
+An empty right edge means the season is open ended (the current season). The
+`· name` suffix is optional; without it, the bare date range becomes the
+label. The file is a plain note, so editing the ranges happens in the same
+Crepe surface as any other note: a pencil button in the season header drops
+you straight into it.
+
+**The view**. The season header shows the name with the date range to its
+right, sticky to the top like the year header. Below it sits a two column
+Areas grid; each cell is one Area and lists the Notable Folders inside it
+whose all-day events ("notable updates") fell inside the season's range,
+sorted most recent first and capped at eight per cell. Each NF row expands
+into nested bullets, one per all-day note in the range, with the note's title
+as a tap-to-open link. Empty cells show only the Area name. The arrows step
+through seasons in document order (disabled at the boundaries; no wrap); the
+today button jumps to whichever season contains today's date, falling back to
+the most recent past season if today sits in a gap.
+
+The implementation is intentionally thin. A small `seasons.ts` library parses
+the bullets and computes per-Area NF activity in memory over the already
+loaded `calendarNotes`; the `SeasonView` component renders the grid. No new
+vault APIs, no separate index, no FullCalendar coupling.
+
 ### File watching
 
 A Rust-side `notify` watcher (debounced 500ms) observes the vault tree and
@@ -578,7 +631,7 @@ and phone. Left to right:
   Auto-flips Show to *All* when invoked under *Notable folders only* so the
   new card is always immediately visible.
 - **view picker** — one button, a menu with two parallel groups:
-    - *View*: Stream / Day / Week / Month / Year
+    - *View*: Stream / Day / Week / Month / Year / Season
     - *Show*: All notes + folders / Notes only / Notable folders only
   Pick from either group changes only its own selection (a tap on "Notes only"
   doesn't force Stream view — you can be in Week + Notes-only at the same
@@ -648,13 +701,16 @@ adding one is a dozen lines.
   font-size variable — deliberately *not* CSS `zoom` or native webview zoom,
   which throw ProseMirror's click-to-caret hit-testing off (and the native path
   isn't available on iOS). The size persists.
-- `Cmd N` — new note. `Cmd S / D / W / M / Y` — switch to Stream / Day / Week /
-  Month / Year. The active view persists across launches; first launch defaults
-  to **Day on phones** (viewport ≤640px) and **Week on desktop**.
+- `Cmd N` — new note. `Cmd D / W / M / Y / S` — switch to Day / Week / Month /
+  Year / Season. The active view persists across launches; first launch
+  defaults to **Day on phones** (viewport ≤640px) and **Week on desktop**.
+  Stream isn't on its own letter; reach it via the dock's Home button (or
+  `Cmd R` to toggle home / clear).
 - `Cmd Ctrl ← / →` — back / forward by the active view's unit. In **Stream**
   it cycles the single-folder include filter through `notableFolders`; in
   **Day / Week / Month** it calls FullCalendar's `prev` / `next`; in **Year**
-  it decrements / increments the year. (Both modifiers are required so plain
+  it decrements / increments the year; in **Season** it steps through the
+  `Seasons.md` ranges in document order. (Both modifiers are required so plain
   Cmd+←/→ keep their browser-style word-jump behaviour inside the Milkdown
   editor.)
 - `Cmd T` — cycle theme. `Cmd '` — clear all filters. `?` — toggle the
