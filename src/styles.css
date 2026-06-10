@@ -511,18 +511,12 @@ input, textarea, select { outline: none; box-shadow: none; }
               0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-/* Notable Folder Main Document — permanent thick coral border so the
-   NF cover always reads as the section header it is. No tiering; the
-   highlight stays loud whether the folder is pinned in the pile or
-   just appearing in the bare stream. */
+/* Notable Folder Main Document — keeps the same border weight as a
+   regular card; the distinction is a very slight coral tint on the
+   background, just enough to read as "this is the section header"
+   without the louder bordered chrome the design used previously. */
 .order-card.is-main {
-  border-width: 2px;
-  border-color: var(--coral);
-  box-shadow: 0 6px 18px rgba(255, 90, 72, 0.14);
-}
-:root[data-theme="dark"] .order-card.is-main,
-:root[data-theme="black"] .order-card.is-main {
-  box-shadow: 0 6px 18px rgba(255, 138, 120, 0.15);
+  background: color-mix(in srgb, var(--coral) 5%, var(--bg));
 }
 .order-card.is-loading {
   min-height: 100px;
@@ -1031,6 +1025,15 @@ input, textarea, select { outline: none; box-shadow: none; }
   font-size: 1em;
 }
 .milkdown-host .ProseMirror p:last-child { margin-bottom: 0; }
+/* Any block that ends the document shouldn't leave a trailing gutter —
+   the card's own padding already sets the bottom rhythm. Without this,
+   a note that ends in a bullet list left a visible band of whitespace
+   below the last bullet (the ul's 0.7em bottom margin compounding with
+   card padding). Mirrors the equivalent <p>:last-child rule above. */
+.milkdown-host .ProseMirror > :is(ul, ol, blockquote, pre, hr):last-child,
+.milkdown-host .milkdown > .milkdown-list-item-block:last-child {
+  margin-bottom: 0;
+}
 
 /* Lists: tight vertical rhythm so a bullet list reads as a compact
    cluster, not a sea of gaps. */
