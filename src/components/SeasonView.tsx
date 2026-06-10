@@ -10,10 +10,11 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate } from "../lib/frontmatter";
+import { Pencil } from "lucide-react";
 import {
   buildSeasonActivity,
   findSeasonForDate,
-  seasonLabel,
+  seasonRange,
   type Season,
   type SeasonActivity,
 } from "../lib/seasons";
@@ -41,6 +42,11 @@ interface NoteForView {
 
 interface Props {
   seasons: Season[];
+  /** Absolute path of the Seasons.md (or role:seasons) file, when one
+   *  exists on disk. Powers the "edit Seasons.md" affordance in the
+   *  header so the user can adjust the date ranges without leaving
+   *  Order. Null when no seasons file has been authored yet. */
+  seasonsPath: string | null;
   areas: AreaForView[];
   notes: NoteForView[];
   /** Click handler for an Area header or NF row. Receives the bare ref
@@ -55,7 +61,7 @@ interface Props {
 }
 
 export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonView(
-  { seasons, areas, notes, onOpenRef, onOpenPath, currentView, onSelectView },
+  { seasons, seasonsPath, areas, notes, onOpenRef, onOpenPath, currentView, onSelectView },
   navRef,
 ) {
   const today = isoDate();
@@ -155,9 +161,26 @@ export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonVie
             ›
           </button>
         </div>
-        <h2 className="year-label season-label">
-          {season ? seasonLabel(season) : "No seasons"}
-        </h2>
+        <div className="season-title">
+          <h2 className="year-label season-label">
+            {season ? (season.name ?? seasonRange(season)) : "No seasons"}
+          </h2>
+          {season && season.name && (
+            <div className="season-sublabel">{seasonRange(season)}</div>
+          )}
+        </div>
+        {seasonsPath && (
+          <button
+            type="button"
+            className="season-edit-btn"
+            onClick={() => onOpenPath(seasonsPath)}
+            title="Edit Seasons.md"
+            aria-label="Edit Seasons.md"
+          >
+            <Pencil size={14} />
+            <span>Edit Seasons.md</span>
+          </button>
+        )}
       </header>
 
       {season ? (

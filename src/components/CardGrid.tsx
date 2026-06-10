@@ -2115,10 +2115,9 @@ export function CardGrid() {
   // Seasons.md — the vault-root file (or any note with `role: seasons`)
   // whose body bullets define ISO 8601 date ranges. First match wins.
   // Body is pre-loaded via needsBodyUpfront, so parseSeasons sees it.
-  const seasons: Season[] = (() => {
-    const file = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-    return file ? parseSeasons(file.body) : [];
-  })();
+  const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+  const seasons: Season[] = seasonsFile ? parseSeasons(seasonsFile.body) : [];
+  const seasonsPath = seasonsFile?.path ?? null;
 
   // Notable Folder Main Documents — notes whose YAML carries `category`.
   // Their title comes from the filename minus the .md (which is also
@@ -2856,6 +2855,7 @@ export function CardGrid() {
             ref={seasonHandleRef}
             key="season"
             seasons={seasons}
+            seasonsPath={seasonsPath}
             areas={vaultTaxonomy.areas.map((a) => ({
               ref: a.ref,
               nfRefs: a.categories.flatMap((c) => c.folders),

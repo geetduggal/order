@@ -59,11 +59,17 @@ export function findSeasonForDate(seasons: Season[], today: string): Season | nu
     (a.end ?? a.start) > (b.end ?? b.start) ? a : b);
 }
 
-/** Human-friendly label for a season — its name if present, else the
- *  bare date range with an open right edge rendered as "…". */
-export function seasonLabel(s: Season): string {
-  if (s.name) return s.name;
+/** Bare date range for a season, with an open right edge rendered
+ *  as "…". Used as the header subtitle alongside the name, or as
+ *  the primary label when no name is set. */
+export function seasonRange(s: Season): string {
   return `${s.start} → ${s.end ?? "…"}`;
+}
+
+/** Human-friendly label for a season — its name if present, else the
+ *  bare date range. Kept for any caller that wants a single string. */
+export function seasonLabel(s: Season): string {
+  return s.name ?? seasonRange(s);
 }
 
 // ---------- Activity query ----------

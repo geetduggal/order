@@ -5429,12 +5429,41 @@ iframe.order-youtube-embed {
   padding: 8px clamp(16px, 4vw, 40px) 80px;
   font-family: var(--sans);
 }
-.season-head { /* paired with .year-head — no extra rules needed yet */ }
+.season-head { /* paired with .year-head — gap handled by .year-head */ }
+.season-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .season-label {
   font-family: var(--serif);
   font-weight: 500;
   font-size: 22px;
 }
+.season-sublabel {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+.season-edit-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.season-edit-btn:hover { border-color: var(--royal); color: var(--ink); }
 .season-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
