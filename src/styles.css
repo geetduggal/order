@@ -5478,6 +5478,7 @@ iframe.order-youtube-embed {
   .season-edit-btn { padding: 4px 8px; }
   .season-label { font-size: 16px; }
   .season-sublabel { font-size: 10px; }
+  .season-update-list { margin-left: 24px; padding-left: 8px; }
 }
 .season-grid {
   display: grid;
@@ -5589,8 +5590,12 @@ iframe.order-youtube-embed {
 }
 .season-update-list {
   list-style: none;
-  margin: 2px 0 4px;
-  padding: 0 0 0 16px;
+  /* Left margin pushes the whole sub-list past the chevron + dot so
+     nested rows visually sit under the NF name rather than at the
+     row's left edge. The border-left becomes a tree-style stem
+     dropping out of the dot column. */
+  margin: 2px 0 4px 32px;
+  padding: 0 0 0 10px;
   display: flex;
   flex-direction: column;
   gap: 1px;
