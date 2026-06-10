@@ -489,7 +489,12 @@ input, textarea, select { outline: none; box-shadow: none; }
 /* ---------- Card ---------- */
 .order-card {
   position: relative;
-  background: var(--bg);
+  /* Subtle royal wash so regular notes read as cool satellites around
+     the NF Main Doc's coral centerpiece (see .is-main below). Coral
+     and royal are Order's two accent colors; using them as paired
+     tints turns the newspaper section into a centerpiece-and-orbit
+     reading at a glance. */
+  background: color-mix(in srgb, var(--royal) 6%, var(--bg));
   /* 1.5 px border on the warm-tan rule so the card edge reads
      like the icon's high-contrast inner-card outline. */
   border: 1.5px solid var(--rule);
