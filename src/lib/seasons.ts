@@ -68,6 +68,15 @@ export function seasonLabel(s: Season): string {
 
 // ---------- Activity query ----------
 
+export interface SeasonUpdate {
+  /** Absolute on-disk path to the note — used for click-through nav. */
+  path: string;
+  /** Display title (note's first-line heading, fallback filename). */
+  title: string;
+  /** The all-day event's `date` field, YYYY-MM-DD. */
+  date: string;
+}
+
 export interface NotableUpdate {
   /** Notable Folder name (filename without `.md`). */
   nf: string;
@@ -75,6 +84,9 @@ export interface NotableUpdate {
   count: number;
   /** Most recent all-day event date (YYYY-MM-DD) inside the range. */
   mostRecent: string;
+  /** Per-event details, sorted by `date` descending — what the season
+   *  view renders as nested bullets under the NF row. */
+  updates: SeasonUpdate[];
 }
 
 /** Per-Area lists of Notable Folder activity for the season. Each list
@@ -83,6 +95,8 @@ export interface NotableUpdate {
 export type SeasonActivity = Map<string, NotableUpdate[]>;
 
 interface NoteForActivity {
+  path: string;
+  title: string;
   frontmatter: Frontmatter;
 }
 
@@ -105,8 +119,9 @@ export function buildSeasonActivity(
   today: string,
 ): SeasonActivity {
   const end = season.end ?? today;
-  // Per-NF aggregation: { count, mostRecent }.
-  const byNf = new Map<string, { count: number; mostRecent: string }>();
+  // Per-NF aggregation. Accumulates the matching events so the view
+  // can expand each NF row into nested bullets.
+  const byNf = new Map<string, SeasonUpdate[]>();
   for (const n of notes) {
     if (n.frontmatter.allDay !== true) continue;
     const date = isoDateValue(n.frontmatter.date);
@@ -114,20 +129,24 @@ export function buildSeasonActivity(
     if (date < season.start || date > end) continue;
     const nf = parseRef(n.frontmatter.folder);
     if (!nf || !resolver.isKnown(nf)) continue;
-    const cur = byNf.get(nf);
-    if (!cur) byNf.set(nf, { count: 1, mostRecent: date });
-    else {
-      cur.count += 1;
-      if (date > cur.mostRecent) cur.mostRecent = date;
-    }
+    const list = byNf.get(nf) ?? [];
+    list.push({ path: n.path, title: n.title, date });
+    byNf.set(nf, list);
   }
   // Group by Area.
   const byArea: SeasonActivity = new Map();
-  for (const [nf, agg] of byNf) {
+  for (const [nf, events] of byNf) {
     const area = resolver.areaOf(nf);
     if (!area) continue;
+    // Most-recent first inside each NF.
+    events.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     const list = byArea.get(area) ?? [];
-    list.push({ nf, count: agg.count, mostRecent: agg.mostRecent });
+    list.push({
+      nf,
+      count: events.length,
+      mostRecent: events[0].date,
+      updates: events,
+    });
     byArea.set(area, list);
   }
   // Sort each Area's NFs by recency desc, then cap.

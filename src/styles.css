@@ -5483,9 +5483,14 @@ iframe.order-youtube-embed {
 }
 .season-nf-row {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+.season-nf-head {
+  display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
 }
 .season-nf-dot {
   width: 8px;
@@ -5502,6 +5507,7 @@ iframe.order-youtube-embed {
   color: var(--ink);
   font-size: 13px;
   cursor: pointer;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5517,6 +5523,34 @@ iframe.order-youtube-embed {
   min-width: 18px;
   text-align: center;
 }
+.season-update-list {
+  list-style: none;
+  margin: 2px 0 4px;
+  padding: 0 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--rule);
+}
+.season-update-row {
+  display: flex;
+  align-items: baseline;
+  font-size: 12px;
+}
+.season-update-link {
+  flex: 1 1 auto;
+  background: transparent;
+  border: 0;
+  padding: 0 0 0 8px;
+  text-align: left;
+  color: var(--ink-faint);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.season-update-link:hover { color: var(--royal); }
 .season-empty {
   margin: 32px auto;
   max-width: 420px;

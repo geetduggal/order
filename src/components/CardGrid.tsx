@@ -1410,7 +1410,7 @@ export function CardGrid() {
       }
       if (e.key === "s" || e.key === "S") {
         e.preventDefault();
-        setView("stream");
+        setView("season");
         return;
       }
       if (e.key === "d" || e.key === "D") {
@@ -2862,6 +2862,7 @@ export function CardGrid() {
             }))}
             notes={calendarNotes}
             onOpenRef={focusFolder}
+            onOpenPath={navigateAndFocus}
             currentView="season"
             onSelectView={setView}
           />

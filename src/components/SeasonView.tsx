@@ -34,6 +34,8 @@ interface AreaForView {
 }
 
 interface NoteForView {
+  path: string;
+  title: string;
   frontmatter: Frontmatter;
 }
 
@@ -44,13 +46,16 @@ interface Props {
   /** Click handler for an Area header or NF row. Receives the bare ref
    *  (Area name or NF name); parent decides what "open" means. */
   onOpenRef: (ref: string) => void;
+  /** Click handler for a single notable update (nested bullet). Receives
+   *  the note's absolute on-disk path. */
+  onOpenPath: (path: string) => void;
   /** Calendar scope tabs at the top — same contract the other views use. */
   currentView?: "day" | "week" | "month" | "year" | "season";
   onSelectView?: (v: "day" | "week" | "month" | "year" | "season") => void;
 }
 
 export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonView(
-  { seasons, areas, notes, onOpenRef, currentView, onSelectView },
+  { seasons, areas, notes, onOpenRef, onOpenPath, currentView, onSelectView },
   navRef,
 ) {
   const today = isoDate();
@@ -174,21 +179,37 @@ export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonVie
                   <ul className="season-nf-list">
                     {rows.map((r) => (
                       <li key={r.nf} className="season-nf-row">
-                        <span
-                          className="season-nf-dot"
-                          style={{ background: folderColor(r.nf) }}
-                          aria-hidden="true"
-                        />
-                        <button
-                          type="button"
-                          className="season-nf-link"
-                          onClick={() => onOpenRef(r.nf)}
-                        >
-                          {r.nf}
-                        </button>
-                        <span className="season-nf-count" aria-label={`${r.count} updates`}>
-                          {r.count}
-                        </span>
+                        <div className="season-nf-head">
+                          <span
+                            className="season-nf-dot"
+                            style={{ background: folderColor(r.nf) }}
+                            aria-hidden="true"
+                          />
+                          <button
+                            type="button"
+                            className="season-nf-link"
+                            onClick={() => onOpenRef(r.nf)}
+                          >
+                            {r.nf}
+                          </button>
+                          <span className="season-nf-count" aria-label={`${r.count} updates`}>
+                            {r.count}
+                          </span>
+                        </div>
+                        <ul className="season-update-list">
+                          {r.updates.map((u) => (
+                            <li key={u.path} className="season-update-row">
+                              <button
+                                type="button"
+                                className="season-update-link"
+                                onClick={() => onOpenPath(u.path)}
+                                title={u.date}
+                              >
+                                {u.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
                       </li>
                     ))}
                   </ul>
