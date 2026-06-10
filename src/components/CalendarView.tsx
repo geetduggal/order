@@ -45,12 +45,13 @@ interface Props {
    *  next to the click instead of jumping straight into the note. */
   onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
   onCreate?: (patch: Frontmatter) => Promise<void>;
-  /** Currently-active high-level view ("day" | "week" | "month" | "year").
-   *  The in-shell picker uses this for the active-state highlight. */
-  currentView?: "day" | "week" | "month" | "year";
+  /** Currently-active high-level view ("day" | "week" | "month" | "year"
+   *  | "season"). The in-shell picker uses this for the active-state
+   *  highlight. */
+  currentView?: "day" | "week" | "month" | "year" | "season";
   /** Switch to a different calendar view. Routed to the parent so
    *  state stays in CardGrid / ViewerApp. */
-  onSelectView?: (v: "day" | "week" | "month" | "year") => void;
+  onSelectView?: (v: "day" | "week" | "month" | "year" | "season") => void;
 }
 
 /** Add one day to a `YYYY-MM-DD` string (UTC-safe via the Date ctor).
@@ -473,7 +474,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         </button>
         {onSelectView && currentView && (
           <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
-            {(["day", "week", "month", "year"] as const).map((v) => (
+            {(["day", "week", "month", "year", "season"] as const).map((v) => (
               <button
                 key={v}
                 type="button"

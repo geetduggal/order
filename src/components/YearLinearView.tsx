@@ -68,8 +68,8 @@ interface Props {
   /** High-level calendar view picker — surfaced inside the year head
    *  so users can switch to Day/Week/Month without round-tripping to
    *  the sidebar. */
-  currentView?: "day" | "week" | "month" | "year";
-  onSelectView?: (v: "day" | "week" | "month" | "year") => void;
+  currentView?: "day" | "week" | "month" | "year" | "season";
+  onSelectView?: (v: "day" | "week" | "month" | "year" | "season") => void;
 }
 
 interface PositionedEvent {
@@ -326,7 +326,7 @@ export const YearLinearView = forwardRef<YearLinearViewHandle, Props>(function Y
         </button>
         {onSelectView && currentView && (
           <div className="fc-view-switch" role="tablist" aria-label="Calendar view">
-            {(["day", "week", "month", "year"] as const).map((v) => (
+            {(["day", "week", "month", "year", "season"] as const).map((v) => (
               <button
                 key={v}
                 type="button"

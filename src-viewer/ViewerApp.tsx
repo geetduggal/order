@@ -22,7 +22,7 @@ import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
 import { folderColor } from "../src/lib/folders";
 
-type View = "stream" | "day" | "week" | "month" | "year";
+type View = "stream" | "day" | "week" | "month" | "year" | "season";
 
 export function ViewerApp(
   { data, initialSlug, basePath = "/" }:

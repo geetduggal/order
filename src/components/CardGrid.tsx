@@ -19,6 +19,8 @@ import { LazyCell } from "./LazyCell";
 import { FtsOverlay } from "./FtsOverlay";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
+import { SeasonView, type SeasonViewHandle } from "./SeasonView";
+import { parseSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
@@ -204,7 +206,7 @@ function publicBaseUrl(target: string): string | null {
 
 const GRID_ROW_PX = 8;
 
-type View = "stream" | "day" | "week" | "month" | "year";
+type View = "stream" | "day" | "week" | "month" | "year" | "season";
 
 interface LoadedNote {
   /** Stable id across renames — used as React key so the Card never
@@ -288,6 +290,7 @@ function parseYaml(yamlText: string): Frontmatter {
  *  Card mount via vault_read_text. */
 function needsBodyUpfront(fm: Frontmatter): boolean {
   if (fm.role === "areas") return true;
+  if (fm.role === "seasons") return true;
   if (typeof fm.category === "string" && fm.category) return true;
   if (typeof fm.list === "string" && fm.list) return true;
   return false;
@@ -364,7 +367,7 @@ export function CardGrid() {
   // until they leave or pick another scale. Stream / newspaper mode
   // is unaffected — its filters belong to its own context.
   useEffect(() => {
-    if (view === "day" || view === "week" || view === "month" || view === "year") {
+    if (view === "day" || view === "week" || view === "month" || view === "year" || view === "season") {
       setFilters([]);
     }
   }, [view]);
@@ -373,6 +376,7 @@ export function CardGrid() {
   // other stays null), so the key handler can blindly call .current.
   const calendarHandleRef = useRef<CalendarViewHandle | null>(null);
   const yearHandleRef = useRef<YearLinearViewHandle | null>(null);
+  const seasonHandleRef = useRef<SeasonViewHandle | null>(null);
   const [scrollTargetPath, setScrollTargetPath] = useState<string | null>(null);
   /** Path of the most recently created note. The matching Card
    *  mounts with `autoFocus` so the cursor lands inside its editor
@@ -1454,6 +1458,8 @@ export function CardGrid() {
         e.preventDefault();
         if (view === "year") {
           if (dir > 0) yearHandleRef.current?.next(); else yearHandleRef.current?.prev();
+        } else if (view === "season") {
+          if (dir > 0) seasonHandleRef.current?.next(); else seasonHandleRef.current?.prev();
         } else {
           if (dir > 0) calendarHandleRef.current?.next(); else calendarHandleRef.current?.prev();
         }
@@ -2105,6 +2111,14 @@ export function CardGrid() {
     if (cat) return areaByCategory.get(cat) ?? "";
     return "";
   }
+
+  // Seasons.md — the vault-root file (or any note with `role: seasons`)
+  // whose body bullets define ISO 8601 date ranges. First match wins.
+  // Body is pre-loaded via needsBodyUpfront, so parseSeasons sees it.
+  const seasons: Season[] = (() => {
+    const file = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+    return file ? parseSeasons(file.body) : [];
+  })();
 
   // Notable Folder Main Documents — notes whose YAML carries `category`.
   // Their title comes from the filename minus the .md (which is also
@@ -2834,6 +2848,21 @@ export function CardGrid() {
             onEventClick={handleEventClick}
             onCreate={promptCreate}
             currentView="year"
+            onSelectView={setView}
+          />
+        )}
+        {view === "season" && (
+          <SeasonView
+            ref={seasonHandleRef}
+            key="season"
+            seasons={seasons}
+            areas={vaultTaxonomy.areas.map((a) => ({
+              ref: a.ref,
+              nfRefs: a.categories.flatMap((c) => c.folders),
+            }))}
+            notes={calendarNotes}
+            onOpenRef={focusFolder}
+            currentView="season"
             onSelectView={setView}
           />
         )}

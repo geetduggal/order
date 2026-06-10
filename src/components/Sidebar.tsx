@@ -19,7 +19,7 @@ import { folderColor, folderIcon } from "../lib/folders";
 import { useTileDrag } from "../lib/use-tile-drag";
 import type { Frontmatter } from "../lib/frontmatter";
 
-export type View = "stream" | "day" | "week" | "month" | "year";
+export type View = "stream" | "day" | "week" | "month" | "year" | "season";
 
 const MAX_SLOTS = 10;
 const NO_AREA = "(unassigned)";
