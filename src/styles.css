@@ -1031,13 +1031,23 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .milkdown-host .ProseMirror p:last-child { margin-bottom: 0; }
 /* Any block that ends the document shouldn't leave a trailing gutter —
-   the card's own padding already sets the bottom rhythm. Without this,
-   a note that ends in a bullet list left a visible band of whitespace
-   below the last bullet (the ul's 0.7em bottom margin compounding with
-   card padding). Mirrors the equivalent <p>:last-child rule above. */
-.milkdown-host .ProseMirror > :is(ul, ol, blockquote, pre, hr):last-child,
-.milkdown-host .milkdown > .milkdown-list-item-block:last-child {
+   the card's own padding already sets the bottom rhythm. Crepe wraps
+   each list in a .milkdown-list-item-block, so the ul/ol isn't a direct
+   child of .ProseMirror; descendant selector catches both shapes. */
+.milkdown-host .ProseMirror :is(ul, ol, blockquote, pre, hr):last-child,
+.milkdown-host .ProseMirror .milkdown-list-item-block:last-child,
+.milkdown-host .ProseMirror .milkdown-list-item-block:last-child > :is(ul, ol):last-child {
   margin-bottom: 0;
+}
+
+/* ProseMirror inserts a trailing empty <p><br class="ProseMirror-
+   trailingBreak"></p> after lists / non-text terminal blocks so the
+   caret has somewhere to land below them. When the editor isn't
+   focused that paragraph is pure gutter; collapse it. The :focus-within
+   branch leaves the original height intact during editing so the caret
+   stays addressable. */
+.milkdown-host .ProseMirror:not(:focus-within) > p:last-child:has(> br.ProseMirror-trailingBreak:only-child) {
+  display: none;
 }
 
 /* Lists: tight vertical rhythm so a bullet list reads as a compact
