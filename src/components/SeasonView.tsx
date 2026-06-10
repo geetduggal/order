@@ -10,7 +10,7 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate } from "../lib/frontmatter";
-import { Pencil } from "lucide-react";
+import { Pencil, ChevronRight, ChevronDown } from "lucide-react";
 import {
   buildSeasonActivity,
   findSeasonForDate,
@@ -104,6 +104,19 @@ export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonVie
     if (!season) return new Map();
     return buildSeasonActivity(notes, season, resolver, today);
   }, [notes, season, resolver, today]);
+
+  // Expanded NF disclosure state. Stays mounted across season switches:
+  // re-clicking a familiar NF in a different season keeps your prior
+  // intent rather than collapsing it again. Default is empty (every NF
+  // starts collapsed) so the grid stays compact on first glance.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (nf: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(nf)) next.delete(nf); else next.add(nf);
+      return next;
+    });
+  };
 
   const prevDisabled = index <= 0;
   const nextDisabled = index < 0 || index >= seasons.length - 1;
@@ -200,41 +213,57 @@ export const SeasonView = forwardRef<SeasonViewHandle, Props>(function SeasonVie
                   <div className="season-area-empty">No updates</div>
                 ) : (
                   <ul className="season-nf-list">
-                    {rows.map((r) => (
-                      <li key={r.nf} className="season-nf-row">
-                        <div className="season-nf-head">
-                          <span
-                            className="season-nf-dot"
-                            style={{ background: folderColor(r.nf) }}
-                            aria-hidden="true"
-                          />
-                          <button
-                            type="button"
-                            className="season-nf-link"
-                            onClick={() => onOpenRef(r.nf)}
-                          >
-                            {r.nf}
-                          </button>
-                          <span className="season-nf-count" aria-label={`${r.count} updates`}>
-                            {r.count}
-                          </span>
-                        </div>
-                        <ul className="season-update-list">
-                          {r.updates.map((u) => (
-                            <li key={u.path} className="season-update-row">
-                              <button
-                                type="button"
-                                className="season-update-link"
-                                onClick={() => onOpenPath(u.path)}
-                                title={u.date}
-                              >
-                                {u.title}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
-                    ))}
+                    {rows.map((r) => {
+                      const isOpen = expanded.has(r.nf);
+                      return (
+                        <li key={r.nf} className="season-nf-row">
+                          <div className="season-nf-head">
+                            <button
+                              type="button"
+                              className="season-nf-toggle"
+                              onClick={() => toggleExpanded(r.nf)}
+                              aria-expanded={isOpen}
+                              aria-label={isOpen ? `Collapse ${r.nf} updates` : `Expand ${r.nf} updates`}
+                            >
+                              {isOpen
+                                ? <ChevronDown size={12} />
+                                : <ChevronRight size={12} />}
+                            </button>
+                            <span
+                              className="season-nf-dot"
+                              style={{ background: folderColor(r.nf) }}
+                              aria-hidden="true"
+                            />
+                            <button
+                              type="button"
+                              className="season-nf-link"
+                              onClick={() => onOpenRef(r.nf)}
+                            >
+                              {r.nf}
+                            </button>
+                            <span className="season-nf-count" aria-label={`${r.count} updates`}>
+                              {r.count}
+                            </span>
+                          </div>
+                          {isOpen && (
+                            <ul className="season-update-list">
+                              {r.updates.map((u) => (
+                                <li key={u.path} className="season-update-row">
+                                  <button
+                                    type="button"
+                                    className="season-update-link"
+                                    onClick={() => onOpenPath(u.path)}
+                                    title={u.date}
+                                  >
+                                    {u.title}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

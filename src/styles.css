@@ -5536,9 +5536,25 @@ iframe.order-youtube-embed {
 .season-nf-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
+.season-nf-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.season-nf-toggle:hover { color: var(--ink); background: var(--bg-elev); }
 .season-nf-dot {
   width: 8px;
   height: 8px;
