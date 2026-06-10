@@ -516,7 +516,7 @@ input, textarea, select { outline: none; box-shadow: none; }
    background, just enough to read as "this is the section header"
    without the louder bordered chrome the design used previously. */
 .order-card.is-main {
-  background: color-mix(in srgb, var(--coral) 5%, var(--bg));
+  background: color-mix(in srgb, var(--coral) 12%, var(--bg));
 }
 .order-card.is-loading {
   min-height: 100px;
