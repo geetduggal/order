@@ -91,10 +91,17 @@ const SIZE_SUFFIX_RE = /^\d+(?:x\d+)?$/;
 // brackets (they aren't standard markdown). Strip those escapes
 // before regex matching so `\[\[Name]]` and `[[Name]]` both parse.
 function unescapeBrackets(s: string): string {
-  // Cover `\!` too — Milkdown sometimes escapes the leading `!`
-  // when serializing an image-shaped sequence it didn't parse as a
-  // proper image (e.g. our `![[X]]` Obsidian embed form).
-  return s.replace(/\\([\[\]!])/g, "$1");
+  // Strip every Milkdown CommonMark backslash escape inserted into
+  // text that COULD be markdown syntax — `[`, `]`, `!`, `_`, `*`,
+  // `(`, `)`, etc. Inside our Obsidian-style `![[X]]` embeds these
+  // escapes are noise: they don't change the embed's semantics and
+  // they break filename matching on disk. `IMG\_0117.jpeg` would
+  // resolve to a file that doesn't exist; the asset URL fails;
+  // the card renders broken. Removing any `\<non-alphanumeric>`
+  // backslash covers every char Milkdown might escape without
+  // touching legitimate `\n` / `\t` / `\u…` sequences (those are
+  // followed by alphanumerics).
+  return s.replace(/\\([^a-zA-Z0-9])/g, "$1");
 }
 
 function parseLine(line: string): ListItem | null {
@@ -179,6 +186,14 @@ export function displayTitleFor(
   return item.ref;
 }
 
+/** Strip any stale backslash escapes that snuck into an item ref
+ *  (e.g. legacy Bookstore.md files where Milkdown escaped every `_`
+ *  in `IMG_0117.jpeg` to `IMG\_0117.jpeg` and the escape got baked
+ *  into item.ref). Heals broken on-disk filenames on the next save. */
+function cleanRef(ref: string): string {
+  return ref.replace(/\\([^a-zA-Z0-9])/g, "$1");
+}
+
 export function serializeListItems(items: ListItem[]): string {
   return items
     .map((item) => {
@@ -187,14 +202,15 @@ export function serializeListItems(items: ListItem[]): string {
         // basename. `item.ref` already holds the decoded basename in
         // both the on-disk and inflated cases (see parseLine), so the
         // round trip stays clean regardless of which form was loaded.
+        const ref = cleanRef(item.ref);
         const caption = item.caption?.trim();
-        return caption ? `- ![[${item.ref}|${caption}]]` : `- ![[${item.ref}]]`;
+        return caption ? `- ![[${ref}|${caption}]]` : `- ![[${ref}]]`;
       }
       // Plain text bullet — emit verbatim. No wikilink wrap, so a
       // round-trip through Order doesn't silently turn user text into
       // a wikilink to a nonexistent note.
-      if (item.text) return `- ${item.text}`;
-      return `- [[${item.ref}]]${item.meta ? ` · ${item.meta}` : ""}`;
+      if (item.text) return `- ${cleanRef(item.text)}`;
+      return `- [[${cleanRef(item.ref)}]]${item.meta ? ` · ${item.meta}` : ""}`;
     })
     .join("\n");
 }
