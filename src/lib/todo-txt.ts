@@ -458,12 +458,20 @@ export function syncTodoBody(
   // Keep only lines that are native (don't match any current .md
   // event, and weren't a mirror last sync — so stale mirrors fall
   // off after their backing .md is gone).
-  const native = items.filter((i) => {
+  //
+  // Also dedup natives by identity — two lines with the exact same
+  // (date, startTime, title) are accidental duplicates, not real
+  // separate events. A malformed source .md once spawned 2000+
+  // identical natives via a serializer-parser round-trip mismatch;
+  // this collapses any such damage on the next sync.
+  const nativeByKey = new Map<string, TodoItem>();
+  for (const i of items) {
     const k = todoItemKey(i);
-    if (mdKeySet.has(k)) return false;
-    if (lastMirrorKeys.has(k)) return false;
-    return true;
-  });
+    if (mdKeySet.has(k)) continue;
+    if (lastMirrorKeys.has(k)) continue;
+    if (!nativeByKey.has(k)) nativeByKey.set(k, i);
+  }
+  const native = [...nativeByKey.values()];
   const mirrored = sources.map(buildMirrorItem);
   const nextBody = serializeTodoTxt([...native, ...mirrored]);
   if (nextBody === currentBody) return null;

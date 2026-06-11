@@ -1634,12 +1634,26 @@ export function CardGrid() {
     const sourcesByKey = new Map<string, MirrorSource>();
     for (const n of notes) {
       const fm = n.frontmatter;
-      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      // Validate the date too — a malformed frontmatter date would
+      // otherwise leak into the serializer the same way startTime did.
+      const dateRaw = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null;
       if (!date) continue;
-      const allDay = fm.allDay === true;
-      const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
+      // ROUND-TRIP VALIDATION: if startTime isn't a clean HH:MM, the
+      // mirror serializer can't emit it in the canonical "due:DATE HH:MM"
+      // form AND the parser can't read it back to the same identity,
+      // which would re-classify every regenerated line as "native" and
+      // cause runaway growth (one .md with startTime: '108:30' grew the
+      // file by 2012 lines before we caught this). Treat malformed
+      // times as all-day so the line round-trips cleanly.
+      const startTimeRaw = typeof fm.startTime === "string" ? fm.startTime : undefined;
+      const startTime = startTimeRaw && /^\d{2}:\d{2}$/.test(startTimeRaw) ? startTimeRaw : undefined;
+      const endTimeRaw = typeof fm.endTime === "string" ? fm.endTime : undefined;
+      const endTime = endTimeRaw && /^\d{2}:\d{2}$/.test(endTimeRaw) ? endTimeRaw : undefined;
+      const allDay = fm.allDay === true || (!!startTimeRaw && !startTime);
+      // No valid time AND not allDay → not a calendar event (dated
+      // reference notes from Readwise, etc.). Skip.
       if (!allDay && !startTime) continue;
-      const endTime = typeof fm.endTime === "string" ? fm.endTime : undefined;
       const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
       const folder = noteFolder(fm) ?? undefined;
       const title = n.title || n.filename.replace(/\.md$/i, "");
