@@ -169,6 +169,7 @@ import {
   joinFrontmatter,
   splitFrontmatter,
   suggestCalendarPatch,
+  toIsoDateValue,
   type Frontmatter,
 } from "../lib/frontmatter";
 import yaml from "js-yaml";
@@ -1634,10 +1635,13 @@ export function CardGrid() {
     const sourcesByKey = new Map<string, MirrorSource>();
     for (const n of notes) {
       const fm = n.frontmatter;
-      // Validate the date too — a malformed frontmatter date would
-      // otherwise leak into the serializer the same way startTime did.
-      const dateRaw = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
-      const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null;
+      // Accept both a string `date:` (the form `isoDate()` writes,
+      // quoted) and a Date instance (the form js-yaml hands us back
+      // for an UNQUOTED `2026-06-12` per YAML 1.1's date type). Without
+      // the Date branch, hand-written events drop out of the mirror
+      // entirely and their todo.txt lines render as duplicate chips
+      // beside the .md events.
+      const date = toIsoDateValue(fm.date);
       if (!date) continue;
       // ROUND-TRIP VALIDATION: if startTime isn't a clean HH:MM, the
       // mirror serializer can't emit it in the canonical "due:DATE HH:MM"
@@ -2924,7 +2928,7 @@ export function CardGrid() {
       // .md files sharing the same (date, startTime, title) renders
       // one chip — not a tower of overlapping ones. First .md wins.
       const fm = n.frontmatter;
-      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      const date = toIsoDateValue(fm.date);
       if (date) {
         const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
         const k = eventKey({ date, startTime, title: n.title });
@@ -2960,7 +2964,12 @@ export function CardGrid() {
   const mdEventKeys = new Set<string>();
   for (const n of notes) {
     const fm = n.frontmatter;
-    const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+    // toIsoDateValue handles both `date: "2026-06-12"` (string the
+    // calendar writes) and `date: 2026-06-12` (Date instance js-yaml
+    // hands us for the unquoted form). Without the Date branch,
+    // hand-written events miss the dedup set and their matching
+    // todo.txt lines render as duplicate chips.
+    const date = toIsoDateValue(fm.date);
     if (!date) continue;
     const allDay = fm.allDay === true;
     const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;

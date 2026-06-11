@@ -76,6 +76,32 @@ export function isoDate(d: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Normalize a YAML `date` / `endDate` value to an ISO `YYYY-MM-DD`
+ *  string. js-yaml's default schema parses an unquoted `2026-06-12`
+ *  as a Date object (YAML 1.1 CORE_SCHEMA behaviour), so plain
+ *  `typeof === "string"` checks miss the unquoted case and the event
+ *  silently drops out of date-keyed indexes (calendar dedup, mirror
+ *  source build, etc.). Handles both shapes. */
+export function toIsoDateValue(v: unknown): string | null {
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const t = Date.parse(s);
+    if (!Number.isFinite(t)) return null;
+    return new Date(t).toISOString().slice(0, 10);
+  }
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    // js-yaml gives a UTC-midnight Date for unquoted YYYY-MM-DD —
+    // re-extract YYYY-MM-DD in UTC so we don't roll back a day west
+    // of UTC.
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return null;
+}
+
 /** HH:MM (24h) for the supplied Date or `new Date()`. */
 export function isoTime(d: Date = new Date()): string {
   const h = String(d.getHours()).padStart(2, "0");

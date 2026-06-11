@@ -24,7 +24,7 @@ import type {
 } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
-import { isoDate, isoTime } from "../lib/frontmatter";
+import { isoDate, isoTime, toIsoDateValue } from "../lib/frontmatter";
 
 export type CalendarRange = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
@@ -65,38 +65,6 @@ function addOneDayIso(iso: string): string {
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
-}
-
-/** Normalize `date` / `endDate` YAML values to ISO `YYYY-MM-DD`.
- *  js-yaml's default schema parses unquoted YYYY-MM-DD as a Date
- *  object — that's the standard YAML 1.1 / CORE_SCHEMA behaviour and
- *  it bit us for ages, because Readwise sync writes dates unquoted
- *  and they'd disappear from the calendar while manually-typed dates
- *  (which we write quoted via isoDate()) survived. Accept both
- *  shapes: string passes through (with a `.slice(0,10)` guard for
- *  datetime variants), Date is converted to an ISO date string. */
-function toIsoDateValue(v: unknown): string | null {
-  if (typeof v === "string") {
-    // Strip whitespace, accept `YYYY-MM-DD` or a datetime starting
-    // with one (the slice is a no-op when only a date is present).
-    const s = v.trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-    // Last-ditch parse for free-form strings; if it produces a real
-    // date, format back to ISO so FullCalendar accepts it.
-    const t = Date.parse(s);
-    if (!Number.isFinite(t)) return null;
-    return new Date(t).toISOString().slice(0, 10);
-  }
-  if (v instanceof Date && !isNaN(v.getTime())) {
-    // js-yaml gives us a UTC-midnight Date for unquoted YYYY-MM-DD.
-    // Re-extract YYYY-MM-DD in UTC so we don't roll back a day in
-    // timezones west of UTC.
-    const y = v.getUTCFullYear();
-    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(v.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  return null;
 }
 
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
