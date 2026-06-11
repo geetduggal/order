@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs, markKnownBody } from "../lib/vault-fs";
 import { MilkdownSurface } from "./MilkdownSurface";
+import { RawTextSurface } from "./RawTextSurface";
 import {
   basenameForEvent,
   firstLineTitle,
@@ -1159,17 +1160,32 @@ export function Card(props: Props) {
             : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined
         }
       >
-        <MilkdownSurface
-          initial={state.body}
-          onChange={handleChange}
-          onDone={() => { void flushNow(); }}
-          onImageUpload={readOnly ? undefined : handleImageUpload}
-          wikiNotes={vaultNotes}
-          onWikiNavigate={handleWikiNavigate}
-          autoFocus={autoFocus && !readOnly}
-          readOnly={readOnly}
-          noteDir={vaultDir(toVaultRel(pathRef.current))}
-        />
+        {filename.toLowerCase().endsWith(".txt") ? (
+          // Plain-text card surface — no Crepe, no markdown
+          // interpretation. Used for todo.txt so the format's `+`,
+          // `[`, and `due:` tokens survive a round-trip through the
+          // editor. The save pipeline is identical: onChange feeds
+          // the same debounced writer, onDone flushes on blur.
+          <RawTextSurface
+            initial={state.body}
+            onChange={handleChange}
+            onDone={() => { void flushNow(); }}
+            autoFocus={autoFocus && !readOnly}
+            readOnly={readOnly}
+          />
+        ) : (
+          <MilkdownSurface
+            initial={state.body}
+            onChange={handleChange}
+            onDone={() => { void flushNow(); }}
+            onImageUpload={readOnly ? undefined : handleImageUpload}
+            wikiNotes={vaultNotes}
+            onWikiNavigate={handleWikiNavigate}
+            autoFocus={autoFocus && !readOnly}
+            readOnly={readOnly}
+            noteDir={vaultDir(toVaultRel(pathRef.current))}
+          />
+        )}
         {isListFolder(state.frontmatter) && (
           <>
             {parsedBase && (

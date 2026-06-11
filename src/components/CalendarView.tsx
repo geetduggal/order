@@ -120,6 +120,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     const endDate = toIsoDateValue(note.frontmatter.endDate);
 
     const title = note.title || note.filename;
+    const completed = note.frontmatter.completed === true;
     // Tint the background with the folder color and keep its border, but
     // let the title inherit --fc-event-text-color (var(--ink)) so it stays
     // readable in every theme. A hardcoded dark textColor here used to
@@ -127,6 +128,10 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     const colorProps = note.color
       ? { backgroundColor: note.color + "29", borderColor: note.color }
       : {};
+    // Pass the completion flag through to renderEventContent via
+    // extendedProps so the chip can apply a strike-through. FC's
+    // event store passes the prop straight through to event.extendedProps.
+    const extendedProps = { completed };
 
     if (allDay) {
       events.push({
@@ -137,6 +142,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
         end: endDate ? addOneDayIso(endDate) : undefined,
         allDay: true,
         ...colorProps,
+        extendedProps,
       });
       continue;
     }
@@ -159,6 +165,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       end: `${endDayIso}T${endIsoTime}`,
       allDay: false,
       ...colorProps,
+      extendedProps,
     });
   }
   return events;
@@ -192,8 +199,12 @@ function formatCompactStart(d: Date | null): string {
 function renderEventContent(arg: EventContentArg) {
   const title = arg.event.title || "Untitled";
   const start = arg.event.allDay ? null : formatCompactStart(arg.event.start);
+  // Completion comes through extendedProps (set by notesToEvents from
+  // the note's frontmatter.completed flag — true for `x ` prefixed
+  // todo.txt lines).
+  const completed = arg.event.extendedProps?.completed === true;
   return (
-    <div className="order-event-row">
+    <div className={"order-event-row" + (completed ? " is-completed" : "")}>
       <span className="order-event-title">{title}</span>
       {start && <span className="order-event-time">{start}</span>}
     </div>

@@ -26,7 +26,20 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { folderColor, isNotableFolder, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import {
+  DEFAULT_TODO_TXT_PATH,
+  appendTodoItem,
+  getTodoTxtSettings,
+  isTodoTxtPath,
+  makeTodoTxtPath,
+  mutateTodoLine,
+  parseTodoTxt,
+  splitTodoTxtPath,
+  subscribeTodoTxtSettings,
+  type TodoItem,
+  type TodoTxtSettings,
+} from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
@@ -288,11 +301,29 @@ function parseYaml(yamlText: string): Frontmatter {
  *  notes need their body pre-loaded at startup so the sidebar taxonomy can
  *  parse bullets immediately. Everything else (leaves) loads its body on
  *  Card mount via vault_read_text. */
-function needsBodyUpfront(fm: Frontmatter): boolean {
+/** Add `delta` minutes to an `HH:MM` string, clamping to 23:59 so a
+ *  todo.txt event near midnight without an explicit `end:` doesn't roll
+ *  the duration past the day. Used to give every timed todo.txt entry
+ *  the default 30-minute duration. */
+function addMinutesToHHMM(hhmm: string, delta: number): string {
+  const m = hhmm.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return hhmm;
+  const total = Math.min(Number(m[1]) * 60 + Number(m[2]) + delta, 23 * 60 + 59);
+  const h = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   if (fm.role === "areas") return true;
   if (fm.role === "seasons") return true;
   if (typeof fm.category === "string" && fm.category) return true;
   if (typeof fm.list === "string" && fm.list) return true;
+  // Plain-text files (.txt — currently used for todo.txt) carry no
+  // frontmatter, but the todo.txt parser needs the whole body to
+  // build calendar events. Pre-load so the first calendar render
+  // sees them.
+  if (filename.toLowerCase().endsWith(".txt")) return true;
   return false;
 }
 
@@ -310,19 +341,25 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
       let frontmatter = parseYaml(m.frontmatterYaml);
       let body = "";
       const filename = m.filename;
-      if (needsBodyUpfront(frontmatter)) {
+      if (needsBodyUpfront(frontmatter, filename)) {
         // Chain / list files: full read + splitFrontmatter so any
         // calendar-frontmatter migration runs (suggestCalendarPatch)
-        // — same behaviour the old loadOne provided.
+        // — same behaviour the old loadOne provided. Plain-text
+        // files (.txt) skip the frontmatter split and the calendar
+        // migration; the body is the whole file.
         const raw = await readVault(m.path);
-        const split = splitFrontmatter(raw);
-        frontmatter = split.frontmatter;
-        body = split.body;
-        const patch = suggestCalendarPatch(frontmatter, body);
-        if (patch) {
-          frontmatter = { ...frontmatter, ...patch };
-          try { await writeVault(m.path, joinFrontmatter(frontmatter, body)); }
-          catch (err) { console.warn("calendar migration failed:", m.path, err); }
+        if (filename.toLowerCase().endsWith(".txt")) {
+          body = raw;
+        } else {
+          const split = splitFrontmatter(raw);
+          frontmatter = split.frontmatter;
+          body = split.body;
+          const patch = suggestCalendarPatch(frontmatter, body);
+          if (patch) {
+            frontmatter = { ...frontmatter, ...patch };
+            try { await writeVault(m.path, joinFrontmatter(frontmatter, body)); }
+            catch (err) { console.warn("calendar migration failed:", m.path, err); }
+          }
         }
       } else {
         // Leaf: try to migrate calendar frontmatter even without a body
@@ -408,6 +445,12 @@ export function CardGrid() {
   const textScale = useTextScale();
   // Light/dark theme — rail moon/sun button toggles it.
   const theme = useTheme();
+  // Todo.txt mode is opt-in via Settings. When enabled, new calendar
+  // events go into `<configured path>` instead of as standalone .md
+  // files. Subscribed via a custom event so a settings flip from the
+  // panel propagates without a reload.
+  const [todoSettings, setTodoSettings] = useState<TodoTxtSettings>(getTodoTxtSettings);
+  useEffect(() => subscribeTodoTxtSettings(setTodoSettings), []);
   // Active filter pills. `null` until hydrated so the first-load
   // default-home-exclude effect can tell "never set" from "user
   // cleared everything".
@@ -1586,12 +1629,37 @@ export function CardGrid() {
     { path: string; title: string; x: number; y: number; date: string | null; folder: string | null } | null
   >(null);
   const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
-    const note = notesRef.current?.find((n) => n.path === path);
-    const d = note && typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
-    const f = note ? noteFolder(note.frontmatter) ?? null : null;
+    let title = "Untitled";
+    let d: string | null = null;
+    let f: string | null = null;
+    if (isTodoTxtPath(path)) {
+      // The "note" here is the underlying todo.txt file; the line
+      // index in the synthetic path picks out the actual item so the
+      // action menu can show its title and date.
+      const split = splitTodoTxtPath(path);
+      if (split) {
+        const file = notesRef.current?.find((n) => n.path === split.file);
+        const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
+        if (item) {
+          title = item.text || "Untitled";
+          d = item.due ?? null;
+          if (item.project) {
+            const names = notableFoldersRef.current ?? [];
+            f = resolveProjectToNf(item.project, names);
+          }
+        }
+      }
+    } else {
+      const note = notesRef.current?.find((n) => n.path === path);
+      if (note) {
+        title = note.title;
+        d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
+        f = noteFolder(note.frontmatter) ?? null;
+      }
+    }
     setEventMenu({
       path,
-      title: note?.title ?? "Untitled",
+      title,
       x: coords?.x ?? window.innerWidth / 2,
       y: coords?.y ?? window.innerHeight / 2,
       date: d,
@@ -1599,9 +1667,30 @@ export function CardGrid() {
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
+    // Todo.txt events share one file; opening any of them lands on
+    // the file itself (the user edits the line in place inside the
+    // RawTextSurface).
+    if (isTodoTxtPath(path)) {
+      const split = splitTodoTxtPath(path);
+      if (split) navigateAndFocus(split.file);
+      return;
+    }
     navigateAndFocus(path);
   }, [navigateAndFocus]);
   const deleteEventNote = useCallback(async (path: string) => {
+    // Todo.txt line delete: rewrite the file with the line spliced
+    // out. The synthetic path identifies which line.
+    if (isTodoTxtPath(path)) {
+      const split = splitTodoTxtPath(path);
+      if (!split) return;
+      const body = await readVault(split.file);
+      const nextBody = mutateTodoLine(body, split.index, null);
+      await writeVault(split.file, nextBody);
+      setNotes((prev) => prev?.map((n) =>
+        n.path === split.file ? { ...n, body: nextBody } : n,
+      ) ?? null);
+      return;
+    }
     const note = notesRef.current?.find((n) => n.path === path);
     if (!note) return;
     await handleCardDelete(note.id, path);
@@ -1807,7 +1896,65 @@ export function CardGrid() {
     setTitlePrompt({ patch });
   }, []);
 
+  /** Append a new event to the active todo.txt file. The synthetic
+   *  path of the new line is returned so the caller can scroll-target /
+   *  focus the file itself (line-level focus isn't a thing yet). */
+  const createTodoTxtEvent = useCallback(async (
+    patch: Frontmatter,
+    todoFilePath: string,
+  ): Promise<string> => {
+    const body = await readVault(todoFilePath);
+    const title = typeof patch.title === "string" ? patch.title.trim() : "";
+    const date = typeof patch.date === "string" ? patch.date.slice(0, 10) : undefined;
+    const startTime = typeof patch.startTime === "string" ? patch.startTime : undefined;
+    const endTime = typeof patch.endTime === "string" ? patch.endTime : undefined;
+    const endDate = typeof patch.endDate === "string" ? patch.endDate.slice(0, 10) : undefined;
+    const allDay = patch.allDay === true;
+    const folderRef = parseRef(patch.folder);
+    const project = folderRef ? nfNameToProjectSlug(folderRef) : undefined;
+    // Build the task line: text gets the verbatim title + a `+slug`
+    // suffix when a folder is known. The +project lives in the text
+    // (per todo.txt convention — it's part of the description, not a
+    // separate field).
+    const text = [title || "Untitled", project ? `+${project}` : null]
+      .filter(Boolean)
+      .join(" ");
+    const item: Omit<TodoItem, "raw" | "index"> = {
+      completed: false,
+      ...(date ? { due: date } : {}),
+      ...(startTime ? { startTime } : {}),
+      ...(endTime ? { endTime } : {}),
+      ...(endDate ? { endDate } : {}),
+      allDay,
+      text,
+      ...(project ? { project } : {}),
+    };
+    const { body: nextBody, index } = appendTodoItem(body, item);
+    await writeVault(todoFilePath, nextBody);
+    setNotes((prev) => prev?.map((n) =>
+      n.path === todoFilePath ? { ...n, body: nextBody } : n,
+    ) ?? null);
+    return makeTodoTxtPath(todoFilePath, index);
+  }, []);
+
   const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
+    // Todo.txt mode: if the toggle is on AND the configured file
+    // exists in the loaded vault, route new events to that file
+    // instead of writing a per-event .md. Falls through to markdown
+    // when the file hasn't been created yet (lazy-open via Settings'
+    // "Open todo.txt" button).
+    const settings = getTodoTxtSettings();
+    if (settings.enabled) {
+      const todoFile = notesRef.current?.find((n) => toVaultRel(n.path) === settings.path);
+      if (todoFile) {
+        const synthPath = await createTodoTxtEvent(patch, todoFile.path);
+        setFocusPath(todoFile.path);
+        setScrollTargetPath(todoFile.path);
+        setFocusedPath(todoFile.path);
+        void synthPath; // synthetic line path is computed; not used yet
+        return;
+      }
+    }
     const root = await vaultRoot();
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
@@ -1872,6 +2019,35 @@ export function CardGrid() {
   // sits earlier in this component, can invoke the latest createNote.
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
+
+  /** Settings → "Open todo.txt": create the configured file if it
+   *  doesn't exist yet (per the spec's "no creation until explicit"
+   *  rule), then navigate to it as a card. The new file lands in the
+   *  in-memory notes list immediately so the navigate works without
+   *  waiting on the watcher's reload cycle. */
+  const openTodoTxt = useCallback(async () => {
+    const settings = getTodoTxtSettings();
+    const relPath = settings.path || DEFAULT_TODO_TXT_PATH;
+    const root = await vaultRoot();
+    const fullPath = `${root}/${relPath}`;
+    const existing = notesRef.current?.find((n) => toVaultRel(n.path) === relPath);
+    if (!existing) {
+      await writeVault(fullPath, "");
+      setNotes((prev) => [
+        ...(prev ?? []),
+        {
+          id: newNoteId(),
+          path: fullPath,
+          filename: relPath.split("/").pop() ?? relPath,
+          frontmatter: {},
+          title: relPath,
+          body: "",
+          mtime: Date.now(),
+        },
+      ]);
+    }
+    navigateAndFocus(fullPath);
+  }, [navigateAndFocus]);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
@@ -2058,6 +2234,15 @@ export function CardGrid() {
   }, [flashCap]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
+    // Todo.txt synthetic paths (`<vault-rel>.txt#L<index>`) route to
+    // the line-rewrite path instead of the markdown frontmatter
+    // merger. The patch shape coming from CalendarView is the same —
+    // date / startTime / endTime / endDate / allDay — but the writer
+    // is line-based, not YAML.
+    if (isTodoTxtPath(path)) {
+      await mutateTodoTxtFromPatch(path, patch);
+      return;
+    }
     const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
@@ -2070,6 +2255,50 @@ export function CardGrid() {
     }
     await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
+  }, []);
+
+  /** Apply a CalendarView-shape patch to a single todo.txt line.
+   *  Reads the file fresh so concurrent edits don't clobber. */
+  const mutateTodoTxtFromPatch = useCallback(async (
+    syntheticPath: string,
+    patch: Frontmatter,
+  ) => {
+    const split = splitTodoTxtPath(syntheticPath);
+    if (!split) return;
+    const body = await readVault(split.file);
+    const items = parseTodoTxt(body);
+    const target = items.find((i) => i.index === split.index);
+    if (!target) return;
+
+    // Merge patch into the item. `undefined` removes a field.
+    const next: TodoItem = { ...target };
+    if ("date" in patch) {
+      const v = patch.date;
+      if (typeof v === "string") next.due = v;
+      else if (v === undefined) next.due = undefined;
+    }
+    if ("startTime" in patch) {
+      const v = patch.startTime;
+      next.startTime = v === undefined ? undefined : String(v);
+    }
+    if ("endTime" in patch) {
+      const v = patch.endTime;
+      next.endTime = v === undefined ? undefined : String(v);
+    }
+    if ("endDate" in patch) {
+      const v = patch.endDate;
+      next.endDate = v === undefined ? undefined : String(v);
+    }
+    if ("allDay" in patch) next.allDay = patch.allDay === true;
+
+    const nextBody = mutateTodoLine(body, split.index, next);
+    await writeVault(split.file, nextBody);
+    // Local mirror: rewrite the LoadedNote.body so the next render
+    // re-derives todoCalendarNotes from the same content the watcher
+    // would have surfaced.
+    setNotes((prev) => prev?.map((n) =>
+      n.path === split.file ? { ...n, body: nextBody } : n,
+    ) ?? null);
   }, []);
   // Bind moveEventToDay (declared earlier via forward-ref) to the live
   // updateNoteFrontmatter so the event action menu can move an event to
@@ -2494,7 +2723,7 @@ export function CardGrid() {
   // notable-folders-only). The dock's left button is now an explicit
   // one-tap cycle, so applying it everywhere matches user
   // expectation — what you toggle is what you see, on every surface.
-  const calendarNotes: NoteMeta[] = streamCandidates
+  const markdownCalendarNotes: NoteMeta[] = streamCandidates
     .filter(filterMatches)
     .filter((n) => !publicOnly || n.frontmatter.public === true)
     .filter((n) => {
@@ -2512,6 +2741,43 @@ export function CardGrid() {
         color: f ? folderColor(f) : undefined,
       };
     });
+
+  // Todo.txt is a parallel calendar source. Each dated `due:` line
+  // becomes a virtual NoteMeta with a synthetic
+  // `<vault-rel>.txt#L<index>` path so updates / deletes can be
+  // dispatched back to the right line. Unmatched `+project` tokens
+  // produce uncolored events that still render.
+  const nfNamesForTodo = notableFolders.map((f) => f.name);
+  const todoTxtNote = todoSettings.enabled
+    ? notes.find((n) => toVaultRel(n.path) === todoSettings.path)
+    : undefined;
+  const todoCalendarNotes: NoteMeta[] = todoTxtNote
+    ? parseTodoTxt(todoTxtNote.body)
+        .filter((i) => !!i.due)
+        .map((i) => {
+          const nf = i.project ? resolveProjectToNf(i.project, nfNamesForTodo) : null;
+          const fm: Frontmatter = {
+            date: i.due,
+            allDay: i.allDay,
+            ...(i.startTime ? { startTime: i.startTime } : {}),
+            ...(i.endTime
+              ? { endTime: i.endTime }
+              : i.startTime ? { endTime: addMinutesToHHMM(i.startTime, 30) } : {}),
+            ...(i.endDate ? { endDate: i.endDate } : {}),
+            ...(nf ? { folder: `[[${nf}]]` } : {}),
+            ...(i.completed ? { completed: true } : {}),
+          };
+          return {
+            path: makeTodoTxtPath(todoTxtNote.path, i.index),
+            filename: todoTxtNote.filename,
+            title: i.text || "Untitled",
+            frontmatter: fm,
+            color: nf ? folderColor(nf) : undefined,
+          };
+        })
+    : [];
+
+  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
 
   /** The new-note flow — extracted so the dock button can call it. */
   const handleNewNote = () => {
@@ -2959,6 +3225,7 @@ export function CardGrid() {
         <SettingsPanel
           onChangeVault={handleChangeVault}
           onClose={() => setSettingsOpen(false)}
+          onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
         />
       )}
 

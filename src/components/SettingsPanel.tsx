@@ -5,18 +5,34 @@
 
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { X as XIcon, Folder as FolderIcon } from "lucide-react";
+import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
+import {
+  DEFAULT_TODO_TXT_PATH,
+  getTodoTxtSettings,
+  setTodoTxtSettings,
+} from "../lib/todo-txt";
 
 export function SettingsPanel({
-  onChangeVault, onClose,
+  onChangeVault, onClose, onOpenTodoTxt,
 }: {
   /** Persist the chosen absolute path (or null to reset to default)
    *  and reload the vault. */
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
+  /** Create the configured todo.txt file if needed and navigate to it
+   *  as a card. */
+  onOpenTodoTxt: () => Promise<void>;
 }) {
+  const initialTodo = getTodoTxtSettings();
+  const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
+  const [todoPath, setTodoPath] = useState(initialTodo.path);
+  const persistTodo = (next: Partial<{ enabled: boolean; path: string }>) => {
+    const merged = setTodoTxtSettings(next);
+    setTodoEnabled(merged.enabled);
+    setTodoPath(merged.path);
+  };
   const [current, setCurrent] = useState<string>("");
   const [fallback, setFallback] = useState<string>("");
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
@@ -111,6 +127,46 @@ export function SettingsPanel({
             Order reads and writes notes here. Pick a different folder when this
             machine's vault lives elsewhere — the choice is saved on this machine
             only.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Todo.txt</span>
+          <span className="settings-value">
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={todoEnabled}
+                onChange={(e) => persistTodo({ enabled: e.target.checked })}
+              />
+              <span>Use {todoPath || DEFAULT_TODO_TXT_PATH} as a calendar source</span>
+            </label>
+          </span>
+          <span className="settings-value">
+            <FileTextIcon size={12} strokeWidth={2} />
+            <input
+              type="text"
+              className="settings-input"
+              value={todoPath}
+              placeholder={DEFAULT_TODO_TXT_PATH}
+              onChange={(e) => setTodoPath(e.target.value)}
+              onBlur={() => persistTodo({ path: todoPath })}
+            />
+          </span>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-btn"
+              onClick={() => { void onOpenTodoTxt(); }}
+              disabled={!todoEnabled}
+            >
+              Open todo.txt
+            </button>
+          </div>
+          <span className="settings-hint">
+            New calendar events go into <code>{todoPath || DEFAULT_TODO_TXT_PATH}</code> when
+            enabled. The file is created the first time you add or open it.
+            Existing markdown events keep working alongside.
           </span>
         </div>
       </div>

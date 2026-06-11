@@ -2358,6 +2358,11 @@ iframe.order-youtube-embed {
   padding: 3px 6px 4px;
   box-sizing: border-box;
 }
+.fc-shell .order-event-row.is-completed .order-event-title,
+.fc-shell .order-event-row.is-completed .order-event-time {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
 .fc-shell .order-event-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -3121,6 +3126,58 @@ iframe.order-youtube-embed {
   color: var(--ink-faint);
   margin-top: 6px;
 }
+.settings-hint code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-elev);
+}
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.settings-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.settings-input {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+}
+.settings-input:focus { border-color: var(--royal); }
+
+/* ---------- Raw-text card surface (todo.txt etc.) ---------------- */
+.raw-text-surface {
+  width: 100%;
+  min-height: 1.5em;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: calc(13px * var(--text-scale, 1));
+  line-height: 1.7;
+  white-space: pre;
+  tab-size: 4;
+}
+.raw-text-surface::selection { background: var(--royal-soft); }
 
 /* ---------- Filter pill stack ---------- */
 /* Vertical column on the left rail: a search icon (opens the command

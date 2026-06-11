@@ -24,7 +24,10 @@ pub fn start_watcher(app: AppHandle, path: String) -> Result<(), String> {
             let paths: Vec<String> = events
                 .iter()
                 .flat_map(|e| e.event.paths.iter())
-                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("md"))
+                .filter(|p| matches!(
+                    p.extension().and_then(|s| s.to_str()),
+                    Some("md") | Some("txt")
+                ))
                 .map(|p| p.to_string_lossy().to_string())
                 .collect();
             if !paths.is_empty() {

@@ -36,6 +36,53 @@ export function noteFolder(fm: Frontmatter): string | null {
   return parseRef(fm.folder);
 }
 
+/** Normalise a slug-style token (CamelCase / PascalCase / kebab-case /
+ *  snake_case / mixed) to lowercase words separated by single spaces.
+ *  Used by todo.txt's `+project` resolver to fuzzy-match against the
+ *  Notable Folder name list. */
+export function expandSlugWords(token: string): string {
+  return token
+    // Insert a separator between a lowercase or digit and a following
+    // uppercase letter (camelCase / PascalCase boundary).
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    // Separator between consecutive uppercase letters when followed by
+    // a lowercase one ("HTMLEditor" -> "HTML Editor").
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    // Letter <-> digit boundaries become word boundaries too, so
+    // "NotableFolder1" lines up with "Notable Folder 1".
+    .replace(/([A-Za-z])([0-9])/g, "$1 $2")
+    .replace(/([0-9])([A-Za-z])/g, "$1 $2")
+    // Treat hyphens / underscores / dots as word separators.
+    .replace(/[-_.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** Resolve a todo.txt `+project` token to a Notable Folder name. Returns
+ *  the canonical NF name when a match exists, else null. Matching is
+ *  exact after both sides are slug-normalised — "myProject" matches
+ *  "My Project" but not "My Big Project". Used by the todo.txt event
+ *  layer to associate a calendar item with its parent NF. */
+export function resolveProjectToNf(
+  token: string,
+  nfNames: readonly string[],
+): string | null {
+  if (!token) return null;
+  const needle = expandSlugWords(token);
+  for (const name of nfNames) {
+    if (expandSlugWords(name) === needle) return name;
+  }
+  return null;
+}
+
+/** Inverse: turn an NF name into the kebab-case form Order writes back
+ *  into todo.txt for a newly assigned project. Idempotent — slug-style
+ *  inputs survive untouched. */
+export function nfNameToProjectSlug(name: string): string {
+  return expandSlugWords(name).replace(/\s+/g, "-");
+}
+
 // ---------- Curated palette (12 muted tones, readable on white) ----------
 
 const PALETTE = [
