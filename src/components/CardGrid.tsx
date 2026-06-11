@@ -1625,21 +1625,25 @@ export function CardGrid() {
     const todoNote = notes.find((n) => toVaultRel(n.path) === todoSettings.path);
     if (!todoNote) return;
 
-    const sources: MirrorSource[] = notes.flatMap((n) => {
+    // Build mirror sources, deduplicated by identity. Two .md files
+    // that share the same (date, startTime, normalized title) are
+    // indistinguishable from todo.txt's perspective; the mirror only
+    // emits ONE line for the group. Without this, a batch of e.g.
+    // transcript notes that share a first line all spawn identical
+    // lines in todo.txt — exactly the runaway-duplicate bug.
+    const sourcesByKey = new Map<string, MirrorSource>();
+    for (const n of notes) {
       const fm = n.frontmatter;
       const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
-      if (!date) return [];
+      if (!date) continue;
       const allDay = fm.allDay === true;
       const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
-      // Dated reference notes (Readwise articles, imports) carry a
-      // date with no time and no allDay flag. They're not calendar
-      // events — skip them.
-      if (!allDay && !startTime) return [];
+      if (!allDay && !startTime) continue;
       const endTime = typeof fm.endTime === "string" ? fm.endTime : undefined;
       const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
       const folder = noteFolder(fm) ?? undefined;
       const title = n.title || n.filename.replace(/\.md$/i, "");
-      return [{
+      const src: MirrorSource = {
         title,
         date,
         ...(startTime ? { startTime } : {}),
@@ -1647,8 +1651,11 @@ export function CardGrid() {
         ...(endDate ? { endDate } : {}),
         allDay,
         ...(folder ? { folder } : {}),
-      }];
-    });
+      };
+      const k = eventKey({ date, startTime, title });
+      if (!sourcesByKey.has(k)) sourcesByKey.set(k, src);
+    }
+    const sources: MirrorSource[] = [...sourcesByKey.values()];
     const result = syncTodoBody(todoNote.body, sources, getMirrorKeys());
     if (!result) return; // up to date
 
@@ -2797,24 +2804,38 @@ export function CardGrid() {
   // notable-folders-only). The dock's left button is now an explicit
   // one-tap cycle, so applying it everywhere matches user
   // expectation — what you toggle is what you see, on every surface.
-  const markdownCalendarNotes: NoteMeta[] = streamCandidates
-    .filter(filterMatches)
-    .filter((n) => !publicOnly || n.frontmatter.public === true)
-    .filter((n) => {
-      if (streamMode === "all") return true;
-      const isNF = isNotableFolder(n.frontmatter);
-      return streamMode === "notes" ? !isNF : isNF;
-    })
-    .map((n) => {
-      const f = noteFolder(n.frontmatter);
-      return {
+  const markdownCalendarNotes: NoteMeta[] = (() => {
+    const out: NoteMeta[] = [];
+    const seen = new Set<string>();
+    for (const n of streamCandidates) {
+      if (!filterMatches(n)) continue;
+      if (publicOnly && n.frontmatter.public !== true) continue;
+      if (streamMode !== "all") {
+        const isNF = isNotableFolder(n.frontmatter);
+        if (streamMode === "notes" ? isNF : !isNF) continue;
+      }
+      // Dedup overlapping events by identity so a vault with many
+      // .md files sharing the same (date, startTime, title) renders
+      // one chip — not a tower of overlapping ones. First .md wins.
+      const fm = n.frontmatter;
+      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      if (date) {
+        const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
+        const k = eventKey({ date, startTime, title: n.title });
+        if (seen.has(k)) continue;
+        seen.add(k);
+      }
+      const f = noteFolder(fm);
+      out.push({
         path: n.path,
         filename: n.filename,
         title: n.title,
-        frontmatter: n.frontmatter,
+        frontmatter: fm,
         color: f ? folderColor(f) : undefined,
-      };
-    });
+      });
+    }
+    return out;
+  })();
 
   // Todo.txt is a parallel calendar source. Each dated `due:` line
   // becomes a virtual NoteMeta with a synthetic
