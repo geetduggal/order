@@ -130,6 +130,12 @@ export function parseTodoTxt(body: string): TodoItem[] {
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (!raw.trim()) continue;
+    // Legacy mirror line — an earlier build of Order wrote `path:` to
+    // tag mirrored .md events. The vault-relative path can contain
+    // spaces, so we can't reliably token-strip it; instead, drop the
+    // whole line so it doesn't render as a calendar chip. The cleanup
+    // pass in CardGrid re-serializes without these, wiping them.
+    if (raw.includes("path:")) continue;
     let rest = raw;
     let completed = false;
     let priority: string | undefined;
@@ -196,10 +202,7 @@ export function parseTodoTxt(body: string): TodoItem[] {
     const prm = rest.match(PROJECT_RE);
     if (prm) project = prm[1];
 
-    // Strip any orphaned `path:<value>` tokens from the visible text.
-    // An earlier build of Order wrote these as mirror markers; this
-    // parser sanitises them out so a re-serialize drops them.
-    const text = rest.replace(/(?:^|\s)path:\S+/g, "").replace(/\s{2,}/g, " ").trim();
+    const text = rest.replace(/\s{2,}/g, " ").trim();
     const allDay = !!due && !startTime;
 
     out.push({
