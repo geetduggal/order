@@ -347,3 +347,148 @@ export function appendTodoItem(body: string, item: Omit<TodoItem, "raw" | "index
   return { body: next, index };
 }
 
+// ---------- .md <-> todo.txt mirror ----------
+//
+// The mirror has one job: keep todo.txt as a perfectly synced view of
+// every calendar event in the vault. There's no on-disk marker — every
+// line in todo.txt looks the same, whether it backs an .md file or
+// not. Identity matching closes the loop:
+//
+//   `${date}|${startTime ?? ""}|${normalized title}`
+//
+// A todo.txt line that matches an .md event by this key is "the same
+// event"; the calendar shows the .md side (which has prose, frontmatter,
+// etc.) and the .txt line is the mirror representation of it. Lines
+// that match nothing are native todo.txt events.
+//
+// Delete detection across restarts is handled by persisting the set of
+// keys we last wrote as mirrors. When an .md is deleted, its key is
+// in the last-mirror set but no longer in the current md-event set →
+// the line in todo.txt gets dropped on next sync.
+
+/** Caller-supplied descriptor of an .md calendar event. Order's
+ *  CardGrid builds these from the loaded notes. */
+export interface MirrorSource {
+  title: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  endDate?: string;
+  allDay: boolean;
+  /** Already-resolved Notable Folder name. Kebab-cased into the
+   *  +project token on the mirror line. */
+  folder?: string;
+  completed?: boolean;
+}
+
+/** Strip todo.txt metadata tokens (`+project`, `@context`) from a free-
+ *  text description so two representations of the same event match
+ *  even when one is a mirror line (which carries the project as a
+ *  +token) and the other is the raw .md title. */
+function normalizeTitle(text: string): string {
+  return text
+    .replace(/(?:^|\s)[+@]\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** Identity key for an event. Used both for dedup on the calendar feed
+ *  and for matching .md events against todo.txt lines during sync. */
+export function eventKey(e: {
+  date?: string;
+  startTime?: string;
+  title?: string;
+}): string {
+  return `${e.date ?? ""}|${e.startTime ?? ""}|${normalizeTitle(e.title ?? "")}`;
+}
+
+/** Identity key for an already-parsed todo.txt item. */
+export function todoItemKey(item: TodoItem): string {
+  return eventKey({ date: item.due, startTime: item.startTime, title: item.text });
+}
+
+/** Build a mirror TodoItem from an .md event. The produced line carries
+ *  no marker tag — it's indistinguishable on disk from a native line of
+ *  the same shape. Identity matching is what binds the two together. */
+export function buildMirrorItem(src: MirrorSource): TodoItem {
+  const project = src.folder
+    ? src.folder.replace(/[-_.]+/g, " ").trim().toLowerCase().replace(/\s+/g, "-")
+    : undefined;
+  const text = [src.title || "Untitled", project ? `+${project}` : null]
+    .filter(Boolean)
+    .join(" ");
+  return {
+    raw: "",
+    index: -1,
+    completed: !!src.completed,
+    due: src.date,
+    ...(src.startTime ? { startTime: src.startTime } : {}),
+    ...(src.endTime ? { endTime: src.endTime } : {}),
+    ...(src.endDate ? { endDate: src.endDate } : {}),
+    allDay: src.allDay,
+    text,
+    ...(project ? { project } : {}),
+  };
+}
+
+/** Rebuild todo.txt to reflect the current vault state.
+ *
+ *  `lastMirrorKeys` is the set of identity keys we wrote as mirrors
+ *  on the previous sync. It lets us tell apart "user-authored line
+ *  that happens to match an .md" (kept as the mirror) from "stale
+ *  mirror left behind after an .md was deleted" (dropped).
+ *
+ *  Returns `null` when no write is needed; otherwise the new body
+ *  plus the fresh `mirrorKeys` to persist for next time.
+ */
+export function syncTodoBody(
+  currentBody: string,
+  sources: MirrorSource[],
+  lastMirrorKeys: ReadonlySet<string>,
+): { body: string; mirrorKeys: string[] } | null {
+  const items = parseTodoTxt(currentBody);
+  const mdKeyArr = sources.map((s) => eventKey({
+    date: s.date,
+    startTime: s.startTime,
+    title: s.title,
+  }));
+  const mdKeySet = new Set(mdKeyArr);
+
+  // Keep only lines that are native (don't match any current .md
+  // event, and weren't a mirror last sync — so stale mirrors fall
+  // off after their backing .md is gone).
+  const native = items.filter((i) => {
+    const k = todoItemKey(i);
+    if (mdKeySet.has(k)) return false;
+    if (lastMirrorKeys.has(k)) return false;
+    return true;
+  });
+  const mirrored = sources.map(buildMirrorItem);
+  const nextBody = serializeTodoTxt([...native, ...mirrored]);
+  if (nextBody === currentBody) return null;
+  return { body: nextBody, mirrorKeys: mdKeyArr };
+}
+
+// ---------- Persistence of the last mirror key set ----------
+
+const MIRROR_KEYS_STORAGE = "order.todoTxt.mirrorKeys";
+
+export function getMirrorKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(MIRROR_KEYS_STORAGE);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((s): s is string => typeof s === "string"));
+    }
+  } catch { /* corrupt storage — start fresh */ }
+  return new Set();
+}
+
+export function setMirrorKeys(keys: ReadonlyArray<string>): void {
+  try {
+    localStorage.setItem(MIRROR_KEYS_STORAGE, JSON.stringify([...keys]));
+  } catch { /* localStorage unavailable */ }
+}
+

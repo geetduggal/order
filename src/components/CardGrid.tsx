@@ -30,14 +30,18 @@ import { folderColor, isNotableFolder, noteFolder, parseRef, resolveProjectToNf,
 import {
   DEFAULT_TODO_TXT_PATH,
   appendTodoItem,
+  eventKey,
+  getMirrorKeys,
   getTodoTxtSettings,
   isTodoTxtPath,
   makeTodoTxtPath,
   mutateTodoLine,
   parseTodoTxt,
-  serializeTodoTxt,
+  setMirrorKeys,
   splitTodoTxtPath,
   subscribeTodoTxtSettings,
+  syncTodoBody,
+  type MirrorSource,
   type TodoItem,
   type TodoTxtSettings,
 } from "../lib/todo-txt";
@@ -1598,25 +1602,61 @@ export function CardGrid() {
     return () => { cancelled = true; };
   }, []);
 
-  // One-shot todo.txt sanitiser. An earlier build mirrored .md events
-  // into the file with a `path:<vault-rel>` metadata token; we've
-  // dropped that convention, but existing files in the wild still
-  // carry it. On load (and on every reload), re-serialise through the
-  // current parser — which strips `path:` tokens — and write back
-  // when the body differs. Cheap fast-path: skip when the file
-  // doesn't contain `path:` at all.
+  // ---- todo.txt mirror sync -------------------------------------
+  // Keep todo.txt in lockstep with every .md calendar event.
+  //
+  // Rule: a todo.txt line and an .md event refer to the same thing
+  // when their `(date, startTime, normalized title)` keys match. The
+  // calendar always renders the .md side for those; the .txt line is
+  // its mirror representation on disk. Lines that match no .md are
+  // native todo.txt-only events.
+  //
+  // Delete detection uses a localStorage-persisted set of "last
+  // mirror keys" — keys we wrote as mirrors on the previous sync. If
+  // a line's key is in that set but no longer matches any .md, the
+  // .md was deleted and the line is dropped from the body.
+  //
+  // The sync writes back through `writeVault`, which routes through
+  // the self-write filter, so the file watcher doesn't bounce us into
+  // an infinite reload.
   useEffect(() => {
     if (!notes) return;
     if (!todoSettings.enabled) return;
     const todoNote = notes.find((n) => toVaultRel(n.path) === todoSettings.path);
     if (!todoNote) return;
-    if (!todoNote.body.includes("path:")) return;
-    const cleaned = serializeTodoTxt(parseTodoTxt(todoNote.body));
-    if (cleaned === todoNote.body) return;
-    const p = todoNote.path;
-    void writeVault(p, cleaned);
+
+    const sources: MirrorSource[] = notes.flatMap((n) => {
+      const fm = n.frontmatter;
+      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      if (!date) return [];
+      const allDay = fm.allDay === true;
+      const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
+      // Dated reference notes (Readwise articles, imports) carry a
+      // date with no time and no allDay flag. They're not calendar
+      // events — skip them.
+      if (!allDay && !startTime) return [];
+      const endTime = typeof fm.endTime === "string" ? fm.endTime : undefined;
+      const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
+      const folder = noteFolder(fm) ?? undefined;
+      const title = n.title || n.filename.replace(/\.md$/i, "");
+      return [{
+        title,
+        date,
+        ...(startTime ? { startTime } : {}),
+        ...(endTime ? { endTime } : {}),
+        ...(endDate ? { endDate } : {}),
+        allDay,
+        ...(folder ? { folder } : {}),
+      }];
+    });
+    const result = syncTodoBody(todoNote.body, sources, getMirrorKeys());
+    if (!result) return; // up to date
+
+    const todoPath = todoNote.path;
+    void writeVault(todoPath, result.body);
+    setMirrorKeys(result.mirrorKeys);
     setNotes((prev) => prev?.map((n) =>
-      n.path === p ? { ...n, body: cleaned } : n,
+      n.path === todoPath ? { ...n, body: result.body } : n,
     ) ?? null);
   }, [notes, todoSettings.enabled, todoSettings.path]);
 
@@ -2785,9 +2825,36 @@ export function CardGrid() {
   const todoTxtNote = todoSettings.enabled
     ? notes.find((n) => toVaultRel(n.path) === todoSettings.path)
     : undefined;
+  // Identity keys for every .md calendar event in the vault — used to
+  // skip todo.txt mirror lines (which look identical on disk to the
+  // lines we generated for those .md events). Built from the full
+  // notes list, not the filter-passed list, so toggling Stream filters
+  // can't make a mirror line resurface as a duplicate chip.
+  const mdEventKeys = new Set<string>();
+  for (const n of notes) {
+    const fm = n.frontmatter;
+    const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+    if (!date) continue;
+    const allDay = fm.allDay === true;
+    const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
+    if (!allDay && !startTime) continue;
+    mdEventKeys.add(eventKey({
+      date,
+      startTime,
+      title: n.title,
+    }));
+  }
+
   const todoCalendarNotes: NoteMeta[] = todoTxtNote
     ? parseTodoTxt(todoTxtNote.body)
         .filter((i) => !!i.due)
+        // Skip todo.txt lines that mirror an .md event — the .md
+        // already renders for them.
+        .filter((i) => !mdEventKeys.has(eventKey({
+          date: i.due,
+          startTime: i.startTime,
+          title: i.text,
+        })))
         .map((i) => {
           const nf = i.project ? resolveProjectToNf(i.project, nfNamesForTodo) : null;
           const fm: Frontmatter = {
