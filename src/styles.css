@@ -3164,7 +3164,13 @@ iframe.order-youtube-embed {
   width: 100%;
   min-height: 1.5em;
   resize: none;
-  overflow: hidden;
+  /* white-space: pre means lines don't soft-wrap; long ones (mirrored
+     lines have a `path:` tail that can be 50+ chars) need a horizontal
+     scrollbar instead of clipping at the card edge. Vertical stays
+     hidden because the auto-grow effect resizes the textarea to fit
+     its content. */
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 0;
   outline: 0;
   padding: 0;
@@ -3176,6 +3182,11 @@ iframe.order-youtube-embed {
   line-height: 1.7;
   white-space: pre;
   tab-size: 4;
+  /* iOS scrolling: momentum + treat the textarea as its own scroll
+     surface so a sideways flick inside it doesn't fight the outer
+     stream scroll. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 .raw-text-surface::selection { background: var(--royal-soft); }
 
@@ -4822,6 +4833,10 @@ iframe.order-youtube-embed {
   cursor: pointer;
 }
 .cmdk-item.is-active { background: var(--bg-elev); }
+.cmdk-item-extra {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--royal);
+}
 .cmdk-item-name { flex: 0 1 auto; }
 .cmdk-item-crumb {
   margin-left: 6px;

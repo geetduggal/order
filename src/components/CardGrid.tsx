@@ -35,10 +35,9 @@ import {
   makeTodoTxtPath,
   mutateTodoLine,
   parseTodoTxt,
+  serializeTodoTxt,
   splitTodoTxtPath,
   subscribeTodoTxtSettings,
-  syncMirroredBody,
-  type MirrorSource,
   type TodoItem,
   type TodoTxtSettings,
 } from "../lib/todo-txt";
@@ -1599,54 +1598,25 @@ export function CardGrid() {
     return () => { cancelled = true; };
   }, []);
 
-  // ---- todo.txt mirror sync -------------------------------------
-  // After every notes load (or settings flip), rebuild the mirrored
-  // section of todo.txt from every .md calendar event. Native lines
-  // (no `path:` tag) survive untouched; mirrored lines are dropped
-  // and regenerated. The write is gated on a content diff to avoid
-  // a self-write reload loop, and routed through markSelfWrite (via
-  // writeVault) so the watcher doesn't re-fire on it either.
-  //
-  // The Areas.md walk only resolves Notable Folder names from
-  // categories present in the chain — we need the same `inferredArea`
-  // logic the render uses to derive a NF's parent for the `+project`
-  // slug. To keep the effect compact, recompute it inline from the
-  // freshly captured notes.
+  // One-shot todo.txt sanitiser. An earlier build mirrored .md events
+  // into the file with a `path:<vault-rel>` metadata token; we've
+  // dropped that convention, but existing files in the wild still
+  // carry it. On load (and on every reload), re-serialise through the
+  // current parser — which strips `path:` tokens — and write back
+  // when the body differs. Cheap fast-path: skip when the file
+  // doesn't contain `path:` at all.
   useEffect(() => {
     if (!notes) return;
     if (!todoSettings.enabled) return;
     const todoNote = notes.find((n) => toVaultRel(n.path) === todoSettings.path);
-    if (!todoNote) return; // file not yet opened; nothing to sync
-
-    const sources: MirrorSource[] = notes.flatMap((n) => {
-      const fm = n.frontmatter;
-      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
-      if (!date) return [];
-      const allDay = fm.allDay === true;
-      const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
-      if (!allDay && !startTime) return []; // "dated reference" notes — not events
-      const endTime = typeof fm.endTime === "string" ? fm.endTime : undefined;
-      const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
-      const folder = noteFolder(fm) ?? undefined;
-      const title = n.title || n.filename.replace(/\.md$/i, "");
-      return [{
-        vaultRel: toVaultRel(n.path),
-        title,
-        date,
-        ...(startTime ? { startTime } : {}),
-        ...(endTime ? { endTime } : {}),
-        ...(endDate ? { endDate } : {}),
-        allDay,
-        ...(folder ? { folder } : {}),
-      }];
-    });
-    const nextBody = syncMirroredBody(todoNote.body, sources);
-    if (nextBody === null) return; // up to date
-
-    const todoPath = todoNote.path;
-    void writeVault(todoPath, nextBody);
+    if (!todoNote) return;
+    if (!todoNote.body.includes("path:")) return;
+    const cleaned = serializeTodoTxt(parseTodoTxt(todoNote.body));
+    if (cleaned === todoNote.body) return;
+    const p = todoNote.path;
+    void writeVault(p, cleaned);
     setNotes((prev) => prev?.map((n) =>
-      n.path === todoPath ? { ...n, body: nextBody } : n,
+      n.path === p ? { ...n, body: cleaned } : n,
     ) ?? null);
   }, [notes, todoSettings.enabled, todoSettings.path]);
 
@@ -1720,43 +1690,22 @@ export function CardGrid() {
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
+    // Todo.txt events share one file; opening any of them lands on
+    // the file itself (the user edits the line in place inside the
+    // RawTextSurface).
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
-      if (!split) return;
-      // Mirrored line → open the actual .md so the user lands inside
-      // the source note. Native line → open the todo.txt file itself.
-      const file = notesRef.current?.find((n) => n.path === split.file);
-      const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
-      if (item?.path) {
-        void (async () => {
-          const root = await vaultRoot();
-          navigateAndFocus(`${root}/${item.path}`);
-        })();
-        return;
-      }
-      navigateAndFocus(split.file);
+      if (split) navigateAndFocus(split.file);
       return;
     }
     navigateAndFocus(path);
   }, [navigateAndFocus]);
   const deleteEventNote = useCallback(async (path: string) => {
+    // Todo.txt line delete: rewrite the file with the line spliced
+    // out. The synthetic path identifies which line.
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
       if (!split) return;
-      const file = notesRef.current?.find((n) => n.path === split.file);
-      const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
-      // Mirrored line — delete the source .md, the mirror sync will
-      // drop the line on the next reload.
-      if (item?.path) {
-        const root = await vaultRoot();
-        const mdPath = `${root}/${item.path}`;
-        const mdNote = notesRef.current?.find((n) => n.path === mdPath);
-        if (mdNote) {
-          await handleCardDelete(mdNote.id, mdPath);
-        }
-        return;
-      }
-      // Native line — rewrite the file with the line spliced out.
       const body = await readVault(split.file);
       const nextBody = mutateTodoLine(body, split.index, null);
       await writeVault(split.file, nextBody);
@@ -2325,27 +2274,9 @@ export function CardGrid() {
     // date / startTime / endTime / endDate / allDay — but the writer
     // is line-based, not YAML.
     if (isTodoTxtPath(path)) {
-      // Mirrored line? The line carries a `path:` tag pointing back
-      // at the source .md. Route the patch to THAT file; the next
-      // mirror sync re-derives the line from it. Otherwise it's a
-      // native todo.txt line and we rewrite it in place.
-      const split = splitTodoTxtPath(path);
-      if (split) {
-        const file = notesRef.current?.find((n) => n.path === split.file);
-        const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
-        if (item?.path) {
-          const root = await vaultRoot();
-          await updateMdFrontmatter(`${root}/${item.path}`, patch);
-          return;
-        }
-      }
       await mutateTodoTxtFromPatch(path, patch);
       return;
     }
-    await updateMdFrontmatter(path, patch);
-  }, []);
-
-  const updateMdFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
@@ -2856,11 +2787,7 @@ export function CardGrid() {
     : undefined;
   const todoCalendarNotes: NoteMeta[] = todoTxtNote
     ? parseTodoTxt(todoTxtNote.body)
-        // Mirrored lines (with `path:` pointing back at an .md) are
-        // already represented by their source markdown event in
-        // markdownCalendarNotes — including them again would render
-        // a duplicate chip for every mirrored event.
-        .filter((i) => !!i.due && !i.path)
+        .filter((i) => !!i.due)
         .map((i) => {
           const nf = i.project ? resolveProjectToNf(i.project, nfNamesForTodo) : null;
           const fm: Frontmatter = {
@@ -2874,10 +2801,17 @@ export function CardGrid() {
             ...(nf ? { folder: `[[${nf}]]` } : {}),
             ...(i.completed ? { completed: true } : {}),
           };
+          // Strip every `+project` / `@context` token from the visible
+          // title; they're todo.txt metadata, not part of the
+          // description.
+          const cleanTitle = i.text
+            .replace(/(?:^|\s)[+@]\S+/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
           return {
             path: makeTodoTxtPath(todoTxtNote.path, i.index),
             filename: todoTxtNote.filename,
-            title: i.text || "Untitled",
+            title: cleanTitle || "Untitled",
             frontmatter: fm,
             color: nf ? folderColor(nf) : undefined,
           };
@@ -3306,6 +3240,14 @@ export function CardGrid() {
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
           recents={recentFolders}
+          extras={todoSettings.enabled ? [
+            {
+              label: todoSettings.path || DEFAULT_TODO_TXT_PATH,
+              keywords: "todo todo.txt todotxt",
+              hint: "todo.txt",
+              onPick: () => { void openTodoTxt(); },
+            },
+          ] : []}
         />
       )}
 

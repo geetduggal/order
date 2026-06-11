@@ -6,6 +6,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { NotableFolder } from "./Sidebar";
 
+/** A non-folder action surfaced in the palette (e.g. "Open todo.txt").
+ *  Sorts above folder matches when the user's query hits its keywords,
+ *  and surfaces in the empty-query view too. */
+export interface PaletteExtra {
+  label: string;
+  /** Lowercase keywords for fuzzy match against the query. */
+  keywords: string;
+  /** Optional secondary label (path, hint) shown after the main label. */
+  hint?: string;
+  onPick: () => void;
+}
+
 interface Props {
   folders: NotableFolder[];
   selected: Set<string>;
@@ -15,9 +27,12 @@ interface Props {
    *  view shows these first (as "Recent") then the rest alphabetically,
    *  so the palette doubles as a back-history for jumping. */
   recents?: string[];
+  /** Extra non-folder actions (e.g. "Open todo.txt"). Shown above
+   *  the folders when their keywords match the query. */
+  extras?: PaletteExtra[];
 }
 
-export function CommandPalette({ folders, selected, onToggle, onClose, recents }: Props) {
+export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras }: Props) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,11 +46,19 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents }
     return m;
   }, [folders]);
 
-  const matches = useMemo(() => {
+  // Matches are heterogeneous: a folder entry or an extra action (an
+  // object marked with a literal `kind: "extra"` discriminator). Both
+  // render in the same list; Enter / click dispatches accordingly.
+  type Match =
+    | { kind: "folder"; folder: NotableFolder }
+    | { kind: "extra"; extra: PaletteExtra };
+  const matches = useMemo<Match[]>(() => {
     const q = query.trim().toLowerCase();
+    const xs = extras ?? [];
     if (!q) {
+      const extraMatches: Match[] = xs.map((e) => ({ kind: "extra", extra: e }));
       // Recents first, then the rest in folders' natural order, capped
-      // at 12. Skip recents that no longer exist (renamed/deleted).
+      // at 12 (minus the extras). Skip recents that no longer exist.
       const recentEntries: NotableFolder[] = [];
       const seen = new Set<string>();
       for (const name of recents ?? []) {
@@ -46,16 +69,25 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents }
         }
         if (recentEntries.length >= 12) break;
       }
-      if (recentEntries.length >= 12) return recentEntries;
-      const rest = folders.filter((f) => !seen.has(f.name)).slice(0, 12 - recentEntries.length);
-      return [...recentEntries, ...rest];
+      const rest = folders.filter((f) => !seen.has(f.name));
+      const folderMatches: Match[] = [...recentEntries, ...rest]
+        .slice(0, Math.max(0, 12 - extraMatches.length))
+        .map((f) => ({ kind: "folder", folder: f }));
+      return [...extraMatches, ...folderMatches];
     }
-    return folders.filter((f) => {
-      const t = f.frontmatter.title;
-      const hay = (f.name + " " + (typeof t === "string" ? t : "")).toLowerCase();
-      return hay.includes(q);
-    }).slice(0, 12);
-  }, [folders, query, recents, byName]);
+    const extraMatches: Match[] = xs
+      .filter((e) => e.keywords.includes(q) || e.label.toLowerCase().includes(q))
+      .map((e) => ({ kind: "extra", extra: e }));
+    const folderMatches: Match[] = folders
+      .filter((f) => {
+        const t = f.frontmatter.title;
+        const hay = (f.name + " " + (typeof t === "string" ? t : "")).toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 12 - extraMatches.length)
+      .map((f) => ({ kind: "folder", folder: f }));
+    return [...extraMatches, ...folderMatches];
+  }, [folders, query, recents, byName, extras]);
   const recentSet = useMemo(() => new Set(recents ?? []), [recents]);
 
   function labelOf(f: typeof folders[number]): string {
@@ -88,7 +120,10 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents }
     if (e.key === "Enter") {
       e.preventDefault();
       const pick = matches[active];
-      if (pick) { onToggle(pick.name); onClose(); }
+      if (!pick) return;
+      if (pick.kind === "extra") { pick.extra.onPick(); onClose(); return; }
+      onToggle(pick.folder.name);
+      onClose();
     }
   }
 
@@ -113,7 +148,25 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents }
           <p className="cmdk-empty">No folders match.</p>
         ) : (
           <ul ref={listRef} className="cmdk-list" role="listbox">
-            {matches.map((f, i) => {
+            {matches.map((m, i) => {
+              if (m.kind === "extra") {
+                return (
+                  <li
+                    key={`extra:${m.extra.label}`}
+                    role="option"
+                    aria-selected={i === active}
+                    className={"cmdk-item cmdk-item-extra" + (i === active ? " is-active" : "")}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => { m.extra.onPick(); onClose(); }}
+                  >
+                    <span className="cmdk-item-name">{m.extra.label}</span>
+                    {m.extra.hint && (
+                      <span className="cmdk-item-crumb">{m.extra.hint}</span>
+                    )}
+                  </li>
+                );
+              }
+              const f = m.folder;
               const color = folderColor(f.name, f.frontmatter.color);
               const Icon = folderIcon(f.name, f.frontmatter.icon);
               const isOn = selected.has(f.name);
