@@ -172,6 +172,29 @@
   --coral-soft: #2a2a1a;
 }
 
+/* Typewriter: same idea as Terminal — pure mono everywhere, no
+   chrome — but on a pure white page instead of black. Reads like
+   a sheet rolled into a typewriter: black ink, faint pencil rules,
+   a single warm-amber accent for emphasis (subbing for the DOS
+   yellow). */
+:root[data-theme="typewriter"] {
+  color-scheme: light;
+  --sans: "Menlo", "Monaco", "Consolas", ui-monospace, monospace;
+  --bg:        #ffffff;
+  --bg-elev:   #f4f4f0;
+  --ink:       #000000;
+  --ink-soft:  #000000;
+  --ink-faint: #555555;
+  --ink-ghost: #bababa;
+  --rule:      #d0d0c8;
+  --rule-soft: #e6e6e0;
+
+  --royal:      #000000;
+  --royal-soft: #e6e6e0;
+  --coral:      #b07000; /* warm typewriter-ribbon amber accent */
+  --coral-soft: #f0e2c4;
+}
+
 /* America: pure #0000ff blue + #ff0000 red on white, black body text,
    clean sans throughout (override the serif reading font too). */
 :root[data-theme="america"] {
@@ -234,6 +257,7 @@
 /* Map Crepe editor colors onto the active theme's tokens. */
 :root[data-theme="wordperfect"] .milkdown,
 :root[data-theme="terminal"] .milkdown,
+:root[data-theme="typewriter"] .milkdown,
 :root[data-theme="america"] .milkdown,
 :root[data-theme="christmas"] .milkdown,
 :root[data-theme="lcars"] .milkdown {
@@ -262,7 +286,9 @@
 :root[data-theme="wordperfect"] .milkdown,
 :root[data-theme="wordperfect"] .milkdown *,
 :root[data-theme="terminal"] .milkdown,
-:root[data-theme="terminal"] .milkdown * {
+:root[data-theme="terminal"] .milkdown *,
+:root[data-theme="typewriter"] .milkdown,
+:root[data-theme="typewriter"] .milkdown * {
   font-family: var(--sans) !important;
 }
 
@@ -271,12 +297,14 @@
    built from its own --royal-soft / --coral-soft.) */
 :root[data-theme="wordperfect"] .box.no-image,
 :root[data-theme="terminal"] .box.no-image,
+:root[data-theme="typewriter"] .box.no-image,
 :root[data-theme="christmas"] .box.no-image,
 :root[data-theme="lcars"] .box.no-image {
   background: linear-gradient(155deg, var(--royal-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
 }
 :root[data-theme="wordperfect"] .box.no-image.coral,
 :root[data-theme="terminal"] .box.no-image.coral,
+:root[data-theme="typewriter"] .box.no-image.coral,
 :root[data-theme="christmas"] .box.no-image.coral,
 :root[data-theme="lcars"] .box.no-image.coral {
   background: linear-gradient(155deg, var(--coral-soft) 0%, var(--bg-elev) 70%, var(--bg) 100%);
@@ -299,11 +327,13 @@
 /* Menlo runs large — pull the WordPerfect / Terminal editor body in a
    notch so the default note text isn't oversized. */
 :root[data-theme="wordperfect"] .milkdown-host .ProseMirror,
-:root[data-theme="terminal"] .milkdown-host .ProseMirror {
+:root[data-theme="terminal"] .milkdown-host .ProseMirror,
+:root[data-theme="typewriter"] .milkdown-host .ProseMirror {
   font-size: calc(14px * var(--text-scale, 1));
 }
 :root[data-theme="wordperfect"] .order-card.is-fullscreen .milkdown-host .ProseMirror,
-:root[data-theme="terminal"] .order-card.is-fullscreen .milkdown-host .ProseMirror {
+:root[data-theme="terminal"] .order-card.is-fullscreen .milkdown-host .ProseMirror,
+:root[data-theme="typewriter"] .order-card.is-fullscreen .milkdown-host .ProseMirror {
   font-size: calc(15px * var(--text-scale, 1));
 }
 
