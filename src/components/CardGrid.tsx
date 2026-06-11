@@ -2071,10 +2071,23 @@ export function CardGrid() {
   // typed title (becomes both the filename and the body's H1); Enter on
   // an empty input still creates (untitled) so it stays a fast capture;
   // Esc cancels.
-  const [titlePrompt, setTitlePrompt] = useState<{ patch: Frontmatter } | null>(null);
-  const promptCreate = useCallback(async (patch: Frontmatter): Promise<void> => {
-    setTitlePrompt({ patch });
+  const [titlePrompt, setTitlePrompt] = useState<
+    { patch: Frontmatter; fromCalendar: boolean } | null
+  >(null);
+  const promptCreate = useCallback(async (
+    patch: Frontmatter,
+    fromCalendar = false,
+  ): Promise<void> => {
+    setTitlePrompt({ patch, fromCalendar });
   }, []);
+  /** Calendar-side onCreate wrapper. The + button / Cmd+N always make
+   *  a real .md note (the user wants to land inside a Notable Folder
+   *  stream), so the todo.txt-only path is reserved for events that
+   *  originated from a calendar drag or click. This wrapper marks the
+   *  call site so the downstream `createNote` knows. */
+  const promptCreateFromCalendar = useCallback(async (
+    patch: Frontmatter,
+  ): Promise<void> => promptCreate(patch, true), [promptCreate]);
 
   /** Append a new event to the active todo.txt file. The synthetic
    *  path of the new line is returned so the caller can scroll-target /
@@ -2117,22 +2130,26 @@ export function CardGrid() {
     return makeTodoTxtPath(todoFilePath, index);
   }, []);
 
-  const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
-    // Todo.txt mode: if the toggle is on AND the configured file
-    // exists in the loaded vault, route new events to that file
-    // instead of writing a per-event .md. Falls through to markdown
-    // when the file hasn't been created yet (lazy-open via Settings'
-    // "Open todo.txt" button).
-    const settings = getTodoTxtSettings();
-    if (settings.enabled) {
-      const todoFile = notesRef.current?.find((n) => toVaultRel(n.path) === settings.path);
-      if (todoFile) {
-        const synthPath = await createTodoTxtEvent(patch, todoFile.path);
-        setFocusPath(todoFile.path);
-        setScrollTargetPath(todoFile.path);
-        setFocusedPath(todoFile.path);
-        void synthPath; // synthetic line path is computed; not used yet
-        return;
+  const createNote = useCallback(async (
+    patch: Frontmatter,
+    fromCalendar = false,
+  ): Promise<void> => {
+    // Todo.txt mode only intercepts CALENDAR-originated creates (a
+    // drag or click on a slot). The dock + button and Cmd+N always
+    // fall through to the markdown path: the user invoking + wants a
+    // note inside a Notable Folder, not a one-line entry in todo.txt.
+    if (fromCalendar) {
+      const settings = getTodoTxtSettings();
+      if (settings.enabled) {
+        const todoFile = notesRef.current?.find((n) => toVaultRel(n.path) === settings.path);
+        if (todoFile) {
+          const synthPath = await createTodoTxtEvent(patch, todoFile.path);
+          setFocusPath(todoFile.path);
+          setScrollTargetPath(todoFile.path);
+          setFocusedPath(todoFile.path);
+          void synthPath;
+          return;
+        }
       }
     }
     const root = await vaultRoot();
@@ -3317,7 +3334,7 @@ export function CardGrid() {
             initialView="timeGridDay"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={promptCreate}
+            onCreate={promptCreateFromCalendar}
             currentView="day"
             onSelectView={setView}
           />
@@ -3330,7 +3347,7 @@ export function CardGrid() {
             initialView="timeGridWeek"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={promptCreate}
+            onCreate={promptCreateFromCalendar}
             currentView="week"
             onSelectView={setView}
           />
@@ -3343,7 +3360,7 @@ export function CardGrid() {
             initialView="dayGridMonth"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={promptCreate}
+            onCreate={promptCreateFromCalendar}
             currentView="month"
             onSelectView={setView}
           />
@@ -3355,7 +3372,7 @@ export function CardGrid() {
             notes={calendarNotes}
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
-            onCreate={promptCreate}
+            onCreate={promptCreateFromCalendar}
             currentView="year"
             onSelectView={setView}
           />
@@ -3495,11 +3512,12 @@ export function CardGrid() {
             defaultFolder={defaultFolder}
             onSubmit={async (title, folder) => {
               const patch = { ...titlePrompt.patch };
+              const fromCalendar = titlePrompt.fromCalendar;
               setTitlePrompt(null);
               if (title) patch.title = title;
               if (folder) patch.folder = `[[${folder}]]`;
               else delete patch.folder;
-              await createNote(patch);
+              await createNote(patch, fromCalendar);
             }}
             onCancel={() => setTitlePrompt(null)}
           />
