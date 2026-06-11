@@ -3885,14 +3885,22 @@ iframe.order-youtube-embed {
   font-family: var(--sans);
 }
 .event-action-menu-title {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px 5px;
   font-size: 11px;
-  color: var(--ink-faint);
+  color: var(--ink);
+  border: 0;
   border-bottom: 1px solid var(--rule);
   margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: transparent;
+  font-family: inherit;
+  outline: none;
+}
+.event-action-menu-title:focus {
+  border-bottom-color: var(--royal);
+  color: var(--ink);
 }
 .event-action-btn {
   display: block;

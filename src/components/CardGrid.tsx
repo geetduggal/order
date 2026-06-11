@@ -1729,7 +1729,13 @@ export function CardGrid() {
         const file = notesRef.current?.find((n) => n.path === split.file);
         const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
         if (item) {
-          title = item.text || "Untitled";
+          // Strip todo.txt metadata tokens (+project / @context) from
+          // the visible title — same shape the calendar chip uses.
+          const cleanTitle = item.text
+            .replace(/(?:^|\s)[+@]\S+/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          title = cleanTitle || "Untitled";
           d = item.due ?? null;
           if (item.project) {
             const names = notableFoldersRef.current ?? [];
@@ -1769,6 +1775,56 @@ export function CardGrid() {
     allDay: boolean;
     folder?: string;
   } | null>(null);
+
+  /** Rename a calendar event's title from the action menu. Routes the
+   *  same way mutations do: synthetic todo.txt path rewrites the line
+   *  in place (preserving any `+project` tag), .md path rewrites the
+   *  H1 + frontmatter title and renames the file to match. */
+  const renameEventTitle = useCallback(async (path: string, newTitle: string) => {
+    const cleanTitle = newTitle.trim();
+    if (!cleanTitle) return;
+    if (isTodoTxtPath(path)) {
+      const split = splitTodoTxtPath(path);
+      if (!split) return;
+      const fileBody = await readVault(split.file);
+      const items = parseTodoTxt(fileBody);
+      const target = items.find((i) => i.index === split.index);
+      if (!target) return;
+      // Keep all metadata tokens (+project / @context), drop only the
+      // existing description, then rebuild as "newTitle [+tags]".
+      const tags = (target.text.match(/(?:^|\s)[+@]\S+/g) ?? [])
+        .map((t) => t.trim());
+      const newText = [cleanTitle, ...tags].join(" ").trim();
+      const next: TodoItem = { ...target, text: newText };
+      const nextBody = mutateTodoLine(fileBody, split.index, next);
+      await writeVault(split.file, nextBody);
+      setNotes((prev) => prev?.map((n) =>
+        n.path === split.file ? { ...n, body: nextBody } : n,
+      ) ?? null);
+      return;
+    }
+    // .md path: rewrite frontmatter title and the H1 first-line so
+    // deriveTitle picks it up on the next reload.
+    const raw = await readVault(path);
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
+    const lines = body.split(/\r?\n/);
+    let h1Replaced = false;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (!t) continue;
+      if (t.startsWith("#")) {
+        lines[i] = `# ${cleanTitle}`;
+        h1Replaced = true;
+      }
+      break;
+    }
+    const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
+    await writeVault(path, joinFrontmatter(nextFm, newBody));
+    setNotes((prev) => prev?.map((n) =>
+      n.path === path ? { ...n, frontmatter: nextFm, title: cleanTitle, body: newBody } : n,
+    ) ?? null);
+  }, []);
 
   const openEventNote = useCallback((path: string) => {
     if (isTodoTxtPath(path)) {
@@ -2334,6 +2390,37 @@ export function CardGrid() {
    *  YAML (mirrors where createNote places new notes). Clearing a
    *  folder just rewrites YAML and leaves the file where it is. */
   const handleAssignFolder = useCallback(async (path: string, folderName: string | null) => {
+    // Todo.txt-backed chip: rewrite the line's `+project` token rather
+    // than reading/writing a non-existent .md. The line stays in the
+    // same position; only its `text` and `project` fields change so
+    // the synthetic path remains valid for subsequent interactions.
+    if (isTodoTxtPath(path)) {
+      const split = splitTodoTxtPath(path);
+      if (!split) return;
+      const fileBody = await readVault(split.file);
+      const items = parseTodoTxt(fileBody);
+      const target = items.find((i) => i.index === split.index);
+      if (!target) return;
+      const slug = folderName ? nfNameToProjectSlug(folderName) : null;
+      // Drop every existing +project/@context token from the text,
+      // then re-append the new one (if any). Order: title, then tag.
+      const textNoTags = target.text
+        .replace(/(?:^|\s)[+@]\S+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const newText = slug ? `${textNoTags} +${slug}` : textNoTags;
+      const next: TodoItem = {
+        ...target,
+        text: newText,
+        ...(slug ? { project: slug } : { project: undefined }),
+      };
+      const nextBody = mutateTodoLine(fileBody, split.index, next);
+      await writeVault(split.file, nextBody);
+      setNotes((prev) => prev?.map((n) =>
+        n.path === split.file ? { ...n, body: nextBody } : n,
+      ) ?? null);
+      return;
+    }
     const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
@@ -3589,6 +3676,9 @@ export function CardGrid() {
             await handleAssignFolder(eventMenu.path, name);
             setEventMenu(null);
           }}
+          onRename={async (newTitle) => {
+            await renameEventTitle(eventMenu.path, newTitle);
+          }}
           onCancel={() => setEventMenu(null)}
         />
       )}
@@ -3654,7 +3744,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
  *  click or Esc dismisses. */
 function EventActionMenu({
   title, x, y, eventDate, currentFolder, availableFolders,
-  onOpen, onDelete, onMoveToDay, onAssignFolder, onCancel,
+  onOpen, onDelete, onMoveToDay, onAssignFolder, onRename, onCancel,
 }: {
   title: string;
   x: number;
@@ -3672,8 +3762,18 @@ function EventActionMenu({
   onDelete: () => void;
   onMoveToDay: (iso: string) => void;
   onAssignFolder: (name: string) => Promise<void> | void;
+  /** Save a new title for the event. Fires on blur or Enter when the
+   *  text has actually changed. */
+  onRename: (newTitle: string) => Promise<void> | void;
   onCancel: () => void;
 }) {
+  const [draftTitle, setDraftTitle] = useState(title);
+  // Reset the draft when the popup opens for a different event.
+  useEffect(() => { setDraftTitle(title); }, [title]);
+  const commit = () => {
+    const next = draftTitle.trim();
+    if (next && next !== title) void onRename(next);
+  };
   const [folderQuery, setFolderQuery] = useState("");
   const [folderOpen, setFolderOpen] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -3721,7 +3821,17 @@ function EventActionMenu({
         style={{ left: `${left}px`, top: `${top}px` }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="event-action-menu-title">{title}</div>
+        <input
+          type="text"
+          className="event-action-menu-title"
+          value={draftTitle}
+          onChange={(e) => setDraftTitle(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
+            if (e.key === "Escape") { e.preventDefault(); setDraftTitle(title); onCancel(); }
+          }}
+        />
         {weekDays.length > 0 && (
           <div className="event-action-days" role="group" aria-label="Move to day">
             {weekDays.map((d) => (
