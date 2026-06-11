@@ -3742,6 +3742,45 @@ iframe.order-youtube-embed {
   border-radius: 3px;
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
+.create-md-prompt {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.create-md-prompt-text {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.create-md-prompt-text strong { color: var(--ink); font-weight: 600; }
+.create-md-prompt-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.create-md-prompt-btn {
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--ink);
+  transition: background-color 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.create-md-prompt-cancel:hover { background: var(--bg-elev); }
+.create-md-prompt-confirm {
+  background: var(--royal);
+  border-color: var(--royal);
+  color: #fff;
+  font-weight: 500;
+}
+.create-md-prompt-confirm:hover { background: color-mix(in srgb, var(--royal) 90%, black); }
+
 .event-prompt-folder-clear:hover {
   color: var(--coral);
   background: var(--coral-soft);

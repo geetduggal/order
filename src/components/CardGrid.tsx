@@ -1750,17 +1750,91 @@ export function CardGrid() {
       folder: f,
     });
   }, []);
+  /** Opening a todo.txt-only chip prompts to "promote" it to a real
+   *  .md note — same shape as `createNote` would build from a calendar
+   *  drag, but seeded from the existing line. The prompt is small +
+   *  centered (Esc cancels, Enter confirms) so it never blocks the
+   *  user's flow. */
+  const [createMdPrompt, setCreateMdPrompt] = useState<{
+    syntheticPath: string;
+    title: string;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    endDate?: string;
+    allDay: boolean;
+    folder?: string;
+  } | null>(null);
+
   const openEventNote = useCallback((path: string) => {
-    // Todo.txt events share one file; opening any of them lands on
-    // the file itself (the user edits the line in place inside the
-    // RawTextSurface).
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
-      if (split) navigateAndFocus(split.file);
+      if (!split) return;
+      const file = notesRef.current?.find((n) => n.path === split.file);
+      const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
+      if (!item || !item.due) return;
+      // Strip todo.txt metadata tokens from the visible title — same
+      // logic the calendar feed uses for chip titles.
+      const cleanTitle = item.text
+        .replace(/(?:^|\s)[+@]\S+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const folder = item.project
+        ? resolveProjectToNf(item.project, notableFoldersRef.current ?? []) ?? undefined
+        : undefined;
+      setCreateMdPrompt({
+        syntheticPath: path,
+        title: cleanTitle || "Untitled",
+        date: item.due,
+        ...(item.startTime ? { startTime: item.startTime } : {}),
+        ...(item.endTime ? { endTime: item.endTime } : {}),
+        ...(item.endDate ? { endDate: item.endDate } : {}),
+        allDay: item.allDay,
+        ...(folder ? { folder } : {}),
+      });
       return;
     }
     navigateAndFocus(path);
   }, [navigateAndFocus]);
+
+  /** Materialise the prompted todo.txt-only event into a real .md
+   *  file, then navigate to it. The next sync sees the new .md,
+   *  marks the original line as a mirror (identity match), and the
+   *  line stays in todo.txt as a clean mirror line. */
+  const confirmCreateMd = useCallback(async () => {
+    const prompt = createMdPrompt;
+    if (!prompt) return;
+    const root = await vaultRoot();
+    const frontmatter: Frontmatter = {
+      date: prompt.date,
+      allDay: prompt.allDay,
+      ...(prompt.startTime ? { startTime: prompt.startTime } : {}),
+      ...(prompt.endTime ? { endTime: prompt.endTime } : {}),
+      ...(prompt.endDate ? { endDate: prompt.endDate } : {}),
+      ...(prompt.folder ? { folder: `[[${prompt.folder}]]` } : {}),
+    };
+    const folderRef = parseRef(frontmatter.folder);
+    const writeDir = (folderRef && noteDirByRef(folderRef)) || root;
+    const seedBody = `# ${prompt.title}\n`;
+    const content = joinFrontmatter(frontmatter, seedBody);
+    const basename = basenameForEvent(prompt.date, prompt.title);
+    const path = await uniqueWrite(writeDir, basename, content);
+    const filename = path.split("/").pop() ?? basename;
+    setNotes((prev) => [
+      ...(prev ?? []),
+      {
+        id: newNoteId(),
+        path,
+        filename,
+        frontmatter,
+        title: prompt.title,
+        body: seedBody,
+        mtime: Date.now(),
+      },
+    ]);
+    setCreateMdPrompt(null);
+    navigateAndFocus(path);
+  }, [createMdPrompt, navigateAndFocus]);
   const deleteEventNote = useCallback(async (path: string) => {
     // Todo.txt line delete: rewrite the file with the line spliced
     // out. The synthetic path identifies which line.
@@ -3404,6 +3478,47 @@ export function CardGrid() {
           />
         );
       })()}
+
+      {createMdPrompt && (
+        <div
+          className="event-prompt-overlay"
+          role="dialog"
+          aria-label="Create note for this event"
+          onMouseDown={() => setCreateMdPrompt(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); setCreateMdPrompt(null); }
+            if (e.key === "Enter") { e.preventDefault(); void confirmCreateMd(); }
+          }}
+          tabIndex={-1}
+          ref={(el) => { el?.focus(); }}
+        >
+          <div
+            className="event-prompt create-md-prompt"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="create-md-prompt-text">
+              Create a note for <strong>{createMdPrompt.title}</strong>?
+            </div>
+            <div className="create-md-prompt-actions">
+              <button
+                type="button"
+                className="create-md-prompt-btn create-md-prompt-cancel"
+                onClick={() => setCreateMdPrompt(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="create-md-prompt-btn create-md-prompt-confirm"
+                onClick={() => { void confirmCreateMd(); }}
+                autoFocus
+              >
+                Create &amp; open
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {eventMenu && (
         <EventActionMenu
