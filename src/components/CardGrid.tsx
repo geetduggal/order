@@ -37,6 +37,8 @@ import {
   parseTodoTxt,
   splitTodoTxtPath,
   subscribeTodoTxtSettings,
+  syncMirroredBody,
+  type MirrorSource,
   type TodoItem,
   type TodoTxtSettings,
 } from "../lib/todo-txt";
@@ -1597,6 +1599,57 @@ export function CardGrid() {
     return () => { cancelled = true; };
   }, []);
 
+  // ---- todo.txt mirror sync -------------------------------------
+  // After every notes load (or settings flip), rebuild the mirrored
+  // section of todo.txt from every .md calendar event. Native lines
+  // (no `path:` tag) survive untouched; mirrored lines are dropped
+  // and regenerated. The write is gated on a content diff to avoid
+  // a self-write reload loop, and routed through markSelfWrite (via
+  // writeVault) so the watcher doesn't re-fire on it either.
+  //
+  // The Areas.md walk only resolves Notable Folder names from
+  // categories present in the chain — we need the same `inferredArea`
+  // logic the render uses to derive a NF's parent for the `+project`
+  // slug. To keep the effect compact, recompute it inline from the
+  // freshly captured notes.
+  useEffect(() => {
+    if (!notes) return;
+    if (!todoSettings.enabled) return;
+    const todoNote = notes.find((n) => toVaultRel(n.path) === todoSettings.path);
+    if (!todoNote) return; // file not yet opened; nothing to sync
+
+    const sources: MirrorSource[] = notes.flatMap((n) => {
+      const fm = n.frontmatter;
+      const date = typeof fm.date === "string" ? fm.date.slice(0, 10) : null;
+      if (!date) return [];
+      const allDay = fm.allDay === true;
+      const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
+      if (!allDay && !startTime) return []; // "dated reference" notes — not events
+      const endTime = typeof fm.endTime === "string" ? fm.endTime : undefined;
+      const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
+      const folder = noteFolder(fm) ?? undefined;
+      const title = n.title || n.filename.replace(/\.md$/i, "");
+      return [{
+        vaultRel: toVaultRel(n.path),
+        title,
+        date,
+        ...(startTime ? { startTime } : {}),
+        ...(endTime ? { endTime } : {}),
+        ...(endDate ? { endDate } : {}),
+        allDay,
+        ...(folder ? { folder } : {}),
+      }];
+    });
+    const nextBody = syncMirroredBody(todoNote.body, sources);
+    if (nextBody === null) return; // up to date
+
+    const todoPath = todoNote.path;
+    void writeVault(todoPath, nextBody);
+    setNotes((prev) => prev?.map((n) =>
+      n.path === todoPath ? { ...n, body: nextBody } : n,
+    ) ?? null);
+  }, [notes, todoSettings.enabled, todoSettings.path]);
+
   useGridLayout(gridEl);
 
   // Safety-net relayout for async content (Milkdown init, font load,
@@ -1667,22 +1720,43 @@ export function CardGrid() {
     });
   }, []);
   const openEventNote = useCallback((path: string) => {
-    // Todo.txt events share one file; opening any of them lands on
-    // the file itself (the user edits the line in place inside the
-    // RawTextSurface).
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
-      if (split) navigateAndFocus(split.file);
+      if (!split) return;
+      // Mirrored line → open the actual .md so the user lands inside
+      // the source note. Native line → open the todo.txt file itself.
+      const file = notesRef.current?.find((n) => n.path === split.file);
+      const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
+      if (item?.path) {
+        void (async () => {
+          const root = await vaultRoot();
+          navigateAndFocus(`${root}/${item.path}`);
+        })();
+        return;
+      }
+      navigateAndFocus(split.file);
       return;
     }
     navigateAndFocus(path);
   }, [navigateAndFocus]);
   const deleteEventNote = useCallback(async (path: string) => {
-    // Todo.txt line delete: rewrite the file with the line spliced
-    // out. The synthetic path identifies which line.
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
       if (!split) return;
+      const file = notesRef.current?.find((n) => n.path === split.file);
+      const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
+      // Mirrored line — delete the source .md, the mirror sync will
+      // drop the line on the next reload.
+      if (item?.path) {
+        const root = await vaultRoot();
+        const mdPath = `${root}/${item.path}`;
+        const mdNote = notesRef.current?.find((n) => n.path === mdPath);
+        if (mdNote) {
+          await handleCardDelete(mdNote.id, mdPath);
+        }
+        return;
+      }
+      // Native line — rewrite the file with the line spliced out.
       const body = await readVault(split.file);
       const nextBody = mutateTodoLine(body, split.index, null);
       await writeVault(split.file, nextBody);
@@ -2021,10 +2095,12 @@ export function CardGrid() {
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
 
   /** Settings → "Open todo.txt": create the configured file if it
-   *  doesn't exist yet (per the spec's "no creation until explicit"
-   *  rule), then navigate to it as a card. The new file lands in the
-   *  in-memory notes list immediately so the navigate works without
-   *  waiting on the watcher's reload cycle. */
+   *  doesn't exist yet, then show ONLY that file in the Stream by
+   *  replacing the active filter set with a single include pinned to
+   *  its filename. Replacing (rather than navigateAndFocus's
+   *  prepending) is important because the user is most often on the
+   *  home NF when they open Settings — preserving that filter would
+   *  splash the home folder's whole stream alongside the file. */
   const openTodoTxt = useCallback(async () => {
     const settings = getTodoTxtSettings();
     const relPath = settings.path || DEFAULT_TODO_TXT_PATH;
@@ -2046,8 +2122,17 @@ export function CardGrid() {
         },
       ]);
     }
-    navigateAndFocus(fullPath);
-  }, [navigateAndFocus]);
+    // Filename is the include ref; .txt files keep their extension
+    // (belongsTo only strips `.md`), so `todo.txt` matches itself
+    // exclusively.
+    const ownRef = (relPath.split("/").pop() ?? relPath);
+    setView("stream");
+    setFilters([{ kind: "include", ref: ownRef }]);
+    setFocusedFolder(null);
+    setFocusPath(fullPath);
+    setFocusedPath(fullPath);
+    setScrollTargetPath(fullPath);
+  }, []);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
@@ -2240,9 +2325,27 @@ export function CardGrid() {
     // date / startTime / endTime / endDate / allDay — but the writer
     // is line-based, not YAML.
     if (isTodoTxtPath(path)) {
+      // Mirrored line? The line carries a `path:` tag pointing back
+      // at the source .md. Route the patch to THAT file; the next
+      // mirror sync re-derives the line from it. Otherwise it's a
+      // native todo.txt line and we rewrite it in place.
+      const split = splitTodoTxtPath(path);
+      if (split) {
+        const file = notesRef.current?.find((n) => n.path === split.file);
+        const item = file ? parseTodoTxt(file.body).find((i) => i.index === split.index) : null;
+        if (item?.path) {
+          const root = await vaultRoot();
+          await updateMdFrontmatter(`${root}/${item.path}`, patch);
+          return;
+        }
+      }
       await mutateTodoTxtFromPatch(path, patch);
       return;
     }
+    await updateMdFrontmatter(path, patch);
+  }, []);
+
+  const updateMdFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
@@ -2753,7 +2856,11 @@ export function CardGrid() {
     : undefined;
   const todoCalendarNotes: NoteMeta[] = todoTxtNote
     ? parseTodoTxt(todoTxtNote.body)
-        .filter((i) => !!i.due)
+        // Mirrored lines (with `path:` pointing back at an .md) are
+        // already represented by their source markdown event in
+        // markdownCalendarNotes — including them again would render
+        // a duplicate chip for every mirrored event.
+        .filter((i) => !!i.due && !i.path)
         .map((i) => {
           const nf = i.project ? resolveProjectToNf(i.project, nfNamesForTodo) : null;
           const fm: Frontmatter = {
