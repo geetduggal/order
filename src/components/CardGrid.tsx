@@ -1833,8 +1833,26 @@ export function CardGrid() {
       },
     ]);
     setCreateMdPrompt(null);
-    navigateAndFocus(path);
-  }, [createMdPrompt, navigateAndFocus]);
+    // Pin the NF filter explicitly. navigateAndFocus would do this
+    // automatically — but it reads from notesRef which hasn't flushed
+    // the new note yet (we're inside the same React tick that called
+    // setNotes), so the lookup misses. Setting the include filter
+    // here puts the new note's NF at the top of the pile so the
+    // newspaper section template kicks in and lands the user inside it.
+    if (prompt.folder) {
+      const nf = prompt.folder;
+      setFilters((prev) => [
+        { kind: "include", ref: nf },
+        ...prev.filter((f) => !(f.kind === "include" && f.ref === nf)),
+      ]);
+      setFocusedFolder(nf);
+      markFolderRecent(nf);
+    }
+    setView("stream");
+    setScrollTargetPath(path);
+    setFocusPath(path);
+    setFocusedPath(path);
+  }, [createMdPrompt, navigateAndFocus, markFolderRecent]);
   const deleteEventNote = useCallback(async (path: string) => {
     // Todo.txt line delete: rewrite the file with the line spliced
     // out. The synthetic path identifies which line.
