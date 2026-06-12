@@ -146,6 +146,10 @@ only the single best thing from each.
 
 ## Architecture
 
+> **Mental model in one page:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+> — the file conventions, the code map, the three data flows, and the
+> invariants. Start there; the sections below add depth per topic.
+
 ### Stack
 
 - **Tauri v2** — Rust shell, system webview. Native window, native file IO; ships
@@ -205,25 +209,17 @@ its Area, all rooted at the vault.
 folder" — the folder itself IS the Notable Folder, with a Main Document inside
 named after it. That single decision pulls everything else into place:
 
-- **Attachments live next to the note that uses them.** Pasting or dropping an
-  image into a note writes the file straight into the NF's own directory and
-  the embed is stored as `![[image.png]]` (Obsidian's
-  `attachmentFolderPath: "./"` convention). Moving a note to a different NF
-  drags its images along by reflex — same folder, same fate. Order doesn't
-  need an `Attachments/` dir at the vault root; one can exist for legacy
-  vaults and basename-relative embeds still resolve (Obsidian-compatible),
-  but the *new* convention is just "drop it in the folder, like you would
-  on a real desktop."
-- **Sidecar artifacts have a home.** AI-generated HTML one-pagers, exported
-  PDFs, screenshots, scratch JSON, anything else a tool spits out next to a
-  note — all of it goes in the same NF directory. Order won't render every
-  file type, but they're discoverable from Finder / Obsidian / VS Code exactly
-  where the note that produced them lives.
-- **Cross-tool portability is free.** The vault opens cleanly in Obsidian
-  with no migration: the same `[[wikilink]]`s, the same `![[image.png]]`
-  embeds, the same chain of folder index files. Every other tool — git,
-  Finder, `grep`, `rsync`, a backup script — also sees a sensible folder
-  tree it can reason about.
+- **Attachments live next to the note that uses them.** Paste or drop an
+  image and it lands in the NF's own directory, embedded as
+  `![[image.png]]` (Obsidian's `attachmentFolderPath: "./"` convention).
+  Move the note, the images come along. A legacy root `Attachments/` dir
+  still resolves, but new content takes the local route.
+- **Sidecar artifacts have a home.** Exported PDFs, screenshots, scratch
+  JSON — anything a tool produces next to a note goes in the same NF
+  directory, discoverable from Finder / Obsidian / VS Code.
+- **Cross-tool portability is free.** The vault opens cleanly in Obsidian:
+  same wikilinks, same embeds, same chain of index files. git, `grep`,
+  `rsync`, and backup scripts all see a sensible folder tree.
 
 At edit time the embeds are inflated to `vaultasset://` URLs — served by a
 custom URI-scheme handler on the Rust side (`lib.rs`) that resolves them
@@ -883,6 +879,31 @@ A note becomes a **Notable Folder Main Document** when its YAML has a `category`
 field. A list folder additionally carries `list: cards` (or `lines`) and its
 body holds the wikilink bullets that the card grid renders. Notes opt into
 publishing by adding `public: true` to their frontmatter.
+
+## Testing
+
+```bash
+pnpm test:e2e        # Playwright suite — real app, mocked Tauri IPC
+pnpm test:e2e:ui     # same, with the Playwright inspector
+ORDER_VAULT=~/path/to/vault pnpm test:e2e consistency   # lint any vault
+```
+
+The browser tests boot the unmodified app in Chromium against an
+in-memory vault; the consistency tests double as a structural linter
+for real vaults (chain integrity, attachment locality, todo.txt sync).
+See `tests/e2e/` and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing).
+
+## Releasing
+
+`scripts/` holds one script per artifact — see
+[docs/RELEASING.md](docs/RELEASING.md) for the full flow including App
+Store submission:
+
+```bash
+scripts/build-desktop.sh   # signed .app + .dmg via tauri build
+scripts/build-ios.sh       # .ipa via tauri ios build
+scripts/release.sh v0.1.0  # tag + upload binaries to the GitHub release
+```
 
 ## License
 
