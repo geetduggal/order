@@ -35,6 +35,13 @@ pnpm test:e2e         # Playwright suite
 Prereqs: Node 20+, pnpm 9+, Rust 1.77+; Xcode 15+ for iOS. First
 launch reads `~/Documents/Dropbox/Home/` (change it in Settings).
 
+**Using the prebuilt .app from a release?** macOS quarantines
+non-notarized downloads and claims the app "is damaged." It isn't:
+
+```bash
+xattr -cr ~/Downloads/Order.app && open ~/Downloads/Order.app
+```
+
 ## A vault at a glance
 
 ```

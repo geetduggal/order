@@ -14,6 +14,12 @@ Signing uses whatever identity `tauri.conf.json` / your keychain
 provide; an unsigned build still produces a runnable .app for local
 use.
 
+**Gatekeeper note.** Without notarization (paid Apple account), any
+DOWNLOADED copy of the app gets quarantined and macOS reports it as
+"damaged." Tell users to run `xattr -cr Order.app` once — and keep
+that instruction in the release notes (release.sh's default notes
+include it). Locally built apps are unaffected.
+
 ## 2. iOS (.ipa)
 
 ```bash
