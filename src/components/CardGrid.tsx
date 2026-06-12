@@ -3074,13 +3074,22 @@ export function CardGrid() {
 
   /** The new-note flow — extracted so the dock button can call it.
    *
-   *  Invariant: the + button ALWAYS lands you in the home Notable
-   *  Folder with that NF pinned as the only active filter. No
-   *  pile-walking, no current-include inheritance, no calendar-popup
-   *  detour. One press → one note, one place. */
+   *  Stream: same semantics as Cmd+N — the note lands in the
+   *  top-of-pile Notable Folder (createNote resolves pile top → home)
+   *  and the existing filter pile is left alone.
+   *
+   *  Calendar views: jump home — create in the home NF, pin the
+   *  filter to it, land in its stream with the cursor in the new
+   *  card. A calendar has no pile context, so home is the one
+   *  predictable destination. */
   const handleNewNote = () => {
     if (streamMode === "folders") {
       setStreamMode(() => { writeStreamMode("all"); return "all"; });
+    }
+    const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
+    if (view === "stream") {
+      void createNote(patch);
+      return;
     }
     const home = homeFolderRef.current;
     setView("stream");
@@ -3090,12 +3099,7 @@ export function CardGrid() {
     } else {
       setFilters([]);
     }
-    void createNote({
-      date: isoDate(),
-      startTime: isoTime(),
-      allDay: false,
-      ...(home ? { folder: `[[${home}]]` } : {}),
-    });
+    void createNote({ ...patch, ...(home ? { folder: `[[${home}]]` } : {}) });
   };
 
   return (

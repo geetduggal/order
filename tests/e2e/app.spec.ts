@@ -9,8 +9,9 @@ import { bootVault, emitTauriEvent, todayIso } from "./helpers";
 const SNAPPY_MS = 1000;
 
 
-test("1a — + button creates a note in the home NF and jumps to it", async ({ page }) => {
+test("1a — + from a calendar view creates in the home NF and jumps to it", async ({ page }) => {
   await bootVault(page);
+  // Cold boot lands on Week (a calendar view) — + must jump home.
   const t0 = Date.now();
   await page.click(".dock-btn-new");
 
@@ -23,6 +24,25 @@ test("1a — + button creates a note in the home NF and jumps to it", async ({ p
     return files.filter((f) => f.startsWith("Alpha/Alpha Spaces/Home Base/") && f.endsWith(".md")).length;
   }).toBeGreaterThan(3); // main doc + Standup + Gallery + the new note
   expect(Date.now() - t0, "create+jump is snappy").toBeLessThan(SNAPPY_MS + 500);
+});
+
+test("1a — + in the Stream creates in the top-of-pile NF, filters untouched", async ({ page }) => {
+  await bootVault(page);
+  // Pin Side Quest via the palette — Stream view, pile top = Side Quest.
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
+  await page.fill(".cmdk-input", "Side Quest");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+
+  await page.click(".dock-btn-new");
+
+  // The note lands in Side Quest (Cmd+N semantics: top of the pile),
+  // and the filter pile is unchanged.
+  await expect.poll(async () => {
+    const files = await page.evaluate(() => Object.keys((window as any).__VAULT__.files));
+    return files.filter((f) => f.startsWith("Alpha/Alpha Spaces/Side Quest/") && f.endsWith(".md")).length;
+  }).toBeGreaterThan(1); // main doc + the new note
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
 });
 
 test("1b — moving an event to another NF switches filter and jumps", async ({ page }) => {

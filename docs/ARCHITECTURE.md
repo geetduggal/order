@@ -154,13 +154,14 @@ camel / snake case (`lib/folders.ts: resolveProjectToNf`).
 
 ## UI flows worth knowing
 
-**+ button.** Always creates an `.md` in the home Notable Folder, pins
-the filter to it, and lands the cursor in the new card. One press, one
-note, one place. Calendar drag/click also creates `.md` files — Order
-never creates todo.txt-only events (a line whose only home is a file
-two devices rewrite concurrently can lose the sync race; an `.md`
-regenerates its mirror line on the next pass no matter what happened
-to todo.txt).
+**+ button.** In the Stream it behaves like Cmd+N: the note lands in
+the top-of-pile Notable Folder (falling back to home) and the filter
+pile is left alone. From any calendar view it jumps home — creates in
+the home NF, pins the filter, lands the cursor in the new card.
+Calendar drag/click also creates `.md` files — Order never creates
+todo.txt-only events (a line whose only home is a file two devices
+rewrite concurrently can lose the sync race; an `.md` regenerates its
+mirror line on the next pass no matter what happened to todo.txt).
 
 **Navigation is a pile.** Every surface — sidebar tile, palette pick,
 wikilink, event-popup Open — puts the target NF on top of the
