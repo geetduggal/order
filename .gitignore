@@ -29,3 +29,5 @@ tsconfig.tsbuildinfo
 # has built the viewer for the first time.
 dist-viewer/*
 !dist-viewer/.gitkeep
+test-results/
+playwright-report/

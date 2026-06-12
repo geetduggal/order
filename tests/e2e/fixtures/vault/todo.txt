@@ -1,0 +1,2 @@
+due:{{TODAY}} 09:00  Standup +home-base
+due:{{TODAY}} 16:00  Native line only +side-quest end:17:30
