@@ -108,6 +108,7 @@ test.describe("1d — disk structure matches the markdown chain", () => {
       }
     }
     for (const n of notes) {
+      if (n.fm.category) continue; // NF main docs are their own home
       const folder = stripRef(n.fm.folder);
       if (!folder) continue;
       const nfDir = nfDirs.get(folder);
@@ -119,18 +120,40 @@ test.describe("1d — disk structure matches the markdown chain", () => {
     }
   });
 
-  test("every ![[image]] embed resolves inside the note's own directory", async () => {
+  test("every ![[file]] embed resolves (note dir, Attachments/, or vault-wide)", async () => {
     const notes = await loadVault();
     const EMBED_RE = /!\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/g;
+    // Vault-wide basename index — Obsidian resolves embeds anywhere in
+    // the vault, so a file that moved dirs is not a broken link.
+    const allFiles = new Set<string>();
+    async function indexDir(dir: string): Promise<void> {
+      for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+        if (e.name.startsWith(".")) continue;
+        if (e.isDirectory()) await indexDir(path.join(dir, e.name));
+        else allFiles.add(e.name);
+      }
+    }
+    await indexDir(VAULT);
+    const broken: string[] = [];
     for (const n of notes) {
       for (const m of n.body.matchAll(EMBED_RE)) {
         const file = m[1].trim();
-        if (file.endsWith(".md")) continue;
-        const local = path.join(VAULT, path.dirname(n.rel), file);
-        const exists = await fs.access(local).then(() => true, () => false);
-        expect(exists, `${n.rel} embeds ${file} — must exist next to the note`).toBe(true);
+        // Extension-less targets are note transclusions, and bare "..."
+        // is documentation — neither is a file embed.
+        if (!/\.[A-Za-z0-9]+$/.test(file) || file.endsWith(".md")) continue;
+        const candidates = [
+          path.join(VAULT, path.dirname(n.rel), file),
+          path.join(VAULT, file),
+        ];
+        let ok = false;
+        for (const c of candidates) {
+          if (await fs.access(c).then(() => true, () => false)) { ok = true; break; }
+        }
+        if (!ok && allFiles.has(path.basename(file))) ok = true;
+        if (!ok) broken.push(`${n.rel} -> ${file}`);
       }
     }
+    expect(broken, `dead embeds:\n${broken.join("\n")}`).toEqual([]);
   });
 });
 
@@ -157,9 +180,15 @@ test.describe("1e — todo.txt agrees with .md calendar events", () => {
       const allDay = n.fm.allDay === "true";
       const startTime = /^\d{2}:\d{2}$/.test(n.fm.startTime ?? "") ? n.fm.startTime : undefined;
       if (!allDay && !startTime) continue; // dated reference, not an event
-      const title = n.fm.title || path.basename(n.rel, ".md").replace(/^\d{4}-\d{2}-\d{2}\s*/, "");
-      const k = eventKey({ date, startTime, title });
-      expect(lineKeys.has(k), `.md event "${title}" (${n.rel}) mirrored in todo.txt`).toBe(true);
+      // The app derives an event's title from the body H1 / filename,
+      // while authored frontmatter may differ in punctuation the
+      // filesystem can't hold (e.g. ':' written as '-'). Accept a
+      // match on any candidate.
+      const fromFile = path.basename(n.rel, ".md").replace(/^\d{4}-\d{2}-\d{2}\s*/, "");
+      const candidates = [n.fm.title, fromFile].filter(Boolean) as string[];
+      const matched = candidates.some((title) =>
+        lineKeys.has(eventKey({ date, startTime, title })));
+      expect(matched, `.md event "${candidates[0]}" (${n.rel}) mirrored in todo.txt`).toBe(true);
     }
   });
 });
