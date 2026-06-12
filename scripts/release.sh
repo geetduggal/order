@@ -8,7 +8,15 @@ cd "$(dirname "$0")/.."
 
 TAG="${1:?usage: scripts/release.sh <tag>}"
 DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
+APP="src-tauri/target/release/bundle/macos/Order.app"
 IPA="src-tauri/gen/apple/build/arm64/Order.ipa"
+
+# dmg bundling needs Finder automation and fails in headless shells;
+# fall back to a ditto-zipped .app (signing preserved).
+if [ -z "$DMG" ] && [ -d "$APP" ]; then
+  DMG="/tmp/Order_${TAG#v}_aarch64_macos.app.zip"
+  ditto -c -k --keepParent "$APP" "$DMG"
+fi
 
 echo "Tag: $TAG -> $(git rev-parse --short HEAD)"
 git tag -f "$TAG"
