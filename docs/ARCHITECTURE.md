@@ -156,8 +156,11 @@ camel / snake case (`lib/folders.ts: resolveProjectToNf`).
 
 **+ button.** Always creates an `.md` in the home Notable Folder, pins
 the filter to it, and lands the cursor in the new card. One press, one
-note, one place. Only calendar drag/click creates todo.txt lines (when
-the toggle is on).
+note, one place. Calendar drag/click also creates `.md` files — Order
+never creates todo.txt-only events (a line whose only home is a file
+two devices rewrite concurrently can lose the sync race; an `.md`
+regenerates its mirror line on the next pass no matter what happened
+to todo.txt).
 
 **Navigation is a pile.** Every surface — sidebar tile, palette pick,
 wikilink, event-popup Open — puts the target NF on top of the

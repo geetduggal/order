@@ -14,7 +14,7 @@ codebase ships desktop and iOS.
 - **Edit in place** — WYSIWYG markdown cards (Milkdown Crepe). No modes, no preview pane.
 - **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10, stored as plain files.
 - **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same frontmatter Obsidian Full Calendar reads.
-- **todo.txt as an event backing** — one line per event; markdown files only when there's prose worth keeping.
+- **todo.txt, always in sync** — every calendar event mirrored as one readable line; hand-added lines show up on the calendar too.
 - **Seasons** — name your own date ranges and see each one as a grid of what actually happened, by Area.
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
@@ -92,8 +92,8 @@ The Season view clusters every notable update (all-day event) by Area
 over the range — which projects went well, which Areas were quiet, at
 a glance. Arrows step between seasons like they step between weeks.
 
-**todo.txt.** Flip one toggle in Settings and calendar events write to
-a single text file instead of per-event markdown:
+**todo.txt.** Flip one toggle in Settings and Order keeps a single
+text file in sync with every calendar event — one line each:
 
 ```
 due:2026-06-13 07:30  Long run +weekly-hub end:09:30
@@ -102,9 +102,10 @@ due:2026-06-13        Ship to prod +map-pipeline-v2
 ```
 
 `+project` fuzzy-matches a Notable Folder (kebab / camel / snake).
-Events with real prose stay as markdown files; Order keeps both
-backings in sync by identity `(date, start, title)` and renders each
-event exactly once.
+Events Order creates are markdown files (the durable truth — sync
+conflicts can never lose them); lines you add by hand in any editor
+render on the calendar too. Identity `(date, start, title)` binds the
+two backings so each event renders exactly once.
 
 **Publish.** Notes with `public: true` build into a static site +
 hydrated SPA (`Cmd+P`). Permalinks pin to the note, not its path, so

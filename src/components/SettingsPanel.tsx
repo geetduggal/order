@@ -164,9 +164,10 @@ export function SettingsPanel({
             </button>
           </div>
           <span className="settings-hint">
-            New calendar events go into <code>{todoPath || DEFAULT_TODO_TXT_PATH}</code> when
-            enabled. The file is created the first time you add or open it.
-            Existing markdown events keep working alongside.
+            Keeps <code>{todoPath || DEFAULT_TODO_TXT_PATH}</code> in sync with every
+            calendar event — one line per event, readable and editable in any
+            text editor. Events you create in Order are markdown files; lines
+            you add by hand show up on the calendar too.
           </span>
         </div>
       </div>
