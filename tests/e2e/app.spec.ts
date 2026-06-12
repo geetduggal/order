@@ -184,4 +184,10 @@ test("1e (live) — calendar chips agree with todo.txt when enabled", async ({ p
     (window as any).__VAULT__.read("todo.txt") as string);
   const todayLines = body.split("\n").filter((l) => l.includes(today));
   expect(todayLines.length).toBe(2);
+
+  // todo.txt lines carry no public flag — under the "Public only"
+  // lens they are private and every todo-backed chip disappears.
+  await page.click(".dock-btn-settings");
+  await page.click(".dock-tools-item:has-text('Public + private')");
+  await expect(page.locator(".fc-event", { hasText: "Native line only" })).toHaveCount(0);
 });

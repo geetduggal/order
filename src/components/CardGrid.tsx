@@ -3066,7 +3066,11 @@ export function CardGrid() {
   // dispatched back to the right line. Unmatched `+project` tokens
   // produce uncolored events that still render.
   const nfNamesForTodo = notableFolders.map((f) => f.name);
-  const todoTxtNote = todoSettings.enabled
+  // todo.txt lines carry no `public:` flag, so they are private by
+  // definition — under the public-only lens the whole source drops
+  // out, matching how publish (which only ships `public: true` notes)
+  // never includes them either.
+  const todoTxtNote = todoSettings.enabled && !publicOnly
     ? notes.find((n) => toVaultRel(n.path) === todoSettings.path)
     : undefined;
   // Identity keys for every .md calendar event in the vault — used to
