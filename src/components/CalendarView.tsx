@@ -139,6 +139,18 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
   return events;
 }
 
+/** Initial scroll position for the Day / Week time grids. FC's
+ *  `scrollTime` pins the given time to the TOP of the grid, so to land
+ *  the current time roughly mid-screen we scroll to now minus ~3.5
+ *  hours (half of a typical visible window), clamped to midnight. */
+function nowCenteredScrollTime(): string {
+  const d = new Date();
+  const mins = Math.max(0, d.getHours() * 60 + d.getMinutes() - 210);
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}:00`;
+}
+
 /** Round a Date to the nearest absolute half-hour mark (XX:00 or XX:30).
  *  setMinutes accepts values ≥ 60 and overflows into the next hour, so
  *  we don't need a wrap branch. Mutates a fresh copy, not the input. */
@@ -503,6 +515,12 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // a half-hour boundary.
         slotDuration="00:30:00"
         snapDuration="00:30:00"
+        // Open Day / Week scrolled so the current time sits mid-screen
+        // (scrollTime pins to the top; the helper backs off ~3.5h).
+        // Month / multi-month ignore this. scrollTimeReset keeps the
+        // same anchor when paging prev/next instead of snapping to 06:00.
+        scrollTime={nowCenteredScrollTime()}
+        scrollTimeReset={false}
         // Event content is rendered manually (see renderEventContent) so
         // FC's range formatter can't sneak a trailing separator in.
         // displayEventTime: false fully silences FC's default time
