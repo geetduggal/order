@@ -1,8 +1,10 @@
-# Order — architecture in one page
+# Order — architecture
 
 The whole app is one idea applied repeatedly: **plain markdown files are
 the database, and every surface is a different read of the same files.**
-If you understand the file conventions, you understand the app.
+If you understand the file conventions, you understand the app. The
+rest of this doc is how that idea survives contact with a vault of tens
+of thousands of files.
 
 ## The data model (on disk)
 
@@ -33,48 +35,107 @@ Five frontmatter keys carry all structure:
 
 Everything else (`title`, `home`, `public`, `image`, …) is decoration.
 
-## The code map (src/)
+## Tech stack — what each layer is for
+
+| Layer | Choice | Why this one |
+|---|---|---|
+| Shell | **Tauri v2** (Rust) | native file IO + system webview; one codebase ships macOS, Linux, Windows, **and iOS**. ~10 MB binaries vs Electron's ~150 |
+| UI | **React 19 + TypeScript**, Vite | one SPA rendered into the webview; HMR in dev |
+| Editor | **Milkdown Crepe** (ProseMirror) | WYSIWYG CommonMark, uncontrolled after mount — typing never round-trips through React state |
+| Calendar | **FullCalendar v6** (Day/Week/Month) | drag/resize/select for free; Year and Season are hand-rolled React (FC buys nothing there) |
+| YAML | js-yaml | frontmatter parse/dump, `noRefs` + quoted strings to stay Obsidian-compatible |
+| Watcher | notify (Rust), 500 ms debounce | external edits reach the UI without polling JS-side |
+| Assets | custom `vaultasset://` URI scheme | images/video stream through the webview's native fetch path with HTTP `Range` support — a 50 MB `![[clip.mov]]` never crosses the IPC bridge |
+
+State management is deliberately primitive: **no Redux, no Zustand, no
+Context**. `CardGrid.tsx` (~4k lines) owns `notes[]`, the view, and the
+filter pile; everything derives per render. One place to look, one
+place to debug.
 
 ```
-components/CardGrid.tsx    THE component. Loads notes, owns view/filter
-                           state, routes every mutation. ~4k lines and
-                           deliberately so — state lives in one place.
-components/Card.tsx        One note: load → edit (Milkdown) → debounced save.
-components/MilkdownSurface Crepe editor wrapper; paste, links, wikilinks.
-components/RawTextSurface  Monospace <textarea> for .txt files (todo.txt).
-components/CalendarView    Day/Week/Month via FullCalendar.
-components/YearLinearView  Year — hand-rolled 12×37 strip.
-components/SeasonView      Season — Areas grid over a date range.
-components/Sidebar.tsx     Areas → Categories → NFs drill + filter pills.
-
-lib/vault-fs.ts            All file IO. Wraps the Rust bridge; vault-
-                           relative paths only.
-lib/frontmatter.ts         YAML split/join; date normalization.
-lib/taxonomy.ts            Walks the Areas.md chain into a tree.
-lib/folders.ts             NF detection, colors, icons, +project slugs.
-lib/list-folder.ts         list: bullets ↔ structured items.
-lib/todo-txt.ts            todo.txt parse/serialize + .md mirror sync.
-lib/seasons.ts             Seasons.md parse + per-Area activity query.
-
-src-tauri/src/vault_fs.rs  The Rust side: 14 thin file commands.
-src-tauri/src/fts.rs       Full-text index (build / load / search).
-src-tauri/src/watcher.rs   Debounced fs notify → "vault-changed" events.
+CardGrid ── owns notes[], view, filters; routes every mutation
+├── Sidebar           Areas → Categories → NFs drill + filter pills
+├── LazyCell[] → Card per note: load → edit (Milkdown) → debounced save
+│   ├── MilkdownSurface   Crepe wrapper: paste, links, wikilinks
+│   ├── RawTextSurface    monospace <textarea> for .txt (todo.txt)
+│   └── ListView          list: cards / lines renders
+├── CalendarView      Day / Week / Month (FullCalendar)
+├── YearLinearView    Year — 12×37 strip
+├── SeasonView        Season — Areas grid over a date range
+└── CommandPalette    ⌘O/⌘K folder picker · FtsOverlay ⌘F search
 ```
 
-## The three flows
+## File operations — everything goes through one bridge
 
-**Load.** `vault_walk_metadata` (Rust) returns every file's frontmatter
-without bodies. Chain files and `.txt` get their bodies up front; leaf
-bodies load lazily when a Card mounts. Everything derives from this one
-`notes[]` array per render: taxonomy, calendar events, seasons, streams.
+The frontend never touches a filesystem API. Every operation calls a
+Rust command via `lib/vault-fs.ts`, with **vault-relative paths** — the
+same code runs on desktop (absolute root) and iOS (security-scoped
+bookmark), and `..` traversal is rejected at the bridge.
 
-**Mutate.** Every mutation rewrites a file through `vaultFs` and patches
-the in-memory `notes[]` in the same tick. Self-writes are stamped so the
-watcher doesn't bounce them back as external edits.
+| Command | Used for |
+|---|---|
+| `vault_walk_metadata` | boot: every file's frontmatter, **no bodies** |
+| `vault_read_text` / `vault_write_text` | note load on demand / debounced save |
+| `vault_write_binary` | image paste |
+| `vault_rename` / `vault_remove` | rename note (+ inbound wikilink rewrite), delete |
+| `vault_read_dir` / `vault_list_dir` | NF file-browser flip side |
+| `vault_import_files` | OS drag-drop (webview eats HTML5 dataTransfer; Rust copies by path) |
+| `fts_build_index` / `fts_search` | full-text search, index lives Rust-side |
+| `open_url` / `open_path` | every external link → OS browser/app, never in-app |
 
-**External edit.** The Rust watcher emits `vault-changed`; CardGrid
-reloads metadata, matches notes by path (ids survive, so mounted editors
-keep cursor + focus), and re-renders.
+**The write path.** Card edits debounce 600 ms, then:
+`splitFrontmatter → mutate → joinFrontmatter → vault_write_text`.
+Every write also stamps a 6-second **self-write marker**; the watcher
+and the mtime poller treat stamped paths as "ours" so saving never
+triggers a reload of the card being typed in. A `knownBodies` cache
+lets the watcher distinguish a real external edit from a Dropbox/iCloud
+metadata touch by comparing content, not just mtime.
+
+**The external-edit path.** notify (Rust, 500 ms debounce) → `vault-changed`
+event → JS coalesces another 250 ms → metadata re-walk → notes matched
+**by path so React ids survive** — a mounted editor keeps its cursor,
+selection, and scroll through a `git pull` happening underneath it.
+
+## Scaling to tens of thousands of files
+
+The budget: every interaction under a second (enforced by the E2E
+suite). Five mechanisms carry it:
+
+1. **Metadata-only boot.** `vault_walk_metadata` ships one small struct
+   per file — frontmatter YAML string, body byte-length, mtime. At 10⁴
+   notes that's the difference between megabytes and hundreds of
+   megabytes crossing the IPC bridge. Bodies load lazily, per note, the
+   moment a Card actually mounts. Only chain files (Areas/Categories/NF
+   main docs, `list:` folders, `.txt`) get bodies up front, because the
+   sidebar and calendar need their bullets immediately.
+
+2. **Lazy editor mounting.** A ProseMirror instance per note is the
+   expensive thing — hundreds of synchronous mounts stall the main
+   thread. `LazyCell` wraps each grid cell in an IntersectionObserver:
+   offscreen cells render a sized placeholder; the real Card mounts
+   when scrolled within ~1.5 viewports above / 3 below. Once mounted it
+   stays mounted, so in-progress edits never get torn down by scrolling.
+
+3. **Pagination before virtualization.** The unfiltered Stream caps at
+   60 cards with a "Show more" tile; filters lift the cap because a
+   filtered set is small by construction. Combined with LazyCell this
+   means cold boot mounts a handful of editors, not thousands.
+
+4. **Masonry without layout thrash.** The Stream is CSS Grid with 8 px
+   auto-rows; each cell's `grid-row-end: span N` comes from its measured
+   height. Re-measure triggers are scoped — a per-card ResizeObserver,
+   a ProseMirror MutationObserver, and a capturing input listener as
+   backstop — so typing in one card never reflows the page.
+
+5. **Derived state, no caches to invalidate.** Taxonomy tree, calendar
+   events, season grids, todo.txt sync sources — all are `useMemo`-style
+   derivations over the single `notes[]` array. There is no secondary
+   store to drift; a 10⁴-element map/filter per render is microseconds,
+   and it's always right.
+
+Search is the one thing that can't derive from metadata: `⌘F` queries a
+Rust-side full-text index (built once, loaded from disk on later
+launches) so JS never holds every body in memory.
 
 ## Calendar events have two backings
 
@@ -91,14 +152,33 @@ triple `(date, startTime, normalized title)`:
 The `+project` token fuzzy-matches Notable Folder names across kebab /
 camel / snake case (`lib/folders.ts: resolveProjectToNf`).
 
+## UI flows worth knowing
+
+**+ button.** Always creates an `.md` in the home Notable Folder, pins
+the filter to it, and lands the cursor in the new card. One press, one
+note, one place. Only calendar drag/click creates todo.txt lines (when
+the toggle is on).
+
+**Navigation is a pile.** Every surface — sidebar tile, palette pick,
+wikilink, event-popup Open — puts the target NF on top of the
+filter-pill stack. The just-touched section renders at scroll-top, so
+the scroll target has nothing to drift through (matters on iOS).
+
+**Folder move.** Reassigning a note's NF rewrites its YAML, moves the
+file *and its same-folder images*, swaps the filter to the destination,
+and scroll-targets the moved card. The React key survives the path
+change so an open editor doesn't remount.
+
+**Publish.** Collects `public: true` notes → prerenders one static HTML
+page per permalink (real content for `curl` and unfurlers) → ships the
+same React components as a read-only SPA. No template to drift.
+
 ## Invariants worth knowing
 
 - Quoted dates. `date: "2026-06-12"` — unquoted dates parse as YAML
   Date objects and need `toIsoDateValue` everywhere they're compared.
 - Attachments live next to their note. No global attachments dir for
   new content; moving a note drags its images along.
-- The + button always creates in the home NF and pins the filter there.
-  Only calendar drag/click creates todo.txt lines (when the toggle is on).
 - Wikilinks resolve by name, not path, so moving folders never rewrites
   links.
 - The published web viewer reuses the same components read-only — there
@@ -107,6 +187,8 @@ camel / snake case (`lib/folders.ts: resolveProjectToNf`).
 ## Testing
 
 `pnpm test:e2e` runs Playwright against the real app in Chromium with a
-mocked Tauri IPC layer (`tests/e2e/helpers.ts`) and an in-memory vault.
-`ORDER_VAULT=<path> pnpm test:e2e consistency` lints any real vault for
-structure/todo.txt consistency.
+mocked Tauri IPC layer (`tests/e2e/helpers.ts`) — an in-memory vault
+stands in for the Rust bridge, so the full UI exercises real app code.
+Interactive assertions carry a <1 s budget. `ORDER_VAULT=<path> pnpm
+test:e2e consistency` lints any real vault: chain ↔ directory
+integrity, attachment locality, todo.txt ↔ `.md` event sync.
