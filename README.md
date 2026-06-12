@@ -7,11 +7,7 @@ and every surface — stream, calendar, seasons, todo.txt — is a
 different read of the same files. Obsidian-compatible vault. One Tauri
 codebase ships desktop and iOS.
 
-![Order — a Notable Folder rendered as a newspaper section](img/order-home.png)
-
-**Demos:** [Basics](https://drive.google.com/file/d/1H2Yv9Jf59Og1bimFuDhJmIlOvjCA4iDp/view?usp=sharing) ·
-[Lists](https://drive.google.com/file/d/1TdWU6fPFFOTDnodDT3AWenjyuuMRjffg/view?usp=sharing) ·
-[Intro article](https://medium.com/@geetduggal/order-a-calendar-first-notebook-for-mapping-your-world-abc0970494a5)
+![Order — a Notable Folder rendered as a newspaper section: the Main Document centered, recent notes orbiting it](img/stream.png)
 
 ## What you get
 
@@ -82,6 +78,8 @@ folder you touch goes on top.
 **Calendar.** Day / Week / Month / Year. Drag to create, drag to move,
 click for an action popup (rename inline, move to a day, reassign the
 folder, open, delete). Events are just notes with a `date:`.
+
+![Week view — events colored by Notable Folder, Season next to Year in the view switcher](img/calendar-week.png)
 
 **Seasons.** List your own date ranges in `Seasons.md`:
 
