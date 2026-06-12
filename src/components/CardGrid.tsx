@@ -2453,6 +2453,15 @@ export function CardGrid() {
       setFocusedPath((p) => (p === path ? newPath : p));
       setFocusPath((p) => (p === path ? newPath : p));
       setScrollTargetPath((p) => (p === path ? newPath : p));
+      // Land the user inside the new NF: clear the filter pile, pin
+      // the new folder, switch to Stream, and let the existing
+      // scrollTargetPath ride the user to the moved card.
+      if (folderName) {
+        setView("stream");
+        setFilters([{ kind: "include", ref: folderName }]);
+        setFocusedFolder(folderName);
+        markFolderRecent(folderName);
+      }
       return;
     }
 
@@ -3127,28 +3136,30 @@ export function CardGrid() {
 
   const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
 
-  /** The new-note flow — extracted so the dock button can call it. */
+  /** The new-note flow — extracted so the dock button can call it.
+   *
+   *  Invariant: the + button ALWAYS lands you in the home Notable
+   *  Folder with that NF pinned as the only active filter. No
+   *  pile-walking, no current-include inheritance, no calendar-popup
+   *  detour. One press → one note, one place. */
   const handleNewNote = () => {
-    // A new note is a regular note (never an NF main doc), so under
-    // "Notable folders only" it would land out of sight. Flip Show to
-    // "All notes + folders" first — the simplest invariant: the +
-    // button always produces a card the user can see immediately.
     if (streamMode === "folders") {
       setStreamMode(() => { writeStreamMode("all"); return "all"; });
     }
-    const sel = notableIncludes;
-    const create = view !== "stream" ? promptCreate : createNote;
-    // Pile-based: when one or more Notable Folders are pinned, drop
-    // the new note in the TOP of the pile (the most-recently-touched
-    // section). No picker; the user's pile order IS the picker.
-    if (sel.length >= 1) {
-      void create({
-        date: isoDate(), startTime: isoTime(), allDay: false,
-        folder: `[[${sel[0]}]]`,
-      });
+    const home = homeFolderRef.current;
+    setView("stream");
+    if (home) {
+      setFilters([{ kind: "include", ref: home }]);
+      setFocusedFolder(home);
     } else {
-      void create({ date: isoDate(), startTime: isoTime(), allDay: false });
+      setFilters([]);
     }
+    void createNote({
+      date: isoDate(),
+      startTime: isoTime(),
+      allDay: false,
+      ...(home ? { folder: `[[${home}]]` } : {}),
+    });
   };
 
   return (
