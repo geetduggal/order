@@ -37,7 +37,7 @@ Everything else (`title`, `home`, `public`, `image`, …) is decoration.
 
 ```
 components/CardGrid.tsx    THE component. Loads notes, owns view/filter
-                           state, routes every mutation. ~3.9k lines and
+                           state, routes every mutation. ~4k lines and
                            deliberately so — state lives in one place.
 components/Card.tsx        One note: load → edit (Milkdown) → debounced save.
 components/MilkdownSurface Crepe editor wrapper; paste, links, wikilinks.
@@ -56,7 +56,8 @@ lib/list-folder.ts         list: bullets ↔ structured items.
 lib/todo-txt.ts            todo.txt parse/serialize + .md mirror sync.
 lib/seasons.ts             Seasons.md parse + per-Area activity query.
 
-src-tauri/src/vault_fs.rs  The Rust side: ~15 thin file commands.
+src-tauri/src/vault_fs.rs  The Rust side: 14 thin file commands.
+src-tauri/src/fts.rs       Full-text index (build / load / search).
 src-tauri/src/watcher.rs   Debounced fs notify → "vault-changed" events.
 ```
 
