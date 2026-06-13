@@ -48,7 +48,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon, Terminal as TerminalIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
@@ -126,6 +126,15 @@ interface Props {
    *  the toggle handler resolves (Card's own loaded state is captured
    *  once on mount and would otherwise stay stale). */
   isPublic?: boolean;
+  /** Patch the note's schedule frontmatter (`allDay` / `startTime`).
+   *  Omitted keys are left alone; `startTime: null` removes the key.
+   *  CardGrid persists and updates state so the chip reflects live. */
+  onSetSchedule?: (patch: { allDay?: boolean; startTime?: string | null }) => Promise<void>;
+  /** Authoritative `allDay` / `startTime` driven by CardGrid's note
+   *  state. The chip reads these (not state.frontmatter) so toggling
+   *  via onSetSchedule re-renders instantly — same pattern as isPublic. */
+  liveAllDay?: boolean;
+  liveStartTime?: string;
   /** Minimal vault index for resolving `- [[Name]]` bullets (and for
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
@@ -330,6 +339,9 @@ export function Card(props: Props) {
     availableFolders,
     onAssignFolder,
     onTogglePublic,
+    onSetSchedule,
+    liveAllDay,
+    liveStartTime,
     isPublic,
     vaultNotes,
     onNavigate,
@@ -458,9 +470,12 @@ export function Card(props: Props) {
     // editorBodyRef is populated both on load (setEditorBody during
     // the read effect) and on every editor change, so it's the
     // single source of truth even before the user has typed.
+    // Milkdown's serializer emits "loose" lists with a blank line
+    // between every item; tighten before writing to the clipboard so
+    // the copy matches the on-disk shape.
     const src = editorBodyRef.current;
     if (!src) return;
-    void navigator.clipboard?.writeText(src);
+    void navigator.clipboard?.writeText(tightenListSpacing(src));
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 1400);
   }, []);
@@ -1130,11 +1145,11 @@ export function Card(props: Props) {
             type="button"
             className={"order-card-btn order-card-update" + (updateOpen ? " is-on" : "")}
             onClick={() => setUpdateOpen((v) => !v)}
-            title={updateOpen ? "Close notable update" : "Log a notable update"}
-            aria-label="Notable update"
+            title={updateOpen ? "Close notable" : "Log a notable"}
+            aria-label="Notable"
             aria-pressed={updateOpen}
           >
-            <PlusIcon size={14} strokeWidth={2} />
+            <StarIcon size={14} strokeWidth={2} />
           </button>
         )}
         {permalink && (
@@ -1252,9 +1267,6 @@ export function Card(props: Props) {
       {termOpen && isMainDoc && !readOnly && vaultRootForFlip && (
         <div className="order-card-term-panel">
           <div className="order-card-term-head">
-            <span className="order-card-term-title">
-              <TerminalIcon size={12} strokeWidth={2} /> {folderName}
-            </span>
             <button
               type="button"
               className="order-card-term-close"
@@ -1264,6 +1276,9 @@ export function Card(props: Props) {
             >
               <XIcon size={13} strokeWidth={2.2} />
             </button>
+            <span className="order-card-term-title">
+              <TerminalIcon size={12} strokeWidth={2} /> {folderName}
+            </span>
           </div>
           <OrderTerminal cwd={`${vaultRootForFlip}/${folderRelForFlip}`} />
         </div>
@@ -1431,6 +1446,62 @@ export function Card(props: Props) {
             >
               {isPub ? "public" : "private"}
             </button>
+          );
+        })()}
+        {onSetSchedule && typeof state.frontmatter.date === "string" && (() => {
+          // Subtle date + time chip in the status bar. Prefer the live
+          // props (driven by CardGrid's notes state) so the chip flips
+          // synchronously with the toggle; fall back to the
+          // initially-loaded frontmatter if a parent isn't passing them.
+          // Click "all day" to drop into a 09:00 default; the time
+          // <input> lets you pick. Click the star to flip back to
+          // all-day (which removes startTime and sets allDay:true so
+          // the note still shows on the calendar — see calendar's
+          // notesToEvents rule).
+          const dateRaw = state.frontmatter.date;
+          const fmStart = typeof state.frontmatter.startTime === "string"
+            ? state.frontmatter.startTime : "";
+          const startTime = liveStartTime !== undefined ? liveStartTime : fmStart;
+          const fmAllDay = state.frontmatter.allDay === true || !fmStart;
+          const allDay = liveAllDay !== undefined ? liveAllDay : fmAllDay;
+          // Local-date parse: YYYY-MM-DD is interpreted in UTC by Date;
+          // splitting + new Date(y, m-1, d) keeps the user's local day.
+          const m = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          const label = m
+            ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            : dateRaw;
+          return (
+            <span className="order-card-when" title={`${dateRaw}${allDay ? " · all day" : ` · ${startTime}`}`}>
+              <span className="when-date">{label}</span>
+              {allDay ? (
+                <button
+                  type="button"
+                  className="when-allday"
+                  onClick={() => { void onSetSchedule({ allDay: false, startTime: startTime || "09:00" }); }}
+                  title="Click to set a time"
+                >
+                  all day
+                </button>
+              ) : (
+                <>
+                  <input
+                    type="time"
+                    className="when-time"
+                    value={startTime}
+                    onChange={(e) => { void onSetSchedule({ startTime: e.target.value, allDay: false }); }}
+                  />
+                  <button
+                    type="button"
+                    className="when-flip"
+                    onClick={() => { void onSetSchedule({ allDay: true, startTime: null }); }}
+                    title="Mark notable (switch to all day)"
+                    aria-label="Mark notable, switch to all day"
+                  >
+                    <StarIcon size={11} strokeWidth={2} />
+                  </button>
+                </>
+              )}
+            </span>
           );
         })()}
         {/* Middle slot: breadcrumb for Notable Folders; folder picker

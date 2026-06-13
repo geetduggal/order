@@ -2445,6 +2445,24 @@ export function CardGrid() {
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 
+  /** Patch `allDay` / `startTime` on a note's frontmatter. Mirrors
+   *  handleTogglePublic: read, mutate, write, sync state. `startTime:
+   *  null` deletes the key; omitting a field leaves it alone. */
+  const handleSetSchedule = useCallback(async (
+    path: string,
+    patch: { allDay?: boolean; startTime?: string | null },
+  ) => {
+    const raw = await readVault(path);
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const next: Frontmatter = { ...frontmatter };
+    if (patch.allDay === true) next.allDay = true;
+    else if (patch.allDay === false) delete next.allDay;
+    if (patch.startTime === null) delete next.startTime;
+    else if (typeof patch.startTime === "string") next.startTime = patch.startTime;
+    await writeVault(path, joinFrontmatter(next, body));
+    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
+  }, []);
+
   /** Create a new Notable Folder Main Document for the given area +
    *  category. With the nested chain layout the file lives at
    *  <vault>/<Area>/<Category>/<Name>/<Name>.md and the Category's
@@ -2803,6 +2821,9 @@ export function CardGrid() {
         onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
         onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
         isPublic={n.frontmatter.public === true}
+        onSetSchedule={(patch) => handleSetSchedule(n.path, patch)}
+        liveAllDay={n.frontmatter.allDay === true || typeof n.frontmatter.startTime !== "string"}
+        liveStartTime={typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : undefined}
         vaultNotes={vaultNotesIndex}
         onNavigate={navigateToRef}
         onAddFilter={addFolderToFilter}

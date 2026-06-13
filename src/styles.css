@@ -619,7 +619,9 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+  row-gap: 4px;
   margin-top: 10px;
   padding-top: 6px;
   border-top: 1px solid var(--rule);
@@ -682,6 +684,77 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .order-card-public.is-on:hover {
   background: var(--royal-soft, rgba(65, 105, 225, 0.16));
+}
+
+/* Subtle date + time chip in the status bar. Sits flush with the
+   other status pills, but stays muted so it doesn't shout — the
+   date is just context, not a control. */
+.order-card-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+.order-card-when .when-date {
+  font-variant-numeric: tabular-nums;
+}
+.order-card-when .when-allday,
+.order-card-when .when-time,
+.order-card-when .when-flip {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease-out),
+    background-color 0.12s var(--ease-out),
+    border-color 0.12s var(--ease-out);
+}
+.order-card-when .when-time {
+  padding: 0 6px;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+  /* WebKit's <input type="time"> renders a 12-hour AM/PM segment plus a
+     spin button when the locale is 12h — needs more horizontal room
+     than the digits alone suggest. min-width sized to fit "09:12 AM"
+     without ellipsis-clipping the trailing letter. */
+  min-width: 92px;
+  box-sizing: border-box;
+}
+/* WebKit decorates time inputs with a spin button (and sometimes a
+   "clear" affordance) that appears as a stray empty pill outside the
+   value box. Hide them — the value is edited inline; clearing is the
+   ×-to-all-day button next door. */
+.order-card-when .when-time::-webkit-clear-button,
+.order-card-when .when-time::-webkit-inner-spin-button,
+.order-card-when .when-time::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+}
+.order-card-when .when-allday {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.order-card-when .when-allday:hover,
+.order-card-when .when-time:hover,
+.order-card-when .when-flip:hover {
+  color: var(--ink-faint);
+  border-color: var(--ink-faint);
+}
+.order-card-when .when-flip {
+  width: 18px;
+  padding: 0;
+  line-height: 1;
+  font-size: 12px;
 }
 
 .order-card-folder-chip {
@@ -5364,7 +5437,6 @@ iframe.order-youtube-embed {
 .order-card-term-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 0 0 6px;
 }
