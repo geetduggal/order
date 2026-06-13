@@ -84,6 +84,24 @@ test("1c — dock toggle: home ⇄ week with no filters", async ({ page }) => {
   expect(Date.now() - t0, "back-to-week is snappy").toBeLessThan(SNAPPY_MS);
 });
 
+test("folded — note renders as a spine, click reveals the body", async ({ page }) => {
+  await bootVault(page);
+  await page.click(".dock-btn-home");
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
+  await page.click(".dock-btn-stream-mode"); // show leaf notes
+
+  // The folded note shows its spine (title + "folded" tag), not the body.
+  const spine = page.locator(".order-card-spine", { hasText: "Secret Plan" });
+  await spine.waitFor();
+  await expect(page.locator(".order-card", { hasText: "Secret Plan" }).locator(".ProseMirror")).toHaveCount(0);
+  await expect(page.getByText("surprise party details")).toHaveCount(0);
+
+  // Click the spine → the editor mounts and the body shows.
+  await spine.click();
+  await expect(page.locator(".order-card", { hasText: "Secret Plan" }).locator(".ProseMirror")).toHaveCount(1);
+  await expect(page.getByText("surprise party details")).toBeVisible();
+});
+
 /** Build a paste event carrying a 1×1 PNG and fire it at the given
  *  editor element (a Playwright locator resolving to a .ProseMirror). */
 async function pasteImage(editor: ReturnType<Page["locator"]>): Promise<void> {

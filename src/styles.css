@@ -848,12 +848,49 @@ input, textarea, select { outline: none; box-shadow: none; }
    filled regardless of its specific role. */
 .order-card-home.is-on,
 .order-card-flip.is-on,
+.order-card-fold.is-on,
 .order-card-update.is-on,
 .order-card-list.is-cards,
 .order-card-list.is-lines {
   color: var(--royal);
   background: var(--royal-soft);
 }
+
+/* Folded spine — the compact "click to reveal" row that stands in for
+   a folded note's body. Full-width tap target; title left, muted
+   "folded" tag right. */
+.order-card-spine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 2px 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--serif);
+  color: var(--ink-soft);
+}
+.order-card-spine-icon { flex: 0 0 auto; color: var(--ink-faint); }
+.order-card-spine-title {
+  flex: 1 1 auto;
+  font-size: calc(16px * var(--text-scale, 1));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-card-spine-hint {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-ghost);
+}
+.order-card-spine:hover .order-card-spine-title { color: var(--royal); }
+.order-card-spine:hover .order-card-spine-icon { color: var(--royal); }
 
 /* Coral hover for destructive actions only — delete + dismiss × . */
 .order-card-delete:hover {

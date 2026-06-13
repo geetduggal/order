@@ -48,7 +48,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { isIosSync } from "../lib/vault";
 
@@ -423,6 +423,13 @@ export function Card(props: Props) {
   }, [isHome, pendingHome]);
   const effectiveListMode = pendingListMode ?? listMode ?? "none";
   const effectiveIsHome = pendingHome !== null ? pendingHome : !!isHome;
+  // Folded notes render as a compact spine (title only) until the user
+  // clicks to reveal. The `folded: true` YAML flag is the persistent
+  // state; `unfolded` is the per-session reveal (resets on reload, so
+  // a folded note re-folds next time you open the vault). pendingFolded
+  // mirrors the optimistic-toggle pattern above so the icon flips on tap.
+  const [unfolded, setUnfolded] = useState(false);
+  const [pendingFolded, setPendingFolded] = useState<boolean | null>(null);
   const copyBodyText = useCallback(() => {
     // editorBodyRef is populated both on load (setEditorBody during
     // the read effect) and on every editor change, so it's the
@@ -938,6 +945,29 @@ export function Card(props: Props) {
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
+  /** Write (or clear) the `folded: true` flag straight into this note's
+   *  YAML. Editor-only — the read-only viewer reveals via the spine but
+   *  can't change the persistent flag. Declared ABOVE the loading /
+   *  error early returns so the hook order stays stable across renders. */
+  const toggleFolded = useCallback(async (next: boolean) => {
+    setPendingFolded(next);
+    if (next) setUnfolded(false); // re-folding hides the body again
+    const rel = toVaultRel(pathRef.current);
+    try {
+      const raw = await vaultFs.readText(rel);
+      const { frontmatter, body } = splitFrontmatter(raw);
+      const fm: Frontmatter = { ...frontmatter };
+      if (next) fm.folded = true; else delete fm.folded;
+      const content = joinFrontmatter(fm, body);
+      await vaultFs.writeText(rel, content);
+      markKnownBody(pathRef.current, body);
+      setState((s) => s.kind === "ready" ? { ...s, frontmatter: fm } : s);
+    } catch (err) {
+      console.warn("toggleFolded failed:", err);
+      setPendingFolded(null);
+    }
+  }, []);
+
   if (state.kind === "loading") {
     return <article className="order-card is-loading"><div className="card-loading">Loading…</div></article>;
   }
@@ -955,6 +985,21 @@ export function Card(props: Props) {
   // an NF cover at a glance — no need to remember which card you
   // just navigated to.
   const isMainDoc = isNotableFolder(state.frontmatter);
+  // Folded: render the spine until revealed. The persistent flag lives
+  // in YAML; pendingFolded gives an optimistic flip on the toggle.
+  const isFolded = pendingFolded !== null
+    ? pendingFolded
+    : state.kind === "ready" && state.frontmatter.folded === true;
+  // Show the compact spine when the note is folded and hasn't been
+  // revealed this session. Fullscreen always shows the full content.
+  const showSpine = isFolded && !unfolded && !fullscreen;
+  // Title for the spine — the last derived first-line title, else the
+  // filename minus a leading date prefix, else "Folded note".
+  const spineTitle = lastTitleRef.current
+    || (pathRef.current.split("/").pop() ?? "")
+        .replace(/\.md$/i, "")
+        .replace(/^\d{4}-\d{2}-\d{2}\s*/, "")
+    || "Folded note";
   const folderRelForFlip = vaultDir(toVaultRel(pathRef.current));
   const folderName = pathRef.current.split("/").pop()?.replace(/\.md$/i, "") ?? "";
   const cardClass =
@@ -1037,6 +1082,20 @@ export function Card(props: Props) {
               : effectiveListMode === "lines"
                 ? <AlignJustifyIcon size={14} strokeWidth={2} />
                 : <ListIcon size={14} strokeWidth={2} />}
+          </button>
+        )}
+        {!readOnly && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-fold" + (isFolded ? " is-on" : "")}
+            onClick={() => { void toggleFolded(!isFolded); }}
+            title={isFolded ? "Folded — tap to keep this note open" : "Fold: hide contents until clicked"}
+            aria-label={isFolded ? "Unfold note" : "Fold note"}
+            aria-pressed={isFolded}
+          >
+            {isFolded
+              ? <EyeOffIcon size={14} strokeWidth={2} />
+              : <EyeIcon size={14} strokeWidth={2} />}
           </button>
         )}
         {isMainDoc && !readOnly && onCreateUpdate && (
@@ -1157,10 +1216,25 @@ export function Card(props: Props) {
         style={
           flipped && isMainDoc && !readOnly
             ? { display: "none" }
+            : showSpine ? undefined
             : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined
         }
       >
-        {filename.toLowerCase().endsWith(".txt") ? (
+        {showSpine ? (
+          // Folded spine: title only, click anywhere to reveal the body
+          // for the rest of the session. The editor isn't mounted until
+          // revealed, so a folded card stays cheap in a long stream.
+          <button
+            type="button"
+            className="order-card-spine"
+            onClick={() => setUnfolded(true)}
+            title="Click to reveal"
+          >
+            <EyeOffIcon size={13} strokeWidth={2} className="order-card-spine-icon" />
+            <span className="order-card-spine-title">{spineTitle}</span>
+            <span className="order-card-spine-hint">folded</span>
+          </button>
+        ) : filename.toLowerCase().endsWith(".txt") ? (
           // Plain-text card surface — no Crepe, no markdown
           // interpretation. Used for todo.txt so the format's `+`,
           // `[`, and `due:` tokens survive a round-trip through the
