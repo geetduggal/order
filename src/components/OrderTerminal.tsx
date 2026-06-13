@@ -10,34 +10,62 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-// Order palette → xterm theme. Black field; royal-blue default text;
-// coral cursor. The 16 ANSI slots lean on the two brand accents plus
-// neutral tints so `ls --color`, git, vim syntax stay legible.
-const ORDER_XTERM_THEME = {
-  background: "#000000",
-  foreground: "#9bb0ff",
-  cursor: "#ff7f50",
-  cursorAccent: "#000000",
-  selectionBackground: "#23314f",
-  black: "#11151f",
-  red: "#ff7f50",
-  green: "#7ad6a0",
-  yellow: "#e8c372",
-  blue: "#6b8cff",
-  magenta: "#c08cff",
-  cyan: "#6fd3d3",
-  white: "#cdd6f4",
-  brightBlack: "#5a6488",
-  brightRed: "#ff9b78",
-  brightGreen: "#9be8bd",
-  brightYellow: "#f3d699",
-  brightBlue: "#9bb0ff",
-  brightMagenta: "#d4b0ff",
-  brightCyan: "#9be8e8",
-  brightWhite: "#ffffff",
-};
-
 const MONO = '"Menlo", "SF Mono", "JetBrains Mono", "Monaco", "Consolas", monospace';
+
+// Build an xterm theme from the ACTIVE Order theme's CSS variables, so
+// the terminal tracks light/dark/typewriter/LCARS/etc. as the user
+// cycles themes. background ← --bg, foreground ← --ink, cursor ← --coral,
+// blue ← --royal, red ← --coral. The remaining ANSI hues (green, yellow,
+// cyan, magenta) come from a light-bg or dark-bg set chosen by the
+// background's luminance, so `ls --color` / vim syntax stay legible on a
+// cream typewriter field or a black OLED one alike.
+function relLuminance(hex: string): number {
+  const m = hex.replace("#", "");
+  const v = m.length === 3 ? m.split("").map((c) => c + c).join("") : m;
+  const r = parseInt(v.slice(0, 2), 16) / 255;
+  const g = parseInt(v.slice(2, 4), 16) / 255;
+  const b = parseInt(v.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function buildXtermTheme(): Record<string, string> {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => (cs.getPropertyValue(name).trim() || fallback);
+  const bg = v("--bg", "#000000");
+  const ink = v("--ink", "#9bb0ff");
+  const royal = v("--royal", "#6b8cff");
+  const coral = v("--coral", "#ff7f50");
+  const inkFaint = v("--ink-faint", "#5a6488");
+  const royalSoft = v("--royal-soft", "#23314f");
+  const light = relLuminance(bg.startsWith("#") ? bg : "#000000") > 0.5;
+  // Non-brand ANSI hues, tuned for legibility on light vs dark fields.
+  const set = light
+    ? { green: "#2e8b57", yellow: "#9a7d00", cyan: "#1f7a7a", magenta: "#8a4fbf" }
+    : { green: "#7ad6a0", yellow: "#e8c372", cyan: "#6fd3d3", magenta: "#c08cff" };
+  return {
+    background: bg,
+    foreground: ink,
+    cursor: coral,
+    cursorAccent: bg,
+    selectionBackground: royalSoft,
+    black: light ? "#2a2a2a" : "#11151f",
+    red: coral,
+    green: set.green,
+    yellow: set.yellow,
+    blue: royal,
+    magenta: set.magenta,
+    cyan: set.cyan,
+    white: ink,
+    brightBlack: inkFaint,
+    brightRed: coral,
+    brightGreen: set.green,
+    brightYellow: set.yellow,
+    brightBlue: royal,
+    brightMagenta: set.magenta,
+    brightCyan: set.cyan,
+    brightWhite: ink,
+  };
+}
 
 interface Props {
   /** Absolute starting directory (the Notable Folder's path). */
@@ -52,7 +80,7 @@ export function OrderTerminal({ cwd }: Props) {
     if (!host) return;
 
     const term = new Terminal({
-      theme: ORDER_XTERM_THEME,
+      theme: buildXtermTheme(),
       fontFamily: MONO,
       fontSize: 12,
       lineHeight: 1.15,
@@ -60,6 +88,10 @@ export function OrderTerminal({ cwd }: Props) {
       scrollback: 5000,
       allowProposedApi: true,
     });
+    // Re-theme live when the user cycles Order themes (Cmd+T). The CSS
+    // vars are already updated by the time this event fires.
+    const onThemeChange = () => { term.options.theme = buildXtermTheme(); };
+    window.addEventListener("order:theme", onThemeChange);
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
@@ -120,6 +152,7 @@ export function OrderTerminal({ cwd }: Props) {
 
     return () => {
       disposed = true;
+      window.removeEventListener("order:theme", onThemeChange);
       onData.dispose();
       ro.disconnect();
       unlistenData?.();

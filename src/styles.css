@@ -5368,7 +5368,9 @@ iframe.order-youtube-embed {
   height: min(68vh, 620px);
   margin: 2px calc(-1 * clamp(18px, 3.5vw, 40px)) -12px;
   padding: 10px clamp(18px, 3.5vw, 40px) 12px;
-  background: #000;
+  /* Surface follows the active Order theme (the xterm canvas paints its
+     own matching background from the same vars — see buildXtermTheme). */
+  background: var(--bg);
   border: none;
   border-top: 1px solid var(--coral);
   border-radius: 0 0 9px 9px;
