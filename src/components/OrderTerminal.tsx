@@ -95,12 +95,29 @@ export function OrderTerminal({ cwd }: Props) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
-    fit.fit();
 
     const session = `t${Date.now()}-${Math.floor(performance.now())}`;
     let disposed = false;
     let unlistenData: UnlistenFn | undefined;
     let unlistenExit: UnlistenFn | undefined;
+    let lastW = 0;
+    let lastH = 0;
+    let lastCols = 0;
+    let lastRows = 0;
+
+    // Fit to the host's CURRENT size and, if the grid changed, tell the
+    // PTY. Returns whether anything changed. fit() before layout settles
+    // computes the wrong column count (text then runs off the card), so
+    // the initial fit is deferred to rAF + a fonts-ready pass below.
+    const applyFit = () => {
+      try { fit.fit(); } catch { return; }
+      if (term.cols !== lastCols || term.rows !== lastRows) {
+        lastCols = term.cols;
+        lastRows = term.rows;
+        void invoke("terminal_resize", { session, cols: term.cols, rows: term.rows })
+          .catch(() => { /* closed */ });
+      }
+    };
 
     // PTY → xterm.
     void listen<{ session: string; data: string }>("terminal://data", (e) => {
@@ -116,37 +133,32 @@ export function OrderTerminal({ cwd }: Props) {
       void invoke("terminal_write", { session, data }).catch(() => { /* closed */ });
     });
 
-    // Open the PTY sized to the fitted grid, then focus.
-    void invoke("terminal_open", {
-      session, cwd, cols: term.cols, rows: term.rows,
-    })
-      .then(() => term.focus())
-      .catch((err) => {
-        term.write(`\x1b[38;2;255;127;80m${String(err)}\x1b[0m\r\n`);
-      });
+    // Defer the first fit to the next frame so the card's layout (and
+    // the full-bleed margins) have settled, then open the PTY at the
+    // correct column count and focus. A second fit after the web font
+    // loads corrects the cell width once Menlo replaces the fallback.
+    requestAnimationFrame(() => {
+      if (disposed) return;
+      applyFit();
+      lastW = host.clientWidth;
+      lastH = host.clientHeight;
+      void invoke("terminal_open", { session, cwd, cols: term.cols, rows: term.rows })
+        .then(() => term.focus())
+        .catch((err) => term.write(`\x1b[38;2;255;127;80m${String(err)}\x1b[0m\r\n`));
+    });
+    void (document as Document & { fonts?: FontFaceSet }).fonts?.ready.then(() => {
+      if (!disposed) applyFit();
+    });
 
-    // Refit + tell the PTY on container resize. The host has a definite
-    // height, so the only legit resizes are window/width changes — gate
-    // fit() on a real pixel-size change so a masonry re-measure or
-    // scroll-triggered observer fire can't refit (and can't feed the
-    // growth loop). Then only message the PTY when the grid changed.
-    let lastW = host.clientWidth;
-    let lastH = host.clientHeight;
-    let lastCols = term.cols;
-    let lastRows = term.rows;
+    // Refit on a real host pixel-size change only (window/width). The
+    // host has a definite height, so a masonry re-measure or scroll
+    // can't change it — gating on actual size keeps fit() from feeding
+    // the growth loop.
     const ro = new ResizeObserver(() => {
       if (host.clientWidth === lastW && host.clientHeight === lastH) return;
       lastW = host.clientWidth;
       lastH = host.clientHeight;
-      try {
-        fit.fit();
-        if (term.cols !== lastCols || term.rows !== lastRows) {
-          lastCols = term.cols;
-          lastRows = term.rows;
-          void invoke("terminal_resize", { session, cols: term.cols, rows: term.rows })
-            .catch(() => { /* closed */ });
-        }
-      } catch { /* detached */ }
+      applyFit();
     });
     ro.observe(host);
 

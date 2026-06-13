@@ -5376,9 +5376,15 @@ iframe.order-youtube-embed {
   border-radius: 0 0 9px 9px;
   overflow: hidden;
 }
-/* Fullscreen card: fill the viewport height instead of the capped box. */
+/* Fullscreen card: the fullscreen padding (clamp(40px,10vw,120px)) is
+   wider than the normal card's, so the bleed margins below don't apply.
+   Reset them and fill the remaining flex-column height cleanly. */
 .order-card.is-fullscreen .order-terminal {
-  height: calc(100dvh - 120px);
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 6px 0 0;
+  padding: 8px 0 0;
   border-radius: 0;
 }
 .order-terminal .xterm,
