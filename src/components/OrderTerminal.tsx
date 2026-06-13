@@ -93,12 +93,20 @@ export function OrderTerminal({ cwd }: Props) {
         term.write(`\x1b[38;2;255;127;80m${String(err)}\x1b[0m\r\n`);
       });
 
-    // Refit + tell the PTY on container resize.
+    // Refit + tell the PTY on container resize. Only act when the
+    // computed grid actually changes, so a fit() that nudges layout
+    // can't feed itself a second resize event (the growth loop).
+    let lastCols = term.cols;
+    let lastRows = term.rows;
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
-        void invoke("terminal_resize", { session, cols: term.cols, rows: term.rows })
-          .catch(() => { /* closed */ });
+        if (term.cols !== lastCols || term.rows !== lastRows) {
+          lastCols = term.cols;
+          lastRows = term.rows;
+          void invoke("terminal_resize", { session, cols: term.cols, rows: term.rows })
+            .catch(() => { /* closed */ });
+        }
       } catch { /* detached */ }
     });
     ro.observe(host);

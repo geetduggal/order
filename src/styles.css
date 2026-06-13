@@ -5353,8 +5353,12 @@ iframe.order-youtube-embed {
    .nf-flip-panel is a flex column) so the experience reads as "this
    card is now a terminal", not a small embedded box. */
 .order-terminal {
-  flex: 1 1 auto;
-  min-height: 340px;
+  /* BOUNDED height. A content-sized card + flex:1 terminal + fit() that
+     grows rows to the container created a feedback loop (fit grew the
+     box, ResizeObserver re-fit, repeat). A clamped height gives xterm a
+     stable grid and lets it scroll internally instead of growing the
+     card. Fullscreen overrides this to fill the viewport. */
+  height: clamp(320px, 48vh, 600px);
   margin: 0 0 2px;
   padding: 8px;
   background: #000;
@@ -5362,6 +5366,13 @@ iframe.order-youtube-embed {
   border-radius: 8px;
   box-shadow: 0 0 0 1px rgba(255, 127, 80, 0.14), inset 0 0 28px rgba(107, 140, 255, 0.05);
   overflow: hidden;
+}
+/* Fullscreen card: the terminal fills the remaining height of the
+   flex-column backside instead of the clamped box. */
+.order-card.is-fullscreen .order-terminal {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .order-terminal .xterm,
 .order-terminal .xterm-viewport,
