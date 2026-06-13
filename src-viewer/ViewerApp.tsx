@@ -149,12 +149,12 @@ export function ViewerApp(
   // the scroll fires. Seeded from a note-page deep-link.
   const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
   // Stream mode — three states the prominent rail FAB cycles through.
-  // The published viewer always lands in "notes" (home folder's section
-  // with its Main Document on top), no localStorage read — every visit
-  // gets the same predictable landing. The in-session toggle still
-  // cycles freely; it just doesn't bleed into the next page load.
+  // The published viewer always lands in "all" (ordinary notes AND
+  // Notable-Folder cards), no localStorage read — every visit gets the
+  // same predictable landing. The in-session toggle still cycles freely;
+  // it just doesn't bleed into the next page load.
   type StreamMode = "all" | "notes" | "folders";
-  const [streamMode, setStreamMode] = useState<StreamMode>("notes");
+  const [streamMode, setStreamMode] = useState<StreamMode>("all");
   const setStreamModePersist = (m: StreamMode) => {
     setStreamMode(m);
   };
