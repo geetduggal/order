@@ -22,6 +22,7 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 import { join } from "@tauri-apps/api/path";
+import { tightenListSpacing } from "../lib/list-folder";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import { linkKeymapPlugin } from "../lib/milkdown-link-keymap";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
@@ -99,6 +100,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
     if (!host.current) return;
     let cancelled = false;
     let crepe: Crepe | null = null;
+    let copyCleanup: (() => void) | null = null;
 
     crepe = new Crepe({ root: host.current, defaultValue: initial });
     crepeRef.current = crepe;
@@ -148,6 +150,11 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
         // The default emits each block separated by a blank line, so a
         // copied list pastes into a plain-text app with newlines between
         // every item; markdown puts them on consecutive lines.
+        //
+        // setProps alone isn't enough in practice: @milkdown/plugin-
+        // clipboard ships its own clipboardTextSerializer, so we ALSO
+        // attach a `copy` listener on view.dom (after ProseMirror's
+        // own) that tightens whatever text/plain ProseMirror wrote.
         try {
           crepe.editor.action((ctx) => {
             const view = ctx.get(editorViewCtx);
@@ -161,7 +168,10 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
                   // slice's content fragment is sufficient.
                   const docNode = view.state.doc.type.create(null, slice.content);
                   const md = serialize(docNode);
-                  return widenListIndent(md);
+                  // Milkdown's serializer emits "loose" lists with a
+                  // blank line between every item; tighten them so a
+                  // copied list pastes the way the source file reads.
+                  return tightenListSpacing(widenListIndent(md));
                 } catch {
                   // Fall back to the slice's text content with newline-
                   // joined blocks rather than the default double-newline.
@@ -189,6 +199,23 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
                 return true;
               },
             });
+            // Copy interceptor: attach to view.dom (the ProseMirror
+            // element, same target ProseMirror itself listens on) AFTER
+            // ProseMirror's own listener. Same-element listeners fire
+            // in registration order, so ours runs after ProseMirror has
+            // written text/plain + text/html. We just tighten the
+            // text/plain in place; text/html stays untouched so rich-
+            // text targets still get structure. Bulletproof against any
+            // plugin's clipboardTextSerializer (Milkdown ships one).
+            const onCopy = (e: ClipboardEvent) => {
+              if (!e.clipboardData) return;
+              const text = e.clipboardData.getData("text/plain");
+              if (!text) return;
+              const tightened = tightenListSpacing(text);
+              if (tightened !== text) e.clipboardData.setData("text/plain", tightened);
+            };
+            view.dom.addEventListener("copy", onCopy, false);
+            copyCleanup = () => view.dom.removeEventListener("copy", onCopy, false);
           });
         } catch (err) {
           console.warn("clipboard serializer override failed:", err);
@@ -208,6 +235,8 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
 
     return () => {
       cancelled = true;
+      copyCleanup?.();
+      copyCleanup = null;
       crepe?.destroy();
       crepe = null;
       crepeRef.current = null;
