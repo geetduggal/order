@@ -374,17 +374,18 @@ export function Card(props: Props) {
     return () => { cancelled = true; };
   }, [flipped, termOpen, vaultRootForFlip, readOnly]);
   // Cmd+4 (CardGrid) dispatches `order:open-terminal` with an NF name.
-  // The matching Main Doc card opens its in-card terminal — identical to
-  // clicking the card's terminal icon. termTargetRef carries the live
-  // folder name + main-doc-ness so this once-mounted listener stays
-  // current without re-subscribing.
+  // The matching Main Doc card TOGGLES its in-card terminal — identical to
+  // clicking the card's terminal icon, so Cmd+4 opens it and Cmd+4 again
+  // closes it back to the note. termTargetRef carries the live folder name
+  // + main-doc-ness so this once-mounted listener stays current without
+  // re-subscribing.
   const termTargetRef = useRef<{ name: string; isMain: boolean }>({ name: "", isMain: false });
   useEffect(() => {
     if (readOnly || isIosSync()) return;
     const onOpen = (e: Event) => {
       const name = (e as CustomEvent<string>).detail;
       const t = termTargetRef.current;
-      if (t.isMain && t.name === name) { setFlipped(false); setTermOpen(true); }
+      if (t.isMain && t.name === name) { setFlipped(false); setTermOpen((v) => !v); }
     };
     window.addEventListener("order:open-terminal", onOpen);
     return () => window.removeEventListener("order:open-terminal", onOpen);
