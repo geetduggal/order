@@ -2431,8 +2431,12 @@ iframe.order-youtube-embed {
    the week grid; bump it and let the title wrap to multiple lines so you
    can actually tell what each event is about. */
 .fc-shell .fc-event {
-  border-left-width: 3px;
-  border-radius: 3px;
+  /* Uniform 1px border on all sides — the old left-rail accent read as
+     a thick coral stripe against a pill body and broke the silhouette. */
+  border-width: 1px;
+  /* Pill-rounded corners. 10px keeps short timegrid events recognizably
+     pill-shaped without making longer ones look comic-book. */
+  border-radius: 10px;
   font-size: 0.958em;
   line-height: 1.3;
   /* Padding lives on .order-event-row inside, so we don't double-pad
