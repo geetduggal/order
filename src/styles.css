@@ -5376,9 +5376,17 @@ iframe.order-youtube-embed {
   border-radius: 0 0 9px 9px;
   overflow: hidden;
 }
-/* Fullscreen card: the fullscreen padding (clamp(40px,10vw,120px)) is
-   wider than the normal card's, so the bleed margins below don't apply.
-   Reset them and fill the remaining flex-column height cleanly. */
+/* Fullscreen + terminal: a note in fullscreen wants generous reading
+   padding (clamp(40px,10vw,120px)), but a terminal wants the screen.
+   When the fullscreen card holds a terminal, shrink its padding to a
+   slim gutter so the terminal fills the viewport, the scrollbar lands
+   at the right edge, and the shell's right-prompt isn't clipped. */
+.order-card.is-fullscreen:has(.order-terminal) {
+  padding:
+    calc(env(safe-area-inset-top) + 14px)
+    clamp(14px, 2vw, 28px)
+    calc(env(safe-area-inset-bottom) + 14px);
+}
 .order-card.is-fullscreen .order-terminal {
   height: auto;
   flex: 1 1 auto;
