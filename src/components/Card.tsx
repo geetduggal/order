@@ -1037,7 +1037,7 @@ export function Card(props: Props) {
             7. Delete (editable only)
             8. Fullscreen toggle
             9. × close (dismiss from filtered view) */}
-      <div className="order-card-controls" aria-hidden={false}>
+      <div className={"order-card-controls" + (flipped ? " is-flipped" : "")} aria-hidden={false}>
         {isMainDoc && !readOnly && onSetHome && (
           <button
             type="button"

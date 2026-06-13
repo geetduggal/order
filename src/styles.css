@@ -818,6 +818,18 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card:hover .order-card-controls { opacity: 0.7; }
 .order-card-controls:hover,
 .order-card-controls:focus-within { opacity: 1; }
+/* On the folder backside, the content-oriented controls (home, list
+   mode, fold, notable-update, permalink, copy) don't apply and would
+   collide with the backside's own folder actions. Hide them; flip,
+   delete, fullscreen, and × remain. */
+.order-card-controls.is-flipped .order-card-home,
+.order-card-controls.is-flipped .order-card-list,
+.order-card-controls.is-flipped .order-card-fold,
+.order-card-controls.is-flipped .order-card-update,
+.order-card-controls.is-flipped .order-card-permalink,
+.order-card-controls.is-flipped .order-card-copy {
+  display: none;
+}
 /* Fullscreen card is fixed at the viewport top, so its top-right controls
    land under the status bar / notch — offset them by the safe-area inset
    (no-op on desktop). */
@@ -5266,10 +5278,10 @@ iframe.order-youtube-embed {
   align-items: center;
   justify-content: space-between;
   /* Reserve space on the right so the header doesn't run into the
-     card's top-right controls (flip / fullscreen / delete / ×) which
-     hover at top:6 right:6 with absolute positioning. ~150 px clears
-     all five icons even at the widest hover-expanded state. */
-  padding: 4px 152px 8px 0;
+     card's top-right controls. On the backside those collapse to four
+     (flip / delete / fullscreen / ×) — see .is-flipped above — so
+     ~120 px clears them at the widest hover-expanded state. */
+  padding: 4px 120px 8px 0;
   border-bottom: 1px solid var(--rule-soft);
   margin-bottom: 6px;
   gap: 12px;
@@ -5336,21 +5348,29 @@ iframe.order-youtube-embed {
   text-align: center;
   font-style: italic;
 }
-/* Inline Order terminal panel — a black, brand-colored card terminal.
-   Sits between the folder header and the file list when toggled on.
-   Coral hairline frame so it reads as the "live" surface; the xterm
-   canvas inside paints its own black + royal/coral theme. */
+/* Order terminal — the whole card body becomes a black, brand-colored
+   terminal when toggled on. It fills the remaining card height (the
+   .nf-flip-panel is a flex column) so the experience reads as "this
+   card is now a terminal", not a small embedded box. */
 .order-terminal {
-  height: 260px;
-  margin: 4px 0 8px;
+  flex: 1 1 auto;
+  min-height: 340px;
+  margin: 0 0 2px;
   padding: 8px;
   background: #000;
   border: 1px solid var(--coral);
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(255, 127, 80, 0.12), inset 0 0 24px rgba(107, 140, 255, 0.05);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(255, 127, 80, 0.14), inset 0 0 28px rgba(107, 140, 255, 0.05);
   overflow: hidden;
 }
-.order-terminal .xterm { height: 100%; }
+.order-terminal .xterm,
+.order-terminal .xterm-viewport,
+.order-terminal .xterm-screen { height: 100% !important; }
+.order-terminal .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.order-terminal .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(107, 140, 255, 0.3);
+  border-radius: 4px;
+}
 .nf-flip-tool.is-on {
   color: var(--coral);
   background: var(--coral-soft);

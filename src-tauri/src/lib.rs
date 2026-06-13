@@ -22,6 +22,7 @@ pub fn run() {
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(vault_fs::VaultState::default())
         .manage(fts::FtsState::default())
+        .manage(terminal::TerminalState::default())
         // Serve attachment images / videos from the vault via
         // vaultasset://localhost/<rel>. Resolves through the same
         // VaultState as the FS bridge so it works for an absolute
@@ -137,7 +138,10 @@ pub fn run() {
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,
-            terminal::terminal_run,
+            terminal::terminal_open,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_close,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

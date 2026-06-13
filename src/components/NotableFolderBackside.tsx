@@ -249,32 +249,36 @@ export function NotableFolderBackside({
           <span>{folderName}</span>
         </div>
         <div className="nf-flip-actions">
-          <button
-            type="button"
-            className={"nf-flip-sort" + (sort === "name" ? " is-on" : "")}
-            onClick={() => setSort("name")}
-            title="Sort by name"
-            aria-pressed={sort === "name"}
-          >
-            <ArrowDownAZ size={13} strokeWidth={2.2} />
-          </button>
-          <button
-            type="button"
-            className={"nf-flip-sort" + (sort === "mtime" ? " is-on" : "")}
-            onClick={() => setSort("mtime")}
-            title="Sort by modified time"
-            aria-pressed={sort === "mtime"}
-          >
-            <Clock4 size={13} strokeWidth={2.2} />
-          </button>
-          <button
-            type="button"
-            className="nf-flip-tool"
-            onClick={() => { void revealFolder(); }}
-            title={ios ? "Open in Files" : "Reveal folder in Finder"}
-          >
-            <FolderOpen size={13} strokeWidth={2.2} />
-          </button>
+          {!terminalOpen && (
+            <>
+              <button
+                type="button"
+                className={"nf-flip-sort" + (sort === "name" ? " is-on" : "")}
+                onClick={() => setSort("name")}
+                title="Sort by name"
+                aria-pressed={sort === "name"}
+              >
+                <ArrowDownAZ size={13} strokeWidth={2.2} />
+              </button>
+              <button
+                type="button"
+                className={"nf-flip-sort" + (sort === "mtime" ? " is-on" : "")}
+                onClick={() => setSort("mtime")}
+                title="Sort by modified time"
+                aria-pressed={sort === "mtime"}
+              >
+                <Clock4 size={13} strokeWidth={2.2} />
+              </button>
+              <button
+                type="button"
+                className="nf-flip-tool"
+                onClick={() => { void revealFolder(); }}
+                title={ios ? "Open in Files" : "Reveal folder in Finder"}
+              >
+                <FolderOpen size={13} strokeWidth={2.2} />
+              </button>
+            </>
+          )}
           {!ios && (
             <button
               type="button"
@@ -299,10 +303,12 @@ export function NotableFolderBackside({
       </header>
       {error && <div className="nf-flip-error">{error}</div>}
       {uploadError && <div className="nf-flip-error">Upload: {uploadError}</div>}
-      {terminalOpen && !ios && (
-        <OrderTerminal cwd={absPath} label={folderName} />
-      )}
-      {loading ? (
+      {terminalOpen && !ios ? (
+        // Terminal takes over the whole card body — the file list is
+        // hidden while the session is live. Closing (header button or
+        // flip-back) drops it and the browser returns.
+        <OrderTerminal cwd={absPath} />
+      ) : loading ? (
         <div className="nf-flip-empty">Loading…</div>
       ) : sorted.length === 0 ? (
         <div className="nf-flip-empty">Empty folder. Drop files here to add them.</div>
