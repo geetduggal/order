@@ -90,6 +90,14 @@ type `[[` and a folder/note autocomplete opens — pick one and the item
 becomes a wikilink that navigates on click. (Same `[[`-trigger you get
 inside the editor.) Paste or drop an image to add it as a cover.
 
+**Terminal.** Every Notable Folder's Main Document card has a terminal
+button next to its folder-flip button. Click it (or press `⌘4` on the
+focused folder) and the card front becomes a real terminal rooted in
+that folder — a true PTY, so `vim`, `htop`, colors, and line editing all
+work. It paints in the active Order theme and follows your text-size
+zoom. `⌘4` again, the close button, or full-screen all toggle it back to
+the note. Desktop only.
+
 **Calendar.** Day / Week / Month / Year. Drag to create, drag to move,
 click for an action popup (rename inline, move to a day, reassign the
 folder, open, delete). Events are just notes with a `date:`.
@@ -136,7 +144,7 @@ reorganizing the vault never breaks a link.
 | `⌘O` · `⌘K` | folder palette (folders + todo.txt) |
 | `⌘F` · `/` | full-text search |
 | `⌘R` | home ⇄ clear-filters toggle |
-| `⌘4` | terminal in the focused folder (`$` lives on the 4) |
+| `⌘4` | toggle the in-card terminal for the focused folder (`$` lives on the 4) |
 | `⌘;` | sidebar · `⌘'` clear filters · `⌘T` theme · `⌘P` publish |
 | `⌘+ / − / 0` | note text size |
 | `?` | shortcut overlay |

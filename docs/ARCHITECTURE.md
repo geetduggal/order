@@ -58,7 +58,9 @@ CardGrid ── owns notes[], view, filters; routes every mutation
 ├── LazyCell[] → Card per note: load → edit (Milkdown) → debounced save
 │   ├── MilkdownSurface   Crepe wrapper: paste, links, wikilinks
 │   ├── RawTextSurface    monospace <textarea> for .txt (todo.txt)
-│   └── ListCards / ListLines   list: cards (grid) / lines (table)
+│   ├── ListCards / ListLines   list: cards (grid) / lines (table)
+│   ├── NotableFolderBackside   Main Doc flip side: folder browser + OS drag-drop
+│   └── OrderTerminal    Main Doc front: in-card PTY (xterm.js), ⌘4 / button toggle
 ├── CalendarView      Day / Week / Month (FullCalendar)
 ├── YearLinearView    Year — 12×37 strip
 ├── SeasonView        Season — Areas grid over a date range
