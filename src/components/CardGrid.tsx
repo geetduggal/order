@@ -582,6 +582,13 @@ export function CardGrid() {
     setView("stream");
     const note = notesRef.current?.find((n) => n.path === path);
     if (note) {
+      // Public-only is on but the target is private — drop the lens so
+      // the note actually surfaces. Otherwise the click would silently
+      // do nothing (filter hides the card it just pinned).
+      if (publicOnly && note.frontmatter.public !== true) {
+        setPublicOnly(false);
+        writePublicOnly(false);
+      }
       const ownRef = note.filename.replace(/\.md$/i, "");
       const targetFolder = isNotableFolder(note.frontmatter)
         ? ownRef
@@ -614,7 +621,7 @@ export function CardGrid() {
     setScrollTargetPath(path);
     setFocusPath(path);
     setFocusedPath(path);
-  }, [markFolderRecent]);
+  }, [markFolderRecent, publicOnly]);
   /** Add an include filter AND scroll the stream to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
