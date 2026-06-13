@@ -93,12 +93,19 @@ export function OrderTerminal({ cwd }: Props) {
         term.write(`\x1b[38;2;255;127;80m${String(err)}\x1b[0m\r\n`);
       });
 
-    // Refit + tell the PTY on container resize. Only act when the
-    // computed grid actually changes, so a fit() that nudges layout
-    // can't feed itself a second resize event (the growth loop).
+    // Refit + tell the PTY on container resize. The host has a definite
+    // height, so the only legit resizes are window/width changes — gate
+    // fit() on a real pixel-size change so a masonry re-measure or
+    // scroll-triggered observer fire can't refit (and can't feed the
+    // growth loop). Then only message the PTY when the grid changed.
+    let lastW = host.clientWidth;
+    let lastH = host.clientHeight;
     let lastCols = term.cols;
     let lastRows = term.rows;
     const ro = new ResizeObserver(() => {
+      if (host.clientWidth === lastW && host.clientHeight === lastH) return;
+      lastW = host.clientWidth;
+      lastH = host.clientHeight;
       try {
         fit.fit();
         if (term.cols !== lastCols || term.rows !== lastRows) {
