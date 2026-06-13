@@ -81,6 +81,7 @@ bookmark), and `..` traversal is rejected at the bridge.
 | `vault_read_dir` / `vault_list_dir` | NF file-browser flip side |
 | `vault_import_files` | OS drag-drop (webview eats HTML5 dataTransfer; Rust copies by path) |
 | `fts_build_index` / `fts_search` | full-text search, index lives Rust-side |
+| `terminal_run` | streams a shell command's output for the in-card terminal |
 | `open_url` / `open_path` | every external link → OS browser/app, never in-app |
 
 **The write path.** Card edits debounce 600 ms, then:

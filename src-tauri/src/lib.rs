@@ -4,6 +4,7 @@ mod watcher;
 mod publish;
 mod publish_ios;
 mod fts;
+mod terminal;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -136,6 +137,7 @@ pub fn run() {
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,
+            terminal::terminal_run,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

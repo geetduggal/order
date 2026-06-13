@@ -18,6 +18,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ArrowDownAZ, Clock4, FolderOpen, Terminal, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
 import { vaultFs, type VaultDirEntryStat } from "../lib/vault-fs";
 import { isIosSync } from "../lib/vault";
+import { OrderTerminal } from "./OrderTerminal";
 
 type SortMode = "name" | "mtime";
 
@@ -152,10 +153,9 @@ export function NotableFolderBackside({
     catch (e) { console.error("reveal_path failed:", e); }
   }, [absPath, ios]);
 
-  const openTerminal = useCallback(async () => {
-    try { await invoke("open_terminal", { path: absPath }); }
-    catch (e) { console.error("open_terminal failed:", e); }
-  }, [absPath]);
+  // The terminal is now an inline Order-branded panel (OrderTerminal),
+  // not a launch of the system Terminal. Toggled by the header button.
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   // Drag IN from the OS: Tauri's webview eats HTML5 dataTransfer at
   // the OS layer, so the React onDrop handler never receives the
@@ -278,9 +278,10 @@ export function NotableFolderBackside({
           {!ios && (
             <button
               type="button"
-              className="nf-flip-tool"
-              onClick={() => { void openTerminal(); }}
-              title="Open in Terminal"
+              className={"nf-flip-tool" + (terminalOpen ? " is-on" : "")}
+              onClick={() => setTerminalOpen((v) => !v)}
+              title={terminalOpen ? "Close terminal" : "Open an Order terminal in this folder"}
+              aria-pressed={terminalOpen}
             >
               <Terminal size={13} strokeWidth={2.2} />
             </button>
@@ -298,6 +299,9 @@ export function NotableFolderBackside({
       </header>
       {error && <div className="nf-flip-error">{error}</div>}
       {uploadError && <div className="nf-flip-error">Upload: {uploadError}</div>}
+      {terminalOpen && !ios && (
+        <OrderTerminal cwd={absPath} label={folderName} />
+      )}
       {loading ? (
         <div className="nf-flip-empty">Loading…</div>
       ) : sorted.length === 0 ? (

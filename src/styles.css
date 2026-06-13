@@ -5336,6 +5336,25 @@ iframe.order-youtube-embed {
   text-align: center;
   font-style: italic;
 }
+/* Inline Order terminal panel — a black, brand-colored card terminal.
+   Sits between the folder header and the file list when toggled on.
+   Coral hairline frame so it reads as the "live" surface; the xterm
+   canvas inside paints its own black + royal/coral theme. */
+.order-terminal {
+  height: 260px;
+  margin: 4px 0 8px;
+  padding: 8px;
+  background: #000;
+  border: 1px solid var(--coral);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(255, 127, 80, 0.12), inset 0 0 24px rgba(107, 140, 255, 0.05);
+  overflow: hidden;
+}
+.order-terminal .xterm { height: 100%; }
+.nf-flip-tool.is-on {
+  color: var(--coral);
+  background: var(--coral-soft);
+}
 .nf-flip-list {
   list-style: none;
   margin: 0;
