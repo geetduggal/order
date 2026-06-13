@@ -4153,12 +4153,11 @@ iframe.order-youtube-embed {
 }
 .list-line {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  /* Tight rows — was 6px 4px which doubled per-row height. The lines
-     view is the dense surface, so trim it; the rule + hairline above
-     reads as the row boundary instead of a thick gap. */
-  padding: 2px 4px;
+  /* Top-align so a long, wrapping description doesn't drag a single-line
+     title to the vertical middle of a tall row (the old overlap). */
+  align-items: flex-start;
+  gap: 4px 10px;
+  padding: 4px 4px;
   font-family: var(--sans);
   /* List rows obey the note text size (rail zoom / Cmd±) too. The em /
      font:inherit descendants (titles, dates) follow this anchor. */
@@ -4188,31 +4187,52 @@ iframe.order-youtube-embed {
 @media (hover: none) {
   .lr-handle { opacity: 0.6; }
 }
+/* Fixed-width title column so the meta/description column starts at the
+   same x on every row — neat columns instead of ragged flex. The title
+   stays on ONE line and ellipsizes; it no longer wraps word-by-word. */
 .lr-title, .lr-title-input {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  width: clamp(110px, 26%, 260px);
+  box-sizing: border-box;
   background: transparent;
   border: none;
   padding: 0;
   margin: 0;
   font: inherit;
+  line-height: 1.4;
   color: var(--ink);
   text-align: left;
   cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lr-title-input { outline: none; }
+/* The icon aligns with the first text line's cap height, not the middle
+   of a multi-line description. */
+.list-line > svg:first-of-type,
+.list-line .lr-handle + svg { margin-top: 1px; }
 .lr-meta, .lr-meta-input {
   flex: 1 1 auto;
   min-width: 0;
-  margin-left: 6px;
   background: transparent;
   border: none;
   padding: 0;
   font-family: var(--sans);
   font-size: calc(11px * var(--text-scale, 1));
+  line-height: 1.4;
   color: var(--ink-faint);
   text-align: left;
   cursor: text;
+}
+/* Description column wraps within its own width, clamped to two lines so
+   rows stay scannable. (Input can't be a -webkit-box, so clamp the
+   display button only.) */
+.lr-meta {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 /* Hide the empty meta slot until the user hovers the row. Without this,
    every row reads as "title  Add meta…" — visual noise on a list whose
@@ -4390,6 +4410,11 @@ iframe.order-youtube-embed {
 }
 .list-line-add:hover { color: var(--coral, #ff7f50); }
 .list-line-add.is-input { padding: 4px; }
+/* Top "add to top" row reads as secondary to the bottom add: dimmer
+   until hovered, a hair tighter. */
+.list-line-add.is-slim { opacity: 0.55; padding: 1px 4px; }
+.list-line-add.is-slim:hover { opacity: 1; }
+.list-line-add.is-slim.is-input { opacity: 1; }
 
 /* Autocomplete dropdown shared by ListLines and ListCards inputs.
    Anchored relative to the input wrapper; positioned via .ref-ac so
@@ -4411,19 +4436,30 @@ iframe.order-youtube-embed {
   max-height: 240px;
   overflow-y: auto;
 }
-.ref-ac-item {
+/* WikiRefInput renders <button class="ref-ac-option">; the older
+   RefAutocomplete used .ref-ac-item. Style both so the `[[` dropdown
+   options read correctly. */
+.ref-ac-item,
+.ref-ac-option {
+  display: block;
+  width: 100%;
   padding: 4px 8px;
+  border: none;
+  background: transparent;
   border-radius: 4px;
   font-family: var(--sans);
   font-size: 12px;
   color: var(--ink);
+  text-align: left;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ref-ac-item.is-on,
-.ref-ac-item:hover {
+.ref-ac-item:hover,
+.ref-ac-option.is-on,
+.ref-ac-option:hover {
   background: var(--royal-soft);
   color: var(--ink);
 }
@@ -4636,6 +4672,14 @@ iframe.order-youtube-embed {
   justify-content: center;
   border-bottom: 1px solid var(--rule);
   color: var(--royal, var(--ink-soft));
+}
+/* Scale the fallback icon to the cover so non-image cards read with the
+   same visual weight as image covers when the two are mixed in a grid.
+   width drives it; height auto keeps the aspect. */
+.basecard-fallback-icon {
+  width: 44%;
+  height: auto;
+  opacity: 0.92;
 }
 .basecard-cover.is-fallback.is-royal {
   background:

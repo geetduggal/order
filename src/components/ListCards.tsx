@@ -13,7 +13,6 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
 import { folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
-import { RefAutocomplete } from "./RefAutocomplete";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { useTileDrag } from "../lib/use-tile-drag";
@@ -106,6 +105,18 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return;
     onChange(position === "start" ? [{ ref: trimmed }, ...items] : [...items, { ref: trimmed }]);
   }
+  /** Add from the add-tile input. Plain text by default; only an exact
+   *  `[[Name]]` becomes a wikilink (same rule as inline title edits). */
+  function addFromInput(value: string, position: "start" | "end" = "end") {
+    const t = value.trim();
+    if (!t) return;
+    const wiki = t.match(/^\[\[([^\]\n]+)\]\]$/);
+    if (wiki) { add(wiki[1].trim(), position); return; }
+    const lower = t.toLowerCase();
+    if (items.some((i) => (i.text ?? i.ref).toLowerCase() === lower)) return;
+    const node: ListItem = { ref: t, text: t };
+    onChange(position === "start" ? [node, ...items] : [...items, node]);
+  }
   function addItem(item: ListItem, position: "start" | "end" = "end") {
     if (items.some((i) => i.ref.toLowerCase() === item.ref.toLowerCase())) return;
     onChange(position === "start" ? [item, ...items] : [...items, item]);
@@ -173,7 +184,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         <AddTile
           slim
           onCancel={() => setAdding(false)}
-          onAdd={add}
+          onAdd={(value) => addFromInput(value, "end")}
           startOpen
           candidates={notableFolderCandidates}
           excludeRefs={existingRefsLower}
@@ -192,7 +203,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           slim
           onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
           startOpen={addingTop}
-          onAdd={(name) => { add(name, "start"); setAddingTop(false); }}
+          onAdd={(value) => { addFromInput(value, "start"); setAddingTop(false); }}
           onCancel={() => setAddingTop(false)}
           onOpen={() => setAddingTop(true)}
           candidates={notableFolderCandidates}
@@ -285,7 +296,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           slim
           onImage={onUploadImage ? (f) => ingestImageFile(f, "end") : undefined}
           startOpen={adding}
-          onAdd={(name) => { add(name); setAdding(false); }}
+          onAdd={(value) => { addFromInput(value, "end"); setAdding(false); }}
           onCancel={() => setAdding(false)}
           onOpen={() => setAdding(true)}
           candidates={notableFolderCandidates}
@@ -417,7 +428,11 @@ function BaseCard({
             aria-label={onNavigate ? `Open ${displayTitle}` : undefined}
             title={onNavigate ? `Open ${displayTitle}` : undefined}
           >
-            <Icon size={44} strokeWidth={1.3} />
+            {/* Large text-relevant icon (folderIcon picks it from the
+                item name). CSS sizes it to ~44% of the cover width so it
+                reads as a deliberate cover next to image cards, at any
+                column width. */}
+            <Icon size={64} strokeWidth={1.3} className="basecard-fallback-icon" />
           </div>
         )}
         {!readOnly && (
@@ -629,7 +644,7 @@ function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage, candidates
   }
   return (
     <div className={"basecard basecard-add is-input" + (slim ? " is-slim" : "")}>
-      <RefAutocomplete
+      <WikiRefInput
         autoFocus
         value={draft}
         onChange={setDraft}
@@ -642,7 +657,7 @@ function AddTile({ startOpen, slim, onAdd, onCancel, onOpen, onImage, candidates
         candidates={candidates ?? []}
         exclude={excludeRefs}
         className="basecard-add-input"
-        placeholder="Note name"
+        placeholder="Item name — type [[ to link a folder"
       />
     </div>
   );

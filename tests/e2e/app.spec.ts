@@ -84,6 +84,31 @@ test("1c — dock toggle: home ⇄ week with no filters", async ({ page }) => {
   expect(Date.now() - t0, "back-to-week is snappy").toBeLessThan(SNAPPY_MS);
 });
 
+test("list add — plain text becomes a text bullet, not a wikilink", async ({ page }) => {
+  await bootVault(page);
+  // Pin Side Quest (a list: cards folder) so its main doc renders.
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
+  await page.fill(".cmdk-input", "Side Quest");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+
+  // Open the bottom add tile, type plain text, commit with Enter.
+  await page.locator(".basecard-add-text", { hasText: "Add" }).last().click();
+  const input = page.locator(".basecard-add-input").last();
+  await input.fill("Buy milk");
+  await input.press("Enter");
+
+  // Persisted as a plain `- Buy milk` bullet (text item), NOT `- [[Buy milk]]`.
+  await expect.poll(async () => {
+    const body = await page.evaluate(() =>
+      (window as any).__VAULT__.read("Alpha/Alpha Spaces/Side Quest/Side Quest.md") as string);
+    return body;
+  }).toMatch(/^- Buy milk\s*$/m);
+  const body = await page.evaluate(() =>
+    (window as any).__VAULT__.read("Alpha/Alpha Spaces/Side Quest/Side Quest.md") as string);
+  expect(body).not.toContain("[[Buy milk]]");
+});
+
 test("folded — note renders as a spine, click reveals the body", async ({ page }) => {
   await bootVault(page);
   await page.click(".dock-btn-home");

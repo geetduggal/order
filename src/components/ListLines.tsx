@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
 import { folderColor, folderIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
-import { RefAutocomplete } from "./RefAutocomplete";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
@@ -111,6 +110,20 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     if (items.some((i) => i.ref.toLowerCase() === t.toLowerCase())) return;
     onChange(position === "start" ? [{ ref: t }, ...items] : [...items, { ref: t }]);
   }
+  /** Add from the add-row input. Default is a PLAIN TEXT item; only a
+   *  value that is exactly `[[Name]]` (the Milkdown-style trigger the
+   *  add input now supports) becomes a wikilink. Mirrors updateTitle's
+   *  text-vs-wikilink split. */
+  function addFromInput(value: string, position: "start" | "end" = "end") {
+    const t = value.trim();
+    if (!t) return;
+    const wiki = t.match(/^\[\[([^\]\n]+)\]\]$/);
+    if (wiki) { add(wiki[1].trim(), position); return; }
+    const lower = t.toLowerCase();
+    if (items.some((i) => (i.text ?? i.ref).toLowerCase() === lower)) return;
+    const node: ListItem = { ref: t, text: t };
+    onChange(position === "start" ? [node, ...items] : [...items, node]);
+  }
   function addItem(item: ListItem, position: "start" | "end" = "end") {
     if (items.some((i) => i.ref.toLowerCase() === item.ref.toLowerCase())) return;
     onChange(position === "start" ? [item, ...items] : [...items, item]);
@@ -164,7 +177,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       <div className="list-lines">
         <AddRow
           startOpen
-          onAdd={add}
+          onAdd={(value) => addFromInput(value, "end")}
           onCancel={() => setAdding(false)}
           candidates={notableFolderCandidates}
           excludeRefs={existingRefsLower}
@@ -178,9 +191,21 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       ref={gridRef}
       className="list-lines"
     >
-      {/* No top Add row in lines mode — one Add affordance at the bottom is
-          enough. The lines render is meant to be dense; two chrome bars
-          around six rows ate more vertical space than the rows themselves. */}
+      {/* Top add row — collapsed to a thin "+ add to top" until clicked,
+          so new items can land at the head of the list (parity with the
+          cards view). The bottom row stays the primary add affordance. */}
+      {!hideControls && (
+        <AddRow
+          slim
+          startOpen={addingTop}
+          onAdd={(value) => { addFromInput(value, "start"); setAddingTop(false); }}
+          onCancel={() => setAddingTop(false)}
+          onOpen={() => setAddingTop(true)}
+          onImage={onUploadImage ? (f) => ingestImageFile(f, "start") : undefined}
+          candidates={notableFolderCandidates}
+          excludeRefs={existingRefsLower}
+        />
+      )}
       {items.map((item, originalIdx) => {
         // Plain-text bullet — display its text, no navigation, no
         // resolve. The parser surfaces these so plain `- foo` bullets
@@ -308,7 +333,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
       {!hideControls && (
         <AddRow
           startOpen={adding}
-          onAdd={(name) => { add(name); setAdding(false); }}
+          onAdd={(value) => { addFromInput(value, "end"); setAdding(false); }}
           onCancel={() => setAdding(false)}
           onOpen={() => setAdding(true)}
           onImage={onUploadImage ? (f) => ingestImageFile(f, "end") : undefined}
@@ -489,9 +514,14 @@ function LineRow({
 
 interface AddRowProps {
   startOpen?: boolean;
-  onAdd: (name: string) => void;
+  /** Raw input value on commit. The parent applies the
+   *  text-vs-`[[wikilink]]` rule (see addFromInput). */
+  onAdd: (value: string) => void;
   onCancel: () => void;
   onOpen?: () => void;
+  /** Compact variant for the top-of-list add (thinner, "add to top"
+   *  label) so it reads as secondary to the main bottom add row. */
+  slim?: boolean;
   /** When provided, surface image affordances (file picker + clipboard
    *  paste button) alongside the "+ Add" text. */
   onImage?: (file: File) => Promise<void> | void;
@@ -503,7 +533,7 @@ interface AddRowProps {
   excludeRefs?: Set<string>;
 }
 
-function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, excludeRefs }: AddRowProps) {
+function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, excludeRefs, slim }: AddRowProps) {
   const [open, setOpen] = useState(!!startOpen);
   const [draft, setDraft] = useState("");
   useEffect(() => { if (startOpen) setOpen(true); }, [startOpen]);
@@ -515,15 +545,15 @@ function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, exclu
   }
   if (!open) {
     return (
-      <div className="list-line list-line-add">
+      <div className={"list-line list-line-add" + (slim ? " is-slim" : "")}>
         <button
           type="button"
           className="basecard-add-text"
           onClick={() => { setOpen(true); onOpen?.(); }}
-          title="Add a wikilink list item"
+          title={slim ? "Add an item to the top" : "Add a list item (type [[ to link a folder)"}
         >
           <Plus size={14} strokeWidth={1.6} />
-          <span>Add</span>
+          <span>{slim ? "Add to top" : "Add"}</span>
         </button>
         {onImage && (
           <span className="basecard-add-image-group">
@@ -577,8 +607,8 @@ function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, exclu
     );
   }
   return (
-    <div className="list-line list-line-add is-input">
-      <RefAutocomplete
+    <div className={"list-line list-line-add is-input" + (slim ? " is-slim" : "")}>
+      <WikiRefInput
         autoFocus
         value={draft}
         onChange={setDraft}
@@ -587,7 +617,7 @@ function AddRow({ startOpen, onAdd, onCancel, onOpen, onImage, candidates, exclu
         candidates={candidates ?? []}
         exclude={excludeRefs}
         className="lr-add-input"
-        placeholder="Note name"
+        placeholder="Item name — type [[ to link a folder"
       />
     </div>
   );

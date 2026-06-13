@@ -75,6 +75,21 @@ Notable Folder and it becomes a *newspaper section* — Main Document as
 the centerpiece, recent notes orbiting it. Navigation is a pile: the
 folder you touch goes on top.
 
+**Lists.** Give a note `list: cards` or `list: lines` and its body
+bullets render as a visual list instead of prose — a reading list, a
+tools index, a wishlist. Each item is a markdown bullet:
+
+- `cards` is a drag-reorderable grid: an image cover when the item (or
+  its linked note) has one, otherwise a large text-relevant icon so
+  mixed image/non-image lists still read as one cohesive grid.
+- `lines` is a dense table: aligned title and description columns,
+  drag to reorder, click a cell to edit.
+
+Add an item at the top or bottom. Typing is **plain text by default**;
+type `[[` and a folder/note autocomplete opens — pick one and the item
+becomes a wikilink that navigates on click. (Same `[[`-trigger you get
+inside the editor.) Paste or drop an image to add it as a cover.
+
 **Calendar.** Day / Week / Month / Year. Drag to create, drag to move,
 click for an action popup (rename inline, move to a day, reassign the
 folder, open, delete). Events are just notes with a `date:`.

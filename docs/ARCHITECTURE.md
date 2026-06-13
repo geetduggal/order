@@ -58,7 +58,7 @@ CardGrid ── owns notes[], view, filters; routes every mutation
 ├── LazyCell[] → Card per note: load → edit (Milkdown) → debounced save
 │   ├── MilkdownSurface   Crepe wrapper: paste, links, wikilinks
 │   ├── RawTextSurface    monospace <textarea> for .txt (todo.txt)
-│   └── ListView          list: cards / lines renders
+│   └── ListCards / ListLines   list: cards (grid) / lines (table)
 ├── CalendarView      Day / Week / Month (FullCalendar)
 ├── YearLinearView    Year — 12×37 strip
 ├── SeasonView        Season — Areas grid over a date range
@@ -176,6 +176,16 @@ change so an open editor doesn't remount.
 **Publish.** Collects `public: true` notes → prerenders one static HTML
 page per permalink (real content for `curl` and unfurlers) → ships the
 same React components as a read-only SPA. No template to drift.
+
+**Lists.** A `list:` note's body bullets parse to `ListItem`s
+(`lib/list-folder.ts`): a `- [[Name]]` bullet is a wikilink item
+(`ref`, optional `· meta`); a plain `- text` bullet is a text item
+(`ref === text`, `text` set); a `- ![[img]]` bullet is an image item.
+`ListCards` / `ListLines` render and mutate the array, persisting via
+the host Card's save. Both the add input and inline row-rename use
+`WikiRefInput` — plain text until you type `[[`, which opens the same
+folder autocomplete the Milkdown editor uses; the parent applies
+"exactly `[[Name]]` → wikilink item, else text item."
 
 ## Invariants worth knowing
 
