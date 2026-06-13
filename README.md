@@ -136,6 +136,7 @@ reorganizing the vault never breaks a link.
 | `⌘O` · `⌘K` | folder palette (folders + todo.txt) |
 | `⌘F` · `/` | full-text search |
 | `⌘R` | home ⇄ clear-filters toggle |
+| `⌘4` | terminal in the focused folder (`$` lives on the 4) |
 | `⌘;` | sidebar · `⌘'` clear filters · `⌘T` theme · `⌘P` publish |
 | `⌘+ / − / 0` | note text size |
 | `?` | shortcut overlay |

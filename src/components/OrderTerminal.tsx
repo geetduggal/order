@@ -149,6 +149,11 @@ export function OrderTerminal({ cwd }: Props) {
     void (document as Document & { fonts?: FontFaceSet }).fonts?.ready.then(() => {
       if (!disposed) applyFit();
     });
+    // One more fit after the first output settles — when `ls` overflows
+    // and the scrollbar gutter is claimed, the usable width changes and
+    // the column count must shrink so the last column / right-prompt
+    // doesn't end up under the scrollbar.
+    const settleTimer = setTimeout(() => { if (!disposed) applyFit(); }, 120);
 
     // Refit on a real host pixel-size change only (window/width). The
     // host has a definite height, so a masonry re-measure or scroll
@@ -164,6 +169,7 @@ export function OrderTerminal({ cwd }: Props) {
 
     return () => {
       disposed = true;
+      clearTimeout(settleTimer);
       window.removeEventListener("order:theme", onThemeChange);
       onData.dispose();
       ro.disconnect();

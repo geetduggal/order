@@ -5366,8 +5366,13 @@ iframe.order-youtube-embed {
      definite height the masonry measures once kills it; xterm scrolls
      internally. */
   height: min(68vh, 620px);
+  /* Full-bleed: negative margins cancel the card's horizontal + bottom
+     padding so the terminal reaches the coral border. The INNER gutter
+     is a small even 12px (not the card's clamp) so text sits a hair off
+     the border on both sides and the xterm scrollbar lands at the right
+     edge without a huge left margin. */
   margin: 2px calc(-1 * clamp(18px, 3.5vw, 40px)) -12px;
-  padding: 10px clamp(18px, 3.5vw, 40px) 12px;
+  padding: 8px 12px 10px;
   /* Surface follows the active Order theme (the xterm canvas paints its
      own matching background from the same vars — see buildXtermTheme). */
   background: var(--bg);
@@ -5398,7 +5403,15 @@ iframe.order-youtube-embed {
 .order-terminal .xterm,
 .order-terminal .xterm-viewport,
 .order-terminal .xterm-screen { height: 100% !important; }
+/* Always reserve the scrollbar gutter so the rightmost column (and the
+   shell's right-prompt) never slides under the scrollbar when output
+   starts overflowing. FitAddon then measures a stable content width. */
+.order-terminal .xterm-viewport {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+}
 .order-terminal .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.order-terminal .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
 .order-terminal .xterm-viewport::-webkit-scrollbar-thumb {
   background: rgba(107, 140, 255, 0.3);
   border-radius: 4px;
@@ -5406,6 +5419,68 @@ iframe.order-youtube-embed {
 .nf-flip-tool.is-on {
   color: var(--coral);
   background: var(--coral-soft);
+}
+
+/* Global terminal overlay (Cmd+4) — a centered branded panel at the
+   focused Notable Folder's directory. Reuses OrderTerminal, resetting
+   its card-bleed margins so it fills the panel cleanly. */
+.terminal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 5vh, 56px);
+  background: rgba(0, 0, 0, 0.42);
+  animation: prompt-fade 140ms var(--ease-out);
+}
+.terminal-overlay-panel {
+  width: min(1100px, 94vw);
+  height: min(700px, 86vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1.5px solid var(--coral);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.terminal-overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--coral);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+.terminal-overlay-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--coral);
+  letter-spacing: 0.02em;
+}
+.terminal-overlay-close {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 4px;
+  color: var(--ink-faint);
+  background: transparent;
+  cursor: pointer;
+}
+.terminal-overlay-close:hover { color: var(--ink); background: var(--bg-elev); }
+/* Reset OrderTerminal's card full-bleed inside the overlay — fill the
+   panel body with an even gutter, no inner border/round. */
+.terminal-overlay-panel .order-terminal {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
 }
 .nf-flip-list {
   list-style: none;
