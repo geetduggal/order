@@ -9,6 +9,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { getTextScale } from "../lib/text-scale";
+
+// Base cell size in px at 1.0 zoom. The terminal font follows the same
+// --text-scale the Stream / calendar use (Cmd ± / dock zoom), so a
+// command's output grows and shrinks with everything else.
+const BASE_FONT_PX = 12;
 
 const MONO = '"Menlo", "SF Mono", "JetBrains Mono", "Monaco", "Consolas", monospace';
 
@@ -82,7 +88,7 @@ export function OrderTerminal({ cwd }: Props) {
     const term = new Terminal({
       theme: buildXtermTheme(),
       fontFamily: MONO,
-      fontSize: 12,
+      fontSize: Math.round(BASE_FONT_PX * getTextScale()),
       lineHeight: 1.15,
       cursorBlink: true,
       scrollback: 5000,
@@ -92,6 +98,15 @@ export function OrderTerminal({ cwd }: Props) {
     // vars are already updated by the time this event fires.
     const onThemeChange = () => { term.options.theme = buildXtermTheme(); };
     window.addEventListener("order:theme", onThemeChange);
+    // Follow the global text-scale zoom (Cmd ± / dock). xterm sizes via
+    // a JS fontSize, not CSS, so we set it and refit so the PTY learns
+    // the new grid.
+    const onScale = (e: Event) => {
+      const z = (e as CustomEvent<number>).detail;
+      term.options.fontSize = Math.round(BASE_FONT_PX * z);
+      requestAnimationFrame(() => applyFit());
+    };
+    window.addEventListener("order:text-scale", onScale);
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
@@ -171,6 +186,7 @@ export function OrderTerminal({ cwd }: Props) {
       disposed = true;
       clearTimeout(settleTimer);
       window.removeEventListener("order:theme", onThemeChange);
+      window.removeEventListener("order:text-scale", onScale);
       onData.dispose();
       ro.disconnect();
       unlistenData?.();

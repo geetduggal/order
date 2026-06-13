@@ -48,8 +48,9 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon } from "lucide-react";
+import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon, Terminal as TerminalIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
+import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -359,13 +360,35 @@ export function Card(props: Props) {
    *  Lives at the TOP of the hook list so the early-return loading /
    *  error branches don't change hook count between renders. */
   const [flipped, setFlipped] = useState(false);
+  // In-card terminal mode (NF Main Docs, desktop). Opened by the card's
+  // terminal icon or the Cmd+4 window event; renders OrderTerminal in
+  // place of the card body, rooted at the folder's directory.
+  const [termOpen, setTermOpen] = useState(false);
   const [vaultRootForFlip, setVaultRootForFlip] = useState<string | null>(null);
+  // Resolve the vault root once either the file browser OR the terminal
+  // needs the folder's absolute path.
   useEffect(() => {
-    if (!flipped || vaultRootForFlip !== null || readOnly) return;
+    if ((!flipped && !termOpen) || vaultRootForFlip !== null || readOnly) return;
     let cancelled = false;
     void vaultRoot().then((r) => { if (!cancelled) setVaultRootForFlip(r); });
     return () => { cancelled = true; };
-  }, [flipped, vaultRootForFlip, readOnly]);
+  }, [flipped, termOpen, vaultRootForFlip, readOnly]);
+  // Cmd+4 (CardGrid) dispatches `order:open-terminal` with an NF name.
+  // The matching Main Doc card opens its in-card terminal — identical to
+  // clicking the card's terminal icon. termTargetRef carries the live
+  // folder name + main-doc-ness so this once-mounted listener stays
+  // current without re-subscribing.
+  const termTargetRef = useRef<{ name: string; isMain: boolean }>({ name: "", isMain: false });
+  useEffect(() => {
+    if (readOnly || isIosSync()) return;
+    const onOpen = (e: Event) => {
+      const name = (e as CustomEvent<string>).detail;
+      const t = termTargetRef.current;
+      if (t.isMain && t.name === name) { setFlipped(false); setTermOpen(true); }
+    };
+    window.addEventListener("order:open-terminal", onOpen);
+    return () => window.removeEventListener("order:open-terminal", onOpen);
+  }, [readOnly]);
   /** Newspaper height-cap state: `expanded` lifts the cap (Read more
    *  or, when editable, focusing the card); `overflowing` is whether
    *  the body actually exceeds the cap (only then do we show the
@@ -1002,6 +1025,9 @@ export function Card(props: Props) {
     || "Folded note";
   const folderRelForFlip = vaultDir(toVaultRel(pathRef.current));
   const folderName = pathRef.current.split("/").pop()?.replace(/\.md$/i, "") ?? "";
+  // Keep the terminal-target ref current for the order:open-terminal
+  // listener (Cmd+4).
+  termTargetRef.current = { name: folderName, isMain: isMainDoc };
   const cardClass =
     "order-card" +
     (isMainDoc ? " is-main" : "") +
@@ -1037,7 +1063,7 @@ export function Card(props: Props) {
             7. Delete (editable only)
             8. Fullscreen toggle
             9. × close (dismiss from filtered view) */}
-      <div className={"order-card-controls" + (flipped ? " is-flipped" : "")} aria-hidden={false}>
+      <div className={"order-card-controls" + (flipped || termOpen ? " is-flipped" : "")} aria-hidden={false}>
         {isMainDoc && !readOnly && onSetHome && (
           <button
             type="button"
@@ -1134,12 +1160,24 @@ export function Card(props: Props) {
           <button
             type="button"
             className={"order-card-btn order-card-flip" + (flipped ? " is-on" : "")}
-            onClick={() => setFlipped((f) => !f)}
+            onClick={() => { setFlipped((f) => !f); setTermOpen(false); }}
             title={flipped ? "Back to note" : "Folder contents"}
             aria-label={flipped ? "Show note" : "Show folder contents"}
             aria-pressed={flipped}
           >
             <FolderOpenIcon size={14} strokeWidth={2} />
+          </button>
+        )}
+        {isMainDoc && !readOnly && !isIosSync() && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-terminal" + (termOpen ? " is-on" : "")}
+            onClick={() => { setTermOpen((t) => !t); setFlipped(false); }}
+            title={termOpen ? "Close terminal" : "Open a terminal in this folder (Cmd+4)"}
+            aria-label={termOpen ? "Close terminal" : "Open terminal"}
+            aria-pressed={termOpen}
+          >
+            <TerminalIcon size={14} strokeWidth={2} />
           </button>
         )}
         {!readOnly && (confirmingDelete ? (
@@ -1210,11 +1248,30 @@ export function Card(props: Props) {
           onFlipBack={() => setFlipped(false)}
         />
       )}
+      {termOpen && isMainDoc && !readOnly && vaultRootForFlip && (
+        <div className="order-card-term-panel">
+          <div className="order-card-term-head">
+            <span className="order-card-term-title">
+              <TerminalIcon size={12} strokeWidth={2} /> {folderName}
+            </span>
+            <button
+              type="button"
+              className="order-card-term-close"
+              onClick={() => setTermOpen(false)}
+              title="Close terminal"
+              aria-label="Close terminal"
+            >
+              <XIcon size={13} strokeWidth={2.2} />
+            </button>
+          </div>
+          <OrderTerminal cwd={`${vaultRootForFlip}/${folderRelForFlip}`} />
+        </div>
+      )}
       <div
         className="order-card-content"
         ref={contentRef}
         style={
-          flipped && isMainDoc && !readOnly
+          (flipped || termOpen) && isMainDoc && !readOnly
             ? { display: "none" }
             : showSpine ? undefined
             : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined

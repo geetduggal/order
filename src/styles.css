@@ -5352,6 +5352,54 @@ iframe.order-youtube-embed {
    terminal when toggled on. It fills the remaining card height (the
    .nf-flip-panel is a flex column) so the experience reads as "this
    card is now a terminal", not a small embedded box. */
+/* Inline terminal panel — the front-of-card counterpart to the folder
+   backside. A slim header (folder name + close) sits in the card's
+   normal padding; the OrderTerminal below it goes full-bleed to the
+   coral border. */
+.order-card-term-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.order-card-term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px;
+}
+.order-card-term-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, "Menlo", monospace);
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  text-transform: lowercase;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.order-card-term-title svg { color: var(--coral); flex: 0 0 auto; }
+.order-card-term-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.order-card-term-close:hover { color: var(--coral); background: var(--coral-soft); }
+
+.order-card-terminal.is-on { color: var(--coral); background: var(--coral-soft); }
+
 .order-terminal {
   /* The terminal IS the card body: full-bleed to the card's coral
      border (negative margins cancel the card's horizontal + bottom
@@ -5391,6 +5439,14 @@ iframe.order-youtube-embed {
     calc(env(safe-area-inset-top) + 14px)
     clamp(14px, 2vw, 28px)
     calc(env(safe-area-inset-bottom) + 14px);
+  /* Column layout so the terminal panel can claim all remaining height
+     down toward the dock, rather than sitting at its capped 620px. */
+  display: flex;
+  flex-direction: column;
+}
+.order-card.is-fullscreen .order-card-term-panel {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .order-card.is-fullscreen .order-terminal {
   height: auto;
@@ -5421,67 +5477,6 @@ iframe.order-youtube-embed {
   background: var(--coral-soft);
 }
 
-/* Global terminal overlay (Cmd+4) — a centered branded panel at the
-   focused Notable Folder's directory. Reuses OrderTerminal, resetting
-   its card-bleed margins so it fills the panel cleanly. */
-.terminal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 420;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(16px, 5vh, 56px);
-  background: rgba(0, 0, 0, 0.42);
-  animation: prompt-fade 140ms var(--ease-out);
-}
-.terminal-overlay-panel {
-  width: min(1100px, 94vw);
-  height: min(700px, 86vh);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  border: 1.5px solid var(--coral);
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-}
-.terminal-overlay-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--coral);
-  font-family: var(--mono, monospace);
-  font-size: 12px;
-}
-.terminal-overlay-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--coral);
-  letter-spacing: 0.02em;
-}
-.terminal-overlay-close {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 4px;
-  color: var(--ink-faint);
-  background: transparent;
-  cursor: pointer;
-}
-.terminal-overlay-close:hover { color: var(--ink); background: var(--bg-elev); }
-/* Reset OrderTerminal's card full-bleed inside the overlay — fill the
-   panel body with an even gutter, no inner border/round. */
-.terminal-overlay-panel .order-terminal {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 0;
-  margin: 0;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 0;
-}
 .nf-flip-list {
   list-style: none;
   margin: 0;

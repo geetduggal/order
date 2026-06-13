@@ -15,10 +15,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ArrowDownAZ, Clock4, FolderOpen, Terminal, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
+import { ArrowDownAZ, Clock4, FolderOpen, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
 import { vaultFs, type VaultDirEntryStat } from "../lib/vault-fs";
 import { isIosSync } from "../lib/vault";
-import { OrderTerminal } from "./OrderTerminal";
 
 type SortMode = "name" | "mtime";
 
@@ -153,10 +152,6 @@ export function NotableFolderBackside({
     catch (e) { console.error("reveal_path failed:", e); }
   }, [absPath, ios]);
 
-  // The terminal is now an inline Order-branded panel (OrderTerminal),
-  // not a launch of the system Terminal. Toggled by the header button.
-  const [terminalOpen, setTerminalOpen] = useState(false);
-
   // Drag IN from the OS: Tauri's webview eats HTML5 dataTransfer at
   // the OS layer, so the React onDrop handler never receives the
   // file list. The native event from getCurrentWebview().
@@ -249,47 +244,32 @@ export function NotableFolderBackside({
           <span>{folderName}</span>
         </div>
         <div className="nf-flip-actions">
-          {!terminalOpen && (
-            <>
-              <button
-                type="button"
-                className={"nf-flip-sort" + (sort === "name" ? " is-on" : "")}
-                onClick={() => setSort("name")}
-                title="Sort by name"
-                aria-pressed={sort === "name"}
-              >
-                <ArrowDownAZ size={13} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                className={"nf-flip-sort" + (sort === "mtime" ? " is-on" : "")}
-                onClick={() => setSort("mtime")}
-                title="Sort by modified time"
-                aria-pressed={sort === "mtime"}
-              >
-                <Clock4 size={13} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                className="nf-flip-tool"
-                onClick={() => { void revealFolder(); }}
-                title={ios ? "Open in Files" : "Reveal folder in Finder"}
-              >
-                <FolderOpen size={13} strokeWidth={2.2} />
-              </button>
-            </>
-          )}
-          {!ios && (
-            <button
-              type="button"
-              className={"nf-flip-tool" + (terminalOpen ? " is-on" : "")}
-              onClick={() => setTerminalOpen((v) => !v)}
-              title={terminalOpen ? "Close terminal" : "Open an Order terminal in this folder"}
-              aria-pressed={terminalOpen}
-            >
-              <Terminal size={13} strokeWidth={2.2} />
-            </button>
-          )}
+          <button
+            type="button"
+            className={"nf-flip-sort" + (sort === "name" ? " is-on" : "")}
+            onClick={() => setSort("name")}
+            title="Sort by name"
+            aria-pressed={sort === "name"}
+          >
+            <ArrowDownAZ size={13} strokeWidth={2.2} />
+          </button>
+          <button
+            type="button"
+            className={"nf-flip-sort" + (sort === "mtime" ? " is-on" : "")}
+            onClick={() => setSort("mtime")}
+            title="Sort by modified time"
+            aria-pressed={sort === "mtime"}
+          >
+            <Clock4 size={13} strokeWidth={2.2} />
+          </button>
+          <button
+            type="button"
+            className="nf-flip-tool"
+            onClick={() => { void revealFolder(); }}
+            title={ios ? "Open in Files" : "Reveal folder in Finder"}
+          >
+            <FolderOpen size={13} strokeWidth={2.2} />
+          </button>
           <button
             type="button"
             className="nf-flip-back"
@@ -303,12 +283,7 @@ export function NotableFolderBackside({
       </header>
       {error && <div className="nf-flip-error">{error}</div>}
       {uploadError && <div className="nf-flip-error">Upload: {uploadError}</div>}
-      {terminalOpen && !ios ? (
-        // Terminal takes over the whole card body — the file list is
-        // hidden while the session is live. Closing (header button or
-        // flip-back) drops it and the browser returns.
-        <OrderTerminal cwd={absPath} />
-      ) : loading ? (
+      {loading ? (
         <div className="nf-flip-empty">Loading…</div>
       ) : sorted.length === 0 ? (
         <div className="nf-flip-empty">Empty folder. Drop files here to add them.</div>

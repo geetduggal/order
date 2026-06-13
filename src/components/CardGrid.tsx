@@ -20,7 +20,6 @@ import { FtsOverlay } from "./FtsOverlay";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { SeasonView, type SeasonViewHandle } from "./SeasonView";
-import { OrderTerminal } from "./OrderTerminal";
 import { parseSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
@@ -684,20 +683,22 @@ export function CardGrid() {
   // Forward-ref binding for Cmd+R's "jump to home" half of the toggle.
   useEffect(() => { goHomeRef.current = goHome; }, [goHome]);
 
-  // Cmd+M: open a terminal at the currently-focused Notable Folder's
-  // directory. "Focused" = the pinned/focused NF, else the top of the
-  // include pile, else home. Resolves the NF's on-disk directory via
-  // its Main Document path. Bound through a ref so the keydown effect
+  // Cmd+4: open the terminal for the currently-focused Notable Folder.
+  // "Focused" = the pinned/focused NF, else the top of the include pile,
+  // else home. We navigate to the NF's Main Document so its card is
+  // visible, then dispatch `order:open-terminal` with the folder name —
+  // the matching Card opens its in-card terminal (identical to clicking
+  // the card's terminal icon). Bound through a ref so the keydown effect
   // always calls the latest closure.
   const openFocusedTerminal = useCallback(() => {
     const name = focusedFolder
       ?? notableIncludesRef.current[0]
       ?? homeFolderRef.current;
     if (!name) return;
-    const dir = noteDirByRef(name);
-    if (!dir) return;
-    setTerminalOverlay({ cwd: dir, name });
-  }, [focusedFolder]);
+    const path = notePathByRef(name);
+    if (path) navigateAndFocus(path);
+    window.dispatchEvent(new CustomEvent<string>("order:open-terminal", { detail: name }));
+  }, [focusedFolder, navigateAndFocus]);
   useEffect(() => { openTerminalRef.current = openFocusedTerminal; }, [openFocusedTerminal]);
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
@@ -1404,12 +1405,11 @@ export function CardGrid() {
   // toggle — goHome is defined earlier and we don't want a stale
   // closure from the keydown effect's mount.
   const goHomeRef = useRef<(() => void) | null>(null);
-  // Cmd+M opens a terminal at the currently-focused Notable Folder's
-  // directory (forward-ref so the keydown effect calls the latest one).
+  // Cmd+4 opens the terminal for the currently-focused Notable Folder —
+  // same effect as clicking the terminal icon on that NF's card. It
+  // dispatches a window event the matching Card listens for (forward-ref
+  // so the keydown effect calls the latest closure).
   const openTerminalRef = useRef<(() => void) | null>(null);
-  // The global terminal overlay: { cwd, name } when open, null when
-  // closed. Reuses OrderTerminal; Esc / × dismiss.
-  const [terminalOverlay, setTerminalOverlay] = useState<{ cwd: string; name: string } | null>(null);
   // Shortcuts overlay — toggled by bare `?` outside text input.
   const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
@@ -3664,33 +3664,6 @@ export function CardGrid() {
       )}
 
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-
-      {terminalOverlay && (
-        <div
-          className="terminal-overlay"
-          role="dialog"
-          aria-label={`Terminal — ${terminalOverlay.name}`}
-          onMouseDown={() => setTerminalOverlay(null)}
-        >
-          <div className="terminal-overlay-panel" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="terminal-overlay-head">
-              <span className="terminal-overlay-title">
-                <TerminalIcon size={13} strokeWidth={2} /> {terminalOverlay.name}
-              </span>
-              <button
-                type="button"
-                className="terminal-overlay-close"
-                onClick={() => setTerminalOverlay(null)}
-                title="Close terminal (Esc)"
-                aria-label="Close terminal"
-              >
-                <XCircle size={15} strokeWidth={2.2} />
-              </button>
-            </div>
-            <OrderTerminal cwd={terminalOverlay.cwd} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
