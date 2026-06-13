@@ -5,9 +5,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ViewerApp } from "./ViewerApp";
+import { applyTheme } from "../src/lib/theme";
 import "../src/styles.css";
 import "./viewer.css";
 import type { PublishedSite } from "../src/lib/publish";
+
+// Force a clean landing state for the published viewer: every fresh
+// page load resets to the light theme, regardless of what was saved
+// last visit. The in-session toggle still works (rail Sun/Moon icon).
+applyTheme("light");
 
 async function boot() {
   const root = document.getElementById("viewer-root");

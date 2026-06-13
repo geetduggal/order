@@ -149,24 +149,14 @@ export function ViewerApp(
   // the scroll fires. Seeded from a note-page deep-link.
   const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
   // Stream mode — three states the prominent rail FAB cycles through.
-  // "folders" is the default for the published home so visitors land
-  // on a Notable-Folder card grid first; "notes" hides NF cards;
-  // "all" shows both. Persisted across visits (shared key with the
-  // in-app vault).
+  // The published viewer always lands in "notes" (home folder's section
+  // with its Main Document on top), no localStorage read — every visit
+  // gets the same predictable landing. The in-session toggle still
+  // cycles freely; it just doesn't bleed into the next page load.
   type StreamMode = "all" | "notes" | "folders";
-  const [streamMode, setStreamMode] = useState<StreamMode>(() => {
-    try {
-      const v = localStorage.getItem("order.streamMode");
-      if (v === "all" || v === "notes" || v === "folders") return v;
-    } catch { /* non-fatal */ }
-    // Published web viewer defaults to "notes" — a visitor lands on
-    // the home folder's section and reads the actual writing; the
-    // Notable Folder grid is one tap away via the sidebar.
-    return "notes";
-  });
+  const [streamMode, setStreamMode] = useState<StreamMode>("notes");
   const setStreamModePersist = (m: StreamMode) => {
     setStreamMode(m);
-    try { localStorage.setItem("order.streamMode", m); } catch { /* non-fatal */ }
   };
 
   // Recently-pinned Notable Folders, most-recent first. The command
