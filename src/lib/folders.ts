@@ -12,7 +12,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Briefcase, Brush, Camera, Code, Coffee, Compass,
   Feather, Flame, Folder, Footprints, Heart, Home, Hourglass,
-  Layers, Leaf, Mountain, Music, PenLine, Sparkles, Sun, Users,
+  Layers, Leaf, Mountain, Music, PenLine, Sparkles, Sun, Tag, Users,
   Wallet, Wrench,
 } from "lucide-react";
 
@@ -185,4 +185,21 @@ export function folderIcon(name: string, override?: unknown): LucideIcon {
     if (rule.rx.test(name)) return rule.icon;
   }
   return Folder;
+}
+
+/** Icon for a plain list-card item (not a Notable Folder). Same
+ *  keyword matcher as folderIcon — "Cal Newport Books" → BookOpen — but
+ *  falls back to a neutral Tag glyph instead of Folder, since these rows
+ *  don't point at a folder. An explicit `icon:` name still wins. Used by
+ *  ListCards so text / non-NF bullets get a large, name-relevant cover
+ *  glyph rather than a bare dot. */
+export function listItemIcon(name: string, override?: unknown): LucideIcon {
+  if (typeof override === "string" && override.trim()) {
+    const explicit = NAME_TO_LUCIDE[override.trim().toLowerCase()];
+    if (explicit) return explicit;
+  }
+  for (const rule of ICON_RULES) {
+    if (rule.rx.test(name)) return rule.icon;
+  }
+  return Tag;
 }

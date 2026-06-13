@@ -10,8 +10,8 @@
 // the OS level, so drop events never reach in-page handlers.
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste, Dot as DotIcon } from "lucide-react";
-import { folderIcon, isNotableFolder } from "../lib/folders";
+import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
+import { folderIcon, listItemIcon, isNotableFolder } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -255,7 +255,12 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         // navigation the row can't deliver. (Plain text bullets +
         // wikilinks to non-NF notes both fall through here.)
         const isNFRow = !!(note && isNotableFolder(note.frontmatter));
-        const Icon = isNFRow ? folderIcon(item.ref, note?.frontmatter.icon) : DotIcon;
+        // NF rows use the folder glyph (honoring an explicit `icon:`);
+        // every other row gets a large, name-relevant icon — "Cal
+        // Newport Books" → an open book — falling back to a neutral tag.
+        const Icon = isNFRow
+          ? folderIcon(item.ref, note?.frontmatter.icon)
+          : listItemIcon(item.text ?? item.ref, note?.frontmatter.icon);
         return (
           <BaseCard
             key={item.ref}
