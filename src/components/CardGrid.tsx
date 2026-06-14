@@ -2438,37 +2438,115 @@ export function CardGrid() {
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 
-  /** Toggle the note's `public: true` flag. Public = opted into the
-   *  static site bundle the Publish button generates. Absence of the
-   *  field means private; we strip the key on toggle-off so YAML
-   *  stays clean. */
-  const handleTogglePublic = useCallback(async (path: string, makePublic: boolean) => {
-    const raw = await readVault(path);
-    const { frontmatter, body } = splitFrontmatter(raw);
-    const next: Frontmatter = { ...frontmatter };
-    if (makePublic) next.public = true;
-    else delete next.public;
-    await writeVault(path, joinFrontmatter(next, body));
-    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
-  }, []);
-
-  /** Patch `allDay` / `startTime` on a note's frontmatter. Mirrors
-   *  handleTogglePublic: read, mutate, write, sync state. `startTime:
-   *  null` deletes the key; omitting a field leaves it alone. */
-  const handleSetSchedule = useCallback(async (
+  /** Generic frontmatter patcher driving the FrontmatterInspector.
+   *  Read, mutate, write, sync state. Keys set to `null` are deleted;
+   *  everything else upserts. Replaces the per-key togglers we used
+   *  to have for `public`, `allDay`, etc. */
+  const handleSetFrontmatter = useCallback(async (
     path: string,
-    patch: { allDay?: boolean; startTime?: string | null },
+    patch: Record<string, unknown | null>,
   ) => {
     const raw = await readVault(path);
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
-    if (patch.allDay === true) next.allDay = true;
-    else if (patch.allDay === false) delete next.allDay;
-    if (patch.startTime === null) delete next.startTime;
-    else if (typeof patch.startTime === "string") next.startTime = patch.startTime;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === undefined) delete next[k];
+      else next[k] = v;
+    }
     await writeVault(path, joinFrontmatter(next, body));
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
+
+  /** Rename a Notable Folder.
+   *
+   *  An NF lives at `<vault>/<Area>/<Category>/<Name>/<Name>.md`. The
+   *  folder NAME is its filename ref (the bullet text in its parent
+   *  Category list, and the link target for any `folder: [[Name]]`
+   *  frontmatter elsewhere). To rename in-place without breaking refs:
+   *
+   *    1. Rename the dir   `.../OldName/`     → `.../NewName/`
+   *    2. Rename the file  `NewName/OldName.md` → `NewName/NewName.md`
+   *    3. Sync `title:` on the main doc if it used to mirror the name.
+   *    4. Rewrite inbound  `[[OldName]]` (bodies) and
+   *                        `folder: [[OldName]]` (frontmatter) across
+   *       every other note in the vault.
+   *    5. Reload from disk so paths, refs, and chain order pick up.
+   *
+   *  Unsafe filesystem chars in the new name are coerced to `-`. The
+   *  pretty form (with `:` etc.) belongs in `title:`, which the
+   *  FrontmatterInspector edits separately. */
+  const handleRenameNotableFolder = useCallback(async (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-").trim();
+    if (!safe || safe === oldName) return;
+    const list = notesRef.current ?? [];
+    const main = list.find(
+      (n) => n.filename.replace(/\.md$/i, "") === oldName && isNotableFolder(n.frontmatter),
+    );
+    if (!main) return;
+    const oldRel = toVaultRel(main.path);
+    const oldDir = vaultDir(oldRel);
+    const parentDir = vaultDir(oldDir);
+    const newDir = parentDir ? `${parentDir}/${safe}` : safe;
+    const newPath = `${newDir}/${safe}.md`;
+    try {
+      // 1. Dir rename. If the target dir exists already, bail — we'd
+      //    rather refuse than merge with an unrelated folder.
+      if (await vaultFs.exists(newDir)) {
+        flashCap(`Couldn't rename — ${safe} already exists.`);
+        return;
+      }
+      await vaultFs.rename(oldDir, newDir);
+      // 2. Rename the main doc inside.
+      await vaultFs.rename(`${newDir}/${oldName}.md`, newPath);
+      // 3. Sync title if it was mirroring the filename name.
+      try {
+        const raw = await readVault(newPath);
+        const { frontmatter, body } = splitFrontmatter(raw);
+        const t = frontmatter.title;
+        if (typeof t !== "string" || !t.trim() || t === oldName) {
+          await writeVault(newPath, joinFrontmatter({ ...frontmatter, title: safe }, body));
+        }
+      } catch (err) {
+        console.warn("title sync skipped on folder rename", err);
+      }
+      // 4. Rewrite inbound refs (bodies + frontmatter folder field).
+      const target = oldName.toLowerCase();
+      const folderRefRe = /^\[\[([^\]]+)\]\]$/;
+      for (const n of list) {
+        if (n.id === main.id) continue;
+        try {
+          const raw = await readVault(n.path);
+          const { frontmatter, body } = splitFrontmatter(raw);
+          let nextBody = body;
+          let nextFm: Frontmatter = frontmatter;
+          let dirty = false;
+          if (body.toLowerCase().includes(target)) {
+            const rb = rewriteWikilinksForRename(body, oldName, safe);
+            if (rb !== body) { nextBody = rb; dirty = true; }
+          }
+          const fv = frontmatter.folder;
+          if (typeof fv === "string") {
+            const m = fv.trim().match(folderRefRe);
+            if (m && m[1].trim().toLowerCase() === target) {
+              nextFm = { ...frontmatter, folder: `[[${safe}]]` };
+              dirty = true;
+            }
+          }
+          if (dirty) await writeVault(n.path, joinFrontmatter(nextFm, nextBody));
+        } catch (err) {
+          console.warn("rename inbound rewrite skipped for", n.path, err);
+        }
+      }
+    } catch (err) {
+      console.error("NF rename failed:", err);
+      flashCap(`Rename failed: ${String(err)}`);
+      return;
+    }
+    // 5. Pick up everything fresh — paths, refs, chain order all moved.
+    await reloadNotes();
+  }, [reloadNotes]);
 
   /** Create a new Notable Folder Main Document for the given area +
    *  category. With the nested chain layout the file lives at
@@ -2824,13 +2902,10 @@ export function CardGrid() {
         area={isMain ? inferredArea(n) ?? undefined : undefined}
         category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
         currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
-        availableFolders={isMain ? undefined : availableFolderRefs}
-        onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
-        onTogglePublic={(makePublic) => handleTogglePublic(n.path, makePublic)}
-        isPublic={n.frontmatter.public === true}
-        onSetSchedule={(patch) => handleSetSchedule(n.path, patch)}
-        liveAllDay={n.frontmatter.allDay === true || typeof n.frontmatter.startTime !== "string"}
-        liveStartTime={typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : undefined}
+        availableFolders={availableFolderRefs}
+        onSetFrontmatter={(patch) => handleSetFrontmatter(n.path, patch)}
+        liveFrontmatter={n.frontmatter}
+        recentFolders={recentFolders}
         vaultNotes={vaultNotesIndex}
         onNavigate={navigateToRef}
         onAddFilter={addFolderToFilter}
@@ -3522,6 +3597,7 @@ export function CardGrid() {
           onReorderCategories={handleReorderCategoriesTo}
           onReorderFolders={handleReorderFoldersTo}
           onRemoveFolder={handleRemoveFolder}
+          onRenameFolder={handleRenameNotableFolder}
           order={vaultTaxonomy.areas}
           filteredRefs={includeSet}
           onToggleAreaFilter={(name) => {

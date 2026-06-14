@@ -802,7 +802,6 @@ function StreamView({
         area={isMain ? (areaName || undefined) : undefined}
         category={isMain ? (n.category ?? undefined) : undefined}
         currentFolder={isMain ? undefined : (n.folder ?? null)}
-        isPublic={n.frontmatter.public === true}
         vaultNotes={vaultNotes}
         onNavigate={onNavigate}
         onAddFilter={onNavigate}

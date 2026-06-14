@@ -12,6 +12,7 @@ import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs, markKnownBody } from "../lib/vault-fs";
 import { MilkdownSurface } from "./MilkdownSurface";
 import { RawTextSurface } from "./RawTextSurface";
+import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
   basenameForEvent,
   firstLineTitle,
@@ -19,6 +20,7 @@ import {
   isoTime,
   joinFrontmatter,
   splitFrontmatter,
+  toIsoDateValue,
   type Frontmatter,
 } from "../lib/frontmatter";
 import {
@@ -48,7 +50,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Braces, Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Plus as PlusIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, Eye as EyeIcon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon } from "lucide-react";
+import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
@@ -109,32 +111,25 @@ interface Props {
   area?: string;
   category?: string;
   /** When this card is a regular note, this is its currently assigned
-   *  Notable Folder (or null). The autocomplete in the footer reads /
-   *  writes it through `onAssignFolder`. */
+   *  Notable Folder (or null). Reserved for legacy display surfaces;
+   *  edits happen via `onSetFrontmatter` through the inspector. */
   currentFolder?: string | null;
   /** All Notable Folders in the vault — used to populate the folder
-   *  autocomplete. Each carries the same color we render the chip in. */
+   *  autocomplete in the FrontmatterInspector. */
   availableFolders?: { name: string; color: string }[];
-  /** Called when the user picks (or clears) a folder for this note.
-   *  Pass null to clear. CardGrid persists to YAML + updates state. */
-  onAssignFolder?: (name: string | null) => Promise<void>;
-  /** Toggle the note's `public:` YAML flag. CardGrid persists and
-   *  updates state so the footer pill reflects the new value. */
-  onTogglePublic?: (makePublic: boolean) => Promise<void>;
-  /** Authoritative `public:` value driven by CardGrid's note state.
-   *  The footer pill reads this so the label flips immediately after
-   *  the toggle handler resolves (Card's own loaded state is captured
-   *  once on mount and would otherwise stay stale). */
-  isPublic?: boolean;
-  /** Patch the note's schedule frontmatter (`allDay` / `startTime`).
-   *  Omitted keys are left alone; `startTime: null` removes the key.
-   *  CardGrid persists and updates state so the chip reflects live. */
-  onSetSchedule?: (patch: { allDay?: boolean; startTime?: string | null }) => Promise<void>;
-  /** Authoritative `allDay` / `startTime` driven by CardGrid's note
-   *  state. The chip reads these (not state.frontmatter) so toggling
-   *  via onSetSchedule re-renders instantly — same pattern as isPublic. */
-  liveAllDay?: boolean;
-  liveStartTime?: string;
+  /** Most-recent-first folder refs surfaced as the default rows of any
+   *  folder autocomplete (FolderPicker + FrontmatterInspector). Comes
+   *  from CardGrid's `recentFolders` store. */
+  recentFolders?: string[];
+  /** Generic frontmatter patch handler — used by the FrontmatterInspector.
+   *  Keys set to `null` delete; everything else upserts. CardGrid persists
+   *  and re-renders the live frontmatter through `liveFrontmatter` so the
+   *  inspector stays in sync. */
+  onSetFrontmatter?: (patch: Record<string, unknown | null>) => Promise<void>;
+  /** Authoritative current frontmatter from CardGrid's notes state. The
+   *  inspector reads this so edits re-render immediately. Falls back to
+   *  the locally-loaded state.frontmatter when not provided. */
+  liveFrontmatter?: Frontmatter;
   /** Minimal vault index for resolving `- [[Name]]` bullets (and for
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
@@ -210,122 +205,6 @@ interface Props {
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
 
-// Wikilink + URL splitter used by the YAML peek popover. Splits a
-// string into a sequence of plain-text and clickable segments. Order
-// matters: try wikilink first (more specific shape), then URLs.
-const FM_TOKEN_RE = /(\[\[[^\]\n]+?\]\])|((?:https?|mailto|tel):[^\s)<>]+)/g;
-function fmTokens(text: string): Array<
-  | { kind: "text"; value: string }
-  | { kind: "wiki"; ref: string; alt?: string }
-  | { kind: "url"; href: string }
-> {
-  const out: ReturnType<typeof fmTokens> = [];
-  let last = 0;
-  for (const m of text.matchAll(FM_TOKEN_RE)) {
-    const idx = m.index ?? 0;
-    if (idx > last) out.push({ kind: "text", value: text.slice(last, idx) });
-    if (m[1]) {
-      const inner = m[1].slice(2, -2);
-      const pipe = inner.indexOf("|");
-      const ref = pipe >= 0 ? inner.slice(0, pipe).trim() : inner.trim();
-      const alt = pipe >= 0 ? inner.slice(pipe + 1).trim() : undefined;
-      out.push({ kind: "wiki", ref, alt });
-    } else if (m[2]) {
-      out.push({ kind: "url", href: m[2] });
-    }
-    last = idx + m[0].length;
-  }
-  if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
-  return out;
-}
-
-function FmInline({
-  text, onNavigate,
-}: { text: string; onNavigate: (ref: string) => void }) {
-  const parts = fmTokens(text);
-  if (parts.length === 1 && parts[0].kind === "text") return <>{text}</>;
-  return (
-    <>
-      {parts.map((p, i) => {
-        if (p.kind === "text") return <span key={i}>{p.value}</span>;
-        if (p.kind === "wiki") return (
-          <a
-            key={i}
-            className="order-card-fm-link order-card-fm-link-wiki"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNavigate(p.ref); }}
-            href="#"
-            title={`Open ${p.ref}`}
-          >
-            {p.alt || p.ref}
-          </a>
-        );
-        return (
-          <a
-            key={i}
-            className="order-card-fm-link order-card-fm-link-url"
-            href={p.href}
-            target="_blank"
-            rel="noreferrer"
-            onClick={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              try { await invoke("open_url", { url: p.href }); }
-              catch (err) { console.warn("open_url failed:", err); }
-            }}
-          >
-            {p.href.replace(/^https?:\/\//, "")}
-          </a>
-        );
-      })}
-    </>
-  );
-}
-
-function FmValue({
-  value, onNavigate,
-}: { value: unknown; onNavigate: (ref: string) => void }) {
-  if (value === null || value === undefined || value === "") {
-    return <span className="order-card-fm-null">—</span>;
-  }
-  if (typeof value === "boolean") {
-    return <span className="order-card-fm-bool">{value ? "true" : "false"}</span>;
-  }
-  if (typeof value === "number") {
-    return <span className="order-card-fm-num">{value}</span>;
-  }
-  if (value instanceof Date) {
-    return <span className="order-card-fm-date">{value.toISOString().slice(0, 10)}</span>;
-  }
-  if (typeof value === "string") {
-    return <FmInline text={value} onNavigate={onNavigate} />;
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="order-card-fm-null">[]</span>;
-    return (
-      <ul className="order-card-fm-list">
-        {value.map((it, i) => (
-          <li key={i}><FmValue value={it} onNavigate={onNavigate} /></li>
-        ))}
-      </ul>
-    );
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return <span className="order-card-fm-null">{"{}"}</span>;
-    return (
-      <dl className="order-card-fm-grid order-card-fm-grid-nested">
-        {entries.map(([k, v]) => (
-          <div className="order-card-fm-row" key={k}>
-            <dt className="order-card-fm-key">{k}</dt>
-            <dd className="order-card-fm-val"><FmValue value={v} onNavigate={onNavigate} /></dd>
-          </div>
-        ))}
-      </dl>
-    );
-  }
-  return <span>{String(value)}</span>;
-}
-
 export function Card(props: Props) {
   const {
     path: initialPath,
@@ -337,12 +216,9 @@ export function Card(props: Props) {
     category,
     currentFolder,
     availableFolders,
-    onAssignFolder,
-    onTogglePublic,
-    onSetSchedule,
-    liveAllDay,
-    liveStartTime,
-    isPublic,
+    recentFolders,
+    onSetFrontmatter,
+    liveFrontmatter,
     vaultNotes,
     onNavigate,
     onAddFilter,
@@ -407,21 +283,16 @@ export function Card(props: Props) {
    *  the body actually exceeds the cap (only then do we show the
    *  fade + Read more). */
   const [expanded, setExpanded] = useState(false);
-  /** Frontmatter strip collapsed (just the `{ }` toggle) vs. shown
-   *  (full key/value pairs). Default is initialized once state loads:
-   *  collapsed when the body has substantial content (the user is
-   *  reading prose; YAML metadata is a distraction), shown when the
-   *  body is essentially empty (the YAML IS the content). */
-  const [fmCollapsed, setFmCollapsed] = useState<boolean | null>(null);
+  /** Inspector panel state — closed by default, opened by clicking the
+   *  top-left `{date}` toggle. When open, the FrontmatterInspector
+   *  drops in above the editor body so the YAML is editable inline. */
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   /** Lifecycle state that drives the delete exit animation. */
   const [exiting, setExiting] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Folder picker (autocomplete) state for regular notes. */
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
-  const [folderPickerQuery, setFolderPickerQuery] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
   const copyPermalink = useCallback(() => {
     if (!permalink) return;
@@ -962,25 +833,8 @@ export function Card(props: Props) {
   useEffect(() => {
     if (focusedProp) setExpanded(true);
   }, [focusedProp]);
-  // Decide frontmatter strip default once the body is loaded.
-  // "Substantial" = anything beyond a single H1 heading (with
-  // surrounding whitespace) — so a calendar event that's just
-  // "# Some title" still surfaces its YAML, but a note with even
-  // one paragraph of prose collapses the strip out of the way.
-  useEffect(() => {
-    if (state.kind !== "ready" || fmCollapsed !== null) return;
-    const body = state.body || "";
-    // Strip everything that's "just the title" — leading whitespace,
-    // an H1 line, and trailing whitespace. Anything left counts as
-    // substantial. Setext-style headings (=== underlines) and HTML
-    // block tags like <br /> are also peeled off.
-    const remainder = body
-      .replace(/^\s*#\s+[^\n]*\n?/, "")
-      .replace(/^\s*[^\n]+\n=+\s*\n?/, "")
-      .replace(/^\s*<br\s*\/?>\s*/i, "")
-      .trim();
-    setFmCollapsed(remainder.length > 0);
-  }, [state, fmCollapsed]);
+  // Inspector defaults to closed (it's an authoring affordance, not a
+  // primary surface). Click the top-left `{date}` toggle to open it.
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
 
@@ -1061,6 +915,16 @@ export function Card(props: Props) {
     ? { borderColor: `${color}88` }
     : undefined;
 
+  // Frontmatter inspector source-of-truth: prefer the live frontmatter
+  // CardGrid pushes down (so edits re-render synchronously) and fall
+  // back to the locally-loaded one. The `{date}` toggle label uses the
+  // same date field — bare braces when there's no date yet.
+  const fmLive: Frontmatter = liveFrontmatter ?? state.frontmatter;
+  const fmDateRaw = typeof fmLive.date === "string"
+    ? fmLive.date
+    : toIsoDateValue(fmLive.date) ?? "";
+  const fmToggleLabel = fmDateRaw ? `{${fmDateRaw}}` : "{ }";
+
   return (
     <article
       className={cardClass}
@@ -1068,6 +932,22 @@ export function Card(props: Props) {
       ref={articleRef}
       onMouseDown={onCardFocus}
     >
+      {/* Top-left frontmatter inspector toggle — mirrors the card-
+          controls cluster on the right. Label is `{YYYY-MM-DD}` when
+          the note carries a date, otherwise just `{ }`. Click to drop
+          the FrontmatterInspector in above the editor body. */}
+      {!readOnly && onSetFrontmatter && !flipped && !termOpen && !showSpine && (
+        <button
+          type="button"
+          className={"order-card-fm-toggle" + (inspectorOpen ? " is-on" : "")}
+          onClick={() => setInspectorOpen((v) => !v)}
+          title={inspectorOpen ? "Hide frontmatter" : "Show / edit frontmatter"}
+          aria-label={inspectorOpen ? "Hide frontmatter" : "Show / edit frontmatter"}
+          aria-expanded={inspectorOpen}
+        >
+          {fmToggleLabel}
+        </button>
+      )}
       {/* Unified card chrome — single sticky row of icons in the top
           right. Order (left → right):
             1. Home toggle (NF Main Doc only)
@@ -1124,20 +1004,6 @@ export function Card(props: Props) {
               : effectiveListMode === "lines"
                 ? <AlignJustifyIcon size={14} strokeWidth={2} />
                 : <ListIcon size={14} strokeWidth={2} />}
-          </button>
-        )}
-        {!readOnly && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-fold" + (isFolded ? " is-on" : "")}
-            onClick={() => { void toggleFolded(!isFolded); }}
-            title={isFolded ? "Folded — tap to keep this note open" : "Fold: hide contents until clicked"}
-            aria-label={isFolded ? "Unfold note" : "Fold note"}
-            aria-pressed={isFolded}
-          >
-            {isFolded
-              ? <EyeOffIcon size={14} strokeWidth={2} />
-              : <EyeIcon size={14} strokeWidth={2} />}
           </button>
         )}
         {isMainDoc && !readOnly && onCreateUpdate && (
@@ -1293,6 +1159,15 @@ export function Card(props: Props) {
             : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined
         }
       >
+        {inspectorOpen && onSetFrontmatter && !showSpine && (
+          <FrontmatterInspector
+            frontmatter={fmLive}
+            onChange={(patch) => { void onSetFrontmatter(patch); }}
+            folderCandidates={availableFolders?.map((f) => f.name)}
+            recentFolders={recentFolders}
+            folderColorFor={(ref) => availableFolders?.find((f) => f.name === ref)?.color}
+          />
+        )}
         {showSpine ? (
           // Folded spine: title only, click anywhere to reveal the body
           // for the rest of the session. The editor isn't mounted until
@@ -1386,124 +1261,10 @@ export function Card(props: Props) {
           Read more
         </button>
       )}
-      {Object.keys(state.frontmatter).length > 0 && (
-        fmCollapsed
-          ? (
-            <footer className="order-card-fm is-collapsed" aria-label="Frontmatter (collapsed)">
-              <button
-                type="button"
-                className="order-card-fm-toggle"
-                onClick={() => setFmCollapsed(false)}
-                title="Show frontmatter"
-                aria-label="Show frontmatter"
-                aria-expanded={false}
-              >
-                <Braces size={12} strokeWidth={2} />
-              </button>
-            </footer>
-          )
-          : (
-            <footer className="order-card-fm" aria-label="Frontmatter">
-              <button
-                type="button"
-                className="order-card-fm-toggle"
-                onClick={() => setFmCollapsed(true)}
-                title="Hide frontmatter"
-                aria-label="Hide frontmatter"
-                aria-expanded={true}
-              >
-                <Braces size={12} strokeWidth={2} />
-              </button>
-              {Object.entries(state.frontmatter).map(([k, v]) => (
-                <span className="order-card-fm-pair" key={k}>
-                  <span className="order-card-fm-key">{k}</span>
-                  <span className="order-card-fm-val">
-                    <FmValue value={v} onNavigate={handleWikiNavigate} />
-                  </span>
-                </span>
-              ))}
-            </footer>
-          )
-      )}
       <div className="order-card-status">
         <span className={saving ? "is-saving" : "is-saved"}>
           {readOnly ? "" : (saving ? "saving…" : "saved")}
         </span>
-        {onTogglePublic && (() => {
-          // Prefer the prop (driven by CardGrid's notes state) so the
-          // pill flips synchronously with the toggle; fall back to the
-          // initially-loaded frontmatter if no prop was passed.
-          const isPub = isPublic !== undefined
-            ? isPublic
-            : state.frontmatter.public === true;
-          return (
-            <button
-              type="button"
-              className={"order-card-public" + (isPub ? " is-on" : "")}
-              onClick={() => { void onTogglePublic(!isPub); }}
-              title={isPub ? "This note is in the public set" : "Mark as public"}
-              aria-pressed={isPub}
-            >
-              {isPub ? "public" : "private"}
-            </button>
-          );
-        })()}
-        {onSetSchedule && typeof state.frontmatter.date === "string" && (() => {
-          // Subtle date + time chip in the status bar. Prefer the live
-          // props (driven by CardGrid's notes state) so the chip flips
-          // synchronously with the toggle; fall back to the
-          // initially-loaded frontmatter if a parent isn't passing them.
-          // Click "all day" to drop into a 09:00 default; the time
-          // <input> lets you pick. Click the star to flip back to
-          // all-day (which removes startTime and sets allDay:true so
-          // the note still shows on the calendar — see calendar's
-          // notesToEvents rule).
-          const dateRaw = state.frontmatter.date;
-          const fmStart = typeof state.frontmatter.startTime === "string"
-            ? state.frontmatter.startTime : "";
-          const startTime = liveStartTime !== undefined ? liveStartTime : fmStart;
-          const fmAllDay = state.frontmatter.allDay === true || !fmStart;
-          const allDay = liveAllDay !== undefined ? liveAllDay : fmAllDay;
-          // Local-date parse: YYYY-MM-DD is interpreted in UTC by Date;
-          // splitting + new Date(y, m-1, d) keeps the user's local day.
-          const m = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-          const label = m
-            ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-            : dateRaw;
-          return (
-            <span className="order-card-when" title={`${dateRaw}${allDay ? " · all day" : ` · ${startTime}`}`}>
-              <span className="when-date">{label}</span>
-              {allDay ? (
-                <button
-                  type="button"
-                  className="when-allday"
-                  onClick={() => { void onSetSchedule({ allDay: false, startTime: startTime || "09:00" }); }}
-                  title="Click to set a time"
-                >
-                  all day
-                </button>
-              ) : (
-                <>
-                  <input
-                    type="time"
-                    className="when-time"
-                    value={startTime}
-                    onChange={(e) => { void onSetSchedule({ startTime: e.target.value, allDay: false }); }}
-                  />
-                  <button
-                    type="button"
-                    className="when-flip"
-                    onClick={() => { void onSetSchedule({ allDay: true, startTime: null }); }}
-                    title="Mark notable (switch to all day)"
-                    aria-label="Mark notable, switch to all day"
-                  >
-                    <StarIcon size={11} strokeWidth={2} />
-                  </button>
-                </>
-              )}
-            </span>
-          );
-        })()}
         {/* Middle slot: breadcrumb for Notable Folders; folder picker
             for regular notes; both together when an NF Main Doc also
             carries a `folder:` (e.g. an article that's its own NF
@@ -1515,27 +1276,10 @@ export function Card(props: Props) {
             {category && <span>{category}</span>}
           </span>
         )}
-        {/* Folder picker stays available even when an Area › Category
-            breadcrumb is showing, so the user can re-select the
-            Notable Folder for a note that already lives in one. The
-            breadcrumb shows where the note is in the taxonomy; the
-            chip shows which NF it's assigned to. */}
-        {onAssignFolder && (
-          <FolderPicker
-            current={currentFolder ?? null}
-            available={availableFolders ?? []}
-            open={folderPickerOpen}
-            query={folderPickerQuery}
-            onOpen={() => setFolderPickerOpen(true)}
-            onClose={() => { setFolderPickerOpen(false); setFolderPickerQuery(""); }}
-            onQueryChange={setFolderPickerQuery}
-            onAssign={async (name) => {
-              await onAssignFolder?.(name);
-              setFolderPickerOpen(false);
-              setFolderPickerQuery("");
-            }}
-          />
-        )}
+        {/* Folder assignment lives in the FrontmatterInspector now —
+            click the {date} toggle, then edit the `folder` row. The
+            old footer chip became redundant once the inspector had
+            its own folder autocomplete. */}
         <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (
@@ -1557,9 +1301,13 @@ interface FolderPickerProps {
   onClose: () => void;
   onQueryChange: (q: string) => void;
   onAssign: (name: string | null) => Promise<void>;
+  /** Most-recent-first folder refs. With an empty query these land on
+   *  top of the dropdown so the picker reads as "recents first" — same
+   *  contract as FolderAutocomplete. */
+  recents?: string[];
 }
 
-export function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign }: FolderPickerProps) {
+export function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign, recents }: FolderPickerProps) {
   // The dropdown is position:fixed (positioned from the input's rect) so it
   // escapes the card grid's overflow clipping / stacking and never sits
   // behind sibling cards.
@@ -1573,9 +1321,43 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
     setMenuPos({ top: r.bottom + 4, left: r.left });
   }, [open, query]);
 
-  const matches = query.trim()
-    ? available.filter((f) => f.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
-    : available.slice(0, 6);
+  // Recents-first when the query is empty (most-recent on top, then
+  // the rest alphabetically); substring filter with prefix-match
+  // ranking once the user has typed anything. Each row carries a
+  // `recent` flag so the dropdown can render the "recent" badge.
+  const matches: { name: string; color: string; recent: boolean }[] = (() => {
+    const byName = new Map(available.map((f) => [f.name, f]));
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      const seen = new Set<string>();
+      const out: { name: string; color: string; recent: boolean }[] = [];
+      for (const r of (recents ?? [])) {
+        const f = byName.get(r);
+        if (!f || seen.has(f.name)) continue;
+        seen.add(f.name);
+        out.push({ ...f, recent: true });
+        if (out.length >= 8) return out;
+      }
+      const rest = [...available]
+        .filter((f) => !seen.has(f.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      for (const f of rest) {
+        out.push({ ...f, recent: false });
+        if (out.length >= 8) break;
+      }
+      return out;
+    }
+    return available
+      .filter((f) => f.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const ap = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bp = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        if (ap !== bp) return ap - bp;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 8)
+      .map((f) => ({ ...f, recent: false }));
+  })();
 
   if (current && !open) {
     const f = available.find((x) => x.name === current);
@@ -1644,7 +1426,7 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
                 onMouseDown={(e) => { e.preventDefault(); void onAssign(f.name); }}
               >
                 <span className="order-card-folder-swatch" style={{ background: f.color }} />
-                {f.name}
+                <span className="order-card-folder-option-name">{f.name}</span>
               </button>
             </li>
           ))}

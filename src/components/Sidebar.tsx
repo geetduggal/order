@@ -72,6 +72,11 @@ interface Props {
   onReorderFolders?: (area: string, category: string, order: string[]) => void;
   /** Remove a Notable Folder from its Category (keeps the note). */
   onRemoveFolder?: (name: string, area: string, category: string) => void;
+  /** Rename a Notable Folder in place — renames its dir + main-doc
+   *  file + rewrites every inbound `[[Name]]` and `folder: [[Name]]`
+   *  reference. CardGrid does the heavy lifting; the sidebar just
+   *  surfaces the inline-edit affordance on the folder row. */
+  onRenameFolder?: (oldName: string, newName: string) => void;
   /** Chain order (Areas → Categories → folder refs) so the lists render
    *  in the on-disk bullet order rather than alphabetically. */
   order?: { ref: string; categories: { ref: string; folders: string[] }[] }[];
@@ -193,6 +198,7 @@ export function Sidebar({
   onReorderCategories,
   onReorderFolders,
   onRemoveFolder,
+  onRenameFolder,
   order,
   header,
   filters,
@@ -250,6 +256,7 @@ export function Sidebar({
           onReorderCategories={onReorderCategories}
           onReorderFolders={onReorderFolders}
           onRemoveFolder={onRemoveFolder}
+          onRenameFolder={onRenameFolder}
         />
       </section>
       {footer && <section className="sb-section sb-footer-slot">{footer}</section>}
@@ -263,6 +270,7 @@ function DrillView({
   onAddArea, onRemoveArea, onAddCategory, onRemoveCategory,
   onReorderArea, onReorderCategory, onReorderFolder,
   onReorderAreas, onReorderCategories, onReorderFolders, onRemoveFolder,
+  onRenameFolder,
   onToggleAreaFilter, onToggleCategoryFilter, filteredRefs,
 }: {
   drill: DrillState;
@@ -282,6 +290,7 @@ function DrillView({
   onReorderCategories?: (area: string, order: string[]) => void;
   onReorderFolders?: (area: string, category: string, order: string[]) => void;
   onRemoveFolder?: (name: string, area: string, category: string) => void;
+  onRenameFolder?: (oldName: string, newName: string) => void;
   onToggleAreaFilter?: (name: string) => void;
   onToggleCategoryFilter?: (name: string, area: string) => void;
   filteredRefs?: Set<string>;
@@ -434,6 +443,7 @@ function DrillView({
             onMoveUp={onReorderFolder && i > 0 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "up") : undefined}
             onMoveDown={onReorderFolder && i < folders.length - 1 ? () => onReorderFolder(f.name, drill.areaName, drill.categoryName, "down") : undefined}
             onRemove={onRemoveFolder ? () => onRemoveFolder(f.name, drill.areaName, drill.categoryName) : undefined}
+            onRename={onRenameFolder ? (newName) => onRenameFolder(f.name, newName) : undefined}
             dragging={folderDrag.dragRef === f.name}
             onTilePointerDown={onReorderFolders ? (e) => folderDrag.onTilePointerDown(e, f.name) : undefined}
           />
@@ -656,13 +666,17 @@ function hasFolderInCategory(taxonomy: Taxonomy, area: string, category: string)
 
 const REMOVE_CONFIRM_TIMEOUT_MS = 4000;
 
-function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, dragging, onTilePointerDown }: {
+function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, onRename, dragging, onTilePointerDown }: {
   folder: NotableFolder;
   checked: boolean;
   onToggle: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onRemove?: () => void;
+  /** Rename the folder ref (filename). The pretty `title:` lives in
+   *  YAML and is edited via the card's FrontmatterInspector — this
+   *  changes the on-disk name used by every inbound `[[Name]]` link. */
+  onRename?: (newName: string) => void;
   dragging?: boolean;
   onTilePointerDown?: (e: React.PointerEvent) => void;
 }) {
@@ -671,6 +685,24 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
   const titleFm = folder.frontmatter.title;
   const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
   const hasControls = !!(onMoveUp || onMoveDown || onRemove);
+  // Inline rename — armed by double-click on the folder name; commit
+  // on Enter / blur, cancel on Escape. The committed value is the
+  // *filename ref* (what other notes link to), not the pretty title.
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(folder.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (renaming) {
+      setRenameDraft(folder.name);
+      requestAnimationFrame(() => renameInputRef.current?.select());
+    }
+  }, [renaming, folder.name]);
+  const commitRename = () => {
+    const next = renameDraft.trim();
+    setRenaming(false);
+    if (!next || next === folder.name) return;
+    onRename?.(next);
+  };
   // Two-click confirm for remove. First click arms; second click within
   // REMOVE_CONFIRM_TIMEOUT_MS fires onRemove. Timer auto-cancels armed
   // state. Matches the pattern used by Card's delete button.
@@ -699,7 +731,9 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
       <button
         type="button"
         className={"sb-folder-item" + (checked ? " checked" : "")}
-        onClick={onToggle}
+        onClick={renaming ? undefined : onToggle}
+        onDoubleClick={onRename ? (e) => { e.preventDefault(); e.stopPropagation(); setRenaming(true); } : undefined}
+        title={onRename ? `${label} — double-click to rename` : label}
       >
         <span
           className="sb-folder-icon"
@@ -707,8 +741,24 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
         >
           <Icon size={13} strokeWidth={2} />
         </span>
-        <span className="sb-folder-name">{label}</span>
-        {checked && (
+        {renaming ? (
+          <input
+            ref={renameInputRef}
+            className="sb-folder-rename"
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+              if (e.key === "Escape") { e.preventDefault(); setRenaming(false); }
+            }}
+            onBlur={commitRename}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="sb-folder-name">{label}</span>
+        )}
+        {checked && !renaming && (
           <span className="sb-folder-check" style={{ color }}>
             <Check size={12} strokeWidth={2.5} />
           </span>

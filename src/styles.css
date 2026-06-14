@@ -660,103 +660,6 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 .order-card-folder-add:hover { color: var(--coral); background: var(--coral-soft); }
 
-.order-card-public {
-  font-family: var(--sans);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-soft);
-  border: 1px solid var(--rule);
-  line-height: 1.5;
-  transition:
-    color 0.12s var(--ease-out),
-    background-color 0.12s var(--ease-out),
-    border-color 0.12s var(--ease-out);
-}
-.order-card-public:hover { color: var(--ink-faint); border-color: var(--ink-faint); }
-.order-card-public.is-on {
-  color: var(--royal, #4169e1);
-  background: var(--royal-soft, rgba(65, 105, 225, 0.10));
-  border-color: var(--royal, #4169e1);
-}
-.order-card-public.is-on:hover {
-  background: var(--royal-soft, rgba(65, 105, 225, 0.16));
-}
-
-/* Subtle date + time chip in the status bar. Sits flush with the
-   other status pills, but stays muted so it doesn't shout — the
-   date is just context, not a control. */
-.order-card-when {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--sans);
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-  color: var(--ink-faint);
-  line-height: 1.5;
-}
-.order-card-when .when-date {
-  font-variant-numeric: tabular-nums;
-}
-.order-card-when .when-allday,
-.order-card-when .when-time,
-.order-card-when .when-flip {
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  padding: 1px 8px;
-  cursor: pointer;
-  transition:
-    color 0.12s var(--ease-out),
-    background-color 0.12s var(--ease-out),
-    border-color 0.12s var(--ease-out);
-}
-.order-card-when .when-time {
-  padding: 0 6px;
-  cursor: text;
-  font-variant-numeric: tabular-nums;
-  /* WebKit's <input type="time"> renders a 12-hour AM/PM segment plus a
-     spin button when the locale is 12h — needs more horizontal room
-     than the digits alone suggest. min-width sized to fit "09:12 AM"
-     without ellipsis-clipping the trailing letter. */
-  min-width: 92px;
-  box-sizing: border-box;
-}
-/* WebKit decorates time inputs with a spin button (and sometimes a
-   "clear" affordance) that appears as a stray empty pill outside the
-   value box. Hide them — the value is edited inline; clearing is the
-   ×-to-all-day button next door. */
-.order-card-when .when-time::-webkit-clear-button,
-.order-card-when .when-time::-webkit-inner-spin-button,
-.order-card-when .when-time::-webkit-calendar-picker-indicator {
-  display: none;
-  -webkit-appearance: none;
-}
-.order-card-when .when-allday {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.order-card-when .when-allday:hover,
-.order-card-when .when-time:hover,
-.order-card-when .when-flip:hover {
-  color: var(--ink-faint);
-  border-color: var(--ink-faint);
-}
-.order-card-when .when-flip {
-  width: 18px;
-  padding: 0;
-  line-height: 1;
-  font-size: 12px;
-}
-
 .order-card-folder-chip {
   display: inline-flex;
   align-items: center;
@@ -853,6 +756,13 @@ input, textarea, select { outline: none; box-shadow: none; }
   transition: background-color 0.12s var(--ease-out);
 }
 .order-card-folder-option:hover { background: var(--bg-elev); }
+.order-card-folder-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .order-card-folder-swatch {
   display: inline-block;
   width: 8px; height: 8px;
@@ -897,7 +807,6 @@ input, textarea, select { outline: none; box-shadow: none; }
    delete, fullscreen, and × remain. */
 .order-card-controls.is-flipped .order-card-home,
 .order-card-controls.is-flipped .order-card-list,
-.order-card-controls.is-flipped .order-card-fold,
 .order-card-controls.is-flipped .order-card-update,
 .order-card-controls.is-flipped .order-card-permalink,
 .order-card-controls.is-flipped .order-card-copy {
@@ -933,7 +842,6 @@ input, textarea, select { outline: none; box-shadow: none; }
    filled regardless of its specific role. */
 .order-card-home.is-on,
 .order-card-flip.is-on,
-.order-card-fold.is-on,
 .order-card-update.is-on,
 .order-card-list.is-cards,
 .order-card-list.is-lines {
@@ -995,105 +903,43 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--royal-soft);
 }
 
-/* Inline frontmatter strip at the bottom of every card. Always
-   visible, very small font, key:value pairs flowing horizontally and
-   wrapping as needed. Wikilink and URL values are clickable. Sits
-   outside the cap-cropped content so a capped card still shows it. */
-.order-card-fm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  margin: 8px 0 4px;
-  padding: 6px 0 0;
-  border-top: 1px solid var(--rule-soft, var(--rule));
-  font-size: 10.5px;
-  line-height: 1.45;
-  color: var(--ink-faint);
-}
-.order-card-fm.is-collapsed {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 4px;
-  justify-content: flex-end;
-}
+/* Top-left {date} toggle that drops in the FrontmatterInspector.
+   Mirrors the .order-card-controls cluster on the right: same opacity
+   reveal-on-hover, same compact pill. Monospace so `{2026-06-13}` reads
+   like the YAML it represents. */
 .order-card-fm-toggle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
-  padding: 2px 4px;
-  margin-right: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
   color: var(--ink-faint);
   cursor: pointer;
-  border-radius: 3px;
-  opacity: 0.55;
-  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+  opacity: 0;
+  transition:
+    opacity 0.15s var(--ease-out),
+    color 0.12s var(--ease-out),
+    background-color 0.12s var(--ease-out),
+    border-color 0.12s var(--ease-out);
 }
-.order-card-fm-toggle:hover {
+.order-card:hover .order-card-fm-toggle { opacity: 0.7; }
+.order-card-fm-toggle:hover,
+.order-card-fm-toggle:focus-visible,
+.order-card-fm-toggle.is-on {
   opacity: 1;
   color: var(--royal);
+  border-color: color-mix(in srgb, var(--royal) 35%, transparent);
   background: var(--royal-soft);
 }
-.order-card-fm.is-collapsed .order-card-fm-toggle { margin-right: 0; }
-.order-card-fm-pair {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  white-space: normal;
-  max-width: 100%;
-}
-.order-card-fm-key {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 9.5px;
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
-  color: var(--ink-faint);
-  font-weight: 500;
-}
-.order-card-fm-key::after {
-  content: ":";
-  color: var(--ink-faint);
-  margin-left: 1px;
-  opacity: 0.6;
-}
-.order-card-fm-val {
-  color: var(--ink-soft, var(--ink));
-  word-break: break-word;
-}
-.order-card-fm-null { color: var(--ink-faint); opacity: 0.6; }
-.order-card-fm-bool, .order-card-fm-num, .order-card-fm-date {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10px;
-  color: var(--ink-soft, var(--ink));
-}
-.order-card-fm-list {
-  display: inline;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.order-card-fm-list > li {
-  display: inline;
-}
-.order-card-fm-list > li + li::before {
-  content: ", ";
-  color: var(--ink-faint);
-}
-.order-card-fm-grid,
-.order-card-fm-grid-nested,
-.order-card-fm-row {
-  display: inline;
-}
-.order-card-fm-link {
-  color: var(--royal);
-  text-decoration: none;
-  border-bottom: 1px dotted color-mix(in srgb, var(--royal) 60%, transparent);
-  cursor: pointer;
-  transition: border-color 0.12s var(--ease-out);
-}
-.order-card-fm-link:hover { border-bottom-style: solid; }
 
 /* Permalink + copy buttons inherit .order-card-btn — see unified strip. */
 
@@ -2049,6 +1895,25 @@ iframe.order-youtube-embed {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Inline rename input on a sidebar folder row — matches the row's
+   font/size so the swap-in feels seamless. Double-click the name to
+   arm; Enter/blur commits, Escape cancels. The committed value is the
+   on-disk filename ref; the pretty `title:` lives in YAML. */
+.sb-folder-rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+}
+.sb-folder-rename:focus {
+  border-color: var(--royal);
+  background: color-mix(in srgb, var(--royal-soft) 60%, transparent);
 }
 .sb-folder-check {
   flex-shrink: 0;
@@ -4514,7 +4379,13 @@ iframe.order-youtube-embed {
   z-index: 10;
   top: calc(100% + 2px);
   left: 0;
-  right: 0;
+  /* The input itself can be narrow (e.g. the inspector's value cell
+     is a 1fr grid track that contracts under pressure). The menu
+     shouldn't inherit that — it sizes to its widest row, but never
+     drops below the input's width so the visual anchoring is clear. */
+  min-width: 100%;
+  width: max-content;
+  max-width: 360px;
   list-style: none;
   margin: 0;
   padding: 4px;
@@ -4544,6 +4415,43 @@ iframe.order-youtube-embed {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ref-ac-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ref-ac-option .ref-ac-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Tiny color dot for picker rows that pass `colorFor`. Matches the
+   sidebar's folder-icon swatch. */
+.ref-ac-swatch {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+/* Plain input used by FolderAutocomplete (mirrors the FrontmatterInspector
+   inputs — quiet border on focus, transparent otherwise). */
+.ref-ac-input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 2px 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ref-ac-input:focus {
+  outline: none;
+  border-color: var(--royal);
+  background: color-mix(in srgb, var(--royal-soft) 50%, transparent);
 }
 .ref-ac-item.is-on,
 .ref-ac-item:hover,
@@ -5176,7 +5084,14 @@ iframe.order-youtube-embed {
 .nf-section:last-child .nf-divider { display: none; }
 
 /* ---------- Card height cap (newspaper "Read more") ---------- */
-.order-card-content { position: relative; }
+.order-card-content {
+  position: relative;
+  /* The top-right card-controls cluster + the top-left {date} toggle
+     sit absolutely positioned at top:6. Reserve a small strip of air
+     so the first editor line clears them — matched to the card's
+     12px bottom padding so the chrome feels symmetric top↔bottom. */
+  padding-top: 12px;
+}
 /* Fade overlay at the bottom of a capped card. */
 .order-card-fade {
   position: absolute;
@@ -6109,3 +6024,222 @@ iframe.order-youtube-embed {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 12px;
 }
+
+/* ======================================================================
+   FrontmatterInspector — drops in above the editor body when the
+   top-left {date} toggle is opened. Icon-decorated rows for known
+   Order fields, plain key:value rows for unknown YAML. Subtle by
+   default: same ink-faint palette as the rest of the chrome so the
+   note prose stays the focus when it is open.
+   ===================================================================== */
+.fm-inspector {
+  /* Sits below the top-right card-controls cluster + top-left {date}
+     toggle (both absolute at top:6, ~22px tall). margin-top clears
+     them so the first row never tucks under an icon.
+     Negative horizontal margins pull the inspector flush with the
+     card's edges (its parent .order-card-content sits inside the
+     card's horizontal padding, so we cancel that padding here). The
+     inner padding then re-establishes the same gutter so the row
+     content lines up with the editor prose below. */
+  margin: 22px calc(-1 * clamp(18px, 3.5vw, 40px)) 14px;
+  padding: 10px clamp(18px, 3.5vw, 40px);
+  /* Subtle coral wash — Order's warm accent. Theme-aware via the
+     `--coral-soft` palette (defined per theme); the extra transparency
+     drops the saturation so it reads as a quiet tint of the card,
+     not a hard band. No border — the wash itself is the boundary. */
+  background: color-mix(in srgb, var(--coral-soft) 45%, transparent);
+  border: none;
+  border-radius: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft, var(--ink));
+}
+/* Mobile: the card's side padding shrinks to 16px (see breakpoint
+   below), so the inspector's bleed-out values shrink to match. */
+@media (max-width: 640px) {
+  .fm-inspector {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+.fm-rows {
+  display: grid;
+  grid-template-columns: 16px max-content 1fr 18px;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.fm-row {
+  display: contents;
+}
+.fm-row .fm-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+}
+.fm-row .fm-row-icon-dim { opacity: 0.55; }
+.fm-row .fm-row-label {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--ink-faint);
+}
+.fm-row .fm-row-input {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.fm-row .fm-row-drop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-ghost, var(--ink-faint));
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 0.12s var(--ease-out),
+    color 0.12s var(--ease-out),
+    background-color 0.12s var(--ease-out);
+}
+.fm-row:hover .fm-row-drop { opacity: 0.6; }
+.fm-row .fm-row-drop:hover {
+  opacity: 1;
+  color: var(--coral);
+  background: var(--coral-soft);
+}
+
+/* Inputs share a quiet, near-invisible chrome — they should read as
+   editable text, not boxy form controls. */
+.fm-inspector input.fm-text,
+.fm-inspector input[type="date"],
+.fm-inspector input[type="time"],
+.fm-inspector select.fm-select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 1px 4px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  transition: border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.fm-inspector input.fm-text:hover,
+.fm-inspector input[type="date"]:hover,
+.fm-inspector input[type="time"]:hover,
+.fm-inspector select.fm-select:hover {
+  border-color: var(--rule);
+}
+.fm-inspector input.fm-text:focus,
+.fm-inspector input[type="date"]:focus,
+.fm-inspector input[type="time"]:focus,
+.fm-inspector select.fm-select:focus {
+  outline: none;
+  border-color: var(--royal);
+  background: color-mix(in srgb, var(--royal-soft) 50%, transparent);
+}
+/* Hide WebKit's decoration widgets that pop out next to date / time
+   inputs as separate pills. Editing happens inline. */
+.fm-inspector input[type="date"]::-webkit-calendar-picker-indicator,
+.fm-inspector input[type="time"]::-webkit-calendar-picker-indicator,
+.fm-inspector input[type="date"]::-webkit-inner-spin-button,
+.fm-inspector input[type="time"]::-webkit-inner-spin-button,
+.fm-inspector input[type="date"]::-webkit-clear-button,
+.fm-inspector input[type="time"]::-webkit-clear-button {
+  display: none;
+  -webkit-appearance: none;
+}
+
+.fm-bool {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease-out),
+    background-color 0.12s var(--ease-out),
+    border-color 0.12s var(--ease-out);
+}
+.fm-bool:hover { color: var(--ink-faint); border-color: var(--ink-faint); }
+.fm-bool.is-on {
+  color: var(--royal);
+  background: var(--royal-soft);
+  border-color: var(--royal);
+}
+
+.fm-add {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rule-soft, var(--rule));
+}
+.fm-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: none;
+  padding: 2px 6px 2px 0;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out);
+}
+.fm-add-btn:hover { color: var(--royal); }
+.fm-row-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fm-row-add .fm-row-icon { color: var(--ink-faint); }
+.fm-add-key, .fm-add-freekey {
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.fm-row-commit {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--royal);
+  background: var(--royal-soft);
+  color: var(--royal);
+  cursor: pointer;
+}
+.fm-row-cancel {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
