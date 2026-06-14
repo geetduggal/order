@@ -77,17 +77,12 @@ function writeSidebarOpen(open: boolean): void {
 //   - "notes":   ordinary notes only
 //   - "folders": Notable-Folder main docs only (default for published home)
 export type StreamMode = "all" | "notes" | "folders";
-const STREAM_MODE_KEY = "order.streamMode";
-function readStreamMode(): StreamMode {
-  try {
-    const v = localStorage.getItem(STREAM_MODE_KEY);
-    if (v === "notes" || v === "folders" || v === "all") return v;
-  } catch { /* non-fatal */ }
-  return "all";
-}
-function writeStreamMode(m: StreamMode): void {
-  try { localStorage.setItem(STREAM_MODE_KEY, m); } catch { /* non-fatal */ }
-}
+// Desktop, phone, and the published web viewer all land in "all" on
+// every fresh open — no localStorage read. In-session toggles stay
+// in React state but don't bleed into the next launch, so the
+// landing screen is always the same surface the docs talk about.
+function readStreamMode(): StreamMode { return "all"; }
+function writeStreamMode(_m: StreamMode): void { /* intentional no-op */ }
 function nextStreamMode(m: StreamMode): StreamMode {
   // Cycle: all → notes → folders → all.
   return m === "all" ? "notes" : m === "notes" ? "folders" : "all";
