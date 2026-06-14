@@ -625,7 +625,11 @@ input, textarea, select { outline: none; box-shadow: none; }
   margin-top: 10px;
   padding-top: 6px;
   border-top: 1px solid var(--rule);
-  font-size: 10.5px;
+  /* Single consistent size across every footer chip — saved/saving,
+     breadcrumb, filename. 11px is the midpoint between the prior
+     smallest (9, path) and largest (12.5, breadcrumb) so the row
+     reads as one row instead of three different weights stacked. */
+  font-size: 11px;
   color: var(--ink-soft);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -642,7 +646,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   letter-spacing: 0.01em;
   text-transform: none;
   font-family: var(--sans);
-  font-size: 12.5px;
+  /* Inherit the 11px footer size; only the family + case differ from
+     the surrounding chips so the row stays one consistent rhythm. */
+  font-size: inherit;
   font-weight: 500;
   color: var(--ink);
 }
@@ -775,8 +781,12 @@ input, textarea, select { outline: none; box-shadow: none; }
   font-family: var(--mono);
   text-transform: none;
   letter-spacing: 0;
-  font-size: 9px;
-  color: var(--ink-ghost);
+  /* Match the footer's 11px so the filename sits on the same line as
+     the breadcrumb and "SAVED" without looking like a different tier.
+     Same ink tint as `is-saved` so the two muted chips in the row
+     read as one consistent ink weight. */
+  font-size: inherit;
+  color: var(--ink-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
