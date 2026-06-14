@@ -472,30 +472,49 @@ function LineRow({
           {displayTitle}
         </button>
       )}
-      {editingMeta ? (
-        <input
-          ref={metaInputRef}
-          className="lr-meta-input"
-          value={metaDraft}
-          placeholder={metaSuggestion || "Meta…"}
-          onChange={(e) => setMetaDraft(e.target.value)}
-          onBlur={commitMeta}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
-            if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          className={"lr-meta" + (metaSuggestion ? "" : " is-empty")}
-          onClick={() => { if (!readOnly) setEditingMeta(true); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          title={readOnly ? metaSuggestion : "Click to edit"}
-        >
-          {metaSuggestion || (readOnly ? "" : "Add meta…")}
-        </button>
-      )}
+      {(() => {
+        // Pin a leading ISO date (Articles) or trailing year (Academic
+        // "Venue · 2017") to a fixed right-side column so dates align
+        // across rows. The remainder, if any, renders as a dim
+        // description between the title and the date column.
+        const dated = !editingMeta ? splitDatedMeta(metaSuggestion) : null;
+        if (dated) {
+          return (
+            <>
+              {dated.secondary && (
+                <span className="lr-meta lr-meta-secondary" title={dated.secondary}>
+                  {dated.secondary}
+                </span>
+              )}
+              <span className="lr-date" title={dated.pinned}>{dated.pinned}</span>
+            </>
+          );
+        }
+        return editingMeta ? (
+          <input
+            ref={metaInputRef}
+            className="lr-meta-input"
+            value={metaDraft}
+            placeholder={metaSuggestion || "Meta…"}
+            onChange={(e) => setMetaDraft(e.target.value)}
+            onBlur={commitMeta}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitMeta(); }
+              if (e.key === "Escape") { e.preventDefault(); setEditingMeta(false); }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className={"lr-meta" + (metaSuggestion ? "" : " is-empty")}
+            onClick={() => { if (!readOnly) setEditingMeta(true); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            title={readOnly ? metaSuggestion : "Click to edit"}
+          >
+            {metaSuggestion || (readOnly ? "" : "Add meta…")}
+          </button>
+        );
+      })()}
       {!readOnly && (
         <button
           type="button"

@@ -668,13 +668,12 @@ export function CardGrid() {
   const goHome = useCallback(() => {
     setView("stream");
     setCollapseNonce((n) => n + 1);
-    // Home should land on Notable Folders only — the home Main Doc
-    // already sits at the top via the include filter, and showing
-    // sibling NF covers underneath gives the user one tap to every
-    // other folder. Force the Show 3-state to "folders" so a leftover
-    // "notes" or "all" mode from a previous session doesn't drown the
-    // home page in noise.
-    setStreamMode(() => { writeStreamMode("folders"); return "folders"; });
+    // Home shows both Notable Folders AND notes (streamMode "all") —
+    // matches the viewer's home and the user's mental model of "home
+    // is the whole stream filtered to my home folder." The dock
+    // streamMode cycle button still lets you narrow to one or the
+    // other within the session.
+    setStreamMode("all");
     const home = homeFolderRef.current;
     if (!home) { setFilters([]); return; }
     setFilters([{ kind: "include", ref: home }]);

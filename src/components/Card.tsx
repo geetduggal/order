@@ -935,14 +935,16 @@ export function Card(props: Props) {
       {/* Top-left frontmatter inspector toggle — mirrors the card-
           controls cluster on the right. Label is `{YYYY-MM-DD}` when
           the note carries a date, otherwise just `{ }`. Click to drop
-          the FrontmatterInspector in above the editor body. */}
-      {!readOnly && onSetFrontmatter && !flipped && !termOpen && !showSpine && (
+          the FrontmatterInspector in above the editor body. Shows on
+          the read-only viewer too so visitors can see the YAML and
+          click URL-valued fields. */}
+      {!flipped && !termOpen && !showSpine && (
         <button
           type="button"
           className={"order-card-fm-toggle" + (inspectorOpen ? " is-on" : "")}
           onClick={() => setInspectorOpen((v) => !v)}
-          title={inspectorOpen ? "Hide frontmatter" : "Show / edit frontmatter"}
-          aria-label={inspectorOpen ? "Hide frontmatter" : "Show / edit frontmatter"}
+          title={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
+          aria-label={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
           aria-expanded={inspectorOpen}
         >
           {fmToggleLabel}
@@ -977,33 +979,6 @@ export function Card(props: Props) {
             aria-pressed={effectiveIsHome}
           >
             <HomeIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {!readOnly && onCycleList && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-list is-" + effectiveListMode}
-            onClick={() => {
-              // Same optimistic pattern — flip locally on tap so the
-              // icon swaps the moment the user touches the button.
-              const next = effectiveListMode === "none" ? "cards"
-                : effectiveListMode === "cards" ? "lines"
-                : "none";
-              setPendingListMode(next);
-              void onCycleList();
-            }}
-            title={
-              effectiveListMode === "cards" ? "List: cards — tap for lines" :
-              effectiveListMode === "lines" ? "List: lines — tap to drop" :
-              "Make this a list folder (cards)"
-            }
-            aria-label="Cycle list mode"
-          >
-            {effectiveListMode === "cards"
-              ? <LayoutGridIcon size={14} strokeWidth={2} />
-              : effectiveListMode === "lines"
-                ? <AlignJustifyIcon size={14} strokeWidth={2} />
-                : <ListIcon size={14} strokeWidth={2} />}
           </button>
         )}
         {isMainDoc && !readOnly && onCreateUpdate && (
@@ -1159,10 +1134,10 @@ export function Card(props: Props) {
             : capActive ? { maxHeight: `${capHeight}px`, overflow: "hidden" } : undefined
         }
       >
-        {inspectorOpen && onSetFrontmatter && !showSpine && (
+        {inspectorOpen && !showSpine && (
           <FrontmatterInspector
             frontmatter={fmLive}
-            onChange={(patch) => { void onSetFrontmatter(patch); }}
+            onChange={onSetFrontmatter ? (patch) => { void onSetFrontmatter(patch); } : undefined}
             folderCandidates={availableFolders?.map((f) => f.name)}
             recentFolders={recentFolders}
             folderColorFor={(ref) => availableFolders?.find((f) => f.name === ref)?.color}
@@ -1208,7 +1183,7 @@ export function Card(props: Props) {
             noteDir={vaultDir(toVaultRel(pathRef.current))}
           />
         )}
-        {isListFolder(state.frontmatter) && (
+        {isListFolder(fmLive) && (
           <>
             {parsedBase && (
               <div className="order-card-list-controls">
@@ -1236,7 +1211,7 @@ export function Card(props: Props) {
               </div>
             )}
             <ListView
-              render={isListOfLists ? "lines" : (parsedBase?.view.type ?? listRender(state.frontmatter) ?? "cards")}
+              render={isListOfLists ? "lines" : (parsedBase?.view.type ?? listRender(fmLive) ?? "cards")}
               items={itemsForView}
               vaultNotes={vaultNotes ?? []}
               onChange={handleListChange}

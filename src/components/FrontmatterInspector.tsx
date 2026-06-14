@@ -26,18 +26,50 @@ import {
   X as XIcon,
   List as ListIcon,
   ChevronsDownUp as FoldIcon,
+  ExternalLink as ExternalLinkIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { Frontmatter, toIsoDateValue as _toIsoDateValue } from "../lib/frontmatter";
 import { toIsoDateValue } from "../lib/frontmatter";
 import { FolderAutocomplete } from "./FolderAutocomplete";
 
+/** True when the value reads like an http(s) URL — used to surface
+ *  an "open in browser" affordance next to URL-valued frontmatter
+ *  rows. Anchored so partial junk like "see https://…" doesn't
+ *  qualify; the whole field has to be the URL. */
+const URL_RE = /^https?:\/\/\S+$/;
+function looksLikeUrl(v: unknown): v is string {
+  return typeof v === "string" && URL_RE.test(v.trim());
+}
+
+/** Open a URL in the user's default browser. In the Tauri webview the
+ *  `vault::open_url` command shells out to the OS opener; on the web
+ *  viewer we fall back to a plain window.open with noopener. */
+function openInBrowser(url: string): void {
+  const trimmed = url.trim();
+  // Tauri's invoke is dynamically imported so the viewer build (which
+  // doesn't pull in @tauri-apps/api) tree-shakes fine.
+  const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
+  if (w.__TAURI_INTERNALS__) {
+    void import("@tauri-apps/api/core").then(({ invoke }) => {
+      void invoke("open_url", { url: trimmed }).catch((err) =>
+        console.warn("open_url failed:", err),
+      );
+    });
+    return;
+  }
+  window.open(trimmed, "_blank", "noopener,noreferrer");
+}
+
 /** A patch is partial frontmatter; setting a key to `null` removes it. */
 export type FrontmatterPatch = Record<string, unknown | null>;
 
 interface Props {
   frontmatter: Frontmatter;
-  onChange: (patch: FrontmatterPatch) => void | Promise<void>;
+  /** Apply a patch to the frontmatter. Omitted → read-only inspector
+   *  (used by the published viewer so visitors can see fields + click
+   *  URL values, but not edit). */
+  onChange?: (patch: FrontmatterPatch) => void | Promise<void>;
   /** Notable Folder refs surfaced as autocomplete candidates for the
    *  `folder:` field. Optional — without it the field stays a plain
    *  text input. */
@@ -57,6 +89,8 @@ const KNOWN_FIELDS: { key: string; icon: LucideIcon; label: string }[] = [
   { key: "endDate", icon: CalendarIcon, label: "endDate" },
   { key: "allDay", icon: StarIcon, label: "all day" },
   { key: "startTime", icon: ClockIcon, label: "time" },
+  { key: "endTime", icon: ClockIcon, label: "endTime" },
+  { key: "endtime", icon: ClockIcon, label: "endtime" },
   { key: "folder", icon: FolderIcon, label: "folder" },
   { key: "category", icon: FolderTreeIcon, label: "category" },
   { key: "list", icon: ListIcon, label: "list" },
@@ -69,8 +103,9 @@ const KNOWN_KEYS = new Set(KNOWN_FIELDS.map((f) => f.key));
 /** Fields that ALWAYS render in the inspector — even when the YAML
  *  doesn't carry them — so any note can flip them without typing.
  *  Toggling off deletes the key so the on-disk YAML stays clean for
- *  the implicit default (false). */
-const ALWAYS_SHOWN = new Set(["public", "folded"]);
+ *  the implicit default. Booleans (public, folded) toggle to `null`
+ *  on off; `list` picks "(none)" which also deletes the key. */
+const ALWAYS_SHOWN = new Set(["public", "folded", "list"]);
 
 /** Pull the bracketed name out of `[[Name]]` (Obsidian-style folder
  *  refs) so a free-text input can show / accept just the name. */
@@ -113,17 +148,25 @@ export function FrontmatterInspector({
     (f) => !(f.key in (frontmatter ?? {})) && !ALWAYS_SHOWN.has(f.key),
   );
 
-  const set = (key: string, value: unknown) => onChange({ [key]: value });
-  const drop = (key: string) => onChange({ [key]: null });
+  const readOnly = !onChange;
+  const set = (key: string, value: unknown) => onChange?.({ [key]: value });
+  const drop = (key: string) => onChange?.({ [key]: null });
   // For boolean always-shown fields, "toggle off" maps to delete so the
   // YAML stays clean — the implicit default is false everywhere we
   // care about (public, folded). Set wraps that shape.
-  const toggleBool = (key: string, next: boolean) => onChange({ [key]: next ? true : null });
+  const toggleBool = (key: string, next: boolean) => onChange?.({ [key]: next ? true : null });
+
+  // Read-only inspector (the published viewer): skip rows for the
+  // always-shown booleans / list when they'd render as "no" with no
+  // way to toggle. Visitors don't need to see implicit defaults.
+  const knownToShow = readOnly
+    ? knownPresent.filter((f) => f.key in (frontmatter ?? {}))
+    : knownPresent;
 
   return (
     <div className="fm-inspector" role="group" aria-label="Frontmatter">
       <div className="fm-rows">
-        {knownPresent.map(({ key, icon: Icon, label }) => {
+        {knownToShow.map(({ key, icon: Icon, label }) => {
           const isAlways = ALWAYS_SHOWN.has(key);
           const isBool = key === "public" || key === "folded" || key === "allDay";
           return (
@@ -138,6 +181,7 @@ export function FrontmatterInspector({
               folderCandidates={folderCandidates}
               recentFolders={recentFolders}
               folderColorFor={folderColorFor}
+              readOnly={readOnly}
             />
           );
         })}
@@ -147,35 +191,38 @@ export function FrontmatterInspector({
             fieldKey={key}
             value={frontmatter[key]}
             onSet={(v) => set(key, v)}
+            readOnly={readOnly}
             onDrop={() => drop(key)}
           />
         ))}
       </div>
 
-      <div className="fm-add">
-        {adding ? (
-          <AddRow
-            initialKey={adding.key}
-            initialValue={adding.value}
-            missingKnown={missingKnown}
-            onCommit={(k, v) => {
-              if (k.trim()) onChange({ [k.trim()]: v });
-              setAdding(null);
-            }}
-            onCancel={() => setAdding(null)}
-          />
-        ) : (
-          <button
-            type="button"
-            className="fm-add-btn"
-            onClick={() => setAdding({ key: missingKnown[0]?.key ?? "", value: "" })}
-            title="Add a frontmatter field"
-          >
-            <PlusIcon size={11} strokeWidth={2} />
-            <span>add field</span>
-          </button>
-        )}
-      </div>
+      {!readOnly && (
+        <div className="fm-add">
+          {adding ? (
+            <AddRow
+              initialKey={adding.key}
+              initialValue={adding.value}
+              missingKnown={missingKnown}
+              onCommit={(k, v) => {
+                if (k.trim()) onChange?.({ [k.trim()]: v });
+                setAdding(null);
+              }}
+              onCancel={() => setAdding(null)}
+            />
+          ) : (
+            <button
+              type="button"
+              className="fm-add-btn"
+              onClick={() => setAdding({ key: missingKnown[0]?.key ?? "", value: "" })}
+              title="Add a frontmatter field"
+            >
+              <PlusIcon size={11} strokeWidth={2} />
+              <span>add field</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -193,9 +240,12 @@ interface KnownRowProps {
   folderCandidates?: string[];
   recentFolders?: string[];
   folderColorFor?: (ref: string) => string | undefined;
+  /** Read-only display (the published viewer) — render values as
+   *  spans with URL clickability; no inputs, no drop button. */
+  readOnly?: boolean;
 }
 
-function KnownRow({ fieldKey, Icon, label, value, onSet, onDrop, folderCandidates, recentFolders, folderColorFor }: KnownRowProps) {
+function KnownRow({ fieldKey, Icon, label, value, onSet, onDrop, folderCandidates, recentFolders, folderColorFor, readOnly }: KnownRowProps) {
   return (
     <div className="fm-row fm-row-known" data-fm-key={fieldKey}>
       <span className="fm-row-icon" title={label}>
@@ -203,16 +253,20 @@ function KnownRow({ fieldKey, Icon, label, value, onSet, onDrop, folderCandidate
       </span>
       <span className="fm-row-label">{label}</span>
       <span className="fm-row-input">
-        <KnownInput
-          fieldKey={fieldKey}
-          value={value}
-          onSet={onSet}
-          folderCandidates={folderCandidates}
-          recentFolders={recentFolders}
-          folderColorFor={folderColorFor}
-        />
+        {readOnly ? (
+          <ReadOnlyValue value={value} fieldKey={fieldKey} />
+        ) : (
+          <KnownInput
+            fieldKey={fieldKey}
+            value={value}
+            onSet={onSet}
+            folderCandidates={folderCandidates}
+            recentFolders={recentFolders}
+            folderColorFor={folderColorFor}
+          />
+        )}
       </span>
-      {onDrop ? (
+      {!readOnly && onDrop ? (
         <button
           type="button"
           className="fm-row-drop"
@@ -223,12 +277,44 @@ function KnownRow({ fieldKey, Icon, label, value, onSet, onDrop, folderCandidate
           <XIcon size={11} strokeWidth={2} />
         </button>
       ) : (
-        // Always-shown rows have no remove affordance — they're part
-        // of the inspector's permanent baseline.
+        // Always-shown rows + read-only mode have no remove affordance.
         <span className="fm-row-drop-spacer" aria-hidden />
       )}
     </div>
   );
+}
+
+/** Read-only renderer: bare value display + an "open in browser"
+ *  affordance for URL-valued fields. Used by the published viewer
+ *  so visitors can see + click frontmatter URLs without editing. */
+function ReadOnlyValue({ value, fieldKey }: { value: unknown; fieldKey: string }) {
+  if (looksLikeUrl(value)) {
+    const url = (value as string).trim();
+    return (
+      <span className="fm-readonly-url">
+        <span className="fm-readonly-text" title={url}>{url}</span>
+        <button
+          type="button"
+          className="fm-url-open"
+          onClick={() => openInBrowser(url)}
+          title={`Open ${url} in browser`}
+          aria-label={`Open ${fieldKey} URL in browser`}
+        >
+          <ExternalLinkIcon size={11} strokeWidth={2} />
+        </button>
+      </span>
+    );
+  }
+  // Boolean / null / object / array / number / unhandled string —
+  // a quiet textual representation suffices for the viewer.
+  const text = value === true ? "yes"
+    : value === false ? "no"
+    : value == null ? ""
+    : typeof value === "string" ? value
+    : typeof value === "number" ? String(value)
+    : Array.isArray(value) ? value.join(", ")
+    : JSON.stringify(value);
+  return <span className="fm-readonly-text" title={text}>{text}</span>;
 }
 
 function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, folderColorFor }: {
@@ -252,7 +338,9 @@ function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, f
         />
       );
     }
-    case "startTime": {
+    case "startTime":
+    case "endTime":
+    case "endtime": {
       const v = typeof value === "string" ? value : "";
       return (
         <input
@@ -367,11 +455,12 @@ function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, f
 
 // ---- Unknown-field rows -----------------------------------------------
 
-function UnknownRow({ fieldKey, value, onSet, onDrop }: {
+function UnknownRow({ fieldKey, value, onSet, onDrop, readOnly }: {
   fieldKey: string;
   value: unknown;
   onSet: (v: unknown) => void;
   onDrop: () => void;
+  readOnly?: boolean;
 }) {
   // Preserve YAML scalars round-trip for primitive types we recognize;
   // anything stringly is fine to round-trip as a string.
@@ -389,34 +478,42 @@ function UnknownRow({ fieldKey, value, onSet, onDrop }: {
       </span>
       <span className="fm-row-label">{fieldKey}</span>
       <span className="fm-row-input">
-        <input
-          type="text"
-          className="fm-text"
-          value={initial}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (isBool) {
-              if (next === "true") onSet(true);
-              else if (next === "false") onSet(false);
-              else onSet(next);
-            } else if (isNumber) {
-              const n = Number(next);
-              onSet(Number.isFinite(n) ? n : next);
-            } else {
-              onSet(next);
-            }
-          }}
-        />
+        {readOnly ? (
+          <ReadOnlyValue value={value} fieldKey={fieldKey} />
+        ) : (
+          <input
+            type="text"
+            className="fm-text"
+            value={initial}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (isBool) {
+                if (next === "true") onSet(true);
+                else if (next === "false") onSet(false);
+                else onSet(next);
+              } else if (isNumber) {
+                const n = Number(next);
+                onSet(Number.isFinite(n) ? n : next);
+              } else {
+                onSet(next);
+              }
+            }}
+          />
+        )}
       </span>
-      <button
-        type="button"
-        className="fm-row-drop"
-        onClick={onDrop}
-        title={`Remove ${fieldKey}`}
-        aria-label={`Remove ${fieldKey}`}
-      >
-        <XIcon size={11} strokeWidth={2} />
-      </button>
+      {readOnly ? (
+        <span className="fm-row-drop-spacer" aria-hidden />
+      ) : (
+        <button
+          type="button"
+          className="fm-row-drop"
+          onClick={onDrop}
+          title={`Remove ${fieldKey}`}
+          aria-label={`Remove ${fieldKey}`}
+        >
+          <XIcon size={11} strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }
@@ -443,6 +540,7 @@ function AddRow({ initialKey, initialValue, missingKnown, onCommit, onCancel }: 
     else if (k === "list") v = value || "cards";
     else if (k === "date" || k === "endDate") v = value || null;
     else if (k === "startTime") v = value || "09:00";
+    else if (k === "endtime" || k === "endTime") v = value || "10:00";
     else if (k === "tags") v = value
       ? value.split(",").map((s) => s.trim()).filter(Boolean)
       : [];

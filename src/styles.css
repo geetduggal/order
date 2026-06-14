@@ -4130,6 +4130,14 @@ iframe.order-youtube-embed {
   user-select: none;
   -webkit-user-select: none;
   transition: background-color 0.12s var(--ease-out);
+  /* Cap the row to its container's width and clip overflow so a long
+     title is forced to ellipsize instead of pushing the date column
+     past the card edge. min-width:0 also propagates to the title
+     flex child so its shrink isn't blocked by intrinsic content. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .list-line input { user-select: text; -webkit-user-select: text; }
 .list-line:hover { background: var(--bg-elev, var(--bg)); }
@@ -4151,12 +4159,15 @@ iframe.order-youtube-embed {
 @media (hover: none) {
   .lr-handle { opacity: 0.6; }
 }
-/* Fixed-width title column so the meta/description column starts at the
-   same x on every row — neat columns instead of ragged flex. The title
-   stays on ONE line and ellipsizes; it no longer wraps word-by-word. */
+/* Title takes the row's flex space — dates pinned right via .lr-date
+   below give the column alignment without starving the title. Long
+   titles ellipsize at the row edge rather than at a 260px cap.
+   Flex-basis 0 (not auto) so the title's intrinsic content width
+   doesn't push siblings off the row; it shrinks to whatever space
+   is left after the date column. */
 .lr-title, .lr-title-input {
-  flex: 0 0 auto;
-  width: clamp(110px, 26%, 260px);
+  flex: 1 1 0;
+  min-width: 0;
   box-sizing: border-box;
   background: transparent;
   border: none;
@@ -4167,6 +4178,30 @@ iframe.order-youtube-embed {
   color: var(--ink);
   text-align: left;
   cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Right-pinned date column — every row's date lands at the same x
+   regardless of title length. tabular-nums keeps digits monospace
+   so the date column reads as a vertical grid. */
+.lr-date {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: calc(11px * var(--text-scale, 1));
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+/* Secondary description (everything before a trailing year, e.g. the
+   "Venue" half of "Venue · 2017") sits between the title and the date. */
+.lr-meta-secondary {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: calc(11px * var(--text-scale, 1));
+  color: var(--ink-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6169,6 +6204,48 @@ iframe.order-youtube-embed {
 .fm-inspector input[type="time"]::-webkit-clear-button {
   display: none;
   -webkit-appearance: none;
+}
+
+/* Read-only value display in the viewer's inspector. Plain text that
+   inherits the row's font; URL values get an external-link button to
+   open in the OS default browser (not the in-app webview). */
+.fm-readonly-text {
+  font: inherit;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.fm-readonly-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.fm-readonly-url .fm-readonly-text {
+  color: var(--royal);
+}
+.fm-url-open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
+}
+.fm-url-open:hover {
+  color: var(--royal);
+  background: var(--royal-soft);
 }
 
 .fm-bool {
