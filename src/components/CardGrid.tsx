@@ -1035,6 +1035,19 @@ export function CardGrid() {
   const filtersRef = useRef<Filter[]>([]);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
 
+  // Remember the last "meaningful" pile — a non-empty filter set plus its
+  // focused folder and pile mode — captured whenever the pile is showing
+  // one. A trip to a calendar view clears the filters (resetToDefault /
+  // dropping the last pill both jump to Week with an empty set), so this
+  // snapshot is what Cmd+P restores: you land back on the pile exactly as
+  // you left it, not on the cleared everything-shown pile.
+  const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
+  useEffect(() => {
+    if (view === "pile" && filters.length > 0) {
+      lastPileRef.current = { filters, focusedFolder, pileMode };
+    }
+  }, [view, filters, focusedFolder, pileMode]);
+
   // First-ever launch (no persisted filters) seeds an `include` pill
   // for the home Notable Folder, so Order opens focused on home (its
   // Main Doc pinned, its notes below). Runs in useLayoutEffect so it
@@ -1500,9 +1513,18 @@ export function CardGrid() {
           // to the Pile, mirroring P-for-Pile).
           setPublishOpen((open) => !open);
         } else {
-          // Cmd+P → the Pile: switch to the pile view and scroll to the
-          // top (newest cards), a plain view switch like Cmd+D/W/M.
+          // Cmd+P → the Pile. If we're returning to a cleared pile (a
+          // calendar view emptied the filters), restore the last
+          // remembered pile — its filters, focused folder, and pile mode
+          // — so you land where you left off. Otherwise it's a plain view
+          // switch like Cmd+D/W/M, scrolled to the top (newest cards).
           setView("pile");
+          const last = lastPileRef.current;
+          if (last && filtersRef.current.length === 0 && last.filters.length > 0) {
+            setFilters(last.filters);
+            setFocusedFolder(last.focusedFolder);
+            setPileMode(last.pileMode);
+          }
           requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
         }
         return;
