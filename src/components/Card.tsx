@@ -780,18 +780,24 @@ export function Card(props: Props) {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
   }, []);
 
-  // Esc exits fullscreen via the same animated path as the button.
+  // Esc exits fullscreen via the same animated path as the button —
+  // EXCEPT while the in-card terminal is open. A terminal owns Escape
+  // (vim leaving insert mode, less quitting, etc.); stealing it to
+  // collapse fullscreen is what made vim look broken once the terminal
+  // moved inside the card. Close the terminal (× / Cmd+4) first, then
+  // Esc exits fullscreen as usual.
   useEffect(() => {
     if (!fullscreen) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (termOpen) return;
         e.preventDefault();
         toggleFullscreen();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fullscreen, toggleFullscreen]);
+  }, [fullscreen, toggleFullscreen, termOpen]);
 
   // Cap active = a capHeight is set, the card isn't expanded, and
   // we're not in fullscreen. Measured against the content's natural
