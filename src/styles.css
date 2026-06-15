@@ -343,7 +343,14 @@
    card titles, which are <button>s, would otherwise stay mixed-case). */
 :root[data-theme="lcars"] body,
 :root[data-theme="lcars"] button { text-transform: uppercase; }
-:root[data-theme="lcars"] :is(input, textarea, code, pre) { text-transform: none; }
+/* The in-card terminal is a real shell — keep it monospace Menlo and
+   mixed-case (vim, prompts, output), never LCARS's all-caps condensed
+   treatment. text-transform: none inherits down to the xterm rows. */
+:root[data-theme="lcars"] :is(input, textarea, code, pre, .order-terminal) { text-transform: none; }
+:root[data-theme="lcars"] .order-terminal,
+:root[data-theme="lcars"] .order-terminal .xterm {
+  font-family: "Menlo", "SF Mono", "Monaco", monospace;
+}
 /* Crepe's reset pins the editor heading font + case directly on the
    element, beating inheritance — force them onto the theme font + caps. */
 :root[data-theme="lcars"] .milkdown-host .ProseMirror :is(h1, h2, h3, h4, h5, h6) {
@@ -5897,7 +5904,7 @@ iframe.order-youtube-embed {
 .season-label {
   font-family: var(--serif);
   font-weight: 500;
-  font-size: 18px;
+  font-size: calc(18px * var(--text-scale, 1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5905,7 +5912,7 @@ iframe.order-youtube-embed {
 }
 .season-sublabel {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -5917,7 +5924,7 @@ iframe.order-youtube-embed {
   align-items: center;
   gap: 6px;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 4px 10px;
@@ -5932,8 +5939,8 @@ iframe.order-youtube-embed {
 @media (max-width: 640px) {
   .season-edit-btn span { display: none; }
   .season-edit-btn { padding: 4px 8px; }
-  .season-label { font-size: 16px; }
-  .season-sublabel { font-size: 10px; }
+  .season-label { font-size: calc(16px * var(--text-scale, 1)); }
+  .season-sublabel { font-size: calc(10px * var(--text-scale, 1)); }
   .season-update-list { margin-left: 28px; padding-left: 10px; }
 }
 .season-grid {
@@ -5960,7 +5967,7 @@ iframe.order-youtube-embed {
 .season-area-head {
   font-family: var(--serif);
   font-weight: 500;
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale, 1));
   color: var(--ink);
   background: transparent;
   border: 0;
@@ -5973,7 +5980,7 @@ iframe.order-youtube-embed {
 .season-area-head:hover { color: var(--royal); }
 .season-area-empty {
   color: var(--ink-faint);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   font-style: italic;
 }
 .season-nf-list {
@@ -5988,7 +5995,7 @@ iframe.order-youtube-embed {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
 }
 .season-nf-head {
   display: flex;
@@ -6026,7 +6033,7 @@ iframe.order-youtube-embed {
   padding: 0;
   text-align: left;
   color: var(--ink);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   cursor: pointer;
   font-weight: 500;
   overflow: hidden;
@@ -6036,7 +6043,7 @@ iframe.order-youtube-embed {
 .season-nf-link:hover { color: var(--royal); }
 .season-nf-count {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   background: var(--bg-elev);
   padding: 1px 6px;
@@ -6062,7 +6069,7 @@ iframe.order-youtube-embed {
 .season-update-row {
   display: flex;
   align-items: baseline;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   min-width: 0;
 }
 .season-update-link {
@@ -6073,7 +6080,7 @@ iframe.order-youtube-embed {
   padding: 0 0 0 8px;
   text-align: left;
   color: var(--ink-faint);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6086,13 +6093,13 @@ iframe.order-youtube-embed {
   text-align: center;
   color: var(--ink-faint);
 }
-.season-empty-hint { font-size: 12px; }
+.season-empty-hint { font-size: calc(12px * var(--text-scale, 1)); }
 .season-empty code {
   background: var(--bg-elev);
   padding: 1px 5px;
   border-radius: 3px;
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
 }
 
 /* ======================================================================
