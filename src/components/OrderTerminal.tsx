@@ -196,5 +196,16 @@ export function OrderTerminal({ cwd }: Props) {
     };
   }, [cwd]);
 
-  return <div className="order-terminal" ref={hostRef} />;
+  // Keep pointer events inside the terminal: stop them bubbling to the
+  // card, whose drag / pointer handlers would otherwise hijack a click
+  // and pull keyboard focus off xterm — leaving vim/less rendered but
+  // unable to receive navigation keys. xterm's own click-to-focus and
+  // text selection still work (they fire on the inner elements first).
+  return (
+    <div
+      className="order-terminal"
+      ref={hostRef}
+      onPointerDown={(e) => e.stopPropagation()}
+    />
+  );
 }

@@ -1462,6 +1462,18 @@ export function CardGrid() {
       return t.isContentEditable; // covers Milkdown / ProseMirror
     }
     function onKey(e: KeyboardEvent) {
+      // The in-card terminal owns the keyboard while it's focused: every
+      // keystroke — Ctrl-C/D/W/R, vim's Ctrl-F/B/D/U and Esc, arrows,
+      // everything — must reach the shell, not trigger an app shortcut.
+      // (The global handler otherwise fires on Ctrl as well as Cmd, so
+      // vim's Ctrl commands and the shell's control keys were being eaten
+      // as Day/Week/search shortcuts.) Only Cmd/Ctrl+4 still fires, so
+      // there's always a keyboard way to toggle the terminal back off.
+      const tgt = e.target;
+      if (tgt instanceof HTMLElement && tgt.closest(".order-terminal")) {
+        const isToggle = (e.metaKey || e.ctrlKey) && e.key === "4";
+        if (!isToggle) return;
+      }
       // Bare-key shortcuts only fire when no input / editor has focus,
       // so typing "?" inside a note doesn't pop the help overlay.
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
