@@ -80,6 +80,7 @@ interface Props {
 
 export function OrderTerminal({ cwd }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -110,6 +111,7 @@ export function OrderTerminal({ cwd }: Props) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    termRef.current = term;
 
     const session = `t${Date.now()}-${Math.floor(performance.now())}`;
     let disposed = false;
@@ -192,20 +194,23 @@ export function OrderTerminal({ cwd }: Props) {
       unlistenData?.();
       unlistenExit?.();
       void invoke("terminal_close", { session }).catch(() => { /* already gone */ });
+      termRef.current = null;
       term.dispose();
     };
   }, [cwd]);
 
   // Keep pointer events inside the terminal: stop them bubbling to the
   // card, whose drag / pointer handlers would otherwise hijack a click
-  // and pull keyboard focus off xterm — leaving vim/less rendered but
-  // unable to receive navigation keys. xterm's own click-to-focus and
-  // text selection still work (they fire on the inner elements first).
+  // and pull keyboard focus off xterm. AND force keyboard focus on every
+  // click — when an app turns on mouse reporting (e.g. vim's `set mouse`),
+  // xterm treats clicks as mouse events and preventDefaults them, so the
+  // textarea never gains focus and the keyboard goes dead; calling
+  // term.focus() explicitly keeps the terminal typeable, mouse mode or not.
   return (
     <div
       className="order-terminal"
       ref={hostRef}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => { e.stopPropagation(); termRef.current?.focus(); }}
     />
   );
 }
