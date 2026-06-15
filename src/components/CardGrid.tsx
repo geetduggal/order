@@ -11,6 +11,7 @@ import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
@@ -759,12 +760,21 @@ export function CardGrid() {
   // iOS only: true when no vault folder has been picked yet (no stored
   // bookmark), so the UI prompts to choose one instead of showing empty.
   const [iosNeedsVault, setIosNeedsVault] = useState(false);
+  // Desktop vault-load failure (wrong / blocked / missing folder — e.g.
+  // a default path that only exists on another machine). Without this the
+  // load throws, `notes` stays null, and the app freezes on "Preparing
+  // cards…" with no reachable Settings. loadError drives a recovery screen
+  // that re-opens the folder picker; loadErrorPath is the path we tried.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorPath, setLoadErrorPath] = useState<string>("");
 
   const reloadNotes = useCallback(async () => {
+    let attemptedRoot = "";
     try {
       // On iOS an empty root means no vault bookmark yet — prompt a pick
       // rather than rendering an empty vault.
       const root = await syncVaultRoot();
+      attemptedRoot = root;
       if (!root && (await isIos())) {
         setIosNeedsVault(true);
         setNotes([]);
@@ -784,8 +794,11 @@ export function CardGrid() {
         return prevId ? { ...n, id: prevId } : n;
       });
       setNotes(stable);
+      setLoadError(null);
     } catch (err) {
       console.error("reload failed:", err);
+      setLoadError(String(err));
+      setLoadErrorPath(attemptedRoot || (await vaultRoot().catch(() => "")));
     }
   }, []);
 
@@ -1395,6 +1408,22 @@ export function CardGrid() {
     setFocusedFolder(null);
     await reloadNotes();
   }, [reloadNotes]);
+  /** Recover from a failed vault load by re-picking the folder. iOS uses
+   *  its scoped-bookmark picker; desktop opens the native directory
+   *  dialog. A successful reload clears loadError and renders the cards. */
+  const recoverVault = useCallback(async () => {
+    if (await isIos()) { await pickVaultIos(); return; }
+    try {
+      const result = await openDialog({
+        directory: true,
+        multiple: false,
+        defaultPath: loadErrorPath || undefined,
+      });
+      if (typeof result === "string") await handleChangeVault(result);
+    } catch (err) {
+      console.error("vault re-pick failed:", err);
+    }
+  }, [handleChangeVault, loadErrorPath, pickVaultIos]);
   // Forward-ref to createNote so Cmd+N can invoke it from the keyboard
   // useEffect above the declaration site without a TS forward-ref error.
   const createNoteRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
@@ -1626,8 +1655,14 @@ export function CardGrid() {
           if (cancelled) return;
         }
         setNotes(loaded);
+        setLoadError(null);
       } catch (err) {
         console.error("Could not load cards:", err);
+        if (cancelled) return;
+        // Surface a recovery screen instead of freezing on "Preparing
+        // cards…": the vault folder is unreadable on this machine.
+        setLoadError(String(err));
+        setLoadErrorPath(await vaultRoot().catch(() => ""));
       }
     })();
     return () => { cancelled = true; };
@@ -2680,6 +2715,34 @@ export function CardGrid() {
         <button type="button" className="vault-pick-btn" onClick={() => { void pickVaultIos(); }}>
           Choose folder
         </button>
+      </div>
+    );
+  }
+
+  if (loadError && notes === null && !iosNeedsVault) {
+    return (
+      <div className="vault-pick vault-pick-error">
+        <h1>Couldn't open your vault</h1>
+        {loadErrorPath && <p className="vault-pick-path">{loadErrorPath}</p>}
+        <p>
+          Order couldn't read this folder on this Mac. It may live on
+          another computer, have moved, or macOS may be blocking access.
+          Pick the folder that holds your notes here, and Order will
+          remember it for this machine.
+        </p>
+        <div className="vault-pick-actions">
+          <button type="button" className="vault-pick-btn" onClick={() => { void recoverVault(); }}>
+            Choose vault folder…
+          </button>
+          <button
+            type="button"
+            className="vault-pick-btn is-ghost"
+            onClick={() => { setLoadError(null); setNotes(null); void reloadNotes(); }}
+          >
+            Retry
+          </button>
+        </div>
+        <p className="vault-pick-detail">{loadError}</p>
       </div>
     );
   }

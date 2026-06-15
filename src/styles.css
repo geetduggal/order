@@ -506,6 +506,31 @@ input, textarea, select { outline: none; box-shadow: none; }
   cursor: pointer;
 }
 .vault-pick-btn:active { transform: scale(0.97); }
+.vault-pick-btn.is-ghost {
+  background: transparent;
+  color: var(--royal);
+}
+.vault-pick-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+.vault-pick-path {
+  font-family: var(--mono, "Menlo", monospace);
+  font-size: 12.5px;
+  color: var(--coral);
+  word-break: break-all;
+  margin: 0 0 14px !important;
+}
+.vault-pick-detail {
+  font-size: 11.5px !important;
+  color: var(--ink-faint);
+  opacity: 0.7;
+  font-family: var(--mono, "Menlo", monospace);
+  word-break: break-word;
+  margin: 0 !important;
+}
 
 .card-grid-empty {
   text-align: center;
