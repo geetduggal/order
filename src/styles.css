@@ -5360,7 +5360,7 @@ iframe.order-youtube-embed {
   align-items: center;
   gap: 6px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5398,12 +5398,12 @@ iframe.order-youtube-embed {
   background: var(--royal-soft);
 }
 .nf-flip-back {
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   line-height: 1;
   padding: 4px 7px;
 }
 .nf-flip-error {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--coral);
   background: var(--coral-soft);
   border-radius: 4px;
@@ -5411,7 +5411,7 @@ iframe.order-youtube-embed {
   margin-bottom: 6px;
 }
 .nf-flip-empty {
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-faint);
   padding: 24px 8px;
   text-align: center;
@@ -5560,7 +5560,7 @@ iframe.order-youtube-embed {
   padding: 5px 6px;
   border-radius: 4px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink);
   cursor: pointer;
   user-select: none;
@@ -5585,7 +5585,7 @@ iframe.order-youtube-embed {
 .nf-flip-row-meta,
 .nf-flip-row-mtime {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   color: var(--ink-faint);
   white-space: nowrap;
 }
@@ -5598,7 +5598,7 @@ iframe.order-youtube-embed {
   background: color-mix(in srgb, var(--coral-soft) 70%, transparent);
   color: var(--coral);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   font-weight: 500;
   pointer-events: none;
   border-radius: 6px;
