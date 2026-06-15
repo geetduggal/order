@@ -104,7 +104,7 @@ interface Props {
    *  pending saves first so we don't recreate the file after delete. */
   onDelete?: (path: string) => Promise<void>;
   /** Optional Notable Folder color. Renders as a left-border accent
-   *  so cards visually group by folder in the Stream. */
+   *  so cards visually group by folder in the Pile. */
   color?: string;
   /** When this card IS a Notable Folder Main Document, these populate
    *  the "Area › Category" breadcrumb in the footer. */
@@ -1146,7 +1146,7 @@ export function Card(props: Props) {
         {showSpine ? (
           // Folded spine: title only, click anywhere to reveal the body
           // for the rest of the session. The editor isn't mounted until
-          // revealed, so a folded card stays cheap in a long stream.
+          // revealed, so a folded card stays cheap in a long pile.
           <button
             type="button"
             className="order-card-spine"

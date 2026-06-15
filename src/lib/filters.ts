@@ -1,7 +1,7 @@
-// Shared filter model for the Stream — used by both the desktop app
+// Shared filter model for the Pile — used by both the desktop app
 // (CardGrid) and the read-only web viewer so the two never drift.
 //
-// The Stream is one recency-ordered timeline. Filters narrow it and
+// The Pile is one recency-ordered timeline. Filters narrow it and
 // surface as pills in the left rail:
 //   - include: show only items in this folder (multiple compose OR)
 //   - exclude: hide items in this folder

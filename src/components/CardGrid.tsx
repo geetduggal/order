@@ -1,5 +1,5 @@
 // Top-level shell. Loads all seed notes once (creating files / injecting
-// calendar metadata as needed), then switches between the Stream masonry
+// calendar metadata as needed), then switches between the Pile masonry
 // and the Week calendar. Notes' metadata is the single source of truth
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
@@ -72,26 +72,26 @@ function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
-// Stream membership filter — three states, cycled by the prominent
+// Pile membership filter — three states, cycled by the prominent
 // FAB on the left rail. Persists across sessions.
 //   - "all":     ordinary notes AND Notable-Folder cards (default in-app)
 //   - "notes":   ordinary notes only
 //   - "folders": Notable-Folder main docs only (default for published home)
-export type StreamMode = "all" | "notes" | "folders";
+export type PileMode = "all" | "notes" | "folders";
 // Desktop, phone, and the published web viewer all land in "all" on
 // every fresh open — no localStorage read. In-session toggles stay
 // in React state but don't bleed into the next launch, so the
 // landing screen is always the same surface the docs talk about.
-function readStreamMode(): StreamMode { return "all"; }
-function writeStreamMode(_m: StreamMode): void { /* intentional no-op */ }
-function nextStreamMode(m: StreamMode): StreamMode {
+function readPileMode(): PileMode { return "all"; }
+function writePileMode(_m: PileMode): void { /* intentional no-op */ }
+function nextPileMode(m: PileMode): PileMode {
   // Cycle: all → notes → folders → all.
   return m === "all" ? "notes" : m === "notes" ? "folders" : "all";
 }
 
 // Every launch defaults to Week. We deliberately do NOT persist the
 // active view: the calendar surface is the home base, and a single
-// accidental Stream / Day / Month switch shouldn't quietly change
+// accidental Pile / Day / Month switch shouldn't quietly change
 // "what Order opens on" forever. Week is the right balance — a full
 // look at the upcoming week without the density of a Month grid or
 // the tunnel-vision of a single Day.
@@ -99,7 +99,7 @@ function readInitialView(): View {
   return "week";
 }
 
-// "Public only" filter: when on, the Stream shows only notes flagged
+// "Public only" filter: when on, the Pile shows only notes flagged
 // `public: true`. Off (default) shows public + private together.
 const PUBLIC_ONLY_KEY = "order.publicOnly";
 function readPublicOnly(): boolean {
@@ -220,7 +220,7 @@ function publicBaseUrl(target: string): string | null {
 
 const GRID_ROW_PX = 8;
 
-type View = "stream" | "day" | "week" | "month" | "year" | "season";
+type View = "pile" | "day" | "week" | "month" | "year" | "season";
 
 interface LoadedNote {
   /** Stable id across renames — used as React key so the Card never
@@ -402,7 +402,7 @@ export function CardGrid() {
   // Month / Year), drop all filters so the calendar lands on the full
   // vault by default. The effect re-runs only when `view` changes, so
   // filters the user adds AFTER landing on a calendar view persist
-  // until they leave or pick another scale. Stream / newspaper mode
+  // until they leave or pick another scale. Pile / newspaper mode
   // is unaffected — its filters belong to its own context.
   useEffect(() => {
     if (view === "day" || view === "week" || view === "month" || view === "year" || view === "season") {
@@ -459,7 +459,7 @@ export function CardGrid() {
   // Bumped by the home-reset to collapse every section's Show-more
   // expansion back to its first batch.
   const [collapseNonce, setCollapseNonce] = useState(0);
-  // The folder whose Main Document is pinned to the top of the Stream.
+  // The folder whose Main Document is pinned to the top of the Pile.
   // Set by clicking a filter pill or picking one in the command
   // palette. Cleared only when that folder is no longer an active
   // include — so adding it (which changes `filters`) doesn't wipe the
@@ -476,20 +476,20 @@ export function CardGrid() {
     if (!focusedPath || !notes) return;
     if (!notes.some((n) => n.path === focusedPath)) setFocusedPath(null);
   }, [notes, focusedPath]);
-  // "Notes only" toggle: hide Notable-Folder cards from the Stream and
+  // "Notes only" toggle: hide Notable-Folder cards from the Pile and
   // show ordinary notes only. Persisted; survives filter changes.
-  const [streamMode, setStreamMode] = useState<StreamMode>(readStreamMode);
-  // "Public only" toggle: show only `public: true` notes in the Stream
+  const [pileMode, setPileMode] = useState<PileMode>(readPileMode);
+  // "Public only" toggle: show only `public: true` notes in the Pile
   // (off = public + private together). Persisted; survives filter changes.
   const [publicOnly, setPublicOnly] = useState<boolean>(readPublicOnly);
-  // Stream pagination: cap initial Card mounts when nothing is filtered.
-  // Card mounts ProseMirror per note, so unbounded Streams at 10^4 notes
-  // are dead on arrival. `streamLimit = N` shows the N most-recent notes;
+  // Pile pagination: cap initial Card mounts when nothing is filtered.
+  // Card mounts ProseMirror per note, so unbounded Piles at 10^4 notes
+  // are dead on arrival. `pileLimit = N` shows the N most-recent notes;
   // a "Show more" tile bumps it. null = unbounded (e.g., the user clicked
   // "Show more" enough to get there, or a filter is active).
-  const STREAM_PAGE_SIZE = 60;
-  const [streamLimit, setStreamLimit] = useState<number | null>(STREAM_PAGE_SIZE);
-  useEffect(() => { setStreamLimit(STREAM_PAGE_SIZE); }, [filters]);
+  const PILE_PAGE_SIZE = 60;
+  const [pileLimit, setPileLimit] = useState<number | null>(PILE_PAGE_SIZE);
+  useEffect(() => { setPileLimit(PILE_PAGE_SIZE); }, [filters]);
   // Latest sorted-full list, read by the target-extend effect below
   // without forcing the effect to refire on every render (a non-memoed
   // array would cause that — we want it to fire only when a new target
@@ -521,7 +521,7 @@ export function CardGrid() {
   /** Remove a specific pill (matched by kind + ref). If this empties
    *  the filter set, behave like resetToDefault — clear collapsing
    *  signal + jump to the default Week view — so dismissing the last
-   *  pinned NF doesn't leave the cleared stream behind, which read
+   *  pinned NF doesn't leave the cleared pile behind, which read
    *  as "the close button didn't do anything" since the NF Main Doc
    *  re-rendered as a flat-grid card. */
   const removeFilter = useCallback((target: Filter) => {
@@ -546,7 +546,7 @@ export function CardGrid() {
    *  sidebar's clear-× both call this. Empty vault → no filters. */
   const resetToDefault = useCallback(() => {
     // No more home-folder seeding: clearing filters clears them. The
-    // calendar / Stream then show everything in scope (subject to the
+    // calendar / Pile then show everything in scope (subject to the
     // notes-only / public-only toggles). The default landing surface
     // is Week — same as a cold launch — so clearing also resets the
     // view there. The user can still tap a different view from the
@@ -558,24 +558,24 @@ export function CardGrid() {
     // the Show 3-state back to "all" so a leftover "notes only" or
     // "folders only" from the home view doesn't carry over and hide
     // half the calendar.
-    setStreamMode(() => { writeStreamMode("all"); return "all"; });
+    setPileMode(() => { writePileMode("all"); return "all"; });
   }, []);
   // Forward-ref binding for Cmd+' (declared earlier in the component).
   useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);
-  /** Scroll the stream to a card and pin focus on it. Single entry
+  /** Scroll the pile to a card and pin focus on it. Single entry
    *  point used by every navigation surface (sidebar tile, calendar
    *  Open, command palette, wikilink, filter-pill jump) so the
    *  "click → focused card" guarantee holds uniformly.
    *
    *  Side effect: additively include the note's Notable Folder in
-   *  the filter set. This narrows the Stream to the section that
+   *  the filter set. This narrows the Pile to the section that
    *  contains the note — newspaper mode kicks in, the NF main doc
    *  lands at the top, and the scroll target has far less mass
    *  around it to drift through. Side benefit: it doubles as a
    *  navigation breadcrumb ("you're inside Cal Newport now") that
    *  the user can dismiss with the pill's ×. */
   const navigateAndFocus = useCallback((path: string) => {
-    setView("stream");
+    setView("pile");
     const note = notesRef.current?.find((n) => n.path === path);
     if (note) {
       // Public-only is on but the target is private — drop the lens so
@@ -591,7 +591,7 @@ export function CardGrid() {
         : (noteFolder(note.frontmatter) ?? null);
       if (targetFolder) {
         // Pin the target NF at the FRONT of the include set so its
-        // newspaper section renders at the top of the Stream. Any
+        // newspaper section renders at the top of the Pile. Any
         // existing entry is moved to the front so a re-click also
         // bubbles the section back up — the include set acts as a
         // most-recently-visited stack. The just-pinned section sits
@@ -607,7 +607,7 @@ export function CardGrid() {
         // Folder-less note: pin its OWN ref so the include filter
         // narrows to just this one card. belongsTo() matches by
         // filename ref, so the note appears alone instead of getting
-        // lost in whatever the current stream happens to show.
+        // lost in whatever the current pile happens to show.
         setFilters((prev) => [
           { kind: "include", ref: ownRef },
           ...prev.filter((f) => !(f.kind === "include" && f.ref === ownRef)),
@@ -618,7 +618,7 @@ export function CardGrid() {
     setFocusPath(path);
     setFocusedPath(path);
   }, [markFolderRecent, publicOnly]);
-  /** Add an include filter AND scroll the stream to it. Bound to
+  /** Add an include filter AND scroll the pile to it. Bound to
    *  wikilink title-clicks in the list renders. Lives above the
    *  notes-loading early return so hook order is stable. */
   const navigateToRef = useCallback((ref: string) => {
@@ -641,7 +641,7 @@ export function CardGrid() {
   // includes always compose with OR). Kept as a distinct name for the
   // list-render prop contract.
   const addFolderToFilter = navigateToRef;
-  /** Pick a folder from the command palette: switch to the Stream,
+  /** Pick a folder from the command palette: switch to the Pile,
    *  add it as an include, pin its Main Document, and scroll to it —
    *  so Cmd+K lands you ON that page. */
   const focusFolder = useCallback((ref: string) => {
@@ -658,7 +658,7 @@ export function CardGrid() {
         { kind: "include", ref },
         ...prev.filter((f) => !(f.kind === "include" && f.ref === ref)),
       ]);
-      setView("stream");
+      setView("pile");
     }
   }, [navigateAndFocus]);
   /** Jump to the home Notable Folder — the one whose YAML carries
@@ -667,14 +667,14 @@ export function CardGrid() {
    *  on the home newspaper section as if Order had just opened.
    *  Falls back to plain reset if no home folder exists. */
   const goHome = useCallback(() => {
-    setView("stream");
+    setView("pile");
     setCollapseNonce((n) => n + 1);
-    // Home shows both Notable Folders AND notes (streamMode "all") —
+    // Home shows both Notable Folders AND notes (pileMode "all") —
     // matches the viewer's home and the user's mental model of "home
-    // is the whole stream filtered to my home folder." The dock
-    // streamMode cycle button still lets you narrow to one or the
+    // is the whole pile filtered to my home folder." The dock
+    // pileMode cycle button still lets you narrow to one or the
     // other within the session.
-    setStreamMode("all");
+    setPileMode("all");
     const home = homeFolderRef.current;
     if (!home) { setFilters([]); return; }
     setFilters([{ kind: "include", ref: home }]);
@@ -901,7 +901,7 @@ export function CardGrid() {
         unlisten = await listen<string[]>("vault-changed", (e) => {
           // OS-level event from the notify watcher: handle content
           // changes via the content-aware path AND force an index
-          // reload so brand-new / deleted files reach the Stream.
+          // reload so brand-new / deleted files reach the Pile.
           // (The watcher doesn't distinguish create/delete from
           // modify; reload is cheap relative to body re-reads, and
           // happens at most once per 250ms via the timer.)
@@ -1038,12 +1038,12 @@ export function CardGrid() {
   // First-ever launch (no persisted filters) seeds an `include` pill
   // for the home Notable Folder, so Order opens focused on home (its
   // Main Doc pinned, its notes below). Runs in useLayoutEffect so it
-  // lands before first paint (no flash of the unfiltered stream).
+  // lands before first paint (no flash of the unfiltered pile).
   // After the first run, the persisted set wins and the user is free
   // to add/remove pills.
   const seededDefault = useRef<boolean>(readStoredFilters() !== null);
   // Default at app open: no folder filter. The calendar shows everything
-  // dated; the Stream shows the full recency timeline. Used to seed the
+  // dated; the Pile shows the full recency timeline. Used to seed the
   // home folder as an include on first launch (and force it on every iOS
   // launch) — that's gone now, in line with letting the calendar be the
   // default landing surface and lazy-loading bodies. The persisted set
@@ -1365,7 +1365,7 @@ export function CardGrid() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
-  // Dock-view picker — pick a stream sub-mode or a calendar view
+  // Dock-view picker — pick a pile sub-mode or a calendar view
   // from a menu instead of cycling through them by repeated taps.
 
   useEffect(() => {
@@ -1495,7 +1495,16 @@ export function CardGrid() {
       }
       if (e.key === "p" || e.key === "P") {
         e.preventDefault();
-        setPublishOpen((open) => !open);
+        if (e.shiftKey) {
+          // Cmd+Shift+P → Publish (moved off Cmd+P so that key can jump
+          // to the Pile, mirroring P-for-Pile).
+          setPublishOpen((open) => !open);
+        } else {
+          // Cmd+P → the Pile: switch to the pile view and scroll to the
+          // top (newest cards), a plain view switch like Cmd+D/W/M.
+          setView("pile");
+          requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+        }
         return;
       }
       if (e.key === "n" || e.key === "N") {
@@ -1503,9 +1512,9 @@ export function CardGrid() {
         const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
         // In a calendar view, present the title prompt first (same UX
         // as drag-to-create on a slot) so the event lands with a name
-        // without having to open the note. Stream goes straight to the
+        // without having to open the note. Pile goes straight to the
         // editor as before.
-        if (view !== "stream") void promptCreateRef.current?.(patch);
+        if (view !== "pile") void promptCreateRef.current?.(patch);
         else void createNoteRef.current?.(patch);
         return;
       }
@@ -1548,12 +1557,12 @@ export function CardGrid() {
         return;
       }
       // Cmd+Ctrl+arrow navigation: forward/back by the active view's
-      // unit. Stream cycles single-folder focus through notableFolders.
+      // unit. Pile cycles single-folder focus through notableFolders.
       // Requires both Cmd and Ctrl so plain Cmd+← / → keep their
       // browser-style text-editing behaviour inside the Milkdown editor.
       if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.metaKey && e.ctrlKey) {
         const dir = e.key === "ArrowRight" ? 1 : -1;
-        if (view === "stream") {
+        if (view === "pile") {
           const list = notableFoldersRef.current;
           if (list.length === 0) return;
           e.preventDefault();
@@ -1973,7 +1982,7 @@ export function CardGrid() {
       setFocusedFolder(nf);
       markFolderRecent(nf);
     }
-    setView("stream");
+    setView("pile");
     setScrollTargetPath(path);
     setFocusPath(path);
     setFocusedPath(path);
@@ -2003,38 +2012,38 @@ export function CardGrid() {
   const moveEventToDayRef = useRef<((path: string, newDate: string) => Promise<void>) | null>(null);
 
   // Before the scroll-to-target settle timer fires, make sure the
-  // target is actually in the rendered slice. The bare-stream is
-  // paginated to STREAM_PAGE_SIZE; a newly-created note dated in the
+  // target is actually in the rendered slice. The bare-pile is
+  // paginated to PILE_PAGE_SIZE; a newly-created note dated in the
   // past — or a calendar-event Open on something off the recency
   // tail — could land outside that window, and the cell lookup
   // below would silently miss. Extend the limit to the next
-  // STREAM_PAGE_SIZE boundary that covers the target's sorted index.
+  // PILE_PAGE_SIZE boundary that covers the target's sorted index.
   useEffect(() => {
-    if (view !== "stream") return;
+    if (view !== "pile") return;
     if (filters.length > 0) return;
     const target = scrollTargetPath ?? focusPath ?? focusedPath;
     if (!target) return;
     const idx = sortedFullRef.current.findIndex((n) => n.path === target);
     if (idx < 0) return;
     const need = idx + 1;
-    setStreamLimit((cur) => {
+    setPileLimit((cur) => {
       if (cur === null) return cur;
       if (need <= cur) return cur;
-      return Math.ceil(need / STREAM_PAGE_SIZE) * STREAM_PAGE_SIZE;
+      return Math.ceil(need / PILE_PAGE_SIZE) * PILE_PAGE_SIZE;
     });
     // sortedFullRef is a mutable ref — we deliberately don't list it
     // in deps so this only fires when a new target is requested.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, scrollTargetPath, focusPath, focusedPath, filters.length]);
 
-  // After switching to Stream with a target set, scroll the matching
+  // After switching to Pile with a target set, scroll the matching
   // card into view and pulse a highlight on it. We wait long enough
   // for the masonry layout effect to compute row spans (otherwise the
   // cell's final Y is wrong) and then for the smooth scroll to start.
   // Clearing scrollTargetPath happens INSIDE the timeout so the effect's
   // cleanup doesn't cancel the timer mid-flight.
   useEffect(() => {
-    if (view !== "stream" || !scrollTargetPath) return;
+    if (view !== "pile" || !scrollTargetPath) return;
     const target = scrollTargetPath;
     let cleanedUp = false;
     const cleanups: Array<() => void> = [];
@@ -2256,14 +2265,14 @@ export function CardGrid() {
     if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
       setFilters((prev) => [...prev, { kind: "include", ref: folderRef }]);
     }
-    // Land focus + scroll on the new note. Both Stream and the
+    // Land focus + scroll on the new note. Both Pile and the
     // calendar views consume scrollTargetPath; the Card itself
     // picks up autoFocus on mount.
     setFocusPath(path);
     setScrollTargetPath(path);
     setFocusedPath(path);
     // Stay in whichever view triggered the create — calendar views
-    // re-render with the new event at its date/time; Stream sorts it
+    // re-render with the new event at its date/time; Pile sorts it
     // into place by date+startTime.
   }, []);
   // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
@@ -2272,12 +2281,12 @@ export function CardGrid() {
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
 
   /** Settings → "Open todo.txt": create the configured file if it
-   *  doesn't exist yet, then show ONLY that file in the Stream by
+   *  doesn't exist yet, then show ONLY that file in the Pile by
    *  replacing the active filter set with a single include pinned to
    *  its filename. Replacing (rather than navigateAndFocus's
    *  prepending) is important because the user is most often on the
    *  home NF when they open Settings — preserving that filter would
-   *  splash the home folder's whole stream alongside the file. */
+   *  splash the home folder's whole pile alongside the file. */
   const openTodoTxt = useCallback(async () => {
     const settings = getTodoTxtSettings();
     const relPath = settings.path || DEFAULT_TODO_TXT_PATH;
@@ -2303,7 +2312,7 @@ export function CardGrid() {
     // (belongsTo only strips `.md`), so `todo.txt` matches itself
     // exclusively.
     const ownRef = (relPath.split("/").pop() ?? relPath);
-    setView("stream");
+    setView("pile");
     setFilters([{ kind: "include", ref: ownRef }]);
     setFocusedFolder(null);
     setFocusPath(fullPath);
@@ -2452,10 +2461,10 @@ export function CardGrid() {
       setFocusPath((p) => (p === path ? newPath : p));
       setScrollTargetPath((p) => (p === path ? newPath : p));
       // Land the user inside the new NF: clear the filter pile, pin
-      // the new folder, switch to Stream, and let the existing
+      // the new folder, switch to Pile, and let the existing
       // scrollTargetPath ride the user to the moved card.
       if (folderName) {
-        setView("stream");
+        setView("pile");
         setFilters([{ kind: "include", ref: folderName }]);
         setFocusedFolder(folderName);
         markFolderRecent(folderName);
@@ -2821,10 +2830,10 @@ export function CardGrid() {
     };
   });
 
-  // Hide intermediate Area / Category list files from the Stream.
+  // Hide intermediate Area / Category list files from the Pile.
   // They're navigation infrastructure; the Sidebar drill is the
   // surface for editing them.
-  const streamCandidates = notes.filter((n) => {
+  const pileCandidates = notes.filter((n) => {
     const ref = n.filename.replace(/\.md$/, "");
     return !vaultTaxonomy.hiddenRefs.has(ref);
   });
@@ -2858,14 +2867,14 @@ export function CardGrid() {
   };
 
   const filteredNotes = ((includeRefs.length > 0 || excludeRefs.length > 0)
-    ? streamCandidates.filter(filterMatches)
-    : streamCandidates)
-    // Stream mode: "notes" drops NF cards; "folders" drops ordinary
+    ? pileCandidates.filter(filterMatches)
+    : pileCandidates)
+    // Pile mode: "notes" drops NF cards; "folders" drops ordinary
     // notes (keep only NF main docs); "all" keeps both.
     .filter((n) => {
-      if (streamMode === "all") return true;
+      if (pileMode === "all") return true;
       const isNF = isNotableFolder(n.frontmatter);
-      return streamMode === "notes" ? !isNF : isNF;
+      return pileMode === "notes" ? !isNF : isNF;
     })
     // "Public only": drop notes without `public: true` in YAML.
     .filter((n) => !publicOnly || n.frontmatter.public === true);
@@ -2877,13 +2886,13 @@ export function CardGrid() {
   // cards in a flat recency timeline.
   const singleFolderMode = includeRefs.length === 1;
 
-  // The Stream is one recency-ordered timeline (newest first), keyed
+  // The Pile is one recency-ordered timeline (newest first), keyed
   // off the note's date + startTime frontmatter.
   const sortKey = (n: LoadedNote): string => {
     // Accept both string and js-yaml Date for `date` so unquoted
     // YAML (Readwise sync, hand-typed bare dates) sorts alongside the
     // quoted strings we emit via isoDate(). Without this Readwise
-    // entries sank to the bottom of every Stream view.
+    // entries sank to the bottom of every Pile view.
     const raw = n.frontmatter.date;
     let d = "0000-00-00";
     if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
@@ -2907,7 +2916,7 @@ export function CardGrid() {
     pinnedRef !== null
     && isNotableFolder(n.frontmatter)
     && n.filename.replace(/\.md$/, "") === pinnedRef;
-  // Notable Folder Main Documents float to the top of the Stream by
+  // Notable Folder Main Documents float to the top of the Pile by
   // default — they're the "covers" of each folder and read like a
   // table of contents for the recency feed below. Alphabetical
   // among themselves (no meaningful date on an NF main doc). The
@@ -2925,15 +2934,15 @@ export function CardGrid() {
     }
     return sortKey(b).localeCompare(sortKey(a));
   });
-  // Pagination for the Stream's flat grid: with no folder filter active
+  // Pagination for the Pile's flat grid: with no folder filter active
   // we'd otherwise mount one Card per note in the vault — at 10^4 notes
   // each Milkdown editor instance kills the cold open. Cap the visible
-  // set at STREAM_PAGE_SIZE and surface a "Show more" affordance for
+  // set at PILE_PAGE_SIZE and surface a "Show more" affordance for
   // when the user wants to scroll further. Filtered views show the full
   // set (filtering already bounds the count by folder membership).
   sortedFullRef.current = sortedNotesFull;
-  const sortedNotes = streamLimit !== null && filters.length === 0
-    ? sortedNotesFull.slice(0, streamLimit)
+  const sortedNotes = pileLimit !== null && filters.length === 0
+    ? sortedNotesFull.slice(0, pileLimit)
     : sortedNotesFull;
   const hasMore = sortedNotes.length < sortedNotesFull.length;
 
@@ -3088,7 +3097,7 @@ export function CardGrid() {
   // (this includes the default single home-include view). Each
   // included folder becomes a section — its Main Document as the
   // centerpiece, its notes orbiting below, newest first. An empty or
-  // exclude-only filter falls through to the flat temporal stream.
+  // exclude-only filter falls through to the flat temporal pile.
   const MAIN_CAP = 1400;
   const NOTE_CAP = 440;
   const newspaperMode = includeRefs.length >= 1;
@@ -3152,12 +3161,12 @@ export function CardGrid() {
   const markdownCalendarNotes: NoteMeta[] = (() => {
     const out: NoteMeta[] = [];
     const seen = new Set<string>();
-    for (const n of streamCandidates) {
+    for (const n of pileCandidates) {
       if (!filterMatches(n)) continue;
       if (publicOnly && n.frontmatter.public !== true) continue;
-      if (streamMode !== "all") {
+      if (pileMode !== "all") {
         const isNF = isNotableFolder(n.frontmatter);
-        if (streamMode === "notes" ? isNF : !isNF) continue;
+        if (pileMode === "notes" ? isNF : !isNF) continue;
       }
       // Dedup overlapping events by identity so a vault with many
       // .md files sharing the same (date, startTime, title) renders
@@ -3198,7 +3207,7 @@ export function CardGrid() {
   // Identity keys for every .md calendar event in the vault — used to
   // skip todo.txt mirror lines (which look identical on disk to the
   // lines we generated for those .md events). Built from the full
-  // notes list, not the filter-passed list, so toggling Stream filters
+  // notes list, not the filter-passed list, so toggling Pile filters
   // can't make a mirror line resurface as a duplicate chip.
   const mdEventKeys = new Set<string>();
   for (const n of notes) {
@@ -3264,25 +3273,25 @@ export function CardGrid() {
 
   /** The new-note flow — extracted so the dock button can call it.
    *
-   *  Stream: same semantics as Cmd+N — the note lands in the
+   *  Pile: same semantics as Cmd+N — the note lands in the
    *  top-of-pile Notable Folder (createNote resolves pile top → home)
    *  and the existing filter pile is left alone.
    *
    *  Calendar views: jump home — create in the home NF, pin the
-   *  filter to it, land in its stream with the cursor in the new
+   *  filter to it, land in its pile with the cursor in the new
    *  card. A calendar has no pile context, so home is the one
    *  predictable destination. */
   const handleNewNote = () => {
-    if (streamMode === "folders") {
-      setStreamMode(() => { writeStreamMode("all"); return "all"; });
+    if (pileMode === "folders") {
+      setPileMode(() => { writePileMode("all"); return "all"; });
     }
     const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
-    if (view === "stream") {
+    if (view === "pile") {
       void createNote(patch);
       return;
     }
     const home = homeFolderRef.current;
-    setView("stream");
+    setView("pile");
     if (home) {
       setFilters([{ kind: "include", ref: home }]);
       setFocusedFolder(home);
@@ -3310,21 +3319,21 @@ export function CardGrid() {
         {(() => {
           // Show-mode cycle button: tap cycles all → notes → folders → all.
           // Single-purpose so the dock control reads as a 3-state toggle,
-          // not a popover. View selection (Day/Week/Month/Year/Stream)
+          // not a popover. View selection (Day/Week/Month/Year/Pile)
           // moves to the keyboard (Cmd+S/D/W/M/Y).
-          const nextMode = streamMode === "all" ? "notes" : streamMode === "notes" ? "folders" : "all";
-          const Icon = streamMode === "folders" ? FolderIcon : streamMode === "notes" ? FileText : Files;
-          const label = streamMode === "all"
+          const nextMode = pileMode === "all" ? "notes" : pileMode === "notes" ? "folders" : "all";
+          const Icon = pileMode === "folders" ? FolderIcon : pileMode === "notes" ? FileText : Files;
+          const label = pileMode === "all"
             ? "Showing all · tap for notes only"
-            : streamMode === "notes"
+            : pileMode === "notes"
               ? "Showing notes only · tap for notable folders only"
               : "Showing notable folders only · tap for all";
           return (
             <button
               type="button"
-              className={`dock-btn dock-btn-stream-mode is-${streamMode}`}
+              className={`dock-btn dock-btn-pile-mode is-${pileMode}`}
               onClick={() => {
-                setStreamMode(() => { writeStreamMode(nextMode); return nextMode; });
+                setPileMode(() => { writePileMode(nextMode); return nextMode; });
               }}
               title={label}
               aria-label={label}
@@ -3342,7 +3351,7 @@ export function CardGrid() {
           const home = homeFolderRef.current;
           const noFilters = filters.length === 0;
           const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
-          const isAtHome = homeFiltered && view === "stream";
+          const isAtHome = homeFiltered && view === "pile";
           const isAtCalendar = noFilters && view === "week";
           const stateClass = isAtHome
             ? " is-at-home"
@@ -3483,7 +3492,7 @@ export function CardGrid() {
                 className="new-note-picker-item"
                 onClick={() => {
                   setCreatorOpen(false);
-                  const create = view !== "stream" ? promptCreate : createNote;
+                  const create = view !== "pile" ? promptCreate : createNote;
                   void create({
                     date: isoDate(), startTime: isoTime(), allDay: false,
                     folder: `[[${name}]]`,
@@ -3499,7 +3508,7 @@ export function CardGrid() {
       )}
 
       <main className="pane-main">
-        {view === "stream" && (
+        {view === "pile" && (
           newspaperMode ? (
             <div className="nf-sections">
               {sections.map((s) => (
@@ -3540,11 +3549,11 @@ export function CardGrid() {
                 })}
               </div>
               {hasMore && (
-                <div className="stream-show-more-wrap">
+                <div className="pile-show-more-wrap">
                   <button
                     type="button"
-                    className="stream-show-more"
-                    onClick={() => setStreamLimit((cur) => (cur ?? 0) + STREAM_PAGE_SIZE)}
+                    className="pile-show-more"
+                    onClick={() => setPileLimit((cur) => (cur ?? 0) + PILE_PAGE_SIZE)}
                     title={`Showing ${sortedNotes.length} of ${sortedNotesFull.length}`}
                   >
                     Show more ({sortedNotesFull.length - sortedNotes.length} left)
@@ -3630,7 +3639,7 @@ export function CardGrid() {
           onSelectView={setView}
           folders={notableFolders}
           // Sidebar folder click is a real toggle now: filtered → unfilter
-          // (drop the include pill); not filtered → switch to the Stream,
+          // (drop the include pill); not filtered → switch to the Pile,
           // add the include, and scroll to the NF's main doc.
           selected={includeSet}
           onToggle={(ref) => {
@@ -3675,7 +3684,7 @@ export function CardGrid() {
                 setFocusedFolder(ref);
                 const path = notePathByRef(ref);
                 if (path) navigateAndFocus(path);
-                else setView("stream");
+                else setView("pile");
               }}
             />
           )}
@@ -3804,7 +3813,7 @@ export function CardGrid() {
           eventDate={view === "week" || view === "day" || view === "year" ? eventMenu.date : null}
           // Notable Folder picker: current + the same list the card-footer
           // picker uses, so the gesture is consistent with what's in the
-          // Stream's notes.
+          // Pile's notes.
           currentFolder={eventMenu.folder}
           availableFolders={availableFolderRefs}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
@@ -3844,6 +3853,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   const rows: { keys: string; label: string }[] = [
     { keys: `${cmd} N`, label: "New note (popup with title in calendar views)" },
+    { keys: `${cmd} P`, label: "Pile view (top of pile)" },
     { keys: `${cmd} D / W / M / Y / S`, label: "Day / Week / Month / Year / Season view" },
     { keys: `${cmd} ⌃ ←  /  →`, label: "Back / forward by the view's unit" },
     { keys: `${cmd} O  ·  ${cmd} K`, label: "Folder palette (folders + todo.txt)" },
@@ -3851,7 +3861,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} R`, label: "Home ⇄ clear-filters toggle" },
     { keys: `${cmd} 4`, label: "Terminal in the focused folder ($ on 4)" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
-    { keys: `${cmd} P`, label: "Publish panel" },
+    { keys: `${cmd} ⇧ P`, label: "Publish panel" },
     { keys: `${cmd} T`, label: "Cycle theme" },
     { keys: `${cmd} '`, label: "Clear all filters" },
     { keys: `${cmd} +  /  −  /  0`, label: "Note text size · grow / shrink / reset" },
@@ -3879,7 +3889,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
 }
 
 /** Small popup at the cursor for a clicked calendar event. Open switches
- *  to Stream and scrolls to the note; Delete removes the file. Backdrop
+ *  to Pile and scrolls to the note; Delete removes the file. Backdrop
  *  click or Esc dismisses. */
 function EventActionMenu({
   title, x, y, eventDate, currentFolder, availableFolders,

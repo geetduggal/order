@@ -444,7 +444,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 }
 /* Card mount fade. Originally a 320ms opacity+translate+scale entrance,
    but with pile-based navigation pinning a fresh section to the top of
-   the Stream on every click, all of that section's cards replay the
+   the Pile on every click, all of that section's cards replay the
    animation together — combined with the existing sections shifting
    down underneath, it reads as a full-screen "blink". A short opacity
    fade keeps the visual cue of "something new appeared" without the
@@ -1585,7 +1585,7 @@ iframe.order-youtube-embed {
 }
 
 .pane-right {
-  /* Stick to the top of the viewport while the stream scrolls — sidebar
+  /* Stick to the top of the viewport while the pile scrolls — sidebar
      content stays in place; its own overflow scrolls independently when
      the drill list outgrows the viewport. */
   position: sticky;
@@ -2201,7 +2201,7 @@ iframe.order-youtube-embed {
 /* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
 .fc-shell {
   padding: 8px clamp(16px, 4vw, 40px) 80px;
-  /* Full-bleed like the Year strip and the Stream — a wide monitor
+  /* Full-bleed like the Year strip and the Pile — a wide monitor
      gets wide day columns instead of a centered 1400px island. */
   max-width: none;
   margin: 0 auto;
@@ -2554,7 +2554,7 @@ iframe.order-youtube-embed {
   max-width: none;
   margin: 0 auto;
   font-family: var(--sans);
-  /* Cmd+± / dock zoom: same --text-scale the Stream and the FC views
+  /* Cmd+± / dock zoom: same --text-scale the Pile and the FC views
      honor. Inner sizes are em so labels, day numbers, and event bars
      all ride the base. */
   font-size: calc(13px * var(--text-scale, 1));
@@ -2771,7 +2771,7 @@ iframe.order-youtube-embed {
 .year-event-title { display: block; }
 
 /* ---------- Bottom hovering dock ----------
-   Six controls — new note, stream-mode toggle, public/private, search,
+   Six controls — new note, pile-mode toggle, public/private, search,
    settings (popup), sidebar toggle — centered along the bottom of the
    viewport. z-index sits ABOVE the sidebar so the dock is always
    reachable, even with the sidebar open. */
@@ -2945,28 +2945,28 @@ iframe.order-youtube-embed {
   text-align: center;
 }
 
-/* Stream-mode is the visual anchor of the dock. Per-state accents
+/* Pile-mode is the visual anchor of the dock. Per-state accents
    distinguish notes-only / folders-only / all at a glance, with a
    solid fill so the glyph reads from across the room. */
-.dock-btn-stream {
+.dock-btn-pile {
   color: var(--ink);
   border-width: 1.5px;
   border-color: var(--royal);
 }
-.dock-btn-stream svg { fill: currentColor; fill-opacity: 0.85; }
-.dock-btn-stream.is-folders {
+.dock-btn-pile svg { fill: currentColor; fill-opacity: 0.85; }
+.dock-btn-pile.is-folders {
   color: #fff;
   background: var(--royal);
   border-color: var(--royal);
 }
-.dock-btn-stream.is-folders:hover { color: #fff; background: var(--royal); }
-.dock-btn-stream.is-notes {
+.dock-btn-pile.is-folders:hover { color: #fff; background: var(--royal); }
+.dock-btn-pile.is-notes {
   color: #fff;
   background: var(--coral);
   border-color: var(--coral);
 }
-.dock-btn-stream.is-notes:hover { color: #fff; background: var(--coral); }
-.dock-btn-stream.is-all {
+.dock-btn-pile.is-notes:hover { color: #fff; background: var(--coral); }
+.dock-btn-pile.is-all {
   color: var(--ink);
   background: var(--bg);
   border-color: var(--rule);
@@ -3216,7 +3216,7 @@ iframe.order-youtube-embed {
   tab-size: 4;
   /* iOS scrolling: momentum + treat the textarea as its own scroll
      surface so a sideways flick inside it doesn't fight the outer
-     stream scroll. */
+     pile scroll. */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
@@ -3641,15 +3641,15 @@ iframe.order-youtube-embed {
 .publish-status.is-err { color: var(--coral, #ff7f50); white-space: pre-wrap; }
 
 /* ---------- Cap-reached toast ---------- */
-/* Stream pagination: a single full-width button beneath the flat grid
+/* Pile pagination: a single full-width button beneath the flat grid
    that loads another page of notes. Shown only when the unfiltered set
-   exceeds STREAM_PAGE_SIZE; vanishes once the cap is lifted. */
-.stream-show-more-wrap {
+   exceeds PILE_PAGE_SIZE; vanishes once the cap is lifted. */
+.pile-show-more-wrap {
   display: flex;
   justify-content: center;
   margin: 16px 0 64px;
 }
-.stream-show-more {
+.pile-show-more {
   font-family: var(--sans);
   font-size: 12px;
   letter-spacing: 0.02em;
@@ -3661,7 +3661,7 @@ iframe.order-youtube-embed {
   cursor: pointer;
   transition: color 0.12s var(--ease-out), border-color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
-.stream-show-more:hover {
+.pile-show-more:hover {
   color: var(--royal);
   border-color: var(--royal);
   background: var(--royal-soft);
@@ -5294,7 +5294,7 @@ iframe.order-youtube-embed {
 /* Card / preview view (not fullscreen): crop a large image to a clean
    banner so an image note isn't dominated by whitespace. Fullscreen still
    shows the whole image (object-fit: contain, above). Tune the aspect to
-   taste. Applies in both the app and the published stream. */
+   taste. Applies in both the app and the published pile. */
 .order-card:not(.is-fullscreen) .milkdown-image-block > .image-wrapper {
   width: 100%;
   display: block;

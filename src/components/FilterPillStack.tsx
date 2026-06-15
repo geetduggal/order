@@ -3,7 +3,7 @@
 // pills below it. Each pill is a compact folder icon that expands on
 // hover to reveal the folder name + a remove ×. Clicking the icon body
 // focuses that folder (pins its Main Document to the top of the
-// Stream); clicking × removes the pill. Shared by app + web viewer.
+// Pile); clicking × removes the pill. Shared by app + web viewer.
 
 import { Search as SearchIcon, X as XIcon, FilterX } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";

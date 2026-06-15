@@ -119,12 +119,12 @@ suite). Five mechanisms carry it:
    when scrolled within ~1.5 viewports above / 3 below. Once mounted it
    stays mounted, so in-progress edits never get torn down by scrolling.
 
-3. **Pagination before virtualization.** The unfiltered Stream caps at
+3. **Pagination before virtualization.** The unfiltered Pile caps at
    60 cards with a "Show more" tile; filters lift the cap because a
    filtered set is small by construction. Combined with LazyCell this
    means cold boot mounts a handful of editors, not thousands.
 
-4. **Masonry without layout thrash.** The Stream is CSS Grid with 8 px
+4. **Masonry without layout thrash.** The Pile is CSS Grid with 8 px
    auto-rows; each cell's `grid-row-end: span N` comes from its measured
    height. Re-measure triggers are scoped — a per-card ResizeObserver,
    a ProseMirror MutationObserver, and a capturing input listener as
@@ -157,7 +157,7 @@ camel / snake case (`lib/folders.ts: resolveProjectToNf`).
 
 ## UI flows worth knowing
 
-**+ button.** In the Stream it behaves like Cmd+N: the note lands in
+**+ button.** In the Pile it behaves like Cmd+N: the note lands in
 the top-of-pile Notable Folder (falling back to home) and the filter
 pile is left alone. From any calendar view it jumps home — creates in
 the home NF, pins the filter, lands the cursor in the new card.

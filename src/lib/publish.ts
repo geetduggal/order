@@ -71,7 +71,7 @@ export interface PublishedSite {
     areas: { ref: string; categories: { ref: string; folders: string[] }[] }[];
   };
   /** Refs of intermediate Area / Category list files — the viewer
-   *  hides them from the Stream like Order does. */
+   *  hides them from the Pile like Order does. */
   hiddenRefs: string[];
   /** slug → ref, so a permalinked page can deep-link the viewer to the
    *  right note/folder from its URL. */

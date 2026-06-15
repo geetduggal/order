@@ -26,9 +26,9 @@ test("1a — + from a calendar view creates in the home NF and jumps to it", asy
   expect(Date.now() - t0, "create+jump is snappy").toBeLessThan(SNAPPY_MS + 500);
 });
 
-test("1a — + in the Stream creates in the top-of-pile NF, filters untouched", async ({ page }) => {
+test("1a — + in the Pile creates in the top-of-pile NF, filters untouched", async ({ page }) => {
   await bootVault(page);
-  // Pin Side Quest via the palette — Stream view, pile top = Side Quest.
+  // Pin Side Quest via the palette — Pile view, pile top = Side Quest.
   await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
   await page.fill(".cmdk-input", "Side Quest");
   await page.keyboard.press("Enter");
@@ -56,7 +56,7 @@ test("1b — moving an event to another NF switches filter and jumps", async ({ 
   const t0 = Date.now();
   await page.click(".event-action-folder-option:has-text('Side Quest')");
 
-  // Filter pinned to the destination NF, stream view, note moved on disk.
+  // Filter pinned to the destination NF, pile view, note moved on disk.
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
   await expect.poll(async () => {
     const files = await page.evaluate(() => Object.keys((window as any).__VAULT__.files));
@@ -72,7 +72,7 @@ test("1c — dock toggle: home ⇄ week with no filters", async ({ page }) => {
 
   let t0 = Date.now();
   await page.click(".dock-btn-home");
-  // → Home: stream view, single include pill on the home NF.
+  // → Home: pile view, single include pill on the home NF.
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
   expect(Date.now() - t0, "go-home is snappy").toBeLessThan(SNAPPY_MS);
 
@@ -113,7 +113,7 @@ test("folded — note renders as a spine, click reveals the body", async ({ page
   await bootVault(page);
   await page.click(".dock-btn-home");
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
-  await page.click(".dock-btn-stream-mode"); // show leaf notes
+  await page.click(".dock-btn-pile-mode"); // show leaf notes
 
   // The folded note shows its spine (title + "folded" tag), not the body.
   const spine = page.locator(".order-card-spine", { hasText: "Secret Plan" });
@@ -149,7 +149,7 @@ test("1f — image paste lands in the note's NF directory (Milkdown)", async ({ 
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
   // Home defaults to "Notable folders only" — flip Show to all so the
   // leaf notes (Gallery, Standup) render as cards.
-  await page.click(".dock-btn-stream-mode");
+  await page.click(".dock-btn-pile-mode");
 
   // Paste into the Gallery card's editor.
   const editor = page.locator(".order-card", { hasText: "Gallery" }).locator(".ProseMirror").first();
@@ -219,7 +219,7 @@ test("1g — links open through the OS, never in-app", async ({ page }) => {
   await bootVault(page);
   await page.click(".dock-btn-home");
   // Show leaf notes (home defaults to folders-only).
-  await page.click(".dock-btn-stream-mode");
+  await page.click(".dock-btn-pile-mode");
 
   // The Standup note body carries [docs](https://example.com/agenda).
   const link = page.locator(".order-card:has-text('Standup') .ProseMirror a[href*='example.com']").first();

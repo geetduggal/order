@@ -12,7 +12,7 @@ import "@xterm/xterm/css/xterm.css";
 import { getTextScale } from "../lib/text-scale";
 
 // Base cell size in px at 1.0 zoom. The terminal font follows the same
-// --text-scale the Stream / calendar use (Cmd ± / dock zoom), so a
+// --text-scale the Pile / calendar use (Cmd ± / dock zoom), so a
 // command's output grows and shrinks with everything else.
 const BASE_FONT_PX = 12;
 

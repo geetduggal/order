@@ -43,13 +43,13 @@ map of a life than a project list will ever be.
 
 ## The newspaper template
 
-The Stream is dynamic on purpose — it's the work surface. But the
+The Pile is dynamic on purpose — it's the work surface. But the
 moment you focus on a Notable Folder, a fixed template takes over: Main
 Document as a wide centerpiece, recent notes orbiting it, a hairline
 divider before the next section. The motivation is liturgical. A
 newspaper has weight — when you pick it up you're *arriving* somewhere,
 and the sections sit in known positions every time. Two modes, each
-suited to its purpose: a fluid stream for working, a still page for
+suited to its purpose: a fluid pile for working, a still page for
 reading.
 
 ## Pile-based navigation

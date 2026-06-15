@@ -1,7 +1,7 @@
 // Full-text search overlay. Cmd+F (or '/') opens a centered input
 // over the page; as the user types, a debounced Rust call returns
 // up to N matching notes with a snippet around the first match.
-// Click a result to navigate to that note in the Stream.
+// Click a result to navigate to that note in the Pile.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search as SearchIcon, X as XIcon, RotateCw } from "lucide-react";

@@ -3,7 +3,7 @@
 *Your notes, at home at last.*
 
 A local-first notebook where **plain markdown files are the database**
-and every surface — stream, calendar, seasons, todo.txt — is a
+and every surface — pile, calendar, seasons, todo.txt — is a
 different read of the same files. Obsidian-compatible vault. One Tauri
 codebase ships desktop and iOS.
 
@@ -70,7 +70,7 @@ Everything opens unchanged in Obsidian: same wikilinks, same
 
 ## The surfaces
 
-**Stream.** A masonry of editable cards, newest first. Focus on a
+**Pile.** A masonry of editable cards, newest first. Focus on a
 Notable Folder and it becomes a *newspaper section* — Main Document as
 the centerpiece, recent notes orbiting it. Navigation is a pile: the
 folder you touch goes on top.
@@ -139,13 +139,14 @@ reorganizing the vault never breaks a link.
 | Keys | Action |
 |---|---|
 | `⌘N` | new note (title popup in calendar views) |
+| `⌘P` | pile view (top of pile) |
 | `⌘D / W / M / Y / S` | Day / Week / Month / Year / Season |
 | `⌘⌃ ← / →` | back / forward by the view's unit |
 | `⌘O` · `⌘K` | folder palette (folders + todo.txt) |
 | `⌘F` · `/` | full-text search |
 | `⌘R` | home ⇄ clear-filters toggle |
 | `⌘4` | toggle the in-card terminal for the focused folder (`$` lives on the 4) |
-| `⌘;` | sidebar · `⌘'` clear filters · `⌘T` theme · `⌘P` publish |
+| `⌘;` | sidebar · `⌘'` clear filters · `⌘T` theme · `⌘⇧P` publish |
 | `⌘+ / − / 0` | note text size |
 | `?` | shortcut overlay |
 

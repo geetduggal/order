@@ -1,6 +1,6 @@
 // Root of the read-only web viewer. It mirrors Order's desktop app
-// 1:1 — same Stream, same filter-pill model, same Card component —
-// just read-only. There is one screen (the Stream) plus the calendar
+// 1:1 — same Pile, same filter-pill model, same Card component —
+// just read-only. There is one screen (the Pile) plus the calendar
 // views; filtering is managed exclusively through the left-rail pills,
 // identical to CardGrid.
 
@@ -22,7 +22,7 @@ import type { ListNoteRef } from "../src/lib/list-folder";
 import { useGridLayout } from "../src/lib/grid-layout";
 import { folderColor } from "../src/lib/folders";
 
-type View = "stream" | "day" | "week" | "month" | "year" | "season";
+type View = "pile" | "day" | "week" | "month" | "year" | "season";
 
 export function ViewerApp(
   { data, initialSlug, basePath = "/" }:
@@ -93,7 +93,7 @@ export function ViewerApp(
   // Sidebar hidden by default — viewers shouldn't get a wall of UI on
   // first paint. Toggle via the › / ‹ button or Cmd+;.
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [view, setView] = useState<View>("stream");
+  const [view, setView] = useState<View>("pile");
   // Bumped by resetToDefault to collapse Show-more expansions.
   const [collapseNonce, setCollapseNonce] = useState(0);
   // Light/dark theme — rail moon/sun button toggles it.
@@ -101,7 +101,7 @@ export function ViewerApp(
   const textScale = useTextScale();
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   // View picker — same shape as the desktop app's: two parallel
-  // selections (View: stream/day/week/month/year, Show: all/notes/
+  // selections (View: pile/day/week/month/year, Show: all/notes/
   // folders).
 
   // Outside-click closes each popup.
@@ -131,11 +131,11 @@ export function ViewerApp(
   // Single-note permalink mode: a note's permalink renders only that note.
   // Set on arrival (a note page, with no ?f= override); cleared on any
   // filter change so exploring (folder chip, links, pills) returns to the
-  // normal stream.
+  // normal pile.
   const [singleNoteRef, setSingleNoteRef] = useState<string | null>(
     deeplink && deeplink.scroll && fromSearch.length === 0 ? deeplink.scroll : null,
   );
-  // The folder whose Main Document is pinned to the top of the Stream.
+  // The folder whose Main Document is pinned to the top of the Pile.
   // Set by clicking a pill or picking one in the palette. Cleared only
   // when it's no longer an active include, so adding it doesn't wipe
   // the focus we just set.
@@ -148,15 +148,15 @@ export function ViewerApp(
   // Ref of the card to smooth-scroll to (+ coral flash). Cleared once
   // the scroll fires. Seeded from a note-page deep-link.
   const [scrollTarget, setScrollTarget] = useState<string | null>(deeplink?.scroll ?? null);
-  // Stream mode — three states the prominent rail FAB cycles through.
+  // Pile mode — three states the prominent rail FAB cycles through.
   // The published viewer always lands in "all" (ordinary notes AND
   // Notable-Folder cards), no localStorage read — every visit gets the
   // same predictable landing. The in-session toggle still cycles freely;
   // it just doesn't bleed into the next page load.
-  type StreamMode = "all" | "notes" | "folders";
-  const [streamMode, setStreamMode] = useState<StreamMode>("all");
-  const setStreamModePersist = (m: StreamMode) => {
-    setStreamMode(m);
+  type PileMode = "all" | "notes" | "folders";
+  const [pileMode, setPileMode] = useState<PileMode>("all");
+  const setPileModePersist = (m: PileMode) => {
+    setPileMode(m);
   };
 
   // Recently-pinned Notable Folders, most-recent first. The command
@@ -225,7 +225,7 @@ export function ViewerApp(
   }
   function resetToDefault() {
     // Match the desktop app: clear filters AND pin Week. A bare
-    // viewer stream with no filter renders every NF cover as a flat
+    // viewer pile with no filter renders every NF cover as a flat
     // wall — confusing for a visitor and inconsistent with what the
     // dock Home button does on desktop. Week is the canonical
     // empty-filter landing surface across both surfaces now.
@@ -239,7 +239,7 @@ export function ViewerApp(
   // URL. The Sidebar / Cmd+K palette still use addInclude / focusFolder
   // for the explicit "build up a multi-folder filter" workflow.
   function navigate(ref: string) {
-    setView("stream");
+    setView("pile");
     const note = data.notes.find((n) => n.ref === ref);
     if (note && note.slug) {
       // Pile-based navigation: move the target NF to the FRONT of
@@ -269,7 +269,7 @@ export function ViewerApp(
   // Command palette pick → like navigate, but also pins the folder's
   // Main Document so Cmd+K lands you ON that page.
   function focusFolder(ref: string) {
-    setView("stream");
+    setView("pile");
     pinToFront(ref);
     setFocusedFolder(ref);
     setScrollTarget(ref);
@@ -332,7 +332,7 @@ export function ViewerApp(
     a.categories.map((c) => ({ area: a.ref, name: c.ref })),
   );
 
-  // ---- Stream filtering + sort (mirrors CardGrid) ----
+  // ---- Pile filtering + sort (mirrors CardGrid) ----
   const hidden = useMemo(
     () => new Set(data.hiddenRefs.map((r) => r.toLowerCase())),
     [data.hiddenRefs],
@@ -351,11 +351,11 @@ export function ViewerApp(
       if (hidden.has(n.ref.toLowerCase())) return false;
       if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
-      // Stream mode: "notes" drops NF cards; "folders" drops ordinary
+      // Pile mode: "notes" drops NF cards; "folders" drops ordinary
       // notes (keep only NF main docs, which carry a `category`); "all"
       // keeps both.
-      if (streamMode === "notes" && !!n.category) return false;
-      if (streamMode === "folders" && !n.category) return false;
+      if (pileMode === "notes" && !!n.category) return false;
+      if (pileMode === "folders" && !n.category) return false;
       return true;
     });
     // Single-folder mode pins that folder's Main Doc to the top (its
@@ -367,7 +367,7 @@ export function ViewerApp(
       return `${d} ${t}`;
     };
     const isPinned = (n: PublishedNote) => !!n.category && pinnedRef !== null && n.ref === pinnedRef;
-    // Notable Folder Main Documents float to the top of the Stream
+    // Notable Folder Main Documents float to the top of the Pile
     // by default — they're the "covers" of each folder and read
     // like a table of contents for the recency feed below. The
     // pinned folder cover (single-folder mode) sits above them.
@@ -382,22 +382,22 @@ export function ViewerApp(
       return dateKey(b).localeCompare(dateKey(a));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.notes, hidden, filters, focusedFolder, streamMode]);
+  }, [data.notes, hidden, filters, focusedFolder, pileMode]);
 
   // Calendar projection from the same filtered set. The Show 3-state
   // toggle now applies here too so the dock's left button drives
-  // both the Stream and the calendar.
+  // both the Pile and the calendar.
   const calendarFeed = useMemo(
     () => data.notes.filter((n) => {
       if (hidden.has(n.ref.toLowerCase())) return false;
       if (includeRefs.length > 0 && !includeRefs.some((r) => belongsTo(n, r))) return false;
       if (excludeRefs.some((r) => belongsTo(n, r))) return false;
-      if (streamMode === "notes" && !!n.category) return false;
-      if (streamMode === "folders" && !n.category) return false;
+      if (pileMode === "notes" && !!n.category) return false;
+      if (pileMode === "folders" && !n.category) return false;
       return true;
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.notes, hidden, filters, streamMode],
+    [data.notes, hidden, filters, pileMode],
   );
   const calendarNotes: NoteMeta[] = useMemo(
     () => calendarFeed.map((n) => ({
@@ -410,8 +410,8 @@ export function ViewerApp(
     [calendarFeed],
   );
   // Calendar event click — open the note's permalink. The previous
-  // "scroll to it in the Stream" flow silently failed whenever the
-  // note's folder wasn't in the current filter pile (the Stream
+  // "scroll to it in the Pile" flow silently failed whenever the
+  // note's folder wasn't in the current filter pile (the Pile
   // didn't render the card, so there was nothing to scroll to).
   // The note permalink (singleNoteRef) is the dedicated "read just
   // this one" surface, which works regardless of which folders are
@@ -420,7 +420,7 @@ export function ViewerApp(
     const ref = path.replace(/\.md$/i, "").replace(/^.*\//, "");
     const note = data.notes.find((n) => n.ref === ref);
     if (!note) return;
-    setView("stream");
+    setView("pile");
     if (note.category) {
       // Folder Main Doc → pin its include and scroll there.
       const next: Filter[] = [
@@ -457,7 +457,7 @@ export function ViewerApp(
   // - re-toggle .is-target with a forced reflow so a re-jump replays
   //   the pulse animation.
   useEffect(() => {
-    if (view !== "stream" || !scrollTarget) return;
+    if (view !== "pile" || !scrollTarget) return;
     const target = scrollTarget.toLowerCase();
     let cancelled = false;
     let attempts = 0;
@@ -516,21 +516,21 @@ export function ViewerApp(
   return (
     <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
       {/* Bottom dock — viewer doesn't have new-note or publish, so
-          just stream-mode + search. */}
+          just pile-mode + search. */}
       <div className="bottom-dock" role="toolbar" aria-label="Main controls">
         {(() => {
-          const nextMode = streamMode === "all" ? "notes" : streamMode === "notes" ? "folders" : "all";
-          const Icon = streamMode === "folders" ? FolderIcon : streamMode === "notes" ? FileText : Files;
-          const label = streamMode === "all"
+          const nextMode = pileMode === "all" ? "notes" : pileMode === "notes" ? "folders" : "all";
+          const Icon = pileMode === "folders" ? FolderIcon : pileMode === "notes" ? FileText : Files;
+          const label = pileMode === "all"
             ? "Showing all · tap for notes only"
-            : streamMode === "notes"
+            : pileMode === "notes"
               ? "Showing notes only · tap for notable folders only"
               : "Showing notable folders only · tap for all";
           return (
             <button
               type="button"
-              className={`dock-btn dock-btn-stream-mode is-${streamMode}`}
-              onClick={() => setStreamModePersist(nextMode)}
+              className={`dock-btn dock-btn-pile-mode is-${pileMode}`}
+              onClick={() => setPileModePersist(nextMode)}
               title={label}
               aria-label={label}
             >
@@ -542,7 +542,7 @@ export function ViewerApp(
           const home = data.home?.name ?? null;
           const noFilters = filters.length === 0;
           const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
-          const isAtHome = homeFiltered && view === "stream";
+          const isAtHome = homeFiltered && view === "pile";
           const isAtCalendar = noFilters && view === "week";
           const stateClass = isAtHome
             ? " is-at-home"
@@ -562,7 +562,7 @@ export function ViewerApp(
               resetToDefault();
             } else if (home) {
               commitFilters([{ kind: "include", ref: home }]);
-              setView("stream");
+              setView("pile");
               navigate(home);
             } else {
               resetToDefault();
@@ -650,8 +650,8 @@ export function ViewerApp(
       )}
 
       <main className="pane-main">
-        {view === "stream" && (
-          <StreamView
+        {view === "pile" && (
+          <PileView
             notes={visible}
             data={data}
             basePath={basePath}
@@ -713,7 +713,7 @@ export function ViewerApp(
               onRemove={removeFilter}
               onClear={resetToDefault}
               onJump={(ref) => {
-                setView("stream");
+                setView("pile");
                 pinToFront(ref);
                 setFocusedFolder(ref);
                 setScrollTarget(ref);
@@ -736,12 +736,12 @@ export function ViewerApp(
   );
 }
 
-// ---------- Stream view ----------
+// ---------- Pile view ----------
 
 const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
-function StreamView({
+function PileView({
   notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
 }: {
   notes: PublishedNote[];
@@ -757,7 +757,7 @@ function StreamView({
   /** When set, render ONLY this note (a single-note permalink). */
   soloRef?: string | null;
   /** Ref of a note the parent is about to scroll-target — used to
-   *  extend the bare-stream pagination window when the target lives
+   *  extend the bare-pile pagination window when the target lives
    *  past the default cap. */
   scrollTarget?: string | null;
 }) {
@@ -870,7 +870,7 @@ function StreamView({
   // first paint and a seamless scroll-to-load tail instead of a
   // synchronous wall of cells.
   return (
-    <BareStreamGrid
+    <BarePileGrid
       notes={notes}
       setGridEl={setGridEl}
       cardNode={cardNode}
@@ -879,9 +879,9 @@ function StreamView({
   );
 }
 
-const STREAM_PAGE_SIZE = 60;
+const PILE_PAGE_SIZE = 60;
 
-function BareStreamGrid({
+function BarePileGrid({
   notes,
   setGridEl,
   cardNode,
@@ -895,24 +895,24 @@ function BareStreamGrid({
    *  mounts before the parent's rAF poll gives up. */
   scrollTarget: string | null;
 }) {
-  const [limit, setLimit] = useState(STREAM_PAGE_SIZE);
+  const [limit, setLimit] = useState(PILE_PAGE_SIZE);
   // Reset paging when the underlying list changes (filter toggle,
-  // stream-mode flip). Keying off length is enough — sort is stable
+  // pile-mode flip). Keying off length is enough — sort is stable
   // upstream, so identity tracking would just be churn.
-  useEffect(() => { setLimit(STREAM_PAGE_SIZE); }, [notes.length]);
+  useEffect(() => { setLimit(PILE_PAGE_SIZE); }, [notes.length]);
 
   // Extend the window to include any requested scroll-target. The
   // upstream sort is most-recent-first, so a note dated weeks back
   // sits past the cap; without this bump, the parent's rAF poll
   // looking for `.card-grid-cell[data-path=…]` finds nothing and
-  // gives up. Round up to the next STREAM_PAGE_SIZE boundary so the
+  // gives up. Round up to the next PILE_PAGE_SIZE boundary so the
   // tail keeps its predictable batch size.
   useEffect(() => {
     if (!scrollTarget) return;
     const idx = notes.findIndex((n) => n.ref === scrollTarget);
     if (idx < 0) return;
     const need = idx + 1;
-    setLimit((cur) => (need <= cur ? cur : Math.ceil(need / STREAM_PAGE_SIZE) * STREAM_PAGE_SIZE));
+    setLimit((cur) => (need <= cur ? cur : Math.ceil(need / PILE_PAGE_SIZE) * PILE_PAGE_SIZE));
   }, [scrollTarget, notes]);
 
   const visibleSlice = notes.slice(0, limit);
@@ -928,7 +928,7 @@ function BareStreamGrid({
     const el = sentinelRef.current;
     const io = new IntersectionObserver(
       ([e]) => {
-        if (e.isIntersecting) setLimit((cur) => Math.min(cur + STREAM_PAGE_SIZE, notes.length));
+        if (e.isIntersecting) setLimit((cur) => Math.min(cur + PILE_PAGE_SIZE, notes.length));
       },
       { rootMargin: "1500px 0px 1500px 0px" },
     );
@@ -948,7 +948,7 @@ function BareStreamGrid({
       {hasMore && (
         <div
           ref={sentinelRef}
-          className="stream-load-sentinel"
+          className="pile-load-sentinel"
           aria-hidden="true"
           data-remaining={notes.length - limit}
         />

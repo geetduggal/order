@@ -8,7 +8,7 @@
 // row in its month-strip that doesn't conflict horizontally.
 //
 // Click an empty cell → new all-day event on that date.
-// Click an event bar → flip to Stream and pulse the matching card.
+// Click an event bar → flip to Pile and pulse the matching card.
 // Drag an event bar → rewrite its `date` (single-day events only for
 // now; multi-day drag preserves the duration, just shifts the start).
 

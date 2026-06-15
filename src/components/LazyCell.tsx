@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-// Bare Stream renders one cell per vault note (hundreds, sometimes
+// Bare Pile renders one cell per vault note (hundreds, sometimes
 // thousands once a viewer drops every filter). Mounting a Milkdown
 // Crepe instance for each one synchronously stalls the main thread —
 // noticeable on desktop, painful on iOS, fatal on the published page

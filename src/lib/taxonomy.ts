@@ -31,7 +31,7 @@ export interface AreaNode {
 export interface VaultTaxonomy {
   areas: AreaNode[];
   /** Refs (filenames without .md) of intermediate Area / Category
-   *  list files. Stream view hides these. */
+   *  list files. Pile view hides these. */
   hiddenRefs: Set<string>;
 }
 
