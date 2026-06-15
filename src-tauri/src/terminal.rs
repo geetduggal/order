@@ -63,7 +63,19 @@ pub fn terminal_open(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.arg("-l"); // login shell: rc files, PATH, aliases
     cmd.cwd(dir);
-    cmd.env("TERM", "xterm-256color");
+    // TERM=screen-256color, not xterm-256color, on purpose. Under an
+    // xterm TERM, vim/nvim fire xterm-specific startup probes at the
+    // terminal (modifyOtherKeys `CSI > 4 ; 2 m`, the OSC 10/11 fg/bg
+    // colour queries, cursor-position/version requests) and then WAIT for
+    // the replies. We do reply, but the reply travels back over an async
+    // IPC round-trip (xterm onData -> invoke -> PTY) that can land after
+    // vim's timeout — at which point vim injects the late reply as input
+    // and the keyboard jams (the file renders, but you can't type, not
+    // even `:q!`). The screen-256color termcap has none of those probes,
+    // so the storm never happens; 256 colours and the alternate screen
+    // still work, so vim/htop/less render and accept input normally.
+    cmd.env("TERM", "screen-256color");
+    cmd.env("COLORTERM", "truecolor");
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // The slave is owned by the child now; drop our handle so EOF
