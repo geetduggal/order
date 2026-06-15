@@ -28,7 +28,7 @@ import { linkKeymapPlugin } from "../lib/milkdown-link-keymap";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
 import { videoEmbedPlugin } from "../lib/milkdown-video";
 import { youtubeId } from "../lib/youtube";
-import type { WikiRef } from "../lib/wikilink";
+import { normalizeWikilinkBrackets, type WikiRef } from "../lib/wikilink";
 
 /** Convert CommonMark's default 2-space-per-level list indent to 4
  *  spaces — matches Obsidian's "indent list with hard tabs" output style
@@ -142,7 +142,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
         }
         crepe.on((listener) => {
           listener.markdownUpdated((_ctx, markdown) => {
-            onChangeRef.current(widenListIndent(markdown));
+            onChangeRef.current(normalizeWikilinkBrackets(widenListIndent(markdown)));
           });
         });
         // Replace ProseMirror's default text/plain clipboard serializer
@@ -171,7 +171,7 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
                   // Milkdown's serializer emits "loose" lists with a
                   // blank line between every item; tighten them so a
                   // copied list pastes the way the source file reads.
-                  return tightenListSpacing(widenListIndent(md));
+                  return normalizeWikilinkBrackets(tightenListSpacing(widenListIndent(md)));
                 } catch {
                   // Fall back to the slice's text content with newline-
                   // joined blocks rather than the default double-newline.

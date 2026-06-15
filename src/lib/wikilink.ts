@@ -102,6 +102,15 @@ export function resolveNoteRef(raw: string, vault: WikiRef[]): WikiRef | undefin
 // the exact opening/closing delimiters so a rewrite preserves them.
 const WIKI_OCCURRENCE_RE = /(\\?\[\\?\[)([^\]\n]+?)(\\?\]\\?\])/g;
 
+/** Strip the backslash escapes Milkdown's CommonMark serializer inserts
+ *  around wikilink brackets on save (`\[\[Name]]` → `[[Name]]`). Only
+ *  `[[…]]`-shaped runs are touched, so unrelated escapes (a literal
+ *  `\[`, a task `[x]`, `\*`, `\_`) are left alone. Keeps vault files as
+ *  clean Obsidian-style wikilinks instead of accumulating `\[\[`. */
+export function normalizeWikilinkBrackets(body: string): string {
+  return body.replace(WIKI_OCCURRENCE_RE, (_full, _open, inner, _close) => `[[${inner}]]`);
+}
+
 /** Rewrite every inbound `[[Old]]` (and `[[Old|alias]]`,
  *  `[[Folder/Old]]`) in `body` to use `newName`, preserving alias,
  *  folder qualifier, and bracket-escaping style. Used on rename so
