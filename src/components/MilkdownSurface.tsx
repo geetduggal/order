@@ -4,7 +4,7 @@
 // react to `initial` prop changes after mount: this surface is a
 // single-edit-session component.
 
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
@@ -52,6 +52,13 @@ function widenListIndent(md: string): string {
   return lines.join("\n");
 }
 
+export interface MilkdownHandle {
+  /** Replace the entire document with new markdown content — no remount,
+   *  no cursor disruption to an in-progress edit. Returns false when the
+   *  editor isn't mounted yet (safe to ignore). */
+  replaceContent: (markdown: string) => boolean;
+}
+
 type Props = {
   initial: string;
   onChange: (markdown: string) => void;
@@ -80,10 +87,33 @@ type Props = {
   noteDir?: string;
 };
 
-export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly, noteDir }: Props) {
+export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function MilkdownSurface(
+  { initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly, noteDir }: Props,
+  ref,
+) {
   const host = useRef<HTMLDivElement>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const wikiNotesRef = useRef<WikiRef[]>(wikiNotes ?? []);
+
+  useImperativeHandle(ref, () => ({
+    replaceContent(markdown: string): boolean {
+      const crepe = crepeRef.current;
+      if (!crepe) return false;
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const doc = ctx.get(parserCtx)(markdown);
+        if (!doc) return;
+        // Replace the whole document without touching the selection or
+        // scroll position if possible — the user may be mid-edit elsewhere
+        // on the same card and we don't want to jump their cursor.
+        const { tr } = view.state;
+        tr.replaceWith(0, view.state.doc.content.size, doc.content);
+        tr.setMeta("externalUpdate", true);
+        view.dispatch(tr);
+      });
+      return true;
+    },
+  }), []);
   useEffect(() => { wikiNotesRef.current = wikiNotes ?? []; }, [wikiNotes]);
   const onWikiNavigateRef = useRef(onWikiNavigate);
   useEffect(() => { onWikiNavigateRef.current = onWikiNavigate; }, [onWikiNavigate]);
@@ -483,4 +513,4 @@ export function MilkdownSurface({ initial, onChange, onDone, onImageUpload, wiki
   }
 
   return <div className="milkdown-host" ref={host} onKeyDown={onKeyDown} />;
-}
+});

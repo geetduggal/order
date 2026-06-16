@@ -10,7 +10,7 @@ import { dirname, join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs, markKnownBody } from "../lib/vault-fs";
-import { MilkdownSurface } from "./MilkdownSurface";
+import { MilkdownSurface, type MilkdownHandle } from "./MilkdownSurface";
 import { RawTextSurface } from "./RawTextSurface";
 import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
@@ -149,6 +149,10 @@ interface Props {
   /** Focus the editor after the editor mounts. Used to land the
    *  cursor inside a freshly created note. */
   autoFocus?: boolean;
+  /** Bumped by the parent when the watcher reports this file changed
+   *  externally. Card re-reads the disk and replaces the Milkdown
+   *  document in-place (no remount) so the editor doesn't flicker. */
+  externalBodyVersion?: number;
   /** Pinned-focus signal from the parent: when true, the card is
    *  treated as currently expanded (newspaper cap lifted) and is the
    *  card the user is "on". Survives external file changes — the
@@ -236,7 +240,9 @@ export function Card(props: Props) {
     onSetHome,
     listMode,
     onCycleList,
+    externalBodyVersion,
   } = props;
+  const milkdownRef = useRef<MilkdownHandle | null>(null);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -391,6 +397,28 @@ export function Card(props: Props) {
   const onTitleChangedRef = useRef(onTitleChanged);
   useEffect(() => { onRenamedRef.current = onRenamed; }, [onRenamed]);
   useEffect(() => { onTitleChangedRef.current = onTitleChanged; }, [onTitleChanged]);
+
+  // When the watcher bumps externalBodyVersion, re-read the file and
+  // replace the Milkdown document in-place (no remount, no flicker).
+  // Skip if there's a pending save inflight — our own write is what
+  // triggered the watcher; the file already reflects what the editor shows.
+  useEffect(() => {
+    if (!externalBodyVersion) return;
+    if (inflight.current > 0) return;
+    void (async () => {
+      try {
+        const raw = await vaultFs.readText(toVaultRel(pathRef.current));
+        const { body } = splitFrontmatter(raw);
+        const noteDir = vaultDir(toVaultRel(pathRef.current));
+        const displayBody = inflateImageEmbeds(
+          inflateAttachmentUrls(body, attachmentAssetPrefix(await vaultRoot())),
+          noteDir,
+        );
+        milkdownRef.current?.replaceContent(displayBody);
+      } catch { /* best-effort; if it fails, the next remount cycle will catch up */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalBodyVersion]);
 
   const pendingBody = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1178,6 +1206,7 @@ export function Card(props: Props) {
           />
         ) : (
           <MilkdownSurface
+            ref={milkdownRef}
             initial={state.body}
             onChange={handleChange}
             onDone={() => { void flushNow(); }}

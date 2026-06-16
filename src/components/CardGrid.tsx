@@ -2997,6 +2997,7 @@ export function CardGrid() {
     return (
       <Card
         path={n.path}
+        externalBodyVersion={externalChangeVersion[n.path] ?? 0}
         permalink={permalink}
         color={c}
         area={isMain ? inferredArea(n) ?? undefined : undefined}
@@ -3154,27 +3155,13 @@ export function CardGrid() {
         const sectionNotes = filteredNotes
           .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
-        const keyFor = (n: LoadedNote) => {
-          const cur = externalChangeVersion[n.path] ?? 0;
-          if (n.path === focusedPath) {
-            // First read after focus flips: snapshot the current
-            // version. Subsequent bumps to externalChangeVersion
-            // (a self-write bouncing back through slow-sync, an
-            // external edit while the user is typing, …) are
-            // ignored — we keep returning the snapshot so the
-            // card doesn't remount mid-edit.
-            const snap = focusedKeyVersionRef.current[n.path];
-            const frozen = snap === undefined ? cur : snap;
-            if (snap === undefined) focusedKeyVersionRef.current[n.path] = cur;
-            return `${n.id}:${frozen}`;
-          }
-          // Not focused: drop any stale snapshot so the next time
-          // this card gains focus we capture a fresh one.
-          if (focusedKeyVersionRef.current[n.path] !== undefined) {
-            delete focusedKeyVersionRef.current[n.path];
-          }
-          return `${n.id}:${cur}`;
-        };
+        // Key is just the stable note id — external body edits are now
+        // delivered in-place via the externalBodyVersion prop, so we
+        // never need to remount a card just because the file changed.
+        // Structural mutations (list-mode flip, home:, rename) still
+        // force a remount because reloadNotes() mints a new id for the
+        // affected path.
+        const keyFor = (n: LoadedNote) => n.id;
         const centerpiece: SectionCell | null = mainNote
           ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
@@ -3562,17 +3549,11 @@ export function CardGrid() {
                 {sortedNotes.map((n) => {
                   // Per-Card external-change version is folded into the key:
                   // a true external edit (not one of our own writes) bumps
-                  // it, remounting the Card with fresh content from disk.
-                  // The per-path body cache in vault-fs.ts ensures the
-                  // version only bumps when content TRULY differs, so the
-                  // focused card no longer needs special remount protection
-                  // — Dropbox / iCloud touches that don't change content
-                  // are filtered upstream.
-                  const v = externalChangeVersion[n.path] ?? 0;
-                  const key = `${n.id}:${v}`;
+                  // Body changes are delivered in-place via externalBodyVersion
+                  // prop; key stays stable so Card never remounts on an edit.
                   return (
                     <LazyCell
-                      key={key}
+                      key={n.id}
                       className="card-grid-cell"
                       dataPath={n.path}
                       forceMount={n.path === focusedPath}
