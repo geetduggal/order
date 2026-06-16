@@ -86,28 +86,10 @@ export function ViewerApp(
   })();
 
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
-  // the arrival deep-link, else the home default.
+  // the arrival deep-link, else the home default. The URL is the source of
+  // truth for the current pile order; localStorage is only for theme and
+  // recent-folder navigation history — it does NOT restore the pile here.
   const fromSearch = typeof location !== "undefined" ? filtersFromSearch(location.search) : [];
-
-  // Pile memory: on a BARE visit (no `?f=` query and no permalink
-  // deep-link), restore the last pile this browser was on — its filters,
-  // focused folder, and pile mode — so revisiting the site lands you
-  // where you left off instead of always on Home. Mirrors the desktop's
-  // persisted filters. An explicit URL always wins over remembered state.
-  const PILE_MEMORY_KEY = "order.viewer.lastPile";
-  type PileSnapshot = { filters: Filter[]; focusedFolder: string | null; pileMode: "all" | "notes" | "folders" };
-  const readPileMemory = (): PileSnapshot | null => {
-    try {
-      const raw = localStorage.getItem(PILE_MEMORY_KEY);
-      if (!raw) return null;
-      const p = JSON.parse(raw);
-      if (!p || !Array.isArray(p.filters)) return null;
-      return p as PileSnapshot;
-    } catch { return null; }
-  };
-  const savedPile = (typeof localStorage !== "undefined" && fromSearch.length === 0 && !deeplink)
-    ? readPileMemory()
-    : null;
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Sidebar hidden by default — viewers shouldn't get a wall of UI on
@@ -146,9 +128,7 @@ export function ViewerApp(
       ? fromSearch
       : deeplink
         ? [{ kind: "include", ref: deeplink.include }]
-        : (savedPile && savedPile.filters.length > 0)
-          ? savedPile.filters
-          : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
+        : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
   // Single-note permalink mode: a note's permalink renders only that note.
   // Set on arrival (a note page, with no ?f= override); cleared on any
@@ -161,7 +141,7 @@ export function ViewerApp(
   // Set by clicking a pill or picking one in the palette. Cleared only
   // when it's no longer an active include, so adding it doesn't wipe
   // the focus we just set.
-  const [focusedFolder, setFocusedFolder] = useState<string | null>(savedPile?.focusedFolder ?? null);
+  const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
   useEffect(() => {
     setFocusedFolder((cur) =>
       cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
@@ -176,7 +156,7 @@ export function ViewerApp(
   // same predictable landing. The in-session toggle still cycles freely;
   // it just doesn't bleed into the next page load.
   type PileMode = "all" | "notes" | "folders";
-  const [pileMode, setPileMode] = useState<PileMode>(savedPile?.pileMode ?? "all");
+  const [pileMode, setPileMode] = useState<PileMode>("all");
   const setPileModePersist = (m: PileMode) => {
     setPileMode(m);
   };
@@ -211,14 +191,12 @@ export function ViewerApp(
 
   // Remember the last non-empty pile (filters + focus + mode) so the dock
   // "last pile" button can jump back to it after a calendar trip clears
-  // the filters. Mirrors the desktop app's lastPileRef.
+  // the filters. Session-only (in-memory), exactly like the desktop —
+  // the URL carries the current pile across reloads, not localStorage.
   const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
   useEffect(() => {
     if (view === "pile" && filters.length > 0) {
-      const snap = { filters, focusedFolder, pileMode };
-      lastPileRef.current = snap;
-      // Persist so a later visit to this browser restores the pile.
-      try { localStorage.setItem(PILE_MEMORY_KEY, JSON.stringify(snap)); } catch { /* non-fatal */ }
+      lastPileRef.current = { filters, focusedFolder, pileMode };
     }
   }, [view, filters, focusedFolder, pileMode]);
 
@@ -273,19 +251,24 @@ export function ViewerApp(
   function goToLastPile() {
     const last = lastPileRef.current;
     if (last && last.filters.length > 0) {
+      // Restore the EXACT saved order. Don't call navigate(focusedFolder):
+      // it re-prepends the focused folder to the front, which bumped Home
+      // (or whatever was focused) back to the top of the pile. Use the
+      // scroll target for focus instead, preserving the pill order.
       setView("pile");
       setCollapseNonce((n) => n + 1);
       commitFilters(last.filters);
       setFocusedFolder(last.focusedFolder);
       setPileMode(last.pileMode);
-      if (last.focusedFolder) navigate(last.focusedFolder);
+      if (last.focusedFolder) setScrollTarget(last.focusedFolder);
       return;
     }
     const home = data.home?.name ?? null;
     if (home) {
       commitFilters([{ kind: "include", ref: home }]);
       setView("pile");
-      navigate(home);
+      setFocusedFolder(home);
+      setScrollTarget(home);
     } else {
       resetToDefault();
     }
