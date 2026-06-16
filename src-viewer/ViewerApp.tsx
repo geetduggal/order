@@ -5,7 +5,7 @@
 // identical to CardGrid.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
+import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
 import type { PublishedSite, PublishedNote } from "../src/lib/publish";
@@ -187,6 +187,16 @@ export function ViewerApp(
     [filters],
   );
 
+  // Remember the last non-empty pile (filters + focus + mode) so the dock
+  // "last pile" button can jump back to it after a calendar trip clears
+  // the filters. Mirrors the desktop app's lastPileRef.
+  const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
+  useEffect(() => {
+    if (view === "pile" && filters.length > 0) {
+      lastPileRef.current = { filters, focusedFolder, pileMode };
+    }
+  }, [view, filters, focusedFolder, pileMode]);
+
   // Apply a new pill set AND mirror it into the URL (pushState), so the
   // address bar always matches the pills and is shareable / back-able.
   // Pills still ACCUMULATE — this only adds URL sync, it never replaces.
@@ -232,6 +242,28 @@ export function ViewerApp(
     commitFilters([]);
     setCollapseNonce((n) => n + 1);
     setView("week");
+  }
+  // Jump to the last remembered pile. Only non-empty piles are stored,
+  // so when there's none, fall back to the home pile (or Week if no home).
+  function goToLastPile() {
+    const last = lastPileRef.current;
+    if (last && last.filters.length > 0) {
+      setView("pile");
+      setCollapseNonce((n) => n + 1);
+      commitFilters(last.filters);
+      setFocusedFolder(last.focusedFolder);
+      setPileMode(last.pileMode);
+      if (last.focusedFolder) navigate(last.focusedFolder);
+      return;
+    }
+    const home = data.home?.name ?? null;
+    if (home) {
+      commitFilters([{ kind: "include", ref: home }]);
+      setView("pile");
+      navigate(home);
+    } else {
+      resetToDefault();
+    }
   }
   // Wikilink / list-row click → open the target's permalink (matches
   // arriving at /<slug>/ directly). The old "accumulate filter + scroll"
@@ -563,6 +595,27 @@ export function ViewerApp(
               aria-label={tip}
             >
               <HomeIcon size={20} strokeWidth={2.1} />
+            </button>
+          );
+        })()}
+        {(() => {
+          // "Last pile" button: jump back to the last remembered pile.
+          // Highlights when you're on it; falls back to Home otherwise.
+          const last = lastPileRef.current;
+          const onLastPile =
+            view === "pile" &&
+            !!last && last.filters.length > 0 &&
+            JSON.stringify(filters) === JSON.stringify(last.filters);
+          return (
+            <button
+              type="button"
+              className={"dock-btn dock-btn-last-pile" + (onLastPile ? " is-active" : "")}
+              onClick={goToLastPile}
+              title="Last pile"
+              aria-label="Last pile"
+              aria-pressed={onLastPile}
+            >
+              <Layers size={20} strokeWidth={2.1} />
             </button>
           );
         })()}
