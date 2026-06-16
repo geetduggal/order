@@ -436,6 +436,12 @@ export function ViewerApp(
   const storedCategories = effectiveAreas.flatMap((a) =>
     a.categories.map((c) => ({ area: a.ref, name: c.ref })),
   );
+  // Flat folder order across the whole (reordered) chain — drives the
+  // order of pile sections so dragging the sidebar reorders the pile too.
+  const chainFolderOrder = useMemo(
+    () => effectiveAreas.flatMap((a) => a.categories.flatMap((c) => c.folders)),
+    [effectiveAreas],
+  );
 
   // ---- Pile filtering + sort (mirrors CardGrid) ----
   const hidden = useMemo(
@@ -768,6 +774,7 @@ export function ViewerApp(
             data={data}
             basePath={basePath}
             includeRefs={includeRefs}
+            sectionOrder={chainFolderOrder}
             includeSet={includeSet}
             collapseSignal={collapseNonce}
             onNavigate={navigate}
@@ -861,7 +868,7 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function PileView({
-  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
+  notes, data, basePath, includeRefs, sectionOrder, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
@@ -869,6 +876,10 @@ function PileView({
   /** Active include filters in order. ≥1 → newspaper sections;
    *  0 → flat temporal grid. */
   includeRefs: string[];
+  /** Folder refs in chain order — sections render in this order (so the
+   *  sidebar reorder reorders the pile), with any off-chain includes
+   *  appended in their original pill order. */
+  sectionOrder: string[];
   includeSet: Set<string>;
   collapseSignal: number;
   onNavigate: (ref: string) => void;
@@ -953,9 +964,16 @@ function PileView({
   // multiple stacked sections cap each Main Doc for even weight.
   const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
   if (includeRefs.length >= 1) {
+    // Order sections by the (reordered) chain; off-chain includes keep
+    // their pill order at the end.
+    const pos = new Map(sectionOrder.map((r, i) => [r, i]));
+    const orderedRefs = [
+      ...includeRefs.filter((r) => pos.has(r)).sort((a, b) => pos.get(a)! - pos.get(b)!),
+      ...includeRefs.filter((r) => !pos.has(r)),
+    ];
     return (
       <div className="nf-sections">
-        {includeRefs.map((ref) => {
+        {orderedRefs.map((ref) => {
           const mainNote = notes.find((n) => !!n.category && n.ref === ref);
           const sectionNotes = notes.filter((n) => !n.category && n.folder === ref);
           const centerpiece: SectionCell | null = mainNote
