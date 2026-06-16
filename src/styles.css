@@ -1634,7 +1634,7 @@ iframe.order-youtube-embed {
 .sb-section { margin-bottom: 20px; }
 .sb-title {
   margin: 0 0 8px;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--text-scale, 1));
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1659,11 +1659,11 @@ iframe.order-youtube-embed {
 .sb-title-right {
   display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   color: var(--ink-ghost);
 }
 .sb-add {
-  font-size: 13px; line-height: 1;
+  font-size: calc(13px * var(--text-scale, 1)); line-height: 1;
   color: var(--ink-ghost);
   padding: 0 4px; border-radius: 3px;
 }
@@ -1671,13 +1671,13 @@ iframe.order-youtube-embed {
 .sb-count { letter-spacing: 0; }
 .sb-empty {
   margin: 4px 0 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   line-height: 1.5;
 }
 .sb-empty code {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale, 1));
   background: var(--bg-elev);
   padding: 1px 5px; border-radius: 3px;
 }
@@ -1699,7 +1699,7 @@ iframe.order-youtube-embed {
   padding: 3px 8px;
   border-radius: 999px;
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1733,7 +1733,7 @@ iframe.order-youtube-embed {
 }
 .sb-count {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   color: var(--ink-ghost);
   letter-spacing: 0;
 }
@@ -1746,7 +1746,7 @@ iframe.order-youtube-embed {
   margin: 0 0 12px;
   padding: 4px 6px 4px 4px;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--ink-faint);
@@ -1797,7 +1797,7 @@ iframe.order-youtube-embed {
 }
 .box .box-label {
   font-family: var(--sans);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale, 1));
   font-weight: 500;
   color: var(--ink-soft);
   text-align: center;
@@ -1813,7 +1813,7 @@ iframe.order-youtube-embed {
   border: 1px dashed #d6d4cf;
   color: var(--ink-ghost);
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale, 1));
   font-weight: 200;
   cursor: default;
 }
@@ -1827,7 +1827,7 @@ iframe.order-youtube-embed {
   width: 100%;
   padding: 4px 0;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1839,7 +1839,7 @@ iframe.order-youtube-embed {
   display: inline-block;
   width: 10px;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--ink-ghost);
   transition: transform 0.14s var(--ease-out);
 }
@@ -1848,7 +1848,7 @@ iframe.order-youtube-embed {
 .sb-cat { margin: 6px 0 10px 4px; }
 .sb-cat-name {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1872,7 +1872,7 @@ iframe.order-youtube-embed {
   padding: 4px 6px;
   border-radius: 3px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-soft);
   text-align: left;
   transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
@@ -1970,7 +1970,7 @@ iframe.order-youtube-embed {
   margin-top: 6px;
   padding: 6px 8px;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--coral);
   background: transparent;
   border: 1px dashed var(--coral-soft);
@@ -1985,7 +1985,7 @@ iframe.order-youtube-embed {
   width: 100%;
   padding: 6px 8px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink);
   background: var(--bg-elev);
   border: 1px solid var(--coral);
@@ -2024,7 +2024,7 @@ iframe.order-youtube-embed {
 .box.no-image .box-label {
   color: var(--ink-soft);
   font-family: var(--sans);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale, 1));
   font-weight: 500;
   letter-spacing: 0.01em;
   text-align: center;
@@ -2048,7 +2048,7 @@ iframe.order-youtube-embed {
   background: rgba(255,255,255,0.85);
   color: transparent;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px;
+  font-size: calc(9px * var(--text-scale, 1));
   opacity: 0;
   transition: opacity 0.12s var(--ease-out);
   z-index: 2;
@@ -2076,7 +2076,7 @@ iframe.order-youtube-embed {
 .box-wrapper > .box-remove {
   position: absolute;
   top: 4px; right: 4px;
-  font-size: 12px; line-height: 1;
+  font-size: calc(12px * var(--text-scale, 1)); line-height: 1;
   color: var(--ink-ghost);
   background: rgba(255, 255, 255, 0.65);
   border-radius: 3px;
@@ -2184,7 +2184,7 @@ iframe.order-youtube-embed {
   color: var(--ink-ghost);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale, 1));
   font-weight: 200;
 }
 .box.empty:hover { border-color: var(--ink-soft); color: var(--ink-soft); }
@@ -2196,7 +2196,7 @@ iframe.order-youtube-embed {
 }
 .box-draft-input {
   width: 100%;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   font-family: var(--sans);
   text-align: center;
   background: transparent;
@@ -2888,7 +2888,7 @@ iframe.order-youtube-embed {
   gap: 8px;
   padding: 8px 10px;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--ink);
   background: transparent;
   border: none;
@@ -2901,7 +2901,7 @@ iframe.order-youtube-embed {
 .dock-tools-check { margin-left: auto; color: var(--royal); }
 .dock-tools-group-label {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--text-scale, 1));
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -2946,7 +2946,7 @@ iframe.order-youtube-embed {
 .dock-tools-zoom-btn:disabled:hover { color: var(--ink-soft); border-color: var(--rule); background: transparent; }
 .dock-tools-zoom-label {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   min-width: 42px;
   text-align: center;
@@ -3096,7 +3096,7 @@ iframe.order-youtube-embed {
 }
 .settings-title {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -3117,7 +3117,7 @@ iframe.order-youtube-embed {
 .settings-close:hover { color: var(--ink); background: var(--bg-elev); }
 .settings-row { display: flex; flex-direction: column; gap: 8px; }
 .settings-label {
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -3127,13 +3127,13 @@ iframe.order-youtube-embed {
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale, 1));
   color: var(--ink);
   word-break: break-all;
 }
 .settings-tag {
   font-family: var(--sans);
-  font-size: 9px;
+  font-size: calc(9px * var(--text-scale, 1));
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -3145,7 +3145,7 @@ iframe.order-youtube-embed {
 .settings-actions { display: flex; gap: 8px; margin-top: 4px; }
 .settings-btn {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   letter-spacing: 0.04em;
   padding: 5px 12px;
   border-radius: 4px;
@@ -3160,14 +3160,14 @@ iframe.order-youtube-embed {
 .settings-btn-quiet { border-color: transparent; color: var(--ink-faint); }
 .settings-btn-quiet:hover { color: var(--ink); }
 .settings-hint {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   line-height: 1.5;
   color: var(--ink-faint);
   margin-top: 6px;
 }
 .settings-hint code {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--bg-elev);
@@ -3178,7 +3178,7 @@ iframe.order-youtube-embed {
   gap: 8px;
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale, 1));
 }
 .settings-toggle input[type="checkbox"] {
   width: 14px;
@@ -3188,7 +3188,7 @@ iframe.order-youtube-embed {
 .settings-input {
   flex: 1 1 auto;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale, 1));
   padding: 4px 8px;
   border: 1px solid var(--rule);
   border-radius: 4px;
@@ -3928,7 +3928,7 @@ iframe.order-youtube-embed {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink);
   border: 0;
   border-bottom: 1px solid var(--rule);
@@ -3949,7 +3949,7 @@ iframe.order-youtube-embed {
   border: none;
   border-radius: 4px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -3989,7 +3989,7 @@ iframe.order-youtube-embed {
   background: var(--royal-soft);
 }
 .event-action-day-name {
-  font-size: 9px;
+  font-size: calc(9px * var(--text-scale, 1));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3998,7 +3998,7 @@ iframe.order-youtube-embed {
 }
 .event-action-day-num {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   line-height: 1.1;
   margin-top: 2px;
 }
@@ -4024,7 +4024,7 @@ iframe.order-youtube-embed {
 /* On touch devices give chips real finger-sized targets. */
 @media (hover: none) {
   .event-action-day { padding: 9px 0 7px; }
-  .event-action-day-num { font-size: 13px; }
+  .event-action-day-num { font-size: calc(13px * var(--text-scale, 1)); }
 }
 
 /* Notable Folder picker in the event action menu — same gesture as the
@@ -4044,7 +4044,7 @@ iframe.order-youtube-embed {
   background: var(--bg-elev);
   border: 1px solid var(--rule);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   letter-spacing: 0.02em;
   cursor: pointer;
   color: var(--ink);
@@ -4064,7 +4064,7 @@ iframe.order-youtube-embed {
   width: 100%;
   padding: 5px 8px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink);
   background: var(--bg-elev);
   border: 1px solid var(--rule);
@@ -4089,7 +4089,7 @@ iframe.order-youtube-embed {
   border: none;
   border-radius: 4px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -5007,7 +5007,7 @@ iframe.order-youtube-embed {
   border-bottom: 1px solid var(--rule);
   background: transparent;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   color: var(--ink);
   outline: none;
 }
@@ -5017,7 +5017,7 @@ iframe.order-youtube-embed {
   margin: 0;
   padding: 16px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-faint);
   text-align: center;
 }
@@ -5036,7 +5036,7 @@ iframe.order-youtube-embed {
   padding: 8px 10px;
   border-radius: 4px;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--ink);
   cursor: pointer;
 }
@@ -5048,17 +5048,17 @@ iframe.order-youtube-embed {
 .cmdk-item-name { flex: 0 1 auto; }
 .cmdk-item-crumb {
   margin-left: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   flex: 1 1 auto;
 }
 .cmdk-item-check {
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--coral);
   margin-left: 8px;
 }
 .cmdk-item-recent {
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--text-scale, 1));
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -5644,7 +5644,7 @@ iframe.order-youtube-embed {
   background: transparent;
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
 }
 .fts-rebuild,
 .fts-close {
@@ -5667,7 +5667,7 @@ iframe.order-youtube-embed {
 .fts-status {
   padding: 10px 14px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-faint);
 }
 .fts-results {
@@ -5686,14 +5686,14 @@ iframe.order-youtube-embed {
 .fts-hit.is-on { background: var(--royal-soft); }
 .fts-hit-title {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--ink);
   font-weight: 600;
   margin-bottom: 2px;
 }
 .fts-hit-snippet {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--ink-faint);
   line-height: 1.4;
 }
@@ -5724,7 +5724,7 @@ iframe.order-youtube-embed {
   align-items: center;
   gap: 4px;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5748,7 +5748,7 @@ iframe.order-youtube-embed {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   outline: none;
 }
 .publish-ios-input:focus { border-color: var(--royal); }
@@ -5758,14 +5758,14 @@ iframe.order-youtube-embed {
   border-left: 2px solid var(--royal);
   background: var(--royal-soft);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink);
   line-height: 1.5;
 }
 .publish-ios-help-text a { color: var(--royal); text-decoration: underline; }
 .publish-ios-help-text code {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   padding: 1px 3px;
   background: var(--bg);
   border-radius: 2px;
@@ -5804,7 +5804,7 @@ iframe.order-youtube-embed {
 }
 .fc-view-tab {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   letter-spacing: 0.04em;
   padding: 4px 9px;
   border-radius: 4px;
@@ -5855,7 +5855,7 @@ iframe.order-youtube-embed {
   outline: none;
   background: transparent;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--ink);
 }
 .nf-update-save,
@@ -5863,7 +5863,7 @@ iframe.order-youtube-embed {
   padding: 4px 10px;
   border-radius: 4px;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   letter-spacing: 0.04em;
   cursor: pointer;
   transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
@@ -5877,7 +5877,7 @@ iframe.order-youtube-embed {
 .nf-update-cancel {
   background: transparent;
   color: var(--ink-faint);
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale, 1));
   line-height: 1;
   padding: 2px 8px;
 }
