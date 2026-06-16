@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, X as XCircle, Check, FilterX } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -1047,6 +1047,27 @@ export function CardGrid() {
       lastPileRef.current = { filters, focusedFolder, pileMode };
     }
   }, [view, filters, focusedFolder, pileMode]);
+
+  /** Jump to the last remembered pile (its filters, focused folder, and
+   *  pile mode). Only non-empty piles are ever remembered, so if there's
+   *  no snapshot — or it was the global unfiltered pile — fall back to
+   *  going home. Powers the dock's "last pile" button. */
+  const goToLastPile = useCallback(() => {
+    const last = lastPileRef.current;
+    if (last && last.filters.length > 0) {
+      setView("pile");
+      setCollapseNonce((n) => n + 1);
+      setFilters(last.filters);
+      setFocusedFolder(last.focusedFolder);
+      setPileMode(last.pileMode);
+      const focusName = last.focusedFolder;
+      const path = focusName ? notePathByRef(focusName) : null;
+      if (path) navigateAndFocus(path);
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+    } else {
+      goHome();
+    }
+  }, [goHome, navigateAndFocus]);
 
   // First-ever launch (no persisted filters) seeds an `include` pill
   // for the home Notable Folder, so Order opens focused on home (its
@@ -3375,6 +3396,29 @@ export function CardGrid() {
               aria-label={tip}
             >
               <HomeIcon size={20} strokeWidth={2.1} />
+            </button>
+          );
+        })()}
+        {(() => {
+          // "Last pile" button: jump back to the last remembered pile
+          // (its filters / focus). Highlights when you're currently on
+          // it. Falls back to Home when there's no remembered pile (or it
+          // was the global unfiltered pile).
+          const last = lastPileRef.current;
+          const onLastPile =
+            view === "pile" &&
+            !!last && last.filters.length > 0 &&
+            JSON.stringify(filters) === JSON.stringify(last.filters);
+          return (
+            <button
+              type="button"
+              className={"dock-btn dock-btn-last-pile" + (onLastPile ? " is-active" : "")}
+              onClick={goToLastPile}
+              title="Last pile"
+              aria-label="Last pile"
+              aria-pressed={onLastPile}
+            >
+              <Layers size={20} strokeWidth={2.1} />
             </button>
           );
         })()}

@@ -2960,6 +2960,12 @@ iframe.order-youtube-embed {
   border-color: var(--royal);
   background: var(--royal-soft);
 }
+/* Last-pile button lights up when you're sitting on the remembered pile. */
+.dock-btn-last-pile.is-active {
+  color: var(--royal);
+  border-color: var(--royal);
+  background: var(--royal-soft);
+}
 
 /* ---------- Sidebar slots ----------
    `.sb-filters-slot` hosts the active filter pill stack, rendered
