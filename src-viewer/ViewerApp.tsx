@@ -204,28 +204,6 @@ export function ViewerApp(
     });
   };
 
-  // Local (per-browser) chain-order override. The published site can't
-  // write your vault, so drag-reordering areas / categories / folders in
-  // the sidebar persists here instead — reordering this browser's view
-  // only. Each level stores an ordered list of refs.
-  const ORDER_KEY = "order.viewer.chainOrder";
-  type OrderOverride = {
-    areas?: string[];
-    categories?: Record<string, string[]>;
-    folders?: Record<string, string[]>;
-  };
-  const [orderOverride, setOrderOverride] = useState<OrderOverride>(() => {
-    try {
-      const raw = localStorage.getItem(ORDER_KEY);
-      const p = raw ? JSON.parse(raw) : null;
-      return p && typeof p === "object" ? (p as OrderOverride) : {};
-    } catch { return {}; }
-  });
-  const updateOrder = (next: OrderOverride) => {
-    setOrderOverride(next);
-    try { localStorage.setItem(ORDER_KEY, JSON.stringify(next)); } catch { /* non-fatal */ }
-  };
-
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
     [filters],
@@ -406,41 +384,9 @@ export function ViewerApp(
       })),
     [data.notes, areaByCategory],
   );
-  // Apply the local (per-browser) order override on top of the published
-  // taxonomy: refs in the saved order first, any new/unknown refs appended
-  // in their original order (so a later publish that adds folders still
-  // shows them). Drives the sidebar drill order.
-  const effectiveAreas = useMemo(() => {
-    const orderRefs = <T extends { ref: string }>(items: T[], order?: string[]): T[] => {
-      if (!order || order.length === 0) return items;
-      const pos = new Map(order.map((n, i) => [n, i]));
-      const known = items.filter((i) => pos.has(i.ref)).sort((a, b) => pos.get(a.ref)! - pos.get(b.ref)!);
-      return [...known, ...items.filter((i) => !pos.has(i.ref))];
-    };
-    const orderStrs = (items: string[], order?: string[]): string[] => {
-      if (!order || order.length === 0) return items;
-      const pos = new Map(order.map((n, i) => [n, i]));
-      const known = items.filter((s) => pos.has(s)).sort((a, b) => pos.get(a)! - pos.get(b)!);
-      return [...known, ...items.filter((s) => !pos.has(s))];
-    };
-    return orderRefs(data.taxonomy.areas, orderOverride.areas).map((a) => ({
-      ...a,
-      categories: orderRefs(a.categories, orderOverride.categories?.[a.ref]).map((c) => ({
-        ...c,
-        folders: orderStrs(c.folders, orderOverride.folders?.[c.ref]),
-      })),
-    }));
-  }, [data.taxonomy.areas, orderOverride]);
-
-  const storedAreas = effectiveAreas.map((a) => a.ref);
-  const storedCategories = effectiveAreas.flatMap((a) =>
+  const storedAreas = data.taxonomy.areas.map((a) => a.ref);
+  const storedCategories = data.taxonomy.areas.flatMap((a) =>
     a.categories.map((c) => ({ area: a.ref, name: c.ref })),
-  );
-  // Flat folder order across the whole (reordered) chain — drives the
-  // order of pile sections so dragging the sidebar reorders the pile too.
-  const chainFolderOrder = useMemo(
-    () => effectiveAreas.flatMap((a) => a.categories.flatMap((c) => c.folders)),
-    [effectiveAreas],
   );
 
   // ---- Pile filtering + sort (mirrors CardGrid) ----
@@ -657,13 +603,16 @@ export function ViewerApp(
           const isAtHome = homeFiltered && view === "pile";
           const tip = home ? `Home — ${home}` : "Home";
           const goHome = () => {
-            if (home) {
-              commitFilters([{ kind: "include", ref: home }]);
-              setView("pile");
-              navigate(home);
-            } else {
-              resetToDefault();
-            }
+            if (!home) { resetToDefault(); return; }
+            // Isolate the filter to JUST the home folder. (Don't also call
+            // navigate(): it reads the stale filters and re-prepends home
+            // while KEEPING the others, so the pile never narrowed to home
+            // and the button never lit up.) commitFilters syncs the URL.
+            commitFilters([{ kind: "include", ref: home }]);
+            setView("pile");
+            setFocusedFolder(home);
+            setScrollTarget(home);
+            markFolderRecent(home);
           };
           return (
             <button
@@ -774,7 +723,6 @@ export function ViewerApp(
             data={data}
             basePath={basePath}
             includeRefs={includeRefs}
-            sectionOrder={chainFolderOrder}
             includeSet={includeSet}
             collapseSignal={collapseNonce}
             onNavigate={navigate}
@@ -816,14 +764,7 @@ export function ViewerApp(
           onToggle={addInclude}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
-          order={effectiveAreas}
-          // Local drag-reorder: the published site can't write your vault,
-          // so these persist the new order to this browser only.
-          onReorderAreas={(names) => updateOrder({ ...orderOverride, areas: names })}
-          onReorderCategories={(area, names) =>
-            updateOrder({ ...orderOverride, categories: { ...orderOverride.categories, [area]: names } })}
-          onReorderFolders={(_area, category, names) =>
-            updateOrder({ ...orderOverride, folders: { ...orderOverride.folders, [category]: names } })}
+          order={data.taxonomy.areas}
           filteredRefs={includeSet}
           onToggleAreaFilter={(name) => {
             if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
@@ -838,6 +779,10 @@ export function ViewerApp(
               filters={filters}
               onRemove={removeFilter}
               onClear={resetToDefault}
+              // Drag-reorder the pills → reorders the filter set → reorders
+              // the pile's newspaper sections (sections follow pill order).
+              // Mirrors the desktop. commitFilters keeps the URL in sync.
+              onReorder={(next) => commitFilters(next)}
               onJump={(ref) => {
                 setView("pile");
                 pinToFront(ref);
@@ -868,18 +813,14 @@ const MAIN_CAP = 1400;
 const NOTE_CAP = 440;
 
 function PileView({
-  notes, data, basePath, includeRefs, sectionOrder, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
+  notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
 }: {
   notes: PublishedNote[];
   data: PublishedSite;
   basePath: string;
-  /** Active include filters in order. ≥1 → newspaper sections;
-   *  0 → flat temporal grid. */
+  /** Active include filters in order — sections render in this order, so
+   *  drag-reordering the filter pills reorders the pile. */
   includeRefs: string[];
-  /** Folder refs in chain order — sections render in this order (so the
-   *  sidebar reorder reorders the pile), with any off-chain includes
-   *  appended in their original pill order. */
-  sectionOrder: string[];
   includeSet: Set<string>;
   collapseSignal: number;
   onNavigate: (ref: string) => void;
@@ -964,16 +905,9 @@ function PileView({
   // multiple stacked sections cap each Main Doc for even weight.
   const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
   if (includeRefs.length >= 1) {
-    // Order sections by the (reordered) chain; off-chain includes keep
-    // their pill order at the end.
-    const pos = new Map(sectionOrder.map((r, i) => [r, i]));
-    const orderedRefs = [
-      ...includeRefs.filter((r) => pos.has(r)).sort((a, b) => pos.get(a)! - pos.get(b)!),
-      ...includeRefs.filter((r) => !pos.has(r)),
-    ];
     return (
       <div className="nf-sections">
-        {orderedRefs.map((ref) => {
+        {includeRefs.map((ref) => {
           const mainNote = notes.find((n) => !!n.category && n.ref === ref);
           const sectionNotes = notes.filter((n) => !n.category && n.folder === ref);
           const centerpiece: SectionCell | null = mainNote
