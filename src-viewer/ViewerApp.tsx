@@ -89,6 +89,26 @@ export function ViewerApp(
   // the arrival deep-link, else the home default.
   const fromSearch = typeof location !== "undefined" ? filtersFromSearch(location.search) : [];
 
+  // Pile memory: on a BARE visit (no `?f=` query and no permalink
+  // deep-link), restore the last pile this browser was on — its filters,
+  // focused folder, and pile mode — so revisiting the site lands you
+  // where you left off instead of always on Home. Mirrors the desktop's
+  // persisted filters. An explicit URL always wins over remembered state.
+  const PILE_MEMORY_KEY = "order.viewer.lastPile";
+  type PileSnapshot = { filters: Filter[]; focusedFolder: string | null; pileMode: "all" | "notes" | "folders" };
+  const readPileMemory = (): PileSnapshot | null => {
+    try {
+      const raw = localStorage.getItem(PILE_MEMORY_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (!p || !Array.isArray(p.filters)) return null;
+      return p as PileSnapshot;
+    } catch { return null; }
+  };
+  const savedPile = (typeof localStorage !== "undefined" && fromSearch.length === 0 && !deeplink)
+    ? readPileMemory()
+    : null;
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Sidebar hidden by default — viewers shouldn't get a wall of UI on
   // first paint. Toggle via the › / ‹ button or Cmd+;.
@@ -126,7 +146,9 @@ export function ViewerApp(
       ? fromSearch
       : deeplink
         ? [{ kind: "include", ref: deeplink.include }]
-        : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
+        : (savedPile && savedPile.filters.length > 0)
+          ? savedPile.filters
+          : (data.home.name ? [{ kind: "include", ref: data.home.name }] : []),
   );
   // Single-note permalink mode: a note's permalink renders only that note.
   // Set on arrival (a note page, with no ?f= override); cleared on any
@@ -139,7 +161,7 @@ export function ViewerApp(
   // Set by clicking a pill or picking one in the palette. Cleared only
   // when it's no longer an active include, so adding it doesn't wipe
   // the focus we just set.
-  const [focusedFolder, setFocusedFolder] = useState<string | null>(null);
+  const [focusedFolder, setFocusedFolder] = useState<string | null>(savedPile?.focusedFolder ?? null);
   useEffect(() => {
     setFocusedFolder((cur) =>
       cur && filters.some((f) => f.kind === "include" && f.ref === cur) ? cur : null,
@@ -154,7 +176,7 @@ export function ViewerApp(
   // same predictable landing. The in-session toggle still cycles freely;
   // it just doesn't bleed into the next page load.
   type PileMode = "all" | "notes" | "folders";
-  const [pileMode, setPileMode] = useState<PileMode>("all");
+  const [pileMode, setPileMode] = useState<PileMode>(savedPile?.pileMode ?? "all");
   const setPileModePersist = (m: PileMode) => {
     setPileMode(m);
   };
@@ -193,7 +215,10 @@ export function ViewerApp(
   const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
   useEffect(() => {
     if (view === "pile" && filters.length > 0) {
-      lastPileRef.current = { filters, focusedFolder, pileMode };
+      const snap = { filters, focusedFolder, pileMode };
+      lastPileRef.current = snap;
+      // Persist so a later visit to this browser restores the pile.
+      try { localStorage.setItem(PILE_MEMORY_KEY, JSON.stringify(snap)); } catch { /* non-fatal */ }
     }
   }, [view, filters, focusedFolder, pileMode]);
 
