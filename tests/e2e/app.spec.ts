@@ -65,9 +65,9 @@ test("1b — moving an event to another NF switches filter and jumps", async ({ 
   expect(Date.now() - t0, "folder move is snappy").toBeLessThan(SNAPPY_MS + 500);
 });
 
-test("1c — dock toggle: home ⇄ week with no filters", async ({ page }) => {
+test("1c — dock: home button goes home, calendar button goes to week", async ({ page }) => {
   await bootVault(page);
-  // Cold boot lands on Week with no filters (the "at calendar" state).
+  // Cold boot lands on Week with no filters.
   await expect(page.locator(".fc-view-switch")).toBeVisible();
 
   let t0 = Date.now();
@@ -76,9 +76,13 @@ test("1c — dock toggle: home ⇄ week with no filters", async ({ page }) => {
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
   expect(Date.now() - t0, "go-home is snappy").toBeLessThan(SNAPPY_MS);
 
-  t0 = Date.now();
+  // Home button no longer toggles — tapping it again stays at home.
   await page.click(".dock-btn-home");
-  // → Week again, zero filters.
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
+
+  // The calendar button returns to Week with zero filters.
+  t0 = Date.now();
+  await page.click(".dock-btn-cal");
   await expect(page.locator(".fc-view-switch")).toBeVisible();
   await expect(page.locator(".filter-pill")).toHaveCount(0);
   expect(Date.now() - t0, "back-to-week is snappy").toBeLessThan(SNAPPY_MS);

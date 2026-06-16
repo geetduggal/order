@@ -3364,46 +3364,22 @@ export function CardGrid() {
           );
         })()}
         {(() => {
-          // Explicit Home ⇄ Calendar toggle. State is read from
-          // (filters, view); the icon shows where the tap will take
-          // you (the TARGET state), not where you are, so the
-          // affordance reads as a control to act on rather than a
-          // passive status indicator.
+          // Pure "go home" button — always jumps to the home pile (the
+          // home Notable Folder's section). Highlights when you're
+          // already there. (Calendar/Week now has its own dock button.)
           const home = homeFolderRef.current;
-          const noFilters = filters.length === 0;
           const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
           const isAtHome = homeFiltered && view === "pile";
-          const isAtCalendar = noFilters && view === "week";
-          const stateClass = isAtHome
-            ? " is-at-home"
-            : isAtCalendar
-              ? " is-at-calendar"
-              : "";
-          // Icon flips between the two destinations:
-          //   - at home → show Calendar icon (tap goes to Calendar)
-          //   - at calendar → show Home icon (tap goes to Home)
-          //   - any other state → tap brings the user home; show Home
-          const TargetIcon = isAtHome ? CalendarRange : HomeIcon;
-          const targetLabel = isAtHome ? "Calendar" : (home ?? "Home");
-          const currentLabel = isAtHome
-            ? `Home${home ? ` — ${home}` : ""}`
-            : isAtCalendar
-              ? "Calendar"
-              : "Custom filter";
-          const tip = `At ${currentLabel} · tap for ${targetLabel}`;
-          const toggleHome = () => {
-            if (isAtHome) resetToDefault();
-            else goHome();
-          };
+          const tip = home ? `Home — ${home}` : "Home";
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-home" + stateClass}
-              onClick={toggleHome}
+              className={"dock-btn dock-btn-home" + (isAtHome ? " is-at-home" : "")}
+              onClick={goHome}
               title={tip}
               aria-label={tip}
             >
-              <TargetIcon size={20} strokeWidth={2.1} />
+              <HomeIcon size={20} strokeWidth={2.1} />
             </button>
           );
         })()}

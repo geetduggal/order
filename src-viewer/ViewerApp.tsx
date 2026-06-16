@@ -543,28 +543,14 @@ export function ViewerApp(
           );
         })()}
         {(() => {
+          // Pure "go home" button — always jumps to the home pile.
+          // Highlights when already there. (Week has its own button.)
           const home = data.home?.name ?? null;
-          const noFilters = filters.length === 0;
           const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
           const isAtHome = homeFiltered && view === "pile";
-          const isAtCalendar = noFilters && view === "week";
-          const stateClass = isAtHome
-            ? " is-at-home"
-            : isAtCalendar
-              ? " is-at-calendar"
-              : "";
-          const TargetIcon = isAtHome ? CalendarRange : HomeIcon;
-          const targetLabel = isAtHome ? "Calendar" : (home ?? "Home");
-          const currentLabel = isAtHome
-            ? `Home${home ? ` — ${home}` : ""}`
-            : isAtCalendar
-              ? "Calendar"
-              : "Custom filter";
-          const tip = `At ${currentLabel} · tap for ${targetLabel}`;
-          const toggleHome = () => {
-            if (isAtHome) {
-              resetToDefault();
-            } else if (home) {
+          const tip = home ? `Home — ${home}` : "Home";
+          const goHome = () => {
+            if (home) {
               commitFilters([{ kind: "include", ref: home }]);
               setView("pile");
               navigate(home);
@@ -575,12 +561,12 @@ export function ViewerApp(
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-home" + stateClass}
-              onClick={toggleHome}
+              className={"dock-btn dock-btn-home" + (isAtHome ? " is-at-home" : "")}
+              onClick={goHome}
               title={tip}
               aria-label={tip}
             >
-              <TargetIcon size={20} strokeWidth={2.1} />
+              <HomeIcon size={20} strokeWidth={2.1} />
             </button>
           );
         })()}
