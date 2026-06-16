@@ -204,6 +204,28 @@ export function ViewerApp(
     });
   };
 
+  // Local (per-browser) chain-order override. The published site can't
+  // write your vault, so drag-reordering areas / categories / folders in
+  // the sidebar persists here instead — reordering this browser's view
+  // only. Each level stores an ordered list of refs.
+  const ORDER_KEY = "order.viewer.chainOrder";
+  type OrderOverride = {
+    areas?: string[];
+    categories?: Record<string, string[]>;
+    folders?: Record<string, string[]>;
+  };
+  const [orderOverride, setOrderOverride] = useState<OrderOverride>(() => {
+    try {
+      const raw = localStorage.getItem(ORDER_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      return p && typeof p === "object" ? (p as OrderOverride) : {};
+    } catch { return {}; }
+  });
+  const updateOrder = (next: OrderOverride) => {
+    setOrderOverride(next);
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(next)); } catch { /* non-fatal */ }
+  };
+
   const includeSet = useMemo(
     () => new Set(filters.filter((f) => f.kind === "include").map((f) => f.ref)),
     [filters],
@@ -384,8 +406,34 @@ export function ViewerApp(
       })),
     [data.notes, areaByCategory],
   );
-  const storedAreas = data.taxonomy.areas.map((a) => a.ref);
-  const storedCategories = data.taxonomy.areas.flatMap((a) =>
+  // Apply the local (per-browser) order override on top of the published
+  // taxonomy: refs in the saved order first, any new/unknown refs appended
+  // in their original order (so a later publish that adds folders still
+  // shows them). Drives the sidebar drill order.
+  const effectiveAreas = useMemo(() => {
+    const orderRefs = <T extends { ref: string }>(items: T[], order?: string[]): T[] => {
+      if (!order || order.length === 0) return items;
+      const pos = new Map(order.map((n, i) => [n, i]));
+      const known = items.filter((i) => pos.has(i.ref)).sort((a, b) => pos.get(a.ref)! - pos.get(b.ref)!);
+      return [...known, ...items.filter((i) => !pos.has(i.ref))];
+    };
+    const orderStrs = (items: string[], order?: string[]): string[] => {
+      if (!order || order.length === 0) return items;
+      const pos = new Map(order.map((n, i) => [n, i]));
+      const known = items.filter((s) => pos.has(s)).sort((a, b) => pos.get(a)! - pos.get(b)!);
+      return [...known, ...items.filter((s) => !pos.has(s))];
+    };
+    return orderRefs(data.taxonomy.areas, orderOverride.areas).map((a) => ({
+      ...a,
+      categories: orderRefs(a.categories, orderOverride.categories?.[a.ref]).map((c) => ({
+        ...c,
+        folders: orderStrs(c.folders, orderOverride.folders?.[c.ref]),
+      })),
+    }));
+  }, [data.taxonomy.areas, orderOverride]);
+
+  const storedAreas = effectiveAreas.map((a) => a.ref);
+  const storedCategories = effectiveAreas.flatMap((a) =>
     a.categories.map((c) => ({ area: a.ref, name: c.ref })),
   );
 
@@ -761,7 +809,14 @@ export function ViewerApp(
           onToggle={addInclude}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
-          order={data.taxonomy.areas}
+          order={effectiveAreas}
+          // Local drag-reorder: the published site can't write your vault,
+          // so these persist the new order to this browser only.
+          onReorderAreas={(names) => updateOrder({ ...orderOverride, areas: names })}
+          onReorderCategories={(area, names) =>
+            updateOrder({ ...orderOverride, categories: { ...orderOverride.categories, [area]: names } })}
+          onReorderFolders={(_area, category, names) =>
+            updateOrder({ ...orderOverride, folders: { ...orderOverride.folders, [category]: names } })}
           filteredRefs={includeSet}
           onToggleAreaFilter={(name) => {
             if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
