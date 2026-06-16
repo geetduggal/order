@@ -3338,18 +3338,13 @@ export function CardGrid() {
           +
         </button>
         {(() => {
-          // Calendar button: tap goes to the Week view (same destination
-          // the Home toggle reaches when it flips to Calendar). Highlights
-          // whenever you're on one of the two default landing surfaces —
-          // the unfiltered Week calendar, or the home pile (pile filtered
-          // to just the home Notable Folder) — so the icon confirms "you're
-          // at a clean default state."
-          const home = homeFolderRef.current;
+          // Calendar button: tap goes to the Week view. Highlights only
+          // when you're actually on the unfiltered Week calendar — at home
+          // (or anywhere else) it reads as unhighlighted, so the home and
+          // calendar buttons never both light up at once.
           const noFilters = filters.length === 0;
-          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
           const isAtCalendar = noFilters && view === "week";
-          const isAtHome = homeFiltered && view === "pile";
-          const active = isAtCalendar || isAtHome;
+          const active = isAtCalendar;
           return (
             <button
               type="button"

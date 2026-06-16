@@ -519,16 +519,12 @@ export function ViewerApp(
           just pile-mode + search. */}
       <div className="bottom-dock" role="toolbar" aria-label="Main controls">
         {(() => {
-          // Calendar button: tap goes to the Week view (the same place
-          // the Home toggle reaches when it flips to Calendar). Highlights
-          // on either default landing surface — the unfiltered Week
-          // calendar, or the home pile.
-          const home = data.home?.name ?? null;
+          // Calendar button: tap goes to the Week view. Highlights only
+          // on the unfiltered Week calendar (not at home), so home and
+          // calendar never both light up.
           const noFilters = filters.length === 0;
-          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
           const isAtCalendar = noFilters && view === "week";
-          const isAtHome = homeFiltered && view === "pile";
-          const active = isAtCalendar || isAtHome;
+          const active = isAtCalendar;
           return (
             <button
               type="button"
