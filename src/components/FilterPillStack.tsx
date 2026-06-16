@@ -13,11 +13,14 @@ import { useTileDrag } from "../lib/use-tile-drag";
 const keyOf = (f: Filter) => `${f.kind}:${f.ref}`;
 
 export function FilterPillStack({
-  filters, onRemove, onJump, onSearch, onReorder, onClear,
+  filters, onRemove, onJump, onSearch, onReorder, onClear, stickyRef,
 }: {
   filters: Filter[];
   onRemove: (f: Filter) => void;
   onJump: (ref: string) => void;
+  /** A folder ref that is pinned/non-removable (the home folder in pile
+   *  view) — its pill renders without a remove ×. */
+  stickyRef?: string;
   /** Open the folder search dialog (the Cmd+K command palette). When
    *  set, a search icon renders just above the pills. */
   onSearch?: () => void;
@@ -51,11 +54,12 @@ export function FilterPillStack({
         const color = folderColor(f.ref);
         const Icon = folderIcon(f.ref);
         const isExclude = f.kind === "exclude";
+        const isSticky = f.kind === "include" && !!stickyRef && f.ref === stickyRef;
         return (
           <div
             key={`${f.kind}:${f.ref}`}
             role="listitem"
-            className={"filter-pill" + (isExclude ? " is-exclude" : "") + (onReorder ? " draggable" : "") + (dragRef === keyOf(f) ? " dragging" : "")}
+            className={"filter-pill" + (isExclude ? " is-exclude" : "") + (isSticky ? " is-sticky" : "") + (onReorder ? " draggable" : "") + (dragRef === keyOf(f) ? " dragging" : "")}
             style={{ ["--pill-color" as string]: color }}
             data-tile-ref={keyOf(f)}
             onPointerDown={onReorder ? (e) => onTilePointerDown(e, keyOf(f)) : undefined}
@@ -71,15 +75,17 @@ export function FilterPillStack({
               </span>
               <span className="filter-pill-name">{f.ref}</span>
             </button>
-            <button
-              type="button"
-              className="filter-pill-x"
-              onClick={() => onRemove(f)}
-              title={isExclude ? "Remove exclusion" : "Remove filter"}
-              aria-label={`Remove ${f.ref} filter`}
-            >
-              <XIcon size={11} strokeWidth={2.4} />
-            </button>
+            {!isSticky && (
+              <button
+                type="button"
+                className="filter-pill-x"
+                onClick={() => onRemove(f)}
+                title={isExclude ? "Remove exclusion" : "Remove filter"}
+                aria-label={`Remove ${f.ref} filter`}
+              >
+                <XIcon size={11} strokeWidth={2.4} />
+              </button>
+            )}
           </div>
         );
       })}

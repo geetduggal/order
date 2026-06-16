@@ -193,12 +193,26 @@ export function ViewerApp(
   // "last pile" button can jump back to it after a calendar trip clears
   // the filters. Session-only (in-memory), exactly like the desktop —
   // the URL carries the current pile across reloads, not localStorage.
-  const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
+  const pileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
   useEffect(() => {
     if (view === "pile" && filters.length > 0) {
-      lastPileRef.current = { filters, focusedFolder, pileMode };
+      pileRef.current = { filters, focusedFolder, pileMode };
     }
   }, [view, filters, focusedFolder, pileMode]);
+
+  // Home is sticky in the Pile: pile view ALWAYS includes the home folder
+  // (pinned, non-removable). Only a calendar view may be unfiltered.
+  useEffect(() => {
+    if (view !== "pile") return;
+    const home = data.home?.name ?? null;
+    if (!home) return;
+    if (filters.some((f) => f.kind === "include" && f.ref === home)) return;
+    setFilters((prev) =>
+      prev.some((f) => f.kind === "include" && f.ref === home)
+        ? prev
+        : [...prev, { kind: "include", ref: home }],
+    );
+  }, [view, filters, data.home?.name]);
 
   // Apply a new pill set AND mirror it into the URL (pushState), so the
   // address bar always matches the pills and is shareable / back-able.
@@ -226,6 +240,15 @@ export function ViewerApp(
     pinToFront(ref);
   }
   function removeFilter(target: Filter) {
+    // Home is non-removable in pile view (sticky anchor). Switch to a
+    // calendar view to go unfiltered.
+    if (
+      target.kind === "include" &&
+      target.ref === (data.home?.name ?? null) &&
+      view === "pile"
+    ) {
+      return;
+    }
     const next = filters.filter((f) => !(f.kind === target.kind && f.ref === target.ref));
     commitFilters(next);
     if (next.length === 0) {
@@ -248,8 +271,8 @@ export function ViewerApp(
   }
   // Jump to the last remembered pile. Only non-empty piles are stored,
   // so when there's none, fall back to the home pile (or Week if no home).
-  function goToLastPile() {
-    const last = lastPileRef.current;
+  function goToPile() {
+    const last = pileRef.current;
     if (last && last.filters.length > 0) {
       // Restore the EXACT saved order. Don't call navigate(focusedFolder):
       // it re-prepends the focused folder to the front, which bumped Home
@@ -610,21 +633,21 @@ export function ViewerApp(
           );
         })()}
         {(() => {
-          // "Last pile" button: jump back to the last remembered pile.
+          // "Pile" button: jump back to the last remembered pile.
           // Highlights when you're on it; falls back to Home otherwise.
-          const last = lastPileRef.current;
-          const onLastPile =
+          const last = pileRef.current;
+          const onPile =
             view === "pile" &&
             !!last && last.filters.length > 0 &&
             JSON.stringify(filters) === JSON.stringify(last.filters);
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-last-pile" + (onLastPile ? " is-active" : "")}
-              onClick={goToLastPile}
-              title="Last pile"
-              aria-label="Last pile"
-              aria-pressed={onLastPile}
+              className={"dock-btn dock-btn-pile" + (onPile ? " is-active" : "")}
+              onClick={goToPile}
+              title="Pile"
+              aria-label="Pile"
+              aria-pressed={onPile}
             >
               <Layers size={20} strokeWidth={2.1} />
             </button>
@@ -758,21 +781,34 @@ export function ViewerApp(
             else addInclude(name);
           }}
           filters={(
-            <FilterPillStack
-              filters={filters}
-              onRemove={removeFilter}
-              onClear={resetToDefault}
-              // Drag-reorder the pills → reorders the filter set → reorders
-              // the pile's newspaper sections (sections follow pill order).
-              // Mirrors the desktop. commitFilters keeps the URL in sync.
-              onReorder={(next) => commitFilters(next)}
-              onJump={(ref) => {
-                setView("pile");
-                pinToFront(ref);
-                setFocusedFolder(ref);
-                setScrollTarget(ref);
-              }}
-            />
+            <>
+              <FilterPillStack
+                filters={filters}
+                onRemove={removeFilter}
+                onClear={resetToDefault}
+                stickyRef={view === "pile" ? (data.home?.name ?? undefined) : undefined}
+                // Drag-reorder the pills → reorders the filter set → reorders
+                // the pile's newspaper sections (sections follow pill order).
+                // Mirrors the desktop. commitFilters keeps the URL in sync.
+                onReorder={(next) => commitFilters(next)}
+                onJump={(ref) => {
+                  setView("pile");
+                  pinToFront(ref);
+                  setFocusedFolder(ref);
+                  setScrollTarget(ref);
+                }}
+              />
+              {view !== "pile" && filters.length === 0 && pileRef.current && pileRef.current.filters.length > 0 && (
+                <button
+                  type="button"
+                  className="sb-apply-pile"
+                  onClick={() => commitFilters(pileRef.current!.filters)}
+                  title="Filter this calendar by your pile"
+                >
+                  <Layers size={13} strokeWidth={2} /> Filter by the pile
+                </button>
+              )}
+            </>
           )}
         />
       )}

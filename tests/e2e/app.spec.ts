@@ -32,7 +32,7 @@ test("1a — + in the Pile creates in the top-of-pile NF, filters untouched", as
   await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
   await page.fill(".cmdk-input", "Side Quest");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest", "Home Base"]);
 
   await page.click(".dock-btn-new");
 
@@ -42,7 +42,7 @@ test("1a — + in the Pile creates in the top-of-pile NF, filters untouched", as
     const files = await page.evaluate(() => Object.keys((window as any).__VAULT__.files));
     return files.filter((f) => f.startsWith("Alpha/Alpha Spaces/Side Quest/") && f.endsWith(".md")).length;
   }).toBeGreaterThan(1); // main doc + the new note
-  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest", "Home Base"]);
 });
 
 test("1b — moving an event to another NF switches filter and jumps", async ({ page }) => {
@@ -57,7 +57,7 @@ test("1b — moving an event to another NF switches filter and jumps", async ({ 
   await page.click(".event-action-folder-option:has-text('Side Quest')");
 
   // Filter pinned to the destination NF, pile view, note moved on disk.
-  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest", "Home Base"]);
   await expect.poll(async () => {
     const files = await page.evaluate(() => Object.keys((window as any).__VAULT__.files));
     return files.some((f) => f.startsWith("Alpha/Alpha Spaces/Side Quest/") && f.includes("Standup"));
@@ -94,7 +94,7 @@ test("list add — plain text becomes a text bullet, not a wikilink", async ({ p
   await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
   await page.fill(".cmdk-input", "Side Quest");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest", "Home Base"]);
 
   // Open the bottom add tile, type plain text, commit with Enter.
   await page.locator(".basecard-add-text", { hasText: "Add" }).last().click();
@@ -175,7 +175,7 @@ test("1f — image paste appends a card to a list folder", async ({ page }) => {
   await page.keyboard.press(process.platform === "darwin" ? "Meta+o" : "Control+o");
   await page.fill(".cmdk-input", "Side Quest");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest"]);
+  await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Side Quest", "Home Base"]);
 
   const editor = page.locator(".order-card.is-main .ProseMirror").first();
   await editor.waitFor();

@@ -395,6 +395,9 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>(readInitialView);
+  // Live mirror of `view` for callbacks with empty dep arrays (removeFilter).
+  const viewRef = useRef<View>(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
   // Wipe any persisted view from earlier builds — Order now always opens
   // on the viewport-default (Week on desktop, Day on phones).
   useEffect(() => { try { localStorage.removeItem("order.view"); } catch { /* non-fatal */ } }, []);
@@ -525,6 +528,16 @@ export function CardGrid() {
    *  as "the close button didn't do anything" since the NF Main Doc
    *  re-rendered as a flat-grid card. */
   const removeFilter = useCallback((target: Filter) => {
+    // Home is non-removable in pile view (it's the sticky anchor). The
+    // pill renders without an × anyway; this guards the keyboard / other
+    // paths. To go unfiltered, switch to a calendar view.
+    if (
+      target.kind === "include" &&
+      target.ref === homeFolderRef.current &&
+      viewRef.current === "pile"
+    ) {
+      return;
+    }
     setFilters((prev) => {
       const next = prev.filter(
         (f) => !(f.kind === target.kind && f.ref === target.ref),
@@ -1041,19 +1054,34 @@ export function CardGrid() {
   // dropping the last pill both jump to Week with an empty set), so this
   // snapshot is what Cmd+P restores: you land back on the pile exactly as
   // you left it, not on the cleared everything-shown pile.
-  const lastPileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
+  const pileRef = useRef<{ filters: Filter[]; focusedFolder: string | null; pileMode: PileMode } | null>(null);
   useEffect(() => {
     if (view === "pile" && filters.length > 0) {
-      lastPileRef.current = { filters, focusedFolder, pileMode };
+      pileRef.current = { filters, focusedFolder, pileMode };
     }
   }, [view, filters, focusedFolder, pileMode]);
+
+  // Home is sticky in the Pile: pile view ALWAYS includes the home folder
+  // (pinned, non-removable). Only a calendar view may be unfiltered. If
+  // we're in pile view and home isn't an active include, append it.
+  useEffect(() => {
+    if (view !== "pile") return;
+    const home = homeFolderRef.current;
+    if (!home) return;
+    if (filters.some((f) => f.kind === "include" && f.ref === home)) return;
+    setFilters((prev) =>
+      prev.some((f) => f.kind === "include" && f.ref === home)
+        ? prev
+        : [...prev, { kind: "include", ref: home }],
+    );
+  }, [view, filters]);
 
   /** Jump to the last remembered pile (its filters, focused folder, and
    *  pile mode). Only non-empty piles are ever remembered, so if there's
    *  no snapshot — or it was the global unfiltered pile — fall back to
    *  going home. Powers the dock's "last pile" button. */
-  const goToLastPile = useCallback(() => {
-    const last = lastPileRef.current;
+  const goToPile = useCallback(() => {
+    const last = pileRef.current;
     if (last && last.filters.length > 0) {
       setView("pile");
       setCollapseNonce((n) => n + 1);
@@ -1552,7 +1580,7 @@ export function CardGrid() {
           // — so you land where you left off. Otherwise it's a plain view
           // switch like Cmd+D/W/M, scrolled to the top (newest cards).
           setView("pile");
-          const last = lastPileRef.current;
+          const last = pileRef.current;
           if (last && filtersRef.current.length === 0 && last.filters.length > 0) {
             setFilters(last.filters);
             setFocusedFolder(last.focusedFolder);
@@ -3400,23 +3428,23 @@ export function CardGrid() {
           );
         })()}
         {(() => {
-          // "Last pile" button: jump back to the last remembered pile
+          // "Pile" button: jump back to the last remembered pile
           // (its filters / focus). Highlights when you're currently on
           // it. Falls back to Home when there's no remembered pile (or it
           // was the global unfiltered pile).
-          const last = lastPileRef.current;
-          const onLastPile =
+          const last = pileRef.current;
+          const onPile =
             view === "pile" &&
             !!last && last.filters.length > 0 &&
             JSON.stringify(filters) === JSON.stringify(last.filters);
           return (
             <button
               type="button"
-              className={"dock-btn dock-btn-last-pile" + (onLastPile ? " is-active" : "")}
-              onClick={goToLastPile}
-              title="Last pile"
-              aria-label="Last pile"
-              aria-pressed={onLastPile}
+              className={"dock-btn dock-btn-pile" + (onPile ? " is-active" : "")}
+              onClick={goToPile}
+              title="Pile"
+              aria-label="Pile"
+              aria-pressed={onPile}
             >
               <Layers size={20} strokeWidth={2.1} />
             </button>
@@ -3705,18 +3733,31 @@ export function CardGrid() {
             else addInclude(name);
           }}
           filters={(
-            <FilterPillStack
-              filters={filters}
-              onRemove={removeFilter}
-              onReorder={setFilters}
-              onClear={resetToDefault}
-              onJump={(ref) => {
-                setFocusedFolder(ref);
-                const path = notePathByRef(ref);
-                if (path) navigateAndFocus(path);
-                else setView("pile");
-              }}
-            />
+            <>
+              <FilterPillStack
+                filters={filters}
+                onRemove={removeFilter}
+                onReorder={setFilters}
+                onClear={resetToDefault}
+                stickyRef={view === "pile" ? (homeFolderRef.current ?? undefined) : undefined}
+                onJump={(ref) => {
+                  setFocusedFolder(ref);
+                  const path = notePathByRef(ref);
+                  if (path) navigateAndFocus(path);
+                  else setView("pile");
+                }}
+              />
+              {view !== "pile" && filters.length === 0 && pileRef.current && pileRef.current.filters.length > 0 && (
+                <button
+                  type="button"
+                  className="sb-apply-pile"
+                  onClick={() => setFilters(pileRef.current!.filters)}
+                  title="Filter this calendar by your pile"
+                >
+                  <Layers size={13} strokeWidth={2} /> Filter by the pile
+                </button>
+              )}
+            </>
           )}
         />
       )}

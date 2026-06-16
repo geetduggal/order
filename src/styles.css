@@ -2960,12 +2960,35 @@ iframe.order-youtube-embed {
   border-color: var(--royal);
   background: var(--royal-soft);
 }
-/* Last-pile button lights up when you're sitting on the remembered pile. */
-.dock-btn-last-pile.is-active {
+/* Pile button lights up when you're sitting on the remembered pile. */
+.dock-btn-pile.is-active {
   color: var(--royal);
   border-color: var(--royal);
   background: var(--royal-soft);
 }
+
+/* Sticky (home) filter pill: no remove ×, subtly pinned look. */
+.filter-pill.is-sticky { opacity: 0.95; }
+.filter-pill.is-sticky .filter-pill-icon { color: var(--royal); }
+
+/* "Filter by the pile" — sidebar control shown in a calendar view when
+   unfiltered, to apply your remembered pile's folders to the calendar. */
+.sb-apply-pile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px auto 0;
+  padding: 5px 10px;
+  border: 1px solid var(--royal);
+  border-radius: 6px;
+  background: var(--royal-soft);
+  color: var(--royal);
+  font-family: var(--sans);
+  font-size: calc(11px * var(--text-scale, 1));
+  cursor: pointer;
+}
+.sb-apply-pile:hover { background: var(--royal); color: #fff; }
+.sb-apply-pile svg { flex: 0 0 auto; }
 
 /* ---------- Sidebar slots ----------
    `.sb-filters-slot` hosts the active filter pill stack, rendered
