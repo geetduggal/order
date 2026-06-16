@@ -2952,31 +2952,13 @@ iframe.order-youtube-embed {
   text-align: center;
 }
 
-/* Pile-mode is the visual anchor of the dock. Per-state accents
-   distinguish notes-only / folders-only / all at a glance, with a
-   solid fill so the glyph reads from across the room. */
-.dock-btn-pile {
-  color: var(--ink);
-  border-width: 1.5px;
+/* Calendar button: jumps to the Week view. Lights up like a soft pill
+   whenever you're on a default landing surface (unfiltered Week calendar
+   or the home pile), so the dock confirms a clean baseline state. */
+.dock-btn-cal.is-active {
+  color: var(--royal);
   border-color: var(--royal);
-}
-.dock-btn-pile svg { fill: currentColor; fill-opacity: 0.85; }
-.dock-btn-pile.is-folders {
-  color: #fff;
-  background: var(--royal);
-  border-color: var(--royal);
-}
-.dock-btn-pile.is-folders:hover { color: #fff; background: var(--royal); }
-.dock-btn-pile.is-notes {
-  color: #fff;
-  background: var(--coral);
-  border-color: var(--coral);
-}
-.dock-btn-pile.is-notes:hover { color: #fff; background: var(--coral); }
-.dock-btn-pile.is-all {
-  color: var(--ink);
-  background: var(--bg);
-  border-color: var(--rule);
+  background: var(--royal-soft);
 }
 
 /* ---------- Sidebar slots ----------

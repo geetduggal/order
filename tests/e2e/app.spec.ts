@@ -113,7 +113,8 @@ test("folded — note renders as a spine, click reveals the body", async ({ page
   await bootVault(page);
   await page.click(".dock-btn-home");
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
-  await page.click(".dock-btn-pile-mode"); // show leaf notes
+  // Home lands in "all" pile mode, so leaf notes render alongside the
+  // Main Document.
 
   // The folded note shows its spine (title + "folded" tag), not the body.
   const spine = page.locator(".order-card-spine", { hasText: "Secret Plan" });
@@ -147,9 +148,8 @@ test("1f — image paste lands in the note's NF directory (Milkdown)", async ({ 
   await bootVault(page);
   await page.click(".dock-btn-home");
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
-  // Home defaults to "Notable folders only" — flip Show to all so the
-  // leaf notes (Gallery, Standup) render as cards.
-  await page.click(".dock-btn-pile-mode");
+  // Home lands in "all" pile mode, so the leaf notes (Gallery, Standup)
+  // render as cards.
 
   // Paste into the Gallery card's editor.
   const editor = page.locator(".order-card", { hasText: "Gallery" }).locator(".ProseMirror").first();
@@ -218,8 +218,7 @@ test("1g — OS file drop imports into the flipped NF folder view", async ({ pag
 test("1g — links open through the OS, never in-app", async ({ page }) => {
   await bootVault(page);
   await page.click(".dock-btn-home");
-  // Show leaf notes (home defaults to folders-only).
-  await page.click(".dock-btn-pile-mode");
+  // Home lands in "all" pile mode, so the leaf notes render.
 
   // The Standup note body carries [docs](https://example.com/agenda).
   const link = page.locator(".order-card:has-text('Standup') .ProseMirror a[href*='example.com']").first();

@@ -3338,28 +3338,28 @@ export function CardGrid() {
           +
         </button>
         {(() => {
-          // Show-mode cycle button: tap cycles all → notes → folders → all.
-          // Single-purpose so the dock control reads as a 3-state toggle,
-          // not a popover. View selection (Day/Week/Month/Year/Pile)
-          // moves to the keyboard (Cmd+S/D/W/M/Y).
-          const nextMode = pileMode === "all" ? "notes" : pileMode === "notes" ? "folders" : "all";
-          const Icon = pileMode === "folders" ? FolderIcon : pileMode === "notes" ? FileText : Files;
-          const label = pileMode === "all"
-            ? "Showing all · tap for notes only"
-            : pileMode === "notes"
-              ? "Showing notes only · tap for notable folders only"
-              : "Showing notable folders only · tap for all";
+          // Calendar button: tap goes to the Week view (same destination
+          // the Home toggle reaches when it flips to Calendar). Highlights
+          // whenever you're on one of the two default landing surfaces —
+          // the unfiltered Week calendar, or the home pile (pile filtered
+          // to just the home Notable Folder) — so the icon confirms "you're
+          // at a clean default state."
+          const home = homeFolderRef.current;
+          const noFilters = filters.length === 0;
+          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
+          const isAtCalendar = noFilters && view === "week";
+          const isAtHome = homeFiltered && view === "pile";
+          const active = isAtCalendar || isAtHome;
           return (
             <button
               type="button"
-              className={`dock-btn dock-btn-pile-mode is-${pileMode}`}
-              onClick={() => {
-                setPileMode(() => { writePileMode(nextMode); return nextMode; });
-              }}
-              title={label}
-              aria-label={label}
+              className={"dock-btn dock-btn-cal" + (active ? " is-active" : "")}
+              onClick={() => resetToDefault()}
+              title="Week view"
+              aria-label="Week view"
+              aria-pressed={active}
             >
-              <Icon size={22} strokeWidth={2.1} />
+              <CalendarRange size={22} strokeWidth={2.1} />
             </button>
           );
         })()}

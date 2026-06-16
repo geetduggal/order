@@ -519,22 +519,26 @@ export function ViewerApp(
           just pile-mode + search. */}
       <div className="bottom-dock" role="toolbar" aria-label="Main controls">
         {(() => {
-          const nextMode = pileMode === "all" ? "notes" : pileMode === "notes" ? "folders" : "all";
-          const Icon = pileMode === "folders" ? FolderIcon : pileMode === "notes" ? FileText : Files;
-          const label = pileMode === "all"
-            ? "Showing all · tap for notes only"
-            : pileMode === "notes"
-              ? "Showing notes only · tap for notable folders only"
-              : "Showing notable folders only · tap for all";
+          // Calendar button: tap goes to the Week view (the same place
+          // the Home toggle reaches when it flips to Calendar). Highlights
+          // on either default landing surface — the unfiltered Week
+          // calendar, or the home pile.
+          const home = data.home?.name ?? null;
+          const noFilters = filters.length === 0;
+          const homeFiltered = !!home && includeSet.size === 1 && includeSet.has(home);
+          const isAtCalendar = noFilters && view === "week";
+          const isAtHome = homeFiltered && view === "pile";
+          const active = isAtCalendar || isAtHome;
           return (
             <button
               type="button"
-              className={`dock-btn dock-btn-pile-mode is-${pileMode}`}
-              onClick={() => setPileModePersist(nextMode)}
-              title={label}
-              aria-label={label}
+              className={"dock-btn dock-btn-cal" + (active ? " is-active" : "")}
+              onClick={() => resetToDefault()}
+              title="Week view"
+              aria-label="Week view"
+              aria-pressed={active}
             >
-              <Icon size={22} strokeWidth={2.1} />
+              <CalendarRange size={22} strokeWidth={2.1} />
             </button>
           );
         })()}
