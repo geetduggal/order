@@ -2,7 +2,7 @@
 // `space` (the Areas → Categories → Notable Folders hierarchy) and
 // `time` (events + seasons). Generated from the directory structure and
 // note frontmatter and written to `spacetime.yml` at the vault root. See
-// SPACETIME.md for the format essay.
+// CONVENTIONS.md for the format essay.
 //
 // The serializer is hand-rolled rather than js-yaml because the format
 // has specific human conventions js-yaml won't produce: `space` as nested
@@ -214,7 +214,7 @@ export function serializeSpacetime(st: Spacetime): string {
   lines.push("time:");
   // Share the date + title column widths across seasons AND events so the
   // column after the title (endDate for seasons, folder for events) lines
-  // up across both lists, the way SPACETIME.md shows.
+  // up across both lists, the way CONVENTIONS.md shows.
   const seasonRecs = st.seasons as unknown as Record<string, unknown>[];
   const eventRecs = st.events as unknown as Record<string, unknown>[];
   const dateTitleW = segWidths(seasonRecs, ["date", "title"], eventRecs);
