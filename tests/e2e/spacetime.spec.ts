@@ -10,6 +10,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import {
   serializeSpacetime,
+  parseSpacetime,
   buildSpacetime,
   type Spacetime,
   type SpacetimeNote,
@@ -146,6 +147,19 @@ test("spacetime — a long title doesn't blow out the column for other rows", ()
   for (const l of shortRows) expect(l.length).toBeLessThan(110);
   // Still legal YAML.
   expect(() => yaml.load(text)).not.toThrow();
+});
+
+test("spacetime — serialize then parse round-trips the model", () => {
+  const parsed = parseSpacetime(serializeSpacetime(SHOWCASE));
+  expect(parsed).toEqual(SHOWCASE);
+});
+
+test("spacetime — parser keeps dates and times as strings (JSON schema)", () => {
+  const parsed = parseSpacetime(serializeSpacetime(SHOWCASE));
+  const standup = parsed.events.find((e) => e.title === "Team standup")!;
+  expect(standup.time).toBe("09:00");
+  expect(standup.date).toBe("2026-06-16");
+  expect(typeof standup.time).toBe("string");
 });
 
 test("spacetime — space nesting indents 4 spaces per level", () => {

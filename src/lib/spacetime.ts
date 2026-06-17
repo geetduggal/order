@@ -9,6 +9,7 @@
 // block lists, and `time` records as column-aligned flow mappings with
 // `date` and `title` first. Output is still legal YAML (round-trip tested).
 
+import yaml from "js-yaml";
 import type { VaultTaxonomy } from "./taxonomy";
 import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
 import { noteFolder } from "./folders";
@@ -242,6 +243,67 @@ function renderRecords(
 const DATE_CAP = 99;
 const TITLE_CAP = 44;
 const FOLDER_CAP = 24;
+
+// ---------- YAML parsing (reverse of serialize) ----------
+
+/** Parse the nested `space:` block back into SpaceNodes. Each item is
+ *  either a bare name (leaf) or a single-key map `{Name: [children]}`. */
+function parseSpaceNodes(items: unknown): SpaceNode[] {
+  if (!Array.isArray(items)) return [];
+  const out: SpaceNode[] = [];
+  for (const item of items) {
+    if (typeof item === "string") { out.push({ name: item, children: [] }); continue; }
+    if (item && typeof item === "object") {
+      const name = Object.keys(item as Record<string, unknown>)[0];
+      if (!name) continue;
+      const children = (item as Record<string, unknown>)[name];
+      out.push({ name, children: parseSpaceNodes(children) });
+    }
+  }
+  return out;
+}
+
+function str(v: unknown): string | undefined {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "number") return String(v); // a bare value coerced by YAML
+  return undefined;
+}
+
+/** Parse a spacetime.yml document into the model. Uses JSON_SCHEMA so
+ *  bare dates (`2026-06-15`) and times (`09:00`) stay STRINGS rather than
+ *  being coerced to Date / sexagesimal-number values. Tolerant: malformed
+ *  records are skipped. */
+export function parseSpacetime(text: string): Spacetime {
+  let doc: Record<string, unknown> = {};
+  try {
+    const loaded = yaml.load(text, { schema: yaml.JSON_SCHEMA });
+    if (loaded && typeof loaded === "object") doc = loaded as Record<string, unknown>;
+  } catch { /* fall through to empty */ }
+  const space = parseSpaceNodes(doc.space);
+  const time = (doc.time && typeof doc.time === "object" ? doc.time : {}) as Record<string, unknown>;
+  const rawSeasons = Array.isArray(time.seasons) ? time.seasons : [];
+  const rawEvents = Array.isArray(time.events) ? time.events : [];
+  const seasons: SpacetimeSeason[] = [];
+  for (const r of rawSeasons as Record<string, unknown>[]) {
+    const date = str(r?.date); const title = str(r?.title);
+    if (!date || !title) continue;
+    seasons.push({ date, title, ...(str(r.endDate) ? { endDate: str(r.endDate)! } : {}) });
+  }
+  const events: SpacetimeEvent[] = [];
+  for (const r of rawEvents as Record<string, unknown>[]) {
+    const date = str(r?.date); const title = str(r?.title);
+    if (!date || !title) continue;
+    events.push({
+      date, title,
+      ...(str(r.folder) ? { folder: str(r.folder)! } : {}),
+      ...(str(r.time) ? { time: str(r.time)! } : {}),
+      ...(str(r.endTime) ? { endTime: str(r.endTime)! } : {}),
+      ...(str(r.endDate) ? { endDate: str(r.endDate)! } : {}),
+      ...(r.allDay === true ? { allDay: true } : {}),
+    });
+  }
+  return { space, seasons, events };
+}
 
 /** Serialize a Spacetime model to the canonical YAML text. */
 export function serializeSpacetime(st: Spacetime): string {
