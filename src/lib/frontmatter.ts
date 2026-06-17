@@ -139,6 +139,80 @@ export function suggestCalendarPatch(
  *  blockquote `>`). Returns null for an empty body. Used by auto-rename
  *  so the filename always tracks the visible first line of the note,
  *  regardless of whether it's formatted as a heading. */
+/** Strip inline markdown so a body line reads as a plain title. */
+export function stripMarkdownInline(s: string): string {
+  let t = s;
+  t = t.replace(/^([-*+]|\d+\.)\s+/, "");
+  t = t.replace(/^\[[\sxX]\]\s+/, "");
+  t = t.replace(/\\?\[\\?\[\s*([^\]|]+?)(?:\s*\|\s*([^\]]+?))?\s*\\?\]\\?\]/g,
+    (_m, page, alias) => (alias ?? page).trim());
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+  t = t.replace(/`([^`]+)`/g, "$1");
+  t = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1");
+  t = t.replace(/__([^_]+)__/g, "$1").replace(/_([^_]+)_/g, "$1");
+  t = t.replace(/\\([\[\]()*_`#~|<>!])/g, "$1");
+  return t.trim();
+}
+
+/** If a line is ONLY an image embed (`![alt](url)` or `![[file]]`),
+ *  return a clean title derived from the image's basename (path and
+ *  extension stripped, e.g. `image-2026-06-16-1925`), never the raw URL.
+ *  Returns null when the line isn't a lone image. */
+export function imageLineTitle(line: string): string | null {
+  const t = line.trim();
+  let url: string | undefined;
+  const inflated = t.match(/^!\[[^\]]*\]\(\s*([^)]+?)\s*\)$/);
+  if (inflated) url = inflated[1];
+  else {
+    const obsidian = t.match(/^!\[\[\s*([^\]|]+?)\s*(?:\|[^\]]*)?\]\]$/);
+    if (obsidian) url = obsidian[1];
+  }
+  if (!url) return null;
+  let base = url.split(/[?#]/)[0].split("/").pop() ?? url;
+  try { base = decodeURIComponent(base); } catch { /* keep raw */ }
+  base = base.replace(/\.[A-Za-z0-9]+$/, "").trim();
+  return base || "image";
+}
+
+/** Derive a clean note title from the body: the first usable line, with
+ *  an image-only line reduced to its basename instead of its URL. Null
+ *  when the body has no usable content. */
+export function deriveNoteTitleFromBody(body: string): string | null {
+  for (const line of body.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    const img = imageLineTitle(t);
+    if (img) return img;
+    const raw = t.startsWith("#") ? t.replace(/^#+\s*/, "") : t;
+    const cleaned = stripMarkdownInline(raw);
+    if (!cleaned) continue;
+    return cleaned.length > 60 ? cleaned.slice(0, 57) + "…" : cleaned;
+  }
+  return null;
+}
+
+/** Clean a filename (without extension) into a title: drop a leading ISO
+ *  date prefix, and if image-embed junk was baked into the name, reduce
+ *  it to the image basename. */
+export function cleanFilenameTitle(nameNoExt: string): string {
+  const noDate = nameNoExt.replace(/^\d{4}-\d{2}-\d{2}\s*-?\s*/, "");
+  const img = imageLineTitle(noDate) ?? imageLineTitle(nameNoExt);
+  if (img) return img;
+  // A name that still carries a sanitized image path (`...]( ...image-x.png)`)
+  // collapses to its trailing image-like segment.
+  const trailing = noDate.match(/(image[-\w]*?-\d{4}-\d{2}-\d{2}[-\w]*?)(?:\.[a-z0-9]+)?\)?$/i);
+  if (trailing) return trailing[1];
+  return noDate.trim() || nameNoExt.trim() || "Untitled";
+}
+
+/** The authoritative title for a note: the frontmatter `title:` when set,
+ *  else a clean title derived from the body, else a cleaned filename.
+ *  Never returns a raw image URL. */
+export function noteTitle(fm: Frontmatter, body: string, filenameNoExt: string): string {
+  if (typeof fm.title === "string" && fm.title.trim()) return fm.title.trim();
+  return deriveNoteTitleFromBody(body) ?? cleanFilenameTitle(filenameNoExt);
+}
+
 export function firstLineTitle(body: string): string | null {
   for (const line of body.split(/\r?\n/)) {
     const trimmed = line.trim();

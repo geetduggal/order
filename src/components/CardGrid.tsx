@@ -167,6 +167,7 @@ import {
   splitFrontmatter,
   suggestCalendarPatch,
   toIsoDateValue,
+  noteTitle,
   type Frontmatter,
 } from "../lib/frontmatter";
 import yaml from "js-yaml";
@@ -250,44 +251,6 @@ function newNoteId(): string { return `n${nextNoteId++}`; }
  *  task checkboxes, wikilinks (including Milkdown's backslash-escaped
  *  form), markdown links, inline code, emphasis, and backslash escapes
  *  of markdown specials. Conservative: pure text passes through. */
-function stripMarkdownInline(s: string): string {
-  let t = s;
-  // Leading list marker: `-`, `*`, `+`, or `N.`
-  t = t.replace(/^([-*+]|\d+\.)\s+/, "");
-  // Leading task checkbox: `[ ]`, `[x]`, `[X]`
-  t = t.replace(/^\[[\sxX]\]\s+/, "");
-  // Wikilinks: `[[Page]]` → Page, `[[Page|Alias]]` → Alias. Allow optional
-  // backslash escapes around the brackets (Milkdown emits `\[\[…\]\]`).
-  t = t.replace(/\\?\[\\?\[\s*([^\]|]+?)(?:\s*\|\s*([^\]]+?))?\s*\\?\]\\?\]/g,
-    (_m, page, alias) => (alias ?? page).trim());
-  // Markdown links: `[text](url)` → text
-  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
-  // Inline code
-  t = t.replace(/`([^`]+)`/g, "$1");
-  // Emphasis (display-grade — good enough for a one-line title)
-  t = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1");
-  t = t.replace(/__([^_]+)__/g, "$1").replace(/_([^_]+)_/g, "$1");
-  // Strip remaining backslash escapes of markdown specials
-  t = t.replace(/\\([\[\]()*_`#~|<>!])/g, "$1");
-  return t.trim();
-}
-
-function deriveTitle(body: string, fallback: string): string {
-  const lines = body.split(/\r?\n/);
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t) continue;
-    const raw = t.startsWith("#") ? t.replace(/^#+\s*/, "") : t;
-    const cleaned = stripMarkdownInline(raw);
-    if (!cleaned) continue; // a heading that was pure syntax — try next line
-    return cleaned.length > 60 ? cleaned.slice(0, 57) + "…" : cleaned;
-  }
-  // No usable H1: fall back to the filename, stripping any
-  // `YYYY-MM-DD ` / `YYYY-MM-DD - ` date prefix so calendar / card titles
-  // read as "Untitled" rather than "2026-05-26 Untitled".
-  return fallback.replace(/^\d{4}-\d{2}-\d{2}\s*-?\s*/, "") || fallback;
-}
-
 /** Light frontmatter parse from the YAML string the Rust metadata walker
  *  returns. Mirrors splitFrontmatter's parse step without rebuilding the
  *  `---\nyaml\n---\n` envelope. Returns {} on parse failure (matches the
@@ -386,7 +349,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
         path: m.path,
         filename,
         frontmatter,
-        title: deriveTitle(body, filename.replace(/\.md$/, "")),
+        title: noteTitle(frontmatter, body, filename.replace(/\.md$/, "")),
         body,
         mtime: m.mtimeMs,
       });
@@ -1889,7 +1852,10 @@ export function CardGrid() {
       time?: string; endTime?: string; endDate?: string; allDay: boolean }[] = [];
     for (const src of mwNotes) {
       const dir = vaultDir(toVaultRel(src.path));
-      const folder = noteFolder(src.frontmatter);
+      // The event's Notable Folder: the source note's `folder:`, else its
+      // own containing directory (its NF). Without this, a markwhen note
+      // with no `folder:` produced backing notes that no folder claimed.
+      const folder = noteFolder(src.frontmatter) ?? (dir.split("/").pop() || null);
       for (const ev of parseMarkwhenEvents(src.body)) {
         const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
         if (existing.has(k)) continue;

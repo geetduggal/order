@@ -10,7 +10,7 @@
 // `date` and `title` first. Output is still legal YAML (round-trip tested).
 
 import type { VaultTaxonomy } from "./taxonomy";
-import { type Frontmatter, toIsoDateValue } from "./frontmatter";
+import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
 import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
@@ -52,6 +52,20 @@ export interface SpacetimeNote {
   /** Display title (frontmatter title or first line); falls back to the
    *  filename when absent. */
   title?: string;
+  /** Vault path. Used to recover a note's Notable Folder when its
+   *  frontmatter has no `folder:` (e.g. a markwhen source note): the
+   *  folder is the note's parent directory. */
+  path?: string;
+}
+
+/** The Notable Folder a note belongs to: its `folder:` frontmatter, else
+ *  its parent directory name (files live only inside their NF). */
+function folderOf(n: SpacetimeNote): string | undefined {
+  const explicit = noteFolder(n.frontmatter);
+  if (explicit) return explicit;
+  if (!n.path) return undefined;
+  const parts = n.path.split("/");
+  return parts.length >= 2 ? parts[parts.length - 2] : undefined;
 }
 
 /** Build the canonical Spacetime model from the vault: `space` from the
@@ -78,8 +92,8 @@ export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spac
     const allDay = fm.allDay === true || (!!startRaw && !time);
     if (!allDay && !time) continue; // dated reference note, not an event
     const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
-    const folder = noteFolder(fm) ?? undefined;
-    const title = n.title || n.filename.replace(/\.md$/i, "");
+    const folder = folderOf(n);
+    const title = noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
     const ev: SpacetimeEvent = {
       date, title,
       ...(folder ? { folder } : {}),
@@ -96,7 +110,7 @@ export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spac
   // by the same identity, so a materialized backing note won't double up.
   for (const n of notes) {
     if (n.frontmatter.markwhen !== true) continue;
-    const folder = noteFolder(n.frontmatter) ?? undefined;
+    const folder = folderOf(n);
     for (const mw of parseMarkwhenEvents(n.body)) {
       const ev: SpacetimeEvent = { ...mw, ...(folder ? { folder } : {}) };
       const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;

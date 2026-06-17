@@ -41,6 +41,21 @@ test("markwhen — buildSpacetime folds in a markwhen note's events with its fol
   for (const e of st.events) expect(e.folder).toBe("Order");
 });
 
+test("markwhen — folder falls back to the note's directory when no folder: frontmatter", () => {
+  const notes: SpacetimeNote[] = [
+    {
+      filename: "Retro SD Card.md",
+      frontmatter: { markwhen: true }, // no folder:
+      path: "Craft/Craft Projects/Retro SD Card/Retro SD Card.md",
+      body: "2026-06-17 7am: Test\n",
+      title: "Retro SD Card",
+    },
+  ];
+  const st = buildSpacetime(notes, { areas: [], hiddenRefs: new Set() });
+  expect(st.events).toHaveLength(1);
+  expect(st.events[0]).toMatchObject({ date: "2026-06-17", title: "Test", time: "07:00", folder: "Retro SD Card" });
+});
+
 test("markwhen — a markwhen event already backed by a note is not duplicated", () => {
   const notes: SpacetimeNote[] = [
     {
