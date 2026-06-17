@@ -293,8 +293,14 @@ function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   // frontmatter, but the todo.txt parser needs the whole body to
   // build calendar events. Pre-load so the first calendar render
   // sees them.
-  if (filename.toLowerCase().endsWith(".txt")) return true;
+  if (/\.(txt|ya?ml)$/i.test(filename)) return true;
   return false;
+}
+
+/** Plain-text companion files (todo.txt, spacetime.yml) edited raw, not
+ *  as markdown. */
+function isRawTextFile(filename: string): boolean {
+  return /\.(txt|ya?ml)$/i.test(filename);
 }
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
@@ -318,7 +324,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
         // files (.txt) skip the frontmatter split and the calendar
         // migration; the body is the whole file.
         const raw = await readVault(m.path);
-        if (filename.toLowerCase().endsWith(".txt")) {
+        if (isRawTextFile(filename)) {
           body = raw;
         } else {
           const split = splitFrontmatter(raw);
@@ -350,7 +356,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
         path: m.path,
         filename,
         frontmatter,
-        title: noteTitle(frontmatter, body, filename.replace(/\.md$/, "")),
+        title: isRawTextFile(filename) ? filename : noteTitle(frontmatter, body, filename.replace(/\.md$/, "")),
         body,
         mtime: m.mtimeMs,
       });
@@ -1824,8 +1830,21 @@ export function CardGrid() {
     if (!notes) return;
     const content = serializeSpacetime(buildSpacetime(notes, vaultTaxonomy));
     if (content === lastSpacetimeRef.current) return;
-    lastSpacetimeRef.current = content;
-    void writeVault("spacetime.yml", content);
+    void (async () => {
+      // Don't clobber a hand-edited spacetime.yml: if what's on disk isn't
+      // what we last generated, the user edited it (open spacetime.yml card)
+      // — hold off rewriting until they "Apply spacetime.yml to vault",
+      // which resets this ref. First write (ref null) or a missing file
+      // always proceeds.
+      if (lastSpacetimeRef.current !== null) {
+        try {
+          const onDisk = await readVault("spacetime.yml");
+          if (onDisk !== lastSpacetimeRef.current) return;
+        } catch { /* missing → write it */ }
+      }
+      lastSpacetimeRef.current = content;
+      await writeVault("spacetime.yml", content);
+    })();
   }, [notes, vaultTaxonomy]);
 
   // ---- markwhen → backing notes ---------------------------------
@@ -2040,6 +2059,9 @@ export function CardGrid() {
       }
 
       setSyncReview(null);
+      // Allow the mirror to rewrite the canonical spacetime.yml now that
+      // the vault reflects the applied edits (clears the hand-edit hold).
+      lastSpacetimeRef.current = null;
       await reloadNotes();
     } finally {
       setSyncBusy(false);
@@ -2606,6 +2628,30 @@ export function CardGrid() {
     setFocusedPath(fullPath);
     setScrollTargetPath(fullPath);
   }, []);
+
+  /** Open spacetime.yml as an editable raw-text card (like todo.txt). The
+   *  continuous mirror writes it as you work; opening it lets you hand-edit
+   *  and then "Apply spacetime.yml to vault" to sync the changes back. */
+  const openSpacetime = useCallback(async () => {
+    const relPath = "spacetime.yml";
+    const root = await vaultRoot();
+    const fullPath = `${root}/${relPath}`;
+    const existing = notesRef.current?.find((n) => toVaultRel(n.path) === relPath);
+    if (!existing) {
+      const content = serializeSpacetime(buildSpacetime(notesRef.current ?? [], vaultTaxonomy));
+      await writeVault(relPath, content);
+      setNotes((prev) => [
+        ...(prev ?? []),
+        { id: newNoteId(), path: fullPath, filename: relPath, frontmatter: {}, title: relPath, body: content, mtime: Date.now() },
+      ]);
+    }
+    setView("pile");
+    setFilters([{ kind: "include", ref: relPath }]);
+    setFocusedFolder(null);
+    setFocusPath(fullPath);
+    setFocusedPath(fullPath);
+    setScrollTargetPath(fullPath);
+  }, [vaultTaxonomy]);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
@@ -4009,6 +4055,7 @@ export function CardGrid() {
           onClose={() => setSettingsOpen(false)}
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
           onSyncSpacetime={() => { void onSyncSpacetime(); }}
+          onOpenSpacetime={() => { void openSpacetime(); setSettingsOpen(false); }}
         />
       )}
 

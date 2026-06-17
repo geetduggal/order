@@ -1191,12 +1191,12 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
-        ) : filename.toLowerCase().endsWith(".txt") ? (
+        ) : /\.(txt|ya?ml)$/i.test(filename) ? (
           // Plain-text card surface — no Crepe, no markdown
-          // interpretation. Used for todo.txt so the format's `+`,
-          // `[`, and `due:` tokens survive a round-trip through the
-          // editor. The save pipeline is identical: onChange feeds
-          // the same debounced writer, onDone flushes on blur.
+          // interpretation. Used for todo.txt and spacetime.yml so their
+          // raw syntax survives a round-trip through the editor. The save
+          // pipeline is identical: onChange feeds the same debounced
+          // writer, onDone flushes on blur.
           <RawTextSurface
             initial={state.body}
             onChange={handleChange}

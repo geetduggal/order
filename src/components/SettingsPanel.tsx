@@ -15,7 +15,7 @@ import {
 } from "../lib/todo-txt";
 
 export function SettingsPanel({
-  onChangeVault, onClose, onOpenTodoTxt, onSyncSpacetime,
+  onChangeVault, onClose, onOpenTodoTxt, onSyncSpacetime, onOpenSpacetime,
 }: {
   /** Persist the chosen absolute path (or null to reset to default)
    *  and reload the vault. */
@@ -27,6 +27,8 @@ export function SettingsPanel({
   /** Diff the on-disk spacetime.yml against the vault and open a review
    *  of the changes it would apply (create/update/delete notes, folders). */
   onSyncSpacetime: () => void;
+  /** Open spacetime.yml as an editable raw-text card. */
+  onOpenSpacetime: () => void;
 }) {
   const initialTodo = getTodoTxtSettings();
   const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
@@ -180,9 +182,16 @@ export function SettingsPanel({
             <button
               type="button"
               className="settings-btn"
+              onClick={() => { onOpenSpacetime(); onClose(); }}
+            >
+              Open spacetime.yml
+            </button>
+            <button
+              type="button"
+              className="settings-btn"
               onClick={() => { onSyncSpacetime(); onClose(); }}
             >
-              Apply spacetime.yml to vault…
+              Apply to vault…
             </button>
           </div>
           <span className="settings-hint">
