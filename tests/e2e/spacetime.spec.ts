@@ -5,10 +5,17 @@
 
 import { test, expect } from "@playwright/test";
 import yaml from "js-yaml";
+import { promises as fs } from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
 import {
   serializeSpacetime,
+  buildSpacetime,
   type Spacetime,
+  type SpacetimeNote,
 } from "../../src/lib/spacetime";
+import { splitFrontmatter } from "../../src/lib/frontmatter";
+import { buildVaultTaxonomy } from "../../src/lib/taxonomy";
 
 const SHOWCASE: Spacetime = {
   space: [
@@ -88,6 +95,37 @@ test("spacetime — anchored columns are aligned across event rows", () => {
   // `title:` likewise.
   const titleCols = eventLines.map((l) => l.indexOf("title:"));
   expect(new Set(titleCols).size).toBe(1);
+});
+
+test("spacetime — builds from a real vault on disk into legal YAML", async () => {
+  const vaultRoot = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "fixtures",
+    "vault",
+  );
+  // Walk every .md, splitting frontmatter so we get the same notes the
+  // app would. (Filenames carry {{TODAY}} placeholders, so we don't
+  // assert on specific events — just that the build + serialize is sound.)
+  const notes: SpacetimeNote[] = [];
+  async function walk(dir: string): Promise<void> {
+    for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) { await walk(full); continue; }
+      if (!ent.name.endsWith(".md")) continue;
+      const raw = await fs.readFile(full, "utf8");
+      const { frontmatter, body } = splitFrontmatter(raw);
+      notes.push({ filename: ent.name, frontmatter, body });
+    }
+  }
+  await walk(vaultRoot);
+  const tax = buildVaultTaxonomy(notes);
+  const text = serializeSpacetime(buildSpacetime(notes, tax));
+
+  // Legal YAML, with the two top-level keys and the Alpha area in space.
+  const parsed = yaml.load(text) as { space: Array<Record<string, unknown>>; time: unknown };
+  expect(Object.keys(parsed)).toEqual(["space", "time"]);
+  const areaNames = parsed.space.map((a) => Object.keys(a)[0] ?? Object.values(a)[0]);
+  expect(areaNames).toContain("Alpha");
 });
 
 test("spacetime — space nesting indents 4 spaces per level", () => {

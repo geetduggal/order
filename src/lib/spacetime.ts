@@ -10,6 +10,9 @@
 // `date` and `title` first. Output is still legal YAML (round-trip tested).
 
 import type { VaultTaxonomy } from "./taxonomy";
+import { type Frontmatter, toIsoDateValue } from "./frontmatter";
+import { noteFolder } from "./folders";
+import { parseSeasons, isSeasonsFile } from "./seasons";
 
 /** One node in the space hierarchy: a name plus its ordered children
  *  (the "brood"). Leaves have an empty children list. */
@@ -38,6 +41,59 @@ export interface Spacetime {
   space: SpaceNode[];
   seasons: SpacetimeSeason[];
   events: SpacetimeEvent[];
+}
+
+/** Minimal note shape the Spacetime builder reads. */
+export interface SpacetimeNote {
+  filename: string;
+  frontmatter: Frontmatter;
+  body: string;
+  /** Display title (frontmatter title or first line); falls back to the
+   *  filename when absent. */
+  title?: string;
+}
+
+/** Build the canonical Spacetime model from the vault: `space` from the
+ *  taxonomy, `time.events` from note frontmatter (calendar events only —
+ *  all-day or timed — deduped by identity and date-sorted), and
+ *  `time.seasons` from Seasons.md. Pure and deterministic. */
+export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spacetime {
+  const space = spaceFromTaxonomy(tax);
+
+  const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+  const seasons: SpacetimeSeason[] = (seasonsFile ? parseSeasons(seasonsFile.body) : [])
+    .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const byKey = new Map<string, SpacetimeEvent>();
+  for (const n of notes) {
+    const fm = n.frontmatter;
+    const date = toIsoDateValue(fm.date);
+    if (!date) continue;
+    const startRaw = typeof fm.startTime === "string" ? fm.startTime : undefined;
+    const time = startRaw && /^\d{2}:\d{2}$/.test(startRaw) ? startRaw : undefined;
+    const endRaw = typeof fm.endTime === "string" ? fm.endTime : undefined;
+    const endTime = endRaw && /^\d{2}:\d{2}$/.test(endRaw) ? endRaw : undefined;
+    const allDay = fm.allDay === true || (!!startRaw && !time);
+    if (!allDay && !time) continue; // dated reference note, not an event
+    const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
+    const folder = noteFolder(fm) ?? undefined;
+    const title = n.title || n.filename.replace(/\.md$/i, "");
+    const ev: SpacetimeEvent = {
+      date, title,
+      ...(folder ? { folder } : {}),
+      ...(time ? { time } : {}),
+      ...(endTime ? { endTime } : {}),
+      ...(endDate ? { endDate } : {}),
+      ...(allDay ? { allDay: true } : {}),
+    };
+    const k = `${date}|${time ?? ""}|${title.toLowerCase()}`;
+    if (!byKey.has(k)) byKey.set(k, ev);
+  }
+  const events = [...byKey.values()].sort((a, b) =>
+    (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")),
+  );
+  return { space, seasons, events };
 }
 
 /** Build the `space` tree from Order's taxonomy: areas → categories →

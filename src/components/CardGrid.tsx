@@ -22,6 +22,7 @@ import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./Calendar
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, isSeasonsFile, type Season } from "../lib/seasons";
+import { buildSpacetime, serializeSpacetime } from "../lib/spacetime";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
@@ -1841,6 +1842,23 @@ export function CardGrid() {
       n.path === todoPath ? { ...n, body: result.body } : n,
     ) ?? null);
   }, [notes, todoSettings.enabled, todoSettings.path]);
+
+  // ---- spacetime.yml mirror -------------------------------------
+  // Continuously regenerate the canonical spacetime.yml at the vault root
+  // from the directory structure (space) and note frontmatter + Seasons.md
+  // (time). It's a generated projection — the markdown files stay the
+  // source of truth; spacetime.yml is the compiled, machine-ready picture.
+  // Writes route through the self-write filter (a .yml isn't a markdown
+  // note, so it never re-enters notes), and we skip when content is
+  // unchanged to avoid redundant writes. See SPACETIME.md.
+  const lastSpacetimeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!notes) return;
+    const content = serializeSpacetime(buildSpacetime(notes, vaultTaxonomy));
+    if (content === lastSpacetimeRef.current) return;
+    lastSpacetimeRef.current = content;
+    void writeVault("spacetime.yml", content);
+  }, [notes, vaultTaxonomy]);
 
   useGridLayout(gridEl);
 
