@@ -136,7 +136,7 @@ Space composes through one rule. The brood is the full set of children under a n
 
 ## Canonical form and writing surface
 
-The merged file is the canonical form: the complete, machine ready picture of space and time. You can edit it by hand, but you rarely need to. You write on the surfaces instead: a dated note, a one line event, a folder's own frontmatter. Surfaces compile down into the canonical Spacetime, so you never choose between writing fast and keeping structure.
+The merged file is the canonical form: the complete, machine ready picture of space and time. You can edit it by hand, but you rarely need to. You write on the surfaces instead: a dated note, a one line event, a folder's own frontmatter, or a [markwhen](https://markwhen.com) timeline in a note marked `markwhen: true`. Surfaces compile down into the canonical Spacetime, so you never choose between writing fast and keeping structure. A markwhen note also materializes a backing note in its folder for each event it names, so the timeline becomes real notes you can open.
 
 ## In one line
 

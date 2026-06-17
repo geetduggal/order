@@ -23,6 +23,7 @@ import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import { buildSpacetime, serializeSpacetime } from "../lib/spacetime";
+import { parseMarkwhenEvents } from "../lib/markwhen";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
@@ -321,6 +322,9 @@ function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   if (fm.role === "seasons") return true;
   if (typeof fm.category === "string" && fm.category) return true;
   if (typeof fm.list === "string" && fm.list) return true;
+  // markwhen notes: the timeline lives in the body, and both the
+  // spacetime mirror and the backing-note materializer need it up front.
+  if (fm.markwhen === true) return true;
   // Plain-text files (.txt — currently used for todo.txt) carry no
   // frontmatter, but the todo.txt parser needs the whole body to
   // build calendar events. Pre-load so the first calendar render
@@ -1859,6 +1863,74 @@ export function CardGrid() {
     lastSpacetimeRef.current = content;
     void writeVault("spacetime.yml", content);
   }, [notes, vaultTaxonomy]);
+
+  // ---- markwhen → backing notes ---------------------------------
+  // A note with `markwhen: true` carries a markwhen timeline in its body.
+  // For each event in it, materialize a real event note in the same
+  // directory if one doesn't already exist (matched by date + time +
+  // title), using Order's normal event-note convention. Idempotent: once
+  // a backing note exists, its identity is in `notes` and we skip it.
+  const materializingRef = useRef(false);
+  useEffect(() => {
+    if (!notes || materializingRef.current) return;
+    const mwNotes = notes.filter((n) => n.frontmatter.markwhen === true);
+    if (mwNotes.length === 0) return;
+    // Identity set of every event note already on disk.
+    const existing = new Set<string>();
+    for (const n of notes) {
+      const d = toIsoDateValue(n.frontmatter.date);
+      if (!d) continue;
+      const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
+        ? n.frontmatter.startTime : "";
+      const t = (n.title || n.filename.replace(/\.md$/i, "")).toLowerCase();
+      existing.add(`${d}|${st}|${t}`);
+    }
+    const toCreate: { dir: string; folder: string | null; date: string; title: string;
+      time?: string; endTime?: string; endDate?: string; allDay: boolean }[] = [];
+    for (const src of mwNotes) {
+      const dir = vaultDir(toVaultRel(src.path));
+      const folder = noteFolder(src.frontmatter);
+      for (const ev of parseMarkwhenEvents(src.body)) {
+        const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
+        if (existing.has(k)) continue;
+        existing.add(k); // also dedupe within this pass
+        toCreate.push({
+          dir, folder, date: ev.date, title: ev.title,
+          time: ev.time, endTime: ev.endTime, endDate: ev.endDate,
+          allDay: ev.allDay === true || !ev.time,
+        });
+      }
+    }
+    if (toCreate.length === 0) return;
+    materializingRef.current = true;
+    let cancelled = false;
+    (async () => {
+      const created: LoadedNote[] = [];
+      for (const c of toCreate) {
+        const fm: Frontmatter = {
+          allDay: c.allDay,
+          date: c.date,
+          ...(c.time ? { startTime: c.time } : {}),
+          ...(c.endTime ? { endTime: c.endTime } : {}),
+          ...(c.endDate ? { endDate: c.endDate } : {}),
+          ...(c.folder ? { folder: `[[${c.folder}]]` } : {}),
+          title: c.title,
+        };
+        const seedBody = `# ${c.title}\n`;
+        try {
+          const path = await uniqueWrite(c.dir, basenameForEvent(c.date, c.title), joinFrontmatter(fm, seedBody));
+          if (cancelled) return;
+          created.push({
+            id: newNoteId(), path, filename: path.split("/").pop() ?? "",
+            frontmatter: fm, title: c.title, body: seedBody, mtime: Date.now(),
+          });
+        } catch { /* name collision storm or write error: skip this one */ }
+      }
+      materializingRef.current = false;
+      if (created.length && !cancelled) setNotes((prev) => [...(prev ?? []), ...created]);
+    })();
+    return () => { cancelled = true; materializingRef.current = false; };
+  }, [notes]);
 
   useGridLayout(gridEl);
 

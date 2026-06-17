@@ -13,6 +13,7 @@ import type { VaultTaxonomy } from "./taxonomy";
 import { type Frontmatter, toIsoDateValue } from "./frontmatter";
 import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
+import { parseMarkwhenEvents } from "./markwhen";
 
 /** One node in the space hierarchy: a name plus its ordered children
  *  (the "brood"). Leaves have an empty children list. */
@@ -89,6 +90,18 @@ export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spac
     };
     const k = `${date}|${time ?? ""}|${title.toLowerCase()}`;
     if (!byKey.has(k)) byKey.set(k, ev);
+  }
+  // markwhen notes (`markwhen: true`): fold their timeline events in too,
+  // tagged with the note's own folder. Deduped against frontmatter events
+  // by the same identity, so a materialized backing note won't double up.
+  for (const n of notes) {
+    if (n.frontmatter.markwhen !== true) continue;
+    const folder = noteFolder(n.frontmatter) ?? undefined;
+    for (const mw of parseMarkwhenEvents(n.body)) {
+      const ev: SpacetimeEvent = { ...mw, ...(folder ? { folder } : {}) };
+      const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
+      if (!byKey.has(k)) byKey.set(k, ev);
+    }
   }
   const events = [...byKey.values()].sort((a, b) =>
     (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")),
