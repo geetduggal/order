@@ -1824,7 +1824,7 @@ export function CardGrid() {
   // source of truth; spacetime.yml is the compiled, machine-ready picture.
   // Writes route through the self-write filter (a .yml isn't a markdown
   // note, so it never re-enters notes), and we skip when content is
-  // unchanged to avoid redundant writes. See CONVENTIONS.md.
+  // unchanged to avoid redundant writes. See docs/CONVENTIONS.md.
   const lastSpacetimeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!notes) return;

@@ -3,7 +3,7 @@
 *Your notes, at home at last.*
 
 A local-first notebook where **plain markdown files are the database**
-and every surface — pile, calendar, seasons, todo.txt — is a
+and every surface (pile, calendar, seasons, todo.txt, spacetime.yml) is a
 different read of the same files. Obsidian-compatible vault. One Tauri
 codebase ships desktop and iOS.
 
@@ -16,6 +16,7 @@ codebase ships desktop and iOS.
 - **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same frontmatter Obsidian Full Calendar reads.
 - **todo.txt, always in sync** — every calendar event mirrored as one readable line; hand-added lines show up on the calendar too.
 - **Seasons** — name your own date ranges and see each one as a grid of what actually happened, by Area.
+- **spacetime.yml** — a single canonical file at the vault root, the minimal map of your space (the folder hierarchy) and time (events + seasons), regenerated as you work. Edit it by hand and apply the changes back to the vault. See [CONVENTIONS.md](docs/CONVENTIONS.md).
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
 ## Build & run
@@ -134,6 +135,30 @@ two backings so each event renders exactly once.
 hydrated SPA (`Cmd+P`). Permalinks pin to the note, not its path, so
 reorganizing the vault never breaks a link.
 
+**Spacetime.** `spacetime.yml` at the vault root is the canonical, minimal
+picture of the whole vault: `space` (the Areas to Categories to Notable
+Folders hierarchy) and `time` (events + seasons). It regenerates
+continuously as you work. Open it from Settings to hand-edit it as a plain
+text card, then **Apply to vault** to push your edits back: creating,
+updating, or deleting notes, and adding, removing, or reordering folders.
+Every apply shows a review first, and anything destructive (deleting a
+note, removing a folder and its notes) asks before it runs. See
+[CONVENTIONS.md](docs/CONVENTIONS.md) for the format.
+
+**markwhen (early, experimental).** A note marked `markwhen: true` in its
+frontmatter carries a [markwhen](https://markwhen.com) timeline in its
+body; its events fold into `spacetime.yml` and each one materializes a
+backing event note in the folder. This is an early proof of concept and
+the sync is **one way only**. You can *create* events from a markwhen
+timeline, but:
+
+- editing an event in Order's UI does **not** update the markwhen document;
+- editing an event's title in the markwhen document simply creates a **new**
+  note rather than renaming the existing one.
+
+So the basics work, but round-trip sync is still an open design problem.
+Treat it as a demo, not a daily driver.
+
 ## Keyboard
 
 | Keys | Action |
@@ -150,8 +175,11 @@ reorganizing the vault never breaks a link.
 | `⌘+ / − / 0` | note text size |
 | `?` | shortcut overlay |
 
-The dock mirrors the essentials: **+** (new note in the home folder),
-show-mode cycle, home ⇄ calendar toggle, search, settings, sidebar.
+The dock mirrors the essentials: **+** (new note), calendar (Week view),
+home (the home pile), pile (jump back to your last pile), search,
+settings, sidebar. Home is sticky in the pile: pile view always keeps the
+home folder and never goes fully unfiltered (only the calendar shows
+everything).
 
 Nine themes (`⌘T`): light, dark, OLED black, WordPerfect, Terminal,
 Typewriter, America, Christmas, LCARS — each ~15 lines of CSS variables.
@@ -160,6 +188,7 @@ Typewriter, America, Christmas, LCARS — each ~15 lines of CSS variables.
 
 | Doc | What's in it |
 |---|---|
+| [CONVENTIONS.md](docs/CONVENTIONS.md) | the core conventions + the Spacetime format |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the mental model: code map, data flows, invariants |
 | [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | why it's shaped this way — piles, constraints, one vault two lives |
 | [docs/RELEASING.md](docs/RELEASING.md) | building binaries, refreshing releases, App Store |

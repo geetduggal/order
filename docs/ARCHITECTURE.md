@@ -13,6 +13,7 @@ of thousands of files.
 ├── Areas.md                      role: areas — lists the Areas
 ├── Seasons.md                    role: seasons — list of date ranges (optional)
 ├── todo.txt                      one-line calendar events (optional)
+├── spacetime.yml                 canonical space + time map, generated (see CONVENTIONS.md)
 └── <Area>/
     ├── <Area>.md                 list: cards — lists the Categories
     └── <Category>/
@@ -154,6 +155,24 @@ triple `(date, startTime, normalized title)`:
 
 The `+project` token fuzzy-matches Notable Folder names across kebab /
 camel / snake case (`lib/folders.ts: resolveProjectToNf`).
+
+## Spacetime: the canonical map (`spacetime.yml`)
+
+`lib/spacetime.ts` projects the whole vault into one file: `space` (the
+taxonomy as nested block lists) and `time` (events from frontmatter +
+seasons), with a hand-rolled column-aligned YAML emitter. A continuous
+mirror in CardGrid regenerates it on every notes change, with a
+don't-clobber guard so a hand-edited file isn't overwritten before you
+apply it.
+
+The reverse direction is opt-in and reviewed: `lib/spacetime-sync.ts`
+diffs the on-disk file against the vault into a plan (event
+create/update/delete, season change, folder add/remove/reorder), surfaced
+in a confirm dialog (destructive ops itemized) before any write. markwhen
+(`lib/markwhen.ts`, `@markwhen/parser`) is an early one-way surface: a
+`markwhen: true` note's timeline folds into `time` and materializes
+backing notes, but UI edits don't flow back to the markwhen text. See
+CONVENTIONS.md.
 
 ## UI flows worth knowing
 

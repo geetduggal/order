@@ -36,19 +36,6 @@ A Vault is a collection of Notable Folders in a Johnny Decimal inspired hierarch
 - **Areas**: top-level domains. At most 10.
 - **Categories**: groupings of Notable Folders. At most 10, each belonging to exactly one Area.
 - Files live only inside Notable Folders.
-- The **Index** is a nested markdown list of `Area / Category / Notable Folder`, kept at `Index.md` in the vault root.
-
-```
-- Area
-    - Category
-        - [[Notable Folder]]
-        - ...
-    - ...
-- Area 2
-    - Category 2
-        - [[Notable Folder 2]]
-        - ...
-```
 
 ## Pile
 
@@ -73,6 +60,7 @@ Order's core data model distills to a single plain text format: Spacetime.
 # Spacetime
 
 A single plain text format for the two dimensions a personal system runs on: where things live (space), and when things happen (time). Most tools pick one and treat the other as an attachment. Spacetime holds both as first class, in one file you can read without a manual.
+In short, this structure is a plain text map / atlas of where your life is organized and when it moved. Small enough to read at a glance, composable enough to split across files, and complete enough to trust as the whole picture.
 
 ## The whole format, in one example
 
@@ -108,7 +96,7 @@ Two top-level keys. Everything under them is shape you can already read.
 
 ## Why YAML
 
-YAML is the closest thing to markdown for structured data. Indentation carries nesting, a list carries order, and a flow mapping carries a record on one line. A parser reads it cleanly and a person reads it without decoding.
+YAML is the closest thing to markdown for structured data. Indentation indicates nesting, a list encodes order, and the flow mapping affords a record on one line. A parser reads it cleanly and a person reads it without decoding.
 
 ## Three properties
 
@@ -118,7 +106,7 @@ YAML is the closest thing to markdown for structured data. Indentation carries n
 
 **Habitability.** You can live in the file: open it, edit a line, save it, and nothing breaks. Changing `Jazz` to `Bebop` or fixing a typo in `Team standup` is a one line edit, not a database migration.
 
-## Space and time have different shapes
+## Space and time have different structures
 
 **Time is columnar.** Every event is the same record: a date, a title, a folder, and a few optional fields. The `Team standup` row reads `date, title, folder`, then `time: 09:00, endTime: 09:30`. Reading down the date and title columns tells you what is happening and when; the rest sits to the right, out of the way.
 
@@ -128,16 +116,15 @@ YAML is the closest thing to markdown for structured data. Indentation carries n
 
 Space composes through one rule. The brood is the full set of children under a node, in order. The brood of `Games` is exactly `Board Games` and `Video Games`: you write both or neither, never just one. That makes merging deterministic, because order is always explicit, so joined files line up the same way every time. A valid space fragment is any complete brood at any depth: the full list of areas (`Entertainment`, `Work`), every category under `Work` (`Projects`, `Teams`), or every folder under `Music` (`Jazz`, `Rock`).
 
-## Two kinds of time record
+## Two kinds of time records
 
 **Events** carry a date and a title, then optional fields. `folder` ties the event to its Notable Folder, as `Team standup` ties to `Frontend`. `time` and `endTime` give it a clock (`09:00` to `09:30`). `endDate` makes it span days, the way `Summer trip` runs `2026-07-01` to `2026-07-05`. `allDay` marks a full day with no clock, like `Order v0.1.0 Release`.
 
-**Seasons** are the longer arc: a date, a title, and an endDate. `Summer Building` spans `2026-06-01` to `2026-08-31`. A season names a stretch of life rather than a moment in it.
+**Seasons** are longer: a date, a title, and an endDate. `Summer Building` spans `2026-06-01` to `2026-08-31`. A season names a stretch of life rather than a moment in it.
 
 ## Canonical form and writing surface
 
-The merged file is the canonical form: the complete, machine ready picture of space and time. You can edit it by hand, but you rarely need to. You write on the surfaces instead: a dated note, a one line event, a folder's own frontmatter, or a [markwhen](https://markwhen.com) timeline in a note marked `markwhen: true`. Surfaces compile down into the canonical Spacetime, so you never choose between writing fast and keeping structure. A markwhen note also materializes a backing note in its folder for each event it names, so the timeline becomes real notes you can open.
+The merged file is the canonical form: the complete, machine ready picture of space and time. You can edit it by hand, but you rarely need to. You write on the surfaces instead: a dated note, a one line event, a folder's own frontmatter, or a [markwhen](https://markwhen.com) timeline in a note marked `markwhen: true`. Surfaces compile down into the canonical Spacetime, so you never choose between writing fast and keeping structure.
 
-## In one line
+> **markwhen is early and experimental.** A markwhen note materializes a backing note in its folder for each event it names, so the timeline becomes real notes. But the sync is one way only: editing an event in Order does not update the markwhen text, and changing an event's title in the markwhen text creates a new note rather than renaming the old one. It proves the basics; true round-trip sync is still an open design problem.
 
-A plain text map of where your life is organized and when it moved. Small enough to read at a glance, composable enough to split across files, complete enough to trust as the whole picture.
