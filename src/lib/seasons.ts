@@ -40,6 +40,14 @@ export function parseSeasons(body: string): Season[] {
   return out;
 }
 
+/** Serialize seasons back to the Seasons.md bullet body
+ *  (`- START - END · Name`). Inverse of parseSeasons. */
+export function serializeSeasons(seasons: Season[]): string {
+  return seasons
+    .map((s) => `- ${s.start} - ${s.end ?? ""}${s.name ? ` · ${s.name}` : ""}`)
+    .join("\n") + (seasons.length ? "\n" : "");
+}
+
 export function isSeasonsFile(fm: Frontmatter, filename: string): boolean {
   if (fm.role === "seasons") return true;
   return filename === SEASONS_FILENAME;

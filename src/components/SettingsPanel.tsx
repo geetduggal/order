@@ -15,7 +15,7 @@ import {
 } from "../lib/todo-txt";
 
 export function SettingsPanel({
-  onChangeVault, onClose, onOpenTodoTxt,
+  onChangeVault, onClose, onOpenTodoTxt, onSyncSpacetime,
 }: {
   /** Persist the chosen absolute path (or null to reset to default)
    *  and reload the vault. */
@@ -24,6 +24,9 @@ export function SettingsPanel({
   /** Create the configured todo.txt file if needed and navigate to it
    *  as a card. */
   onOpenTodoTxt: () => Promise<void>;
+  /** Diff the on-disk spacetime.yml against the vault and open a review
+   *  of the changes it would apply (create/update/delete notes, folders). */
+  onSyncSpacetime: () => void;
 }) {
   const initialTodo = getTodoTxtSettings();
   const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
@@ -168,6 +171,26 @@ export function SettingsPanel({
             calendar event — one line per event, readable and editable in any
             text editor. Events you create in Order are markdown files; lines
             you add by hand show up on the calendar too.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">spacetime.yml</span>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-btn"
+              onClick={() => { onSyncSpacetime(); onClose(); }}
+            >
+              Apply spacetime.yml to vault…
+            </button>
+          </div>
+          <span className="settings-hint">
+            <code>spacetime.yml</code> at the vault root is the canonical map of
+            your space and time, regenerated as you work. Edit it by hand and
+            this applies your changes back to the vault — creating, updating, or
+            deleting notes and folders. You review every change first, and
+            anything destructive asks before it runs.
           </span>
         </div>
       </div>

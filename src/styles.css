@@ -2990,6 +2990,25 @@ iframe.order-youtube-embed {
 .sb-apply-pile:hover { background: var(--royal); color: #fff; }
 .sb-apply-pile svg { flex: 0 0 auto; }
 
+/* spacetime.yml sync review modal */
+.sync-review { max-width: 460px; }
+.sync-summary { margin: 8px 0; padding-left: 18px; font-size: calc(13px * var(--text-scale, 1)); }
+.sync-summary li { margin: 2px 0; }
+.sync-summary li.is-delete { color: var(--coral); font-weight: 600; }
+.sync-summary li.is-note { color: var(--ink-faint); }
+.sync-empty { color: var(--ink-faint); font-size: calc(13px * var(--text-scale, 1)); padding: 8px 0; }
+.sync-deletes {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--coral);
+  border-radius: 6px;
+  background: var(--coral-soft);
+  font-size: calc(12px * var(--text-scale, 1));
+}
+.sync-deletes ul { margin: 4px 0 0; padding-left: 16px; }
+.settings-btn.is-danger { border-color: var(--coral); color: var(--coral); }
+.settings-btn.is-danger:hover { background: var(--coral); color: #fff; }
+
 /* ---------- Sidebar slots ----------
    `.sb-filters-slot` hosts the active filter pill stack, rendered
    between the View switcher and the Areas drill so pills sit at the

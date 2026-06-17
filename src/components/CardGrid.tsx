@@ -21,8 +21,9 @@ import { FtsOverlay } from "./FtsOverlay";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { SeasonView, type SeasonViewHandle } from "./SeasonView";
-import { parseSeasons, isSeasonsFile, type Season } from "../lib/seasons";
-import { buildSpacetime, serializeSpacetime } from "../lib/spacetime";
+import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
+import { buildSpacetime, serializeSpacetime, parseSpacetime, type SpacetimeEvent } from "../lib/spacetime";
+import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
@@ -1897,6 +1898,103 @@ export function CardGrid() {
     })();
     return () => { cancelled = true; materializingRef.current = false; };
   }, [notes]);
+
+  // ---- spacetime.yml reverse sync (manual, reviewed) ------------
+  // Diff the on-disk spacetime.yml against the vault and let the user
+  // review + confirm before any write. This phase applies the TIME
+  // dimension (events + seasons): create / update-in-place / delete
+  // notes. Space (folder) changes are surfaced in the review but not yet
+  // applied. Destructive deletes are itemized and confirmed.
+  const [syncReview, setSyncReview] = useState<
+    { plan: SyncPlan; desiredSeasons: { start: string; end: string | null; name?: string }[] } | null
+  >(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+
+  const onSyncSpacetime = useCallback(async () => {
+    try {
+      const text = await readVault("spacetime.yml");
+      const desired = parseSpacetime(text);
+      const current = buildSpacetime(notesRef.current ?? [], vaultTaxonomy);
+      const plan = planSpacetimeSync(current, desired);
+      const desiredSeasons = desired.seasons.map((s) => ({
+        start: s.date, end: s.endDate ?? null, ...(s.title ? { name: s.title } : {}),
+      }));
+      setSyncReview({ plan, desiredSeasons });
+    } catch (err) {
+      console.error("spacetime sync: couldn't read/parse spacetime.yml", err);
+      window.alert("Couldn't read spacetime.yml at the vault root.");
+    }
+  }, [vaultTaxonomy]);
+
+  const applySpacetimeSync = useCallback(async () => {
+    if (!syncReview) return;
+    setSyncBusy(true);
+    try {
+      const cur = notesRef.current ?? [];
+      const noteKey = (n: LoadedNote): string | null => {
+        const d = toIsoDateValue(n.frontmatter.date);
+        if (!d) return null;
+        const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
+          ? n.frontmatter.startTime : "";
+        const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, ""));
+        return `${d}|${st}|${t.toLowerCase()}`;
+      };
+      const byKey = new Map<string, LoadedNote[]>();
+      for (const n of cur) {
+        const k = noteKey(n);
+        if (k) (byKey.get(k) ?? byKey.set(k, []).get(k)!).push(n);
+      }
+      const evKey = (e: SpacetimeEvent) => `${e.date}|${e.time ?? ""}|${e.title.toLowerCase()}`;
+      const fmFor = (e: SpacetimeEvent): Frontmatter => ({
+        allDay: e.allDay === true || !e.time,
+        date: e.date,
+        ...(e.time ? { startTime: e.time } : {}),
+        ...(e.endTime ? { endTime: e.endTime } : {}),
+        ...(e.endDate ? { endDate: e.endDate } : {}),
+        ...(e.folder ? { folder: `[[${e.folder}]]` } : {}),
+        title: e.title,
+      });
+      const root = await vaultRoot();
+      const createEvent = async (e: SpacetimeEvent) => {
+        const dir = (e.folder && noteDirByRef(e.folder)) || root;
+        await uniqueWrite(dir, basenameForEvent(e.date, e.title), joinFrontmatter(fmFor(e), e.title ? `# ${e.title}\n` : ""));
+      };
+      for (const op of syncReview.plan.events) {
+        if (op.kind === "delete") {
+          for (const n of byKey.get(evKey(op.event)) ?? []) {
+            try { await vaultFs.remove(toVaultRel(n.path)); } catch (err) { console.error("sync delete failed", err); }
+          }
+        } else if (op.kind === "create") {
+          await createEvent(op.event);
+        } else if (op.kind === "update") {
+          const n = (byKey.get(evKey(op.from)) ?? [])[0];
+          if (!n) { await createEvent(op.to); continue; }
+          // Update frontmatter in place (no file move/rename in this phase),
+          // preserving the note body.
+          try {
+            const raw = await readVault(n.path);
+            const { body } = splitFrontmatter(raw);
+            await writeVault(n.path, joinFrontmatter({ ...n.frontmatter, ...fmFor(op.to) }, body));
+          } catch (err) { console.error("sync update failed", err); }
+        }
+      }
+      if (syncReview.plan.seasonsChanged) {
+        const seasonsNote = cur.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+        const body = serializeSeasons(syncReview.desiredSeasons);
+        if (seasonsNote) {
+          const raw = await readVault(seasonsNote.path);
+          const { frontmatter } = splitFrontmatter(raw);
+          await writeVault(seasonsNote.path, joinFrontmatter(frontmatter, body));
+        } else {
+          await writeVault("Seasons.md", joinFrontmatter({ role: "seasons" }, body));
+        }
+      }
+      setSyncReview(null);
+      await reloadNotes();
+    } finally {
+      setSyncBusy(false);
+    }
+  }, [syncReview, vaultTaxonomy, reloadNotes]);
 
   useGridLayout(gridEl);
 
@@ -3860,8 +3958,55 @@ export function CardGrid() {
           onChangeVault={handleChangeVault}
           onClose={() => setSettingsOpen(false)}
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
+          onSyncSpacetime={() => { void onSyncSpacetime(); }}
         />
       )}
+
+      {syncReview && (() => {
+        const s = summarizePlan(syncReview.plan);
+        const deletes = syncReview.plan.events.filter((o) => o.kind === "delete");
+        return (
+          <div className="settings-overlay" role="dialog" aria-label="Apply spacetime.yml" onMouseDown={() => !syncBusy && setSyncReview(null)}>
+            <div className="settings-panel sync-review" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="settings-head">
+                <h2 className="settings-title">Apply spacetime.yml</h2>
+                <button type="button" className="settings-close" onClick={() => setSyncReview(null)} disabled={syncBusy} aria-label="Close">✕</button>
+              </div>
+              {s.empty ? (
+                <p className="sync-empty">spacetime.yml already matches the vault. Nothing to apply.</p>
+              ) : (
+                <>
+                  <ul className="sync-summary">
+                    {s.creates > 0 && <li>{s.creates} note{s.creates > 1 ? "s" : ""} created</li>}
+                    {s.updates > 0 && <li>{s.updates} note{s.updates > 1 ? "s" : ""} updated</li>}
+                    {s.deletes > 0 && <li className="is-delete">{s.deletes} note{s.deletes > 1 ? "s" : ""} deleted</li>}
+                    {s.seasons && <li>Seasons updated</li>}
+                    {(s.foldersAdded + s.foldersRemoved + s.reorders) > 0 && (
+                      <li className="is-note">{s.foldersAdded + s.foldersRemoved + s.reorders} folder change{(s.foldersAdded + s.foldersRemoved + s.reorders) > 1 ? "s" : ""} detected (not applied in this version)</li>
+                    )}
+                  </ul>
+                  {deletes.length > 0 && (
+                    <div className="sync-deletes">
+                      <strong>These notes will be deleted:</strong>
+                      <ul>
+                        {deletes.map((o) => o.kind === "delete" && (
+                          <li key={`${o.event.date}-${o.event.title}`}>{o.event.date} · {o.event.title}{o.event.folder ? ` (${o.event.folder})` : ""}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="settings-actions">
+                    <button type="button" className="settings-btn" onClick={() => setSyncReview(null)} disabled={syncBusy}>Cancel</button>
+                    <button type="button" className={"settings-btn" + (s.deletes > 0 ? " is-danger" : "")} onClick={() => { void applySpacetimeSync(); }} disabled={syncBusy}>
+                      {syncBusy ? "Applying…" : s.deletes > 0 ? `Apply (deletes ${s.deletes})` : "Apply"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {capWarning && (
         <div className="cap-warning" role="status">{capWarning}</div>
