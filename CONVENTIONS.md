@@ -112,27 +112,27 @@ YAML is the closest thing to markdown for structured data. Indentation carries n
 
 ## Three properties
 
-**Composability.** The format splits across many files and rejoins to the same picture. Your whole world can sit in one file, or a single area can live in its own. No file is privileged.
+**Composability.** The format splits across many files and rejoins to the same picture. The whole example can sit in one file, or the `Entertainment` area can live in its own (`Games` and `Music` with their folders beneath them) and merge back into place unchanged. No file is privileged.
 
 **Completeness.** Joined, the pieces are the entire system, not a partial view to reconcile against some other source. The merged result is the truth, not a cache of it.
 
-**Habitability.** You can live in the file: open it, edit a line, save it, and nothing breaks. The common case stays short and the structure stays visible.
+**Habitability.** You can live in the file: open it, edit a line, save it, and nothing breaks. Changing `Jazz` to `Bebop` or fixing a typo in `Team standup` is a one line edit, not a database migration.
 
 ## Space and time have different shapes
 
-**Time is columnar.** Every event is the same record: a date, a title, a folder, and a few optional fields. Reading down the date and title columns tells you what is happening and when. The rest sits to the right, out of the way.
+**Time is columnar.** Every event is the same record: a date, a title, a folder, and a few optional fields. The `Team standup` row reads `date, title, folder`, then `time: 09:00, endTime: 09:30`. Reading down the date and title columns tells you what is happening and when; the rest sits to the right, out of the way.
 
-**Space is hierarchical.** There are no field names to invent. A name, and under it the ordered list of names beneath it. The structure is the meaning.
+**Space is hierarchical.** There are no field names to invent. A name, and under it the ordered list of names beneath it. `Games` holds `Board Games` and `Video Games`; the names and their nesting are the whole definition.
 
 ## Brood
 
-Space composes through one rule. The brood is the full set of children under a node, in order. When you write a node's children, you write all of them, never a partial set. That makes merging deterministic: order is always explicit, so joined files line up the same way every time. A valid space fragment is any complete brood at any depth: the full list of areas, every category under one area, or every Notable Folder under one category.
+Space composes through one rule. The brood is the full set of children under a node, in order. The brood of `Games` is exactly `Board Games` and `Video Games`: you write both or neither, never just one. That makes merging deterministic, because order is always explicit, so joined files line up the same way every time. A valid space fragment is any complete brood at any depth: the full list of areas (`Entertainment`, `Work`), every category under `Work` (`Projects`, `Teams`), or every folder under `Music` (`Jazz`, `Rock`).
 
 ## Two kinds of time record
 
-**Events** carry a date and a title, then optional fields. `folder` ties the event to its Notable Folder. `time` and `endTime` give it a clock. `endDate` makes it span days. `allDay` marks a full day with no clock.
+**Events** carry a date and a title, then optional fields. `folder` ties the event to its Notable Folder, as `Team standup` ties to `Frontend`. `time` and `endTime` give it a clock (`09:00` to `09:30`). `endDate` makes it span days, the way `Summer trip` runs `2026-07-01` to `2026-07-05`. `allDay` marks a full day with no clock, like `Order v0.1.0 Release`.
 
-**Seasons** are the longer arc: a date, a title, and an endDate. A season names a stretch of life rather than a moment in it.
+**Seasons** are the longer arc: a date, a title, and an endDate. `Summer Building` spans `2026-06-01` to `2026-08-31`. A season names a stretch of life rather than a moment in it.
 
 ## Canonical form and writing surface
 

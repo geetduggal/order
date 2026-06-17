@@ -177,20 +177,22 @@ function renderRecords(
   tailKeys: string[],
   indent: string,
   anchorSegWidths: number[],
+  caps: number[],
 ): string[] {
   const fmt = fmtVal;
   // Build the anchored segments per record so we can size each column.
   // segs[i] = the `key: value,` text for anchorKeys[i] (or "" if absent).
   const rowSegs = records.map((r) => anchorKeys.map((k) => seg(r, k)));
-  // Column width = the (possibly shared) max segment width + 1 space gap,
-  // so the following field lines up across all rows.
-  const colWidth = anchorKeys.map((_, i) => anchorSegWidths[i] + 1);
+  // Column width = the max segment width, CAPPED so one very long title
+  // (or folder) doesn't pad every row out to its length. Rows within the
+  // cap align; a rare over-cap row overflows with a single trailing space.
+  const colWidth = anchorKeys.map((_, i) => Math.min(anchorSegWidths[i], caps[i]) + 1);
   return records.map((r, ri) => {
     let line = "";
     rowSegs[ri].forEach((seg, ci) => {
-      // Pad every anchored column to its width so the next column aligns,
-      // except trailing padding before the close brace is trimmed later.
-      line += seg.padEnd(colWidth[ci]);
+      // Pad short segments to the column so the next field aligns; an
+      // over-cap segment just gets one space so it stays readable.
+      line += seg.length < colWidth[ci] ? seg.padEnd(colWidth[ci]) : seg + " ";
     });
     const tail = tailKeys
       .map((k) => {
@@ -206,6 +208,14 @@ function renderRecords(
   });
 }
 
+// Column caps (segment widths incl. the `key: ` prefix). Keep alignment
+// tidy on screen: a single very long title or folder overflows on its own
+// row instead of padding every other row out to its length. Dates are
+// fixed width, so they're effectively uncapped.
+const DATE_CAP = 99;
+const TITLE_CAP = 44;
+const FOLDER_CAP = 24;
+
 /** Serialize a Spacetime model to the canonical YAML text. */
 export function serializeSpacetime(st: Spacetime): string {
   const lines: string[] = [];
@@ -220,7 +230,7 @@ export function serializeSpacetime(st: Spacetime): string {
   const dateTitleW = segWidths(seasonRecs, ["date", "title"], eventRecs);
   const folderW = segWidths(eventRecs, ["folder"]);
   lines.push("  seasons:");
-  lines.push(...renderRecords(seasonRecs, ["date", "title"], ["endDate"], "    ", dateTitleW));
+  lines.push(...renderRecords(seasonRecs, ["date", "title"], ["endDate"], "    ", dateTitleW, [DATE_CAP, TITLE_CAP]));
   lines.push("  events:");
   lines.push(
     ...renderRecords(
@@ -229,6 +239,7 @@ export function serializeSpacetime(st: Spacetime): string {
       ["time", "endTime", "endDate", "allDay"],
       "    ",
       [...dateTitleW, folderW[0]],
+      [DATE_CAP, TITLE_CAP, FOLDER_CAP],
     ),
   );
   return lines.join("\n") + "\n";

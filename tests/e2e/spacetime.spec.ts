@@ -128,6 +128,26 @@ test("spacetime — builds from a real vault on disk into legal YAML", async () 
   expect(areaNames).toContain("Alpha");
 });
 
+test("spacetime — a long title doesn't blow out the column for other rows", () => {
+  const st: Spacetime = {
+    space: [],
+    seasons: [],
+    events: [
+      { date: "2025-11-06", title: "JD Firmware Delivery", folder: "Hiring", time: "15:30" },
+      { date: "2025-11-13", title: "A".repeat(180), folder: "Hiring", time: "13:30" },
+      { date: "2025-11-14", title: "Han Song", folder: "Hiring", time: "11:00" },
+    ],
+  };
+  const text = serializeSpacetime(st);
+  const lines = text.split("\n").filter((l) => /^\s*- \{date: /.test(l));
+  // The short rows stay well under the runaway width (capped), even though
+  // one row has a 180-char title.
+  const shortRows = lines.filter((l) => !l.includes("A".repeat(180)));
+  for (const l of shortRows) expect(l.length).toBeLessThan(110);
+  // Still legal YAML.
+  expect(() => yaml.load(text)).not.toThrow();
+});
+
 test("spacetime — space nesting indents 4 spaces per level", () => {
   const text = serializeSpacetime(SHOWCASE);
   const lines = text.split("\n");
