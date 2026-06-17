@@ -86,10 +86,10 @@ time:
     - {date: 2026-09-01, title: Community Focus,        endDate: 2026-11-30}
   events:
     - {date: 2026-06-15, title: Order v0.1.0 Release,   folder: Order,         allDay: true}
-    - {date: 2026-06-16, title: Team standup,           folder: Frontend,      time: 09:00, endTime: 09:30}
+    - {date: 2026-06-16, title: Team standup,           folder: Frontend,      startTime: 09:00, endTime: 09:30}
     - {date: 2026-07-01, title: Summer trip,            folder: Entertainment, endDate: 2026-07-05}
     - {date: 2026-07-10, title: Company offsite,        folder: Work,          allDay: true}
-    - {date: 2026-08-20, title: Medium deadline,        folder: Order,         time: 17:00}
+    - {date: 2026-08-20, title: Medium deadline,        folder: Order,         startTime: 17:00}
 ```
 
 Two top-level keys. Everything under them is shape you can already read.
@@ -108,7 +108,7 @@ YAML is the closest thing to markdown for structured data. Indentation indicates
 
 ## Space and time have different structures
 
-**Time is columnar.** Every event is the same record: a date, a title, a folder, and a few optional fields. The `Team standup` row reads `date, title, folder`, then `time: 09:00, endTime: 09:30`. Reading down the date and title columns tells you what is happening and when; the rest sits to the right, out of the way.
+**Time is columnar.** Every event is the same record: a date, a title, a folder, and a few optional fields. The `Team standup` row reads `date, title, folder`, then `startTime: 09:00, endTime: 09:30`. Reading down the date and title columns tells you what is happening and when; the rest sits to the right, out of the way.
 
 **Space is hierarchical.** There are no field names to invent. A name, and under it the ordered list of names beneath it. `Games` holds `Board Games` and `Video Games`; the names and their nesting are the whole definition.
 
@@ -118,7 +118,7 @@ Space composes through one rule. The brood is the full set of children under a n
 
 ## Two kinds of time records
 
-**Events** carry a date and a title, then optional fields. `folder` ties the event to its Notable Folder, as `Team standup` ties to `Frontend`. `time` and `endTime` give it a clock (`09:00` to `09:30`). `endDate` makes it span days, the way `Summer trip` runs `2026-07-01` to `2026-07-05`. `allDay` marks a full day with no clock, like `Order v0.1.0 Release`.
+**Events** carry a date and a title, then optional fields. `folder` ties the event to its Notable Folder, as `Team standup` ties to `Frontend`. `startTime` and `endTime` give it a clock (`09:00` to `09:30`). `endDate` makes it span days, the way `Summer trip` runs `2026-07-01` to `2026-07-05`. `allDay` marks a full day with no clock, like `Order v0.1.0 Release`.
 
 **Seasons** are longer: a date, a title, and an endDate. `Summer Building` spans `2026-06-01` to `2026-08-31`. A season names a stretch of life rather than a moment in it.
 
