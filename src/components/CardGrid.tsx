@@ -1926,7 +1926,9 @@ export function CardGrid() {
     }
   }, [vaultTaxonomy]);
 
-  const applySpacetimeSync = useCallback(async () => {
+  // Plain function (not useCallback) so it always closes over the latest
+  // notes + chain handlers (notePathByRef etc. are recomputed per render).
+  const applySpacetimeSync = async () => {
     if (!syncReview) return;
     setSyncBusy(true);
     try {
@@ -1989,12 +1991,60 @@ export function CardGrid() {
           await writeVault("Seasons.md", joinFrontmatter({ role: "seasons" }, body));
         }
       }
+
+      // ---- SPACE (folders) ----
+      const space = syncReview.plan.space;
+      // Removals (destructive): delete the directory recursively + drop the
+      // parent's chain bullet. Skip any node whose ancestor is also being
+      // removed (the ancestor's delete already takes it). Deepest first.
+      const removedPaths = new Set(
+        space.filter((o) => o.kind === "removeFolder").map((o) => o.path.join("/")),
+      );
+      const hasRemovedAncestor = (p: string[]) => {
+        for (let i = 1; i < p.length; i++) if (removedPaths.has(p.slice(0, i).join("/"))) return true;
+        return false;
+      };
+      const removals = space
+        .filter((o): o is Extract<typeof o, { kind: "removeFolder" }> => o.kind === "removeFolder")
+        .filter((o) => !hasRemovedAncestor(o.path))
+        .sort((a, b) => b.path.length - a.path.length);
+      for (const op of removals) {
+        const leaf = op.path[op.path.length - 1];
+        const leafPath = notePathByRef(leaf);
+        if (leafPath) {
+          try { await vaultFs.remove(vaultDir(toVaultRel(leafPath))); } catch (err) { console.error("sync remove folder failed", err); }
+        }
+        const parentRef = op.path.length >= 2 ? op.path[op.path.length - 2] : null;
+        const parentPath = parentRef ? notePathByRef(parentRef) : (areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)));
+        if (parentPath) {
+          await mutateBullets(parentPath, (p) => readVault(p), (p, c) => writeVault(p, c),
+            (items) => items.filter((i) => i.ref.toLowerCase() !== leaf.toLowerCase()));
+        }
+      }
+      // Adds: shallowest first so parents exist before children.
+      const adds = space
+        .filter((o): o is Extract<typeof o, { kind: "addFolder" }> => o.kind === "addFolder")
+        .sort((a, b) => a.path.length - b.path.length);
+      for (const op of adds) {
+        const p = op.path;
+        if (p.length === 1) await handleAddArea(p[0]);
+        else if (p.length === 2) await handleAddCategory(p[1], p[0]);
+        else if (p.length >= 3) await handleCreateFolder(p[2], p[0], p[1]);
+      }
+      // Reorders: rewrite the parent's chain to the desired order.
+      for (const op of space) {
+        if (op.kind !== "reorder") continue;
+        if (op.parent.length === 0) await handleReorderAreasTo(op.order);
+        else if (op.parent.length === 1) await handleReorderCategoriesTo(op.parent[0], op.order);
+        else if (op.parent.length >= 2) await handleReorderFoldersTo(op.parent[0], op.parent[1], op.order);
+      }
+
       setSyncReview(null);
       await reloadNotes();
     } finally {
       setSyncBusy(false);
     }
-  }, [syncReview, vaultTaxonomy, reloadNotes]);
+  };
 
   useGridLayout(gridEl);
 
@@ -3964,7 +4014,9 @@ export function CardGrid() {
 
       {syncReview && (() => {
         const s = summarizePlan(syncReview.plan);
-        const deletes = syncReview.plan.events.filter((o) => o.kind === "delete");
+        const deletes = syncReview.plan.events.filter((o): o is Extract<typeof o, { kind: "delete" }> => o.kind === "delete");
+        const folderRemoves = syncReview.plan.space.filter((o): o is Extract<typeof o, { kind: "removeFolder" }> => o.kind === "removeFolder");
+        const dangerCount = s.deletes + s.foldersRemoved;
         return (
           <div className="settings-overlay" role="dialog" aria-label="Apply spacetime.yml" onMouseDown={() => !syncBusy && setSyncReview(null)}>
             <div className="settings-panel sync-review" onMouseDown={(e) => e.stopPropagation()}>
@@ -3981,15 +4033,18 @@ export function CardGrid() {
                     {s.updates > 0 && <li>{s.updates} note{s.updates > 1 ? "s" : ""} updated</li>}
                     {s.deletes > 0 && <li className="is-delete">{s.deletes} note{s.deletes > 1 ? "s" : ""} deleted</li>}
                     {s.seasons && <li>Seasons updated</li>}
-                    {(s.foldersAdded + s.foldersRemoved + s.reorders) > 0 && (
-                      <li className="is-note">{s.foldersAdded + s.foldersRemoved + s.reorders} folder change{(s.foldersAdded + s.foldersRemoved + s.reorders) > 1 ? "s" : ""} detected (not applied in this version)</li>
-                    )}
+                    {s.foldersAdded > 0 && <li>{s.foldersAdded} folder{s.foldersAdded > 1 ? "s" : ""} created</li>}
+                    {s.reorders > 0 && <li>{s.reorders} folder reorder{s.reorders > 1 ? "s" : ""}</li>}
+                    {s.foldersRemoved > 0 && <li className="is-delete">{s.foldersRemoved} folder{s.foldersRemoved > 1 ? "s" : ""} removed (with their notes)</li>}
                   </ul>
-                  {deletes.length > 0 && (
+                  {(deletes.length > 0 || folderRemoves.length > 0) && (
                     <div className="sync-deletes">
-                      <strong>These notes will be deleted:</strong>
+                      <strong>These will be permanently deleted:</strong>
                       <ul>
-                        {deletes.map((o) => o.kind === "delete" && (
+                        {folderRemoves.map((o) => (
+                          <li key={`f-${o.path.join("/")}`}>📁 {o.path.join(" / ")} (folder + all notes)</li>
+                        ))}
+                        {deletes.map((o) => (
                           <li key={`${o.event.date}-${o.event.title}`}>{o.event.date} · {o.event.title}{o.event.folder ? ` (${o.event.folder})` : ""}</li>
                         ))}
                       </ul>
@@ -3997,8 +4052,8 @@ export function CardGrid() {
                   )}
                   <div className="settings-actions">
                     <button type="button" className="settings-btn" onClick={() => setSyncReview(null)} disabled={syncBusy}>Cancel</button>
-                    <button type="button" className={"settings-btn" + (s.deletes > 0 ? " is-danger" : "")} onClick={() => { void applySpacetimeSync(); }} disabled={syncBusy}>
-                      {syncBusy ? "Applying…" : s.deletes > 0 ? `Apply (deletes ${s.deletes})` : "Apply"}
+                    <button type="button" className={"settings-btn" + (dangerCount > 0 ? " is-danger" : "")} onClick={() => { void applySpacetimeSync(); }} disabled={syncBusy}>
+                      {syncBusy ? "Applying…" : dangerCount > 0 ? `Apply (deletes ${dangerCount})` : "Apply"}
                     </button>
                   </div>
                 </>
