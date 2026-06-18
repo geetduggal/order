@@ -151,6 +151,12 @@ time:
 | `endDate` | no | Inclusive end date for multi-day events |
 | `allDay` | no | `true` for all-day events (no clock) |
 
+**Implicit file location.** An event defined in Spacetime corresponds to a backing
+note at `<Notable Folder>/YYYY-MM-DD <Title>.md`. When Order materialises a new
+event it creates this file; when it reads the vault it derives the event from this
+file's date prefix and frontmatter. The folder name in Spacetime determines which
+directory the file lives in.
+
 ### Time — seasons
 
 ```yaml
@@ -212,6 +218,10 @@ Date prefixes:
 | `YYYY-MM-DD HH:MM` | Event with start time, 30-min default duration |
 | `YYYY-MM-DD HH:MM-HH:MM` | Event with start and end time |
 | `YYYY-MM-DD / YYYY-MM-DD` | Multi-day span (inclusive) |
+
+As with YAML events, each `.mw` event corresponds to a backing note at
+`<Notable Folder>/YYYY-MM-DD <Title>.md`. Order creates the file when the event
+is new and updates it when the event changes.
 
 ### Folder tags
 

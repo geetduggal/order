@@ -11,13 +11,22 @@ a stream of surrounding notes.
 
 ```
 Board Games/
-├── Board Games.md        ← Main Document
-├── 2026-06-01 Game night.md
-└── wishlist.md
+├── Board Games.md              ← Main Document (same name as the directory)
+├── 2026-06-01 Game night.md    ← a note / calendar event
+├── 2026-06-08 Wishlist.md      ← another note
+└── box-art.png                 ← attachment (lives next to its note)
 ```
 
-The main document is a markdown file with the same name as the directory. Notes live
-alongside it. No special database — the directory shape is the whole convention.
+Two naming conventions carry the whole structure:
+
+**Main Document** — `<Notable Folder>/<Notable Folder>.md`. The file has the same
+name as the directory. Order recognises it by this match; no special frontmatter
+required.
+
+**Notes and events** — `<Notable Folder>/YYYY-MM-DD <Title>.md`. The date prefix
+places the note on the calendar; the rest of the filename is the event or note
+title. Notes live flat in the directory alongside the Main Document. Attachments
+(images, PDFs) live next to the note that references them, in the same directory.
 
 ## Vault
 
