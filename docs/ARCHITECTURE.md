@@ -23,7 +23,7 @@ survives contact with a vault of tens of thousands of files.
 `spacetime.yml` and `spacetime.mw` are the source of truth for the vault's
 **structure** (the Areas → Categories → Notable Folders hierarchy and its order)
 and **seasons**. Both files are kept in sync; editing either one updates the
-other. See [CONVENTIONS.md](CONVENTIONS.md) for the full format reference.
+other. See [SPACETIME.md](SPACETIME.md) for the full format specification.
 
 ## Tech stack — what each layer is for
 
