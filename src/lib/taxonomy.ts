@@ -17,6 +17,7 @@ import {
   type Frontmatter,
 } from "./frontmatter";
 import { parseRef } from "./folders";
+import { type Spacetime, spacetimeTaxonomy } from "./spacetime";
 
 export const AREAS_FILENAME = "Areas.md";
 
@@ -59,7 +60,13 @@ function findAreasNote(notes: ChainNote[]): ChainNote | undefined {
     ?? notes.find((n) => n.filename === AREAS_FILENAME);
 }
 
-export function buildVaultTaxonomy(notes: ChainNote[]): VaultTaxonomy {
+export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime): VaultTaxonomy {
+  // When spacetime.yml carries a non-empty space tree, it is the source of
+  // truth for the hierarchy and its order. Fall back to the chain files only
+  // when spacetime has no space data (vault not yet migrated).
+  if (spacetime && spacetime.space.length > 0) {
+    return spacetimeTaxonomy(spacetime.space);
+  }
   const byRef = new Map(notes.map((n) => [refOf(n.filename), n]));
   const areasNote = findAreasNote(notes);
   if (!areasNote) return { areas: [], hiddenRefs: new Set() };

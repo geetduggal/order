@@ -109,6 +109,22 @@ export function isoTime(d: Date = new Date()): string {
   return `${h}:${m}`;
 }
 
+/** Default span (minutes) for an event created without an explicit end —
+ *  click-to-create on a calendar slot, Cmd+N. Half an hour, matching the
+ *  calendar's 30-minute slot grid. */
+export const DEFAULT_EVENT_MINUTES = 30;
+
+/** Add `minutes` to an HH:MM time, clamping at 23:59 so a late-evening
+ *  event's default end never wraps past midnight into the next day. */
+export function addMinutesToIsoTime(time: string, minutes: number): string {
+  const m = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!m) return time;
+  const total = Math.min(23 * 60 + 59, Number(m[1]) * 60 + Number(m[2]) + minutes);
+  const h = String(Math.floor(total / 60)).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+  return `${h}:${mm}`;
+}
+
 /**
  * Obsidian Full Calendar compatibility: an event is a markdown note whose
  * frontmatter carries `date`, `startTime`, `allDay`. We inject those for

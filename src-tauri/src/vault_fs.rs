@@ -145,11 +145,12 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
         if is_dir {
             walk_dir(&entry.path(), out);
         } else if name.ends_with(".md") || name.ends_with(".txt")
-            || name.ends_with(".yml") || name.ends_with(".yaml") {
-            // .txt / .yml are here so todo.txt and spacetime.yml (and any
-            // sibling plain-text companion files) flow through the same
-            // load / reload pipeline as markdown notes. Crepe is replaced
-            // with a RawTextSurface for those cards (see Card.tsx).
+            || name.ends_with(".yml") || name.ends_with(".yaml")
+            || name.ends_with(".mw") {
+            // .txt / .yml / .mw are here so todo.txt, spacetime.yml, and
+            // spacetime.mw flow through the same load / reload pipeline as
+            // markdown notes. Crepe is replaced with a RawTextSurface for
+            // those cards (see Card.tsx).
             out.push(WalkEntry {
                 path: entry.path().to_string_lossy().to_string(),
                 name,
@@ -349,6 +350,56 @@ pub fn vault_remove(state: tauri::State<VaultState>, rel: String) -> Result<(), 
         fs::remove_file(p)
     }
     .map_err(|e| e.to_string())
+}
+
+/// Timestamped full-vault snapshot into `<vault>/.order-legacy/backup-<ts>/`.
+/// Skips if a backup was made less than 60 seconds ago. Returns the backup path.
+#[tauri::command]
+pub fn vault_backup(state: tauri::State<VaultState>) -> Result<String, String> {
+    let root = state.root.lock().unwrap().clone().ok_or("no vault root")?;
+    let legacy = root.join(".order-legacy");
+    // Skip if a backup already exists from within the last 60 s.
+    if legacy.is_dir() {
+        let entries = fs::read_dir(&legacy).map_err(|e| e.to_string())?;
+        for e in entries.flatten() {
+            if !e.file_name().to_string_lossy().starts_with("backup-") { continue; }
+            if let Ok(meta) = e.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if modified.elapsed().unwrap_or_default().as_secs() < 60 {
+                        return Ok(e.path().to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let dt = chrono::DateTime::from_timestamp(ts as i64, 0)
+        .ok_or("bad timestamp")?
+        .format("%Y%m%dT%H%M%S")
+        .to_string();
+    let dest = legacy.join(format!("backup-{dt}"));
+    copy_dir_all(&root, &dest)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        // Don't recurse into the backup directory itself
+        if name == ".order-legacy" { continue; }
+        let ty = entry.file_type().map_err(|e| e.to_string())?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst.join(name))?;
+        } else {
+            fs::copy(entry.path(), dst.join(name)).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// Read raw bytes for a vault-relative path. Used by the `vaultasset`

@@ -24,7 +24,7 @@ import type {
 } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
-import { isoDate, isoTime, toIsoDateValue } from "../lib/frontmatter";
+import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
 
 export type CalendarRange = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
@@ -123,9 +123,15 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     // Timed events. If `endDate` is set and differs from `date`, the
     // event spans multiple days — combine endDate with endTime (or
     // fall back to startTime so the event has a positive duration).
-    // Otherwise stay on the same calendar day.
-    const endDayIso = endDate && endDate !== date ? endDate : date;
+    // If endTime ≤ startTime (e.g. 23:00 → 00:00 crossing midnight)
+    // and no explicit endDate was provided, advance the end to the
+    // next calendar day so FullCalendar renders a positive-duration
+    // event instead of collapsing it.
     const endIsoTime = endTime ?? startTime;
+    let endDayIso = endDate && endDate !== date ? endDate : date;
+    if (!endDate && endTime && endTime <= startTime) {
+      endDayIso = addOneDayIso(date);
+    }
     events.push({
       id: note.path,
       title,
@@ -397,11 +403,14 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
       const start = roundToHalfHour(arg.start);
       const end = roundToHalfHour(arg.end);
       const sameInstant = start.getTime() === end.getTime();
+      // A bare click (no drag) gives a zero-length range — default it to a
+      // half-hour span so the event lands with a real endTime in its YAML.
+      const startTime = isoTime(start);
       await props.onCreate({
         date: isoDate(start),
         allDay: false,
-        startTime: isoTime(start),
-        endTime: sameInstant ? undefined : isoTime(end),
+        startTime,
+        endTime: sameInstant ? addMinutesToIsoTime(startTime, DEFAULT_EVENT_MINUTES) : isoTime(end),
       });
     }
     arg.view.calendar.unselect();
@@ -515,6 +524,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // a half-hour boundary.
         slotDuration="00:30:00"
         snapDuration="00:30:00"
+        // Events without an explicit endTime render as a half hour (not
+        // FullCalendar's built-in one-hour default) — matches the duration
+        // we write for click/Cmd+N-created events and the 30-min slot grid.
+        defaultTimedEventDuration="00:30:00"
         // Open Day / Week scrolled so the current time sits mid-screen
         // (scrollTime pins to the top; the helper backs off ~3.5h).
         // Month / multi-month ignore this. scrollTimeReset keeps the

@@ -22,7 +22,11 @@ import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./Calendar
 import { YearLinearView, type YearLinearViewHandle } from "./YearLinearView";
 import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
-import { buildSpacetime, serializeSpacetime, parseSpacetime, type SpacetimeEvent } from "../lib/spacetime";
+import {
+  buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
+  parseMarkwhenFormat, applySpaceMutation, type SpaceMutation,
+  type SpacetimeEvent, type Spacetime,
+} from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
 import { Sidebar, type NotableFolder } from "./Sidebar";
@@ -62,6 +66,7 @@ import {
   planMigration,
   readStoredTaxonomy,
 } from "../lib/taxonomy";
+import { planVaultMigration } from "../lib/vault-migrate";
 import { extractBaseBlock } from "../lib/list-base";
 import type { ListItem, ListNoteRef } from "../lib/list-folder";
 
@@ -164,6 +169,8 @@ import {
   basenameForEvent,
   isoDate,
   isoTime,
+  addMinutesToIsoTime,
+  DEFAULT_EVENT_MINUTES,
   joinFrontmatter,
   splitFrontmatter,
   suggestCalendarPatch,
@@ -268,19 +275,6 @@ function parseYaml(yamlText: string): Frontmatter {
  *  notes need their body pre-loaded at startup so the sidebar taxonomy can
  *  parse bullets immediately. Everything else (leaves) loads its body on
  *  Card mount via vault_read_text. */
-/** Add `delta` minutes to an `HH:MM` string, clamping to 23:59 so a
- *  todo.txt event near midnight without an explicit `end:` doesn't roll
- *  the duration past the day. Used to give every timed todo.txt entry
- *  the default 30-minute duration. */
-function addMinutesToHHMM(hhmm: string, delta: number): string {
-  const m = hhmm.match(/^(\d{2}):(\d{2})$/);
-  if (!m) return hhmm;
-  const total = Math.min(Number(m[1]) * 60 + Number(m[2]) + delta, 23 * 60 + 59);
-  const h = Math.floor(total / 60);
-  const mm = total % 60;
-  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-}
-
 function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   if (fm.role === "areas") return true;
   if (fm.role === "seasons") return true;
@@ -293,14 +287,14 @@ function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   // frontmatter, but the todo.txt parser needs the whole body to
   // build calendar events. Pre-load so the first calendar render
   // sees them.
-  if (/\.(txt|ya?ml)$/i.test(filename)) return true;
+  if (/\.(txt|ya?ml|mw)$/i.test(filename)) return true;
   return false;
 }
 
-/** Plain-text companion files (todo.txt, spacetime.yml) edited raw, not
- *  as markdown. */
+/** Plain-text companion files (todo.txt, spacetime.yml, spacetime.mw)
+ *  edited raw, not as markdown. */
 function isRawTextFile(filename: string): boolean {
-  return /\.(txt|ya?ml)$/i.test(filename);
+  return /\.(txt|ya?ml|mw)$/i.test(filename);
 }
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
@@ -691,17 +685,28 @@ export function CardGrid() {
   }, [focusedFolder, navigateAndFocus]);
   useEffect(() => { openTerminalRef.current = openFocusedTerminal; }, [openFocusedTerminal]);
 
+  // Parse spacetime.yml into memory once per notes change. When it carries
+  // a non-empty `space` tree it becomes the source of truth for the
+  // taxonomy (replacing the chain files); `seasons` similarly override
+  // Seasons.md. Falls back to chain / Seasons.md when absent/empty so
+  // un-migrated vaults keep working without any change.
+  const parsedSpacetime = useMemo<Spacetime | undefined>(() => {
+    if (!notes) return undefined;
+    const st = notes.find((n) => n.filename === "spacetime.yml");
+    if (!st || !st.body) return undefined;
+    return parseSpacetime(st.body);
+  }, [notes]);
+
   // Walk the chain rooted at Areas.md to produce Areas → Categories
-  // → Folder refs. Sidebar consumes this as flat arrays so it can
-  // keep its existing drill UI without further refactor.
+  // → Folder refs. When spacetime.yml has a space tree, that drives the
+  // taxonomy instead; the chain files stay on disk as a fallback.
   const vaultTaxonomy = useMemo(() => {
     if (!notes) return { areas: [], hiddenRefs: new Set<string>() };
-    return buildVaultTaxonomy(notes.map((n) => ({
-      filename: n.filename,
-      frontmatter: n.frontmatter,
-      body: n.body,
-    })));
-  }, [notes]);
+    return buildVaultTaxonomy(
+      notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+      parsedSpacetime,
+    );
+  }, [notes, parsedSpacetime]);
 
   const cardsSubdir = useCallback(async (): Promise<string> => {
     // Name kept for compat with existing callers — returns the vault
@@ -1193,105 +1198,75 @@ export function CardGrid() {
     setTimeout(() => setCapWarning((c) => (c === msg ? null : c)), 2500);
   }, []);
 
+  // ---- spacetime.yml space/season mutation helpers ---------------
+  // All structure edits (add/remove/reorder area, category, folder; season
+  // writes) go through these helpers so the YAML is the only write target.
+
+  const patchSpacetimeSpace = useCallback(async (mutation: SpaceMutation): Promise<void> => {
+    const raw = await readVault("spacetime.yml").catch(() => "");
+    const st = parseSpacetime(raw);
+    const next: Spacetime = { ...st, space: applySpaceMutation(st.space, mutation) };
+    const yml = serializeSpacetime(next);
+    lastSpacetimeRef.current = yml;
+    await writeVault("spacetime.yml", yml);
+    await writeVault("spacetime.mw", serializeMarkwhen(next));
+  }, []);
+
+  const patchSpacetimeSeasons = useCallback(async (seasons: import("../lib/seasons").Season[]): Promise<void> => {
+    const raw = await readVault("spacetime.yml").catch(() => "");
+    const st = parseSpacetime(raw);
+    const next: Spacetime = {
+      ...st,
+      seasons: seasons.map((s) => ({
+        date: s.start,
+        title: s.name ?? "",
+        ...(s.end ? { endDate: s.end } : {}),
+      })),
+    };
+    const yml = serializeSpacetime(next);
+    lastSpacetimeRef.current = yml;
+    await writeVault("spacetime.yml", yml);
+    await writeVault("spacetime.mw", serializeMarkwhen(next));
+  }, []);
+
   /** Add an Area = append a bullet to Areas.md. Caps at 10. */
   const handleAddArea = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const subdir = await cardsSubdir();
-    const path = areasNotePath() ?? (await join(subdir, AREAS_FILENAME));
-    const ok = await mutateBullets(
-      path,
-      (p) => readVault(p),
-      (p, c) => writeVault(p, c),
-      (items) => {
-        if (items.some((i) => i.ref.toLowerCase() === trimmed.toLowerCase())) return items;
-        if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
-        return [...items, { ref: trimmed }];
-      },
-    );
-    if (ok) await reloadNotes();
-  }, [cardsSubdir, reloadNotes, flashCap]);
+    const cur = parseSpacetime(await readVault("spacetime.yml").catch(() => ""));
+    if (cur.space.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return; }
+    await patchSpacetimeSpace({ kind: "addArea", name: trimmed });
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes, flashCap]);
 
   const handleRemoveArea = useCallback(async (name: string) => {
-    const subdir = await cardsSubdir();
-    const path = areasNotePath() ?? (await join(subdir, AREAS_FILENAME));
-    await mutateBullets(
-      path,
-      (p) => readVault(p),
-      (p, c) => writeVault(p, c),
-      (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
-    );
+    await patchSpacetimeSpace({ kind: "removeArea", name });
     await reloadNotes();
-  }, [cardsSubdir, reloadNotes]);
+  }, [patchSpacetimeSpace, reloadNotes]);
 
-  /** Add a Category to an Area = append a bullet to <Area>.md. If the
-   *  Area file doesn't exist yet, create it inside <vault>/<Area>/
-   *  per the nested chain layout and also add the Area to Areas.md.
-   *  Caps at 10. */
   const handleAddCategory = useCallback(async (name: string, areaName: string) => {
     const trimmed = name.trim();
     const trimmedArea = areaName.trim();
     if (!trimmed || !trimmedArea) return;
-    const subdir = await cardsSubdir();
-    // Ensure Area is in Areas.md
-    await mutateBullets(
-      areasNotePath() ?? (await join(subdir, AREAS_FILENAME)),
-      (p) => readVault(p),
-      (p, c) => writeVault(p, c),
-      (items) => {
-        if (items.some((i) => i.ref.toLowerCase() === trimmedArea.toLowerCase())) return items;
-        if (items.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return null; }
-        return [...items, { ref: trimmedArea }];
-      },
-    );
-    // Locate (or create) the Area file. Existing layout: lookup via
-    // loaded notes. Brand new Area: place at <vault>/<Area>/<Area>.md.
-    let areaPath = notePathByRef(trimmedArea);
-    if (!areaPath) {
-      areaPath = await join(subdir, trimmedArea, `${trimmedArea}.md`);
-      const body = `# ${trimmedArea}\n`;
-      await writeVault(areaPath, joinFrontmatter({ list: "cards" }, body));
+    const cur = parseSpacetime(await readVault("spacetime.yml").catch(() => ""));
+    const area = cur.space.find((a) => a.name === trimmedArea);
+    if (area && area.children.length >= 10) {
+      flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return;
     }
-    // Create the Category note nested under the Area's directory so the
-    // on-disk layout mirrors Area → Category → Notable Folder. If a note
-    // with this name already exists, reuse it. The bullet ref tracks the
-    // on-disk filename so the chain resolver finds it.
-    let catRef = trimmed;
-    if (!notePathByRef(trimmed)) {
-      const areaDir = areaPath.slice(0, areaPath.lastIndexOf("/"));
-      const safeCat = (trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim()) || trimmed;
-      const catContent = joinFrontmatter(
-        { list: "cards", ...(safeCat !== trimmed ? { title: trimmed } : {}) },
-        `# ${trimmed}\n`,
-      );
-      const catPath = await uniqueWrite(await join(areaDir, safeCat), `${safeCat}.md`, catContent);
-      catRef = (catPath.split("/").pop() ?? `${safeCat}.md`).replace(/\.md$/i, "");
-    }
-    // Append category bullet to the Area file.
-    const ok = await mutateBullets(
-      areaPath,
-      (p) => readVault(p),
-      (p, c) => writeVault(p, c),
-      (items) => {
-        if (items.some((i) => i.ref.toLowerCase() === catRef.toLowerCase())) return items;
-        if (items.length >= 10) { flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return null; }
-        return [...items, { ref: catRef }];
-      },
-    );
-    if (ok) await reloadNotes();
-  }, [cardsSubdir, reloadNotes, flashCap]);
-
-  const handleRemoveCategory = useCallback(async (_name: string, areaName: string) => {
-    const areaPath = notePathByRef(areaName);
-    if (!areaPath) return;
-    await mutateBullets(
-      areaPath,
-      (p) => readVault(p),
-      (p, c) => writeVault(p, c),
-      (items) => items.filter((i) => i.ref.toLowerCase() !== _name.toLowerCase()),
-    );
+    // Ensure Area exists in space, then add the category
+    let next = area ? cur : { ...cur, space: applySpaceMutation(cur.space, { kind: "addArea", name: trimmedArea }) };
+    next = { ...next, space: applySpaceMutation(next.space, { kind: "addCategory", area: trimmedArea, name: trimmed }) };
+    const yml = serializeSpacetime(next);
+    lastSpacetimeRef.current = yml;
+    await writeVault("spacetime.yml", yml);
+    await writeVault("spacetime.mw", serializeMarkwhen(next));
     await reloadNotes();
-  }, [reloadNotes]);
+  }, [reloadNotes, flashCap]);
+
+  const handleRemoveCategory = useCallback(async (name: string, areaName: string) => {
+    await patchSpacetimeSpace({ kind: "removeCategory", area: areaName, name });
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes]);
 
   // Reorder a bullet within its list file by one slot (up = earlier).
   // Returns silently if the item is missing or already at the edge.
@@ -1326,30 +1301,12 @@ export function CardGrid() {
     await reorderIn(notePathByRef(categoryName), name, dir);
   }, [reorderIn]);
 
-  // Remove a Notable Folder from a Category: drop its bullet AND clear the
-  // note's area/category YAML so it leaves the chain (the note itself is
-  // kept — non-destructive, matching area/category removal).
-  const handleRemoveFolder = useCallback(async (name: string, _areaName: string, categoryName: string) => {
-    const catPath = notePathByRef(categoryName);
-    if (catPath) {
-      await mutateBullets(
-        catPath,
-        (p) => readVault(p),
-        (p, c) => writeVault(p, c),
-        (items) => items.filter((i) => i.ref.toLowerCase() !== name.toLowerCase()),
-      );
-    }
-    const nfPath = notePathByRef(name);
-    if (nfPath) {
-      const raw = await readVault(nfPath);
-      const { frontmatter, body } = splitFrontmatter(raw);
-      const next: Frontmatter = { ...frontmatter };
-      delete next.category;
-      delete next.area;
-      await writeVault(nfPath, joinFrontmatter(next, body));
-    }
+  // Remove a Notable Folder from a Category: drop it from spacetime.yml
+  // space tree. The note itself is kept (non-destructive).
+  const handleRemoveFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
+    await patchSpacetimeSpace({ kind: "removeFolder", area: areaName, category: categoryName, name });
     await reloadNotes();
-  }, [reloadNotes]);
+  }, [patchSpacetimeSpace, reloadNotes]);
 
   // Rewrite a list file's bullets into the given ref order (drag-reorder).
   // Refs not present are appended in their original order; no-op if the
@@ -1376,16 +1333,19 @@ export function CardGrid() {
   }, [reloadNotes]);
 
   const handleReorderAreasTo = useCallback(async (names: string[]) => {
-    await reorderToIn(areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)), names);
-  }, [reorderToIn, cardsSubdir]);
+    await patchSpacetimeSpace({ kind: "reorderAreas", names });
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes]);
 
   const handleReorderCategoriesTo = useCallback(async (areaName: string, names: string[]) => {
-    await reorderToIn(notePathByRef(areaName), names);
-  }, [reorderToIn]);
+    await patchSpacetimeSpace({ kind: "reorderCategories", area: areaName, names });
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes]);
 
-  const handleReorderFoldersTo = useCallback(async (_areaName: string, categoryName: string, names: string[]) => {
-    await reorderToIn(notePathByRef(categoryName), names);
-  }, [reorderToIn]);
+  const handleReorderFoldersTo = useCallback(async (areaName: string, categoryName: string, names: string[]) => {
+    await patchSpacetimeSpace({ kind: "reorderFolders", area: areaName, category: categoryName, names });
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes]);
 
   // Shape Sidebar's existing API expects.
   const storedAreas = vaultTaxonomy.areas.map((a) => a.ref);
@@ -1567,7 +1527,13 @@ export function CardGrid() {
       }
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
-        const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
+        const start = isoTime();
+        const patch: Frontmatter = {
+          date: isoDate(),
+          startTime: start,
+          endTime: addMinutesToIsoTime(start, DEFAULT_EVENT_MINUTES),
+          allDay: false,
+        };
         // In a calendar view, present the title prompt first (same UX
         // as drag-to-create on a slot) so the event lands with a name
         // without having to open the note. Pile goes straight to the
@@ -1817,25 +1783,21 @@ export function CardGrid() {
     ) ?? null);
   }, [notes, todoSettings.enabled, todoSettings.path]);
 
-  // ---- spacetime.yml mirror -------------------------------------
-  // Continuously regenerate the canonical spacetime.yml at the vault root
-  // from the directory structure (space) and note frontmatter + Seasons.md
-  // (time). It's a generated projection — the markdown files stay the
-  // source of truth; spacetime.yml is the compiled, machine-ready picture.
-  // Writes route through the self-write filter (a .yml isn't a markdown
-  // note, so it never re-enters notes), and we skip when content is
-  // unchanged to avoid redundant writes. See docs/CONVENTIONS.md.
+  // ---- spacetime.yml + spacetime.mw mirror ----------------------
+  // Regenerate spacetime.yml continuously. When spacetime.yml already
+  // carries space/seasons (post-migration), those are authoritative and
+  // preserved; only time.events is regenerated from note frontmatter.
+  // spacetime.mw is always regenerated as a companion Markwhen view.
   const lastSpacetimeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!notes) return;
-    const content = serializeSpacetime(buildSpacetime(notes, vaultTaxonomy));
+    const st = buildSpacetime(notes, vaultTaxonomy, parsedSpacetime);
+    const content = serializeSpacetime(st);
     if (content === lastSpacetimeRef.current) return;
     void (async () => {
       // Don't clobber a hand-edited spacetime.yml: if what's on disk isn't
-      // what we last generated, the user edited it (open spacetime.yml card)
-      // — hold off rewriting until they "Apply spacetime.yml to vault",
-      // which resets this ref. First write (ref null) or a missing file
-      // always proceeds.
+      // what we last generated, the user edited it — hold off rewriting
+      // until they "Apply spacetime.yml to vault", which resets this ref.
       if (lastSpacetimeRef.current !== null) {
         try {
           const onDisk = await readVault("spacetime.yml");
@@ -1844,8 +1806,133 @@ export function CardGrid() {
       }
       lastSpacetimeRef.current = content;
       await writeVault("spacetime.yml", content);
+      // Keep spacetime.mw in sync as a Markwhen companion.
+      const mwContent = serializeMarkwhen(st);
+      lastMarkwhenRef.current = mwContent;
+      await writeVault("spacetime.mw", mwContent);
     })();
-  }, [notes, vaultTaxonomy]);
+  }, [notes, vaultTaxonomy, parsedSpacetime]);
+
+  // ---- spacetime.mw → spacetime.yml sync -------------------------
+  // When spacetime.mw changes (user hand-edit in the raw-text card or
+  // external editor), parse it and apply fully:
+  //   • space + seasons → written to spacetime.yml immediately
+  //   • events → full two-way sync against backing notes:
+  //       - in .mw and in vault  → patch frontmatter in place (time, folder…)
+  //       - in .mw but not vault → create backing note
+  //       - in vault but not .mw → strip calendar frontmatter (non-destructive:
+  //                                  file stays, just falls off the calendar)
+  //
+  // The mirror always writes ALL events to .mw, so "not in .mw" reliably
+  // means the user deliberately removed it.
+  //
+  // Re-fire guard: stamp lastMarkwhenRef at the TOP of the handler (before
+  // any await) so that the reloadNotes() at the end doesn't cause the
+  // same user-edited body to re-trigger the handler.
+  const lastMarkwhenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!notes) return;
+    const mwNote = notes.find((n) => n.filename === "spacetime.mw");
+    if (!mwNote?.body) return;
+    if (mwNote.body === lastMarkwhenRef.current) return;
+    // Stamp NOW (synchronously) before any await so subsequent renders
+    // with the same body are skipped even while the async work runs.
+    lastMarkwhenRef.current = mwNote.body;
+    const mwBody = mwNote.body;
+    void (async () => {
+      const parsed = parseMarkwhenFormat(mwBody);
+
+      // ---- space + seasons → spacetime.yml ----
+      const currentYml = await readVault("spacetime.yml").catch(() => "");
+      const currentSt = parseSpacetime(currentYml);
+      const merged: Spacetime = {
+        space:   parsed.space.length   > 0 ? parsed.space   : currentSt.space,
+        seasons: parsed.seasons.length > 0 ? parsed.seasons : currentSt.seasons,
+        events:  currentSt.events,
+      };
+      const yml = serializeSpacetime(merged);
+      lastSpacetimeRef.current = yml;
+      await writeVault("spacetime.yml", yml);
+
+      // ---- events: two-way sync ----
+      // Only run the event sync when .mw has an events section (even if
+      // empty after a deliberate clear). Skip when the .mw body has no
+      // ## Events heading at all — avoids clobbering the vault if the
+      // user is editing only the space or seasons.
+      if (!mwBody.includes("## Events")) { await reloadNotes(); return; }
+
+      const cur = notesRef.current ?? [];
+
+      const EVENT_TIME_KEYS = ["startTime", "endTime", "allDay", "endDate", "folder"] as const;
+
+      // Match ANY note with a date by date|title — no filtering by frontmatter
+      // type. This is the key guard: if a note with that date+title already
+      // exists (even a list:cards or category note), we never create a duplicate.
+      const vaultEventNotes = new Map<string, typeof cur[0]>();
+      for (const n of cur) {
+        const d = toIsoDateValue(n.frontmatter.date);
+        if (!d) continue;
+        const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, "")).toLowerCase();
+        vaultEventNotes.set(`${d}|${t}`, n);
+      }
+
+      // Build a map of events declared in .mw by the same key.
+      const mwEventMap = new Map<string, SpacetimeEvent>();
+      for (const ev of parsed.events) {
+        mwEventMap.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+      }
+
+      const root = await vaultRoot();
+
+      // Pass 1: update existing / create new
+      for (const [key, ev] of mwEventMap) {
+        const existing = vaultEventNotes.get(key);
+        const fm: Frontmatter = {
+          date: ev.date,
+          allDay: ev.allDay === true || !ev.time,
+          ...(ev.time    ? { startTime: ev.time }   : {}),
+          ...(ev.endTime ? { endTime: ev.endTime }   : {}),
+          ...(ev.endDate ? { endDate: ev.endDate }   : {}),
+          ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
+        };
+        if (existing) {
+          const raw = await readVault(toVaultRel(existing.path)).catch(() => "");
+          if (!raw) continue;
+          const { frontmatter: curFm, body } = splitFrontmatter(raw);
+          const next: Frontmatter = { ...curFm, ...fm };
+          // Clear time keys that are no longer present in the .mw event
+          if (!ev.time)    { delete next.startTime; delete next.endTime; }
+          if (!ev.endDate) delete next.endDate;
+          const updated = joinFrontmatter(next, body);
+          if (updated !== raw) await writeVault(toVaultRel(existing.path), updated);
+        } else {
+          const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
+          await uniqueWrite(dir, basenameForEvent(ev.date, ev.title),
+            joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
+        }
+      }
+
+      // Pass 2: strip calendar frontmatter from vault events no longer in .mw
+      // Non-destructive: the file stays, it just loses its date/time keys so
+      // it no longer appears on the calendar.
+      for (const [key, note] of vaultEventNotes) {
+        if (mwEventMap.has(key)) continue;
+        const raw = await readVault(toVaultRel(note.path)).catch(() => "");
+        if (!raw) continue;
+        const { frontmatter: curFm, body } = splitFrontmatter(raw);
+        const next: Frontmatter = {};
+        for (const [k, v] of Object.entries(curFm)) {
+          if (!EVENT_TIME_KEYS.includes(k as typeof EVENT_TIME_KEYS[number]) && k !== "date") {
+            next[k] = v;
+          }
+        }
+        const updated = Object.keys(next).length > 0 ? joinFrontmatter(next, body) : body;
+        if (updated !== raw) await writeVault(toVaultRel(note.path), updated);
+      }
+
+      await reloadNotes();
+    })();
+  }, [notes]);
 
   // ---- markwhen → backing notes ---------------------------------
   // A note with `markwhen: true` carries a markwhen timeline in its body.
@@ -1929,6 +2016,49 @@ export function CardGrid() {
   >(null);
   const [syncBusy, setSyncBusy] = useState(false);
 
+  const handleRunMigration = useCallback(async () => {
+    const cur = notesRef.current ?? [];
+    const eventCount = cur.filter((n) => {
+      const d = toIsoDateValue(n.frontmatter.date);
+      return !!d && !n.frontmatter.role && n.frontmatter.list !== "cards" && n.frontmatter.list !== "lines" && !n.frontmatter.category;
+    }).length;
+    const backupPath = await vaultFs.backup().catch((e: unknown) => {
+      window.alert(`Backup failed: ${String(e)}`); return null;
+    });
+    if (!backupPath) return;
+    const ok = window.confirm(
+      `Vault backed up to:\n${backupPath}\n\n` +
+      `This will:\n` +
+      `• Strip date/time/folder frontmatter from ~${eventCount} event notes\n` +
+      `• Archive Areas.md, Seasons.md, and category index files to .order-legacy/chain/\n\n` +
+      `spacetime.yml becomes the sole source of truth for structure and seasons.\n\n` +
+      `Proceed?`
+    );
+    if (!ok) return;
+    // Load raw bodies for all notes (most leaves are body-lazy)
+    const notesWithRaw = await Promise.all(cur.map(async (n) => {
+      const rel = toVaultRel(n.path);
+      const raw = await readVault(rel).catch(() => "");
+      const { frontmatter, body } = splitFrontmatter(raw);
+      return { path: rel, filename: n.filename, frontmatter, body, raw };
+    }));
+    const actions = planVaultMigration(notesWithRaw);
+    let done = 0;
+    for (const a of actions) {
+      if (a.kind === "stripFrontmatter") {
+        await writeVault(a.path, a.newContent);
+      } else {
+        const content = await readVault(a.path).catch(() => "");
+        await writeVault(a.archivePath, content);
+        await vaultFs.remove(a.path);
+      }
+      done++;
+    }
+    window.alert(`Migration complete — ${done} files updated.\nBackup: ${backupPath}`);
+    lastSpacetimeRef.current = null;
+    await reloadNotes();
+  }, [reloadNotes]);
+
   const onSyncSpacetime = useCallback(async () => {
     try {
       const text = await readVault("spacetime.yml");
@@ -1955,10 +2085,8 @@ export function CardGrid() {
       const noteKey = (n: LoadedNote): string | null => {
         const d = toIsoDateValue(n.frontmatter.date);
         if (!d) return null;
-        const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
-          ? n.frontmatter.startTime : "";
         const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, ""));
-        return `${d}|${st}|${t.toLowerCase()}`;
+        return `${d}|${t.toLowerCase()}`;
       };
       const byKey = new Map<string, LoadedNote[]>();
       for (const n of cur) {
@@ -2000,15 +2128,7 @@ export function CardGrid() {
         }
       }
       if (syncReview.plan.seasonsChanged) {
-        const seasonsNote = cur.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-        const body = serializeSeasons(syncReview.desiredSeasons);
-        if (seasonsNote) {
-          const raw = await readVault(seasonsNote.path);
-          const { frontmatter } = splitFrontmatter(raw);
-          await writeVault(seasonsNote.path, joinFrontmatter(frontmatter, body));
-        } else {
-          await writeVault("Seasons.md", joinFrontmatter({ role: "seasons" }, body));
-        }
+        await patchSpacetimeSeasons(syncReview.desiredSeasons);
       }
 
       // ---- SPACE (folders) ----
@@ -2028,17 +2148,16 @@ export function CardGrid() {
         .filter((o) => !hasRemovedAncestor(o.path))
         .sort((a, b) => b.path.length - a.path.length);
       for (const op of removals) {
-        const leaf = op.path[op.path.length - 1];
+        const p = op.path;
+        const leaf = p[p.length - 1];
         const leafPath = notePathByRef(leaf);
         if (leafPath) {
           try { await vaultFs.remove(vaultDir(toVaultRel(leafPath))); } catch (err) { console.error("sync remove folder failed", err); }
         }
-        const parentRef = op.path.length >= 2 ? op.path[op.path.length - 2] : null;
-        const parentPath = parentRef ? notePathByRef(parentRef) : (areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)));
-        if (parentPath) {
-          await mutateBullets(parentPath, (p) => readVault(p), (p, c) => writeVault(p, c),
-            (items) => items.filter((i) => i.ref.toLowerCase() !== leaf.toLowerCase()));
-        }
+        // Remove from spacetime.yml space tree
+        if (p.length === 1) await patchSpacetimeSpace({ kind: "removeArea", name: leaf });
+        else if (p.length === 2) await patchSpacetimeSpace({ kind: "removeCategory", area: p[0], name: leaf });
+        else await patchSpacetimeSpace({ kind: "removeFolder", area: p[0], category: p[1], name: leaf });
       }
       // Adds: shallowest first so parents exist before children.
       const adds = space
@@ -2956,22 +3075,13 @@ export function CardGrid() {
     // the file; without this the parent's list would point at a name
     // that no .md file matches.
     const bulletRef = filename.replace(/\.md$/i, "");
-    const catPath = notePathByRef(categoryName);
-    if (catPath) {
-      await mutateBullets(
-        catPath,
-        (p) => readVault(p),
-        (p, c) => writeVault(p, c),
-        (items) => items.some((i) => i.ref.toLowerCase() === bulletRef.toLowerCase())
-          ? items
-          : [...items, { ref: bulletRef }],
-      );
-    }
+    // Register the new folder in spacetime.yml (replaces the old category bullet)
+    await patchSpacetimeSpace({ kind: "addFolder", area: areaName, category: categoryName, name: bulletRef });
     setNotes((prev) => [
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
     ]);
-  }, [flashCap]);
+  }, [flashCap, patchSpacetimeSpace]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     // Todo.txt synthetic paths (`<vault-rel>.txt#L<index>`) route to
@@ -3109,11 +3219,12 @@ export function CardGrid() {
     return "";
   }
 
-  // Seasons.md — the vault-root file (or any note with `role: seasons`)
-  // whose body bullets define ISO 8601 date ranges. First match wins.
-  // Body is pre-loaded via needsBodyUpfront, so parseSeasons sees it.
+  // Seasons: prefer spacetime.yml when it carries season records; fall back
+  // to Seasons.md so un-migrated vaults keep working.
   const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-  const seasons: Season[] = seasonsFile ? parseSeasons(seasonsFile.body) : [];
+  const seasons: Season[] = (parsedSpacetime && parsedSpacetime.seasons.length > 0)
+    ? parsedSpacetime.seasons.map((s) => ({ start: s.date, end: s.endDate ?? "", name: s.title }))
+    : (seasonsFile ? parseSeasons(seasonsFile.body) : []);
   const seasonsPath = seasonsFile?.path ?? null;
 
   // Notable Folder Main Documents — notes whose YAML carries `category`.
@@ -3567,7 +3678,7 @@ export function CardGrid() {
             ...(i.startTime ? { startTime: i.startTime } : {}),
             ...(i.endTime
               ? { endTime: i.endTime }
-              : i.startTime ? { endTime: addMinutesToHHMM(i.startTime, 30) } : {}),
+              : i.startTime ? { endTime: addMinutesToIsoTime(i.startTime, DEFAULT_EVENT_MINUTES) } : {}),
             ...(i.endDate ? { endDate: i.endDate } : {}),
             ...(nf ? { folder: `[[${nf}]]` } : {}),
             ...(i.completed ? { completed: true } : {}),
@@ -4056,6 +4167,7 @@ export function CardGrid() {
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
           onSyncSpacetime={() => { void onSyncSpacetime(); }}
           onOpenSpacetime={() => { void openSpacetime(); setSettingsOpen(false); }}
+          onRunMigration={handleRunMigration}
         />
       )}
 

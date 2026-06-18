@@ -10,7 +10,7 @@
 // `date` and `title` first. Output is still legal YAML (round-trip tested).
 
 import yaml from "js-yaml";
-import type { VaultTaxonomy } from "./taxonomy";
+import type { VaultTaxonomy, AreaNode, CategoryNode } from "./taxonomy";
 import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
 import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
@@ -69,17 +69,26 @@ function folderOf(n: SpacetimeNote): string | undefined {
   return parts.length >= 2 ? parts[parts.length - 2] : undefined;
 }
 
-/** Build the canonical Spacetime model from the vault: `space` from the
- *  taxonomy, `time.events` from note frontmatter (calendar events only —
- *  all-day or timed — deduped by identity and date-sorted), and
- *  `time.seasons` from Seasons.md. Pure and deterministic. */
-export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spacetime {
-  const space = spaceFromTaxonomy(tax);
+/** Build the canonical Spacetime model from the vault. When `existing`
+ *  carries a non-empty `space` or `seasons`, those are preserved as
+ *  authoritative (spacetime.yml is the source of truth); only `events`
+ *  are always regenerated from note frontmatter. Falls back to the
+ *  taxonomy / Seasons.md when the existing spacetime is absent/empty. */
+export function buildSpacetime(
+  notes: SpacetimeNote[],
+  tax: VaultTaxonomy,
+  existing?: Spacetime,
+): Spacetime {
+  const space = (existing && existing.space.length > 0)
+    ? existing.space
+    : spaceFromTaxonomy(tax);
 
   const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-  const seasons: SpacetimeSeason[] = (seasonsFile ? parseSeasons(seasonsFile.body) : [])
-    .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const seasons: SpacetimeSeason[] = (existing && existing.seasons.length > 0)
+    ? existing.seasons
+    : (seasonsFile ? parseSeasons(seasonsFile.body) : [])
+        .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
 
   const byKey = new Map<string, SpacetimeEvent>();
   for (const n of notes) {
@@ -122,6 +131,90 @@ export function buildSpacetime(notes: SpacetimeNote[], tax: VaultTaxonomy): Spac
     (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")),
   );
   return { space, seasons, events };
+}
+
+/** Build a VaultTaxonomy from a parsed spacetime.yml `space` tree.
+ *  Assumes the three-level invariant (Area → Category → NF); nodes that
+ *  don't fit are skipped. hiddenRefs is empty because there are no chain
+ *  index files to hide when spacetime drives the taxonomy. */
+export function spacetimeTaxonomy(space: SpaceNode[]): VaultTaxonomy {
+  const areas: AreaNode[] = [];
+  for (const areaNode of space) {
+    const categories: CategoryNode[] = [];
+    for (const catNode of areaNode.children) {
+      const folders = catNode.children.map((f) => f.name);
+      categories.push({ ref: catNode.name, folders });
+    }
+    areas.push({ ref: areaNode.name, categories });
+  }
+  return { areas, hiddenRefs: new Set() };
+}
+
+/** Mutation types for the `space` tree. All structure edits (sidebar,
+ *  migrations, apply-sync) go through `applySpaceMutation` so the
+ *  tree-walk logic is in one place. */
+export type SpaceMutation =
+  | { kind: "addArea"; name: string }
+  | { kind: "removeArea"; name: string }
+  | { kind: "reorderAreas"; names: string[] }
+  | { kind: "addCategory"; area: string; name: string }
+  | { kind: "removeCategory"; area: string; name: string }
+  | { kind: "reorderCategories"; area: string; names: string[] }
+  | { kind: "addFolder"; area: string; category: string; name: string }
+  | { kind: "removeFolder"; area: string; category: string; name: string }
+  | { kind: "reorderFolders"; area: string; category: string; names: string[] };
+
+export function applySpaceMutation(space: SpaceNode[], m: SpaceMutation): SpaceNode[] {
+  switch (m.kind) {
+    case "addArea":
+      if (space.some((n) => n.name === m.name)) return space;
+      return [...space, { name: m.name, children: [] }];
+    case "removeArea":
+      return space.filter((n) => n.name !== m.name);
+    case "reorderAreas":
+      return m.names.flatMap((name) => {
+        const found = space.find((n) => n.name === name);
+        return found ? [found] : [];
+      });
+    case "addCategory":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: a.children.some((c) => c.name === m.name) ? a.children
+          : [...a.children, { name: m.name, children: [] }],
+      });
+    case "removeCategory":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: a.children.filter((c) => c.name !== m.name),
+      });
+    case "reorderCategories":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: m.names.flatMap((n) => {
+          const found = a.children.find((c) => c.name === n);
+          return found ? [found] : [];
+        }),
+      });
+    case "addFolder":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: a.children.map((c) => c.name !== m.category ? c : {
+          ...c, children: c.children.some((f) => f.name === m.name) ? c.children
+            : [...c.children, { name: m.name, children: [] }],
+        }),
+      });
+    case "removeFolder":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: a.children.map((c) => c.name !== m.category ? c : {
+          ...c, children: c.children.filter((f) => f.name !== m.name),
+        }),
+      });
+    case "reorderFolders":
+      return space.map((a) => a.name !== m.area ? a : {
+        ...a, children: a.children.map((c) => c.name !== m.category ? c : {
+          ...c, children: m.names.flatMap((n) => {
+            const found = c.children.find((f) => f.name === n);
+            return found ? [found] : [];
+          }),
+        }),
+      });
+  }
 }
 
 /** Build the `space` tree from Order's taxonomy: areas → categories →
@@ -243,6 +336,187 @@ function renderRecords(
 const DATE_CAP = 99;
 const TITLE_CAP = 44;
 const FOLDER_CAP = 24;
+
+// ---------- Markwhen serializer ----------
+
+/** Translate a space-separated Notable Folder name to a Markwhen tag:
+ *  "Board Games" → "#board-games". Used in spacetime.mw output. */
+export function toMarkwhenTag(name: string): string {
+  return "#" + name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+/** Serialize a Spacetime to the Markwhen `.mw` format:
+ *  a `# Space` section (nested markdown lists) followed by a
+ *  `# Time` section (seasons + date-aligned events). */
+export function serializeMarkwhen(st: Spacetime): string {
+  const lines: string[] = [];
+
+  // Space section — mirror the YAML space hierarchy as nested lists
+  lines.push("# Space", "");
+  function renderMwSpace(nodes: SpaceNode[], depth: number) {
+    const indent = "  ".repeat(depth);
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        lines.push(`${indent}- ${node.name}`);
+        renderMwSpace(node.children, depth + 1);
+      } else {
+        lines.push(`${indent}- ${node.name}`);
+      }
+    }
+  }
+  // Top-level areas get ## headings for readability
+  for (const area of st.space) {
+    lines.push(`## ${area.name}`);
+    renderMwSpace(area.children, 0);
+    lines.push("");
+  }
+
+  // Time section
+  lines.push("# Time", "");
+
+  // Seasons
+  if (st.seasons.length > 0) {
+    lines.push("## Seasons", "");
+    // Compute alignment: longest "date / endDate: " prefix
+    const dateW = Math.max(...st.seasons.map((s) =>
+      s.endDate ? `${s.date} / ${s.endDate}`.length : s.date.length,
+    ));
+    for (const s of st.seasons) {
+      const range = s.endDate ? `${s.date} / ${s.endDate}` : s.date;
+      lines.push(`${range.padEnd(dateW)}: ${s.title}`);
+    }
+    lines.push("");
+  }
+
+  // Events
+  if (st.events.length > 0) {
+    lines.push("## Events", "");
+    // Build date+time prefix per event for alignment
+    const prefixes = st.events.map((e) => {
+      const dt = e.time
+        ? (e.endTime ? `${e.date} ${e.time}-${e.endTime}` : `${e.date} ${e.time}`)
+        : (e.endDate ? `${e.date} / ${e.endDate}` : e.date);
+      return dt;
+    });
+    const prefixW = Math.max(...prefixes.map((p) => p.length));
+    for (let i = 0; i < st.events.length; i++) {
+      const e = st.events[i];
+      const tag = e.folder ? ` ${toMarkwhenTag(e.folder)}` : "";
+      lines.push(`${prefixes[i].padEnd(prefixW)}: ${e.title}${tag}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+// ---------- Markwhen parser (reverse of serializeMarkwhen) ----------
+
+/** Build a tag → original-name lookup from a space tree so event #tags
+ *  can be resolved back to the exact folder name. */
+function buildTagLookup(space: SpaceNode[]): Map<string, string> {
+  const map = new Map<string, string>();
+  function walk(nodes: SpaceNode[]) {
+    for (const n of nodes) { map.set(toMarkwhenTag(n.name), n.name); walk(n.children); }
+  }
+  walk(space);
+  return map;
+}
+
+/** Parse a `spacetime.mw` file back into a Spacetime model. The format
+ *  produced by `serializeMarkwhen` uses:
+ *  - `# Space` / `# Time` top-level sections
+ *  - `## AreaName` headings for areas inside Space
+ *  - `- Category` / `  - Folder` indented lists under each area
+ *  - `## Seasons` / `## Events` sub-sections inside Time
+ *  - Season lines:  `DATE [/ END]: Title`
+ *  - Event lines:   `DATE [HH:MM[-HH:MM]] [/ END]: Title [#tag]`
+ * All column-padding is stripped via trim(). */
+export function parseMarkwhenFormat(text: string): Spacetime {
+  type Section = "none" | "space" | "seasons" | "events";
+  let section: Section = "none";
+  let currentArea: SpaceNode | null = null;
+  let currentCategory: SpaceNode | null = null;
+
+  const space: SpaceNode[] = [];
+  const seasons: SpacetimeSeason[] = [];
+  const events: SpacetimeEvent[] = [];
+
+  for (const raw of text.split("\n")) {
+    const trimmed = raw.trim();
+
+    // Top-level section switches
+    if (trimmed === "# Space")  { section = "space";  currentArea = null; currentCategory = null; continue; }
+    if (trimmed === "# Time")   { section = "none";   continue; }
+    if (trimmed === "## Seasons") { section = "seasons"; continue; }
+    if (trimmed === "## Events")  { section = "events";  continue; }
+    if (!trimmed) continue;
+
+    // ---- Space ----
+    if (section === "space") {
+      if (trimmed.startsWith("## ")) {
+        const name = trimmed.slice(3).trim();
+        currentArea = { name, children: [] };
+        currentCategory = null;
+        space.push(currentArea);
+      } else if (raw.match(/^- /) && currentArea) {
+        // Category: unindented `- Name`
+        const name = trimmed.slice(2);
+        currentCategory = { name, children: [] };
+        currentArea.children.push(currentCategory);
+      } else if (raw.match(/^  - /) && currentCategory) {
+        // Folder: 2-space-indented `  - Name`
+        const name = trimmed.slice(2);
+        currentCategory.children.push({ name, children: [] });
+      }
+      continue;
+    }
+
+    // ---- Seasons ----
+    if (section === "seasons") {
+      // `2026-06-01 / 2026-08-31: Summer Building`  or  `2026-06-01: Open`
+      const m = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s*(?:\/\s*(\d{4}-\d{2}-\d{2}))?\s*:\s*(.+)$/);
+      if (m) seasons.push({ date: m[1], title: m[3].trim(), ...(m[2] ? { endDate: m[2].trim() } : {}) });
+      continue;
+    }
+
+    // ---- Events ----
+    if (section === "events") {
+      // `2026-06-16 09:00-09:30: Title #tag`  or  `2026-07-01 / 2026-07-05: Title`
+      const m = trimmed.match(
+        /^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2})(?:-(\d{2}:\d{2}))?)?(?:\s*\/\s*(\d{4}-\d{2}-\d{2}))?\s*:\s*(.+)$/,
+      );
+      if (!m) continue;
+      const [, date, time, endTime, endDate, rest] = m;
+      // Separate trailing #tag from title
+      const tagM = rest.trimEnd().match(/\s+(#[\w-]+)$/);
+      const tagSlug = tagM ? tagM[1] : null;
+      const title = tagM ? rest.slice(0, rest.length - tagM[0].length).trim() : rest.trim();
+      // Resolve tag → real folder name via tag lookup (built after full parse)
+      events.push({
+        date, title,
+        ...(tagSlug ? { folder: tagSlug } : {}), // resolved to real name below
+        ...(time    ? { time }   : {}),
+        ...(endTime ? { endTime } : {}),
+        ...(endDate ? { endDate } : {}),
+        ...(!time && !endDate ? { allDay: true } : {}),
+      });
+      continue;
+    }
+  }
+
+  // Resolve #tag slugs in event folder fields to the real folder names
+  if (events.length > 0 && space.length > 0) {
+    const tagLookup = buildTagLookup(space);
+    for (const ev of events) {
+      if (ev.folder && ev.folder.startsWith("#")) {
+        ev.folder = tagLookup.get(ev.folder) ?? ev.folder.slice(1);
+      }
+    }
+  }
+
+  return { space, seasons, events };
+}
 
 // ---------- YAML parsing (reverse of serialize) ----------
 

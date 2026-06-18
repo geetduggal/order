@@ -118,6 +118,7 @@ pub fn run() {
             vault_fs::vault_stat,
             vault_fs::vault_rename,
             vault_fs::vault_remove,
+            vault_fs::vault_backup,
             vault::scan_vault,
             vault::refresh_note,
             vault::read_note,
