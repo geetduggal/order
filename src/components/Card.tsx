@@ -12,6 +12,7 @@ import { vaultRoot, toVaultRel } from "../lib/vault";
 import { vaultFs, markKnownBody } from "../lib/vault-fs";
 import { MilkdownSurface, type MilkdownHandle } from "./MilkdownSurface";
 import { RawTextSurface } from "./RawTextSurface";
+import { CodeMirrorSurface } from "./CodeMirrorSurface";
 import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
   basenameForEvent,
@@ -1191,12 +1192,24 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
-        ) : /\.(txt|ya?ml)$/i.test(filename) ? (
-          // Plain-text card surface — no Crepe, no markdown
-          // interpretation. Used for todo.txt and spacetime.yml so their
-          // raw syntax survives a round-trip through the editor. The save
-          // pipeline is identical: onChange feeds the same debounced
-          // writer, onDone flushes on blur.
+        ) : /\.mw$/i.test(filename) ? (
+          // Spacetime Markwhen file — CodeMirror with Markdown highlighting
+          <CodeMirrorSurface
+            value={state.body}
+            onChange={handleChange}
+            lang="markdown"
+            readOnly={readOnly}
+          />
+        ) : /\.ya?ml$/i.test(filename) ? (
+          // YAML file (spacetime.yml, etc.) — CodeMirror with YAML highlighting
+          <CodeMirrorSurface
+            value={state.body}
+            onChange={handleChange}
+            lang="yaml"
+            readOnly={readOnly}
+          />
+        ) : /\.txt$/i.test(filename) ? (
+          // Plain-text card surface — no highlighting (todo.txt)
           <RawTextSurface
             initial={state.body}
             onChange={handleChange}

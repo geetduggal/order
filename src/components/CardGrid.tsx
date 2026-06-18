@@ -2769,13 +2769,12 @@ export function CardGrid() {
   /** Open spacetime.yml as an editable raw-text card (like todo.txt). The
    *  continuous mirror writes it as you work; opening it lets you hand-edit
    *  and then "Apply spacetime.yml to vault" to sync the changes back. */
-  const openSpacetime = useCallback(async () => {
-    const relPath = "spacetime.yml";
+  const openSpacetimeFile = useCallback(async (relPath: string, ensureContent?: () => string) => {
     const root = await vaultRoot();
     const fullPath = `${root}/${relPath}`;
     const existing = notesRef.current?.find((n) => toVaultRel(n.path) === relPath);
-    if (!existing) {
-      const content = serializeSpacetime(buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined));
+    if (!existing && ensureContent) {
+      const content = ensureContent();
       await writeVault(relPath, content);
       setNotes((prev) => [
         ...(prev ?? []),
@@ -2788,7 +2787,20 @@ export function CardGrid() {
     setFocusPath(fullPath);
     setFocusedPath(fullPath);
     setScrollTargetPath(fullPath);
-  }, [vaultTaxonomy]);
+  }, []);
+
+  const openSpacetime = useCallback(async () => {
+    await openSpacetimeFile("spacetime.yml", () =>
+      serializeSpacetime(buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined))
+    );
+  }, [openSpacetimeFile, vaultTaxonomy, parsedSpacetime, mwSources]);
+
+  const openSpacetimeMw = useCallback(async () => {
+    await openSpacetimeFile("spacetime.mw", () => {
+      const st = buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined);
+      return serializeMarkwhen(st);
+    });
+  }, [openSpacetimeFile, vaultTaxonomy, parsedSpacetime, mwSources]);
 
   /** Rewrite every inbound `[[OldName]]` across the vault to `NewName`
    *  when a target is renamed, so source links stay valid (Obsidian
@@ -4148,14 +4160,26 @@ export function CardGrid() {
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
           recents={recentFolders}
-          extras={todoSettings.enabled ? [
-            {
+          extras={[
+            ...(todoSettings.enabled ? [{
               label: todoSettings.path || DEFAULT_TODO_TXT_PATH,
               keywords: "todo todo.txt todotxt",
               hint: "todo.txt",
               onPick: () => { void openTodoTxt(); },
+            }] : []),
+            {
+              label: "spacetime.mw",
+              keywords: "spacetime mw markwhen space time",
+              hint: "spacetime · Markwhen",
+              onPick: () => { void openSpacetimeMw(); },
             },
-          ] : []}
+            {
+              label: "spacetime.yml",
+              keywords: "spacetime yml yaml space time",
+              hint: "spacetime · YAML",
+              onPick: () => { void openSpacetime(); },
+            },
+          ]}
         />
       )}
 
@@ -4183,9 +4207,6 @@ export function CardGrid() {
           onChangeVault={handleChangeVault}
           onClose={() => setSettingsOpen(false)}
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
-          onSyncSpacetime={() => { void onSyncSpacetime(); }}
-          onOpenSpacetime={() => { void openSpacetime(); setSettingsOpen(false); }}
-          onRunMigration={handleRunMigration}
         />
       )}
 

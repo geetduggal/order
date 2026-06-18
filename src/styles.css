@@ -3287,6 +3287,25 @@ iframe.order-youtube-embed {
 }
 .raw-text-surface::selection { background: var(--selection-bg); color: var(--selection-fg); }
 
+/* CodeMirror surface (spacetime.yml / spacetime.mw cards) */
+.cm-surface {
+  height: 100%;
+  min-height: 200px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cm-surface .cm-editor {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+}
+.cm-surface .cm-editor.cm-focused { outline: none; }
+/* Selection */
+.cm-surface .cm-selectionBackground,
+.cm-surface .cm-content ::selection {
+  background: var(--selection-bg) !important;
+}
+
 /* ---------- Filter pill stack ---------- */
 /* Vertical column on the left rail: a search icon (opens the command
    palette) at the top, then the active-filter pills. Sits below the +
