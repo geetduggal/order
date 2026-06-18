@@ -171,4 +171,8 @@ export const vaultFs = {
     markSelfWrite(rel);
     return invoke<void>("vault_remove", { rel });
   },
+  /** Create a timestamped full-vault snapshot in `<vault>/.order-legacy/backup-<ts>/`.
+   *  Returns the absolute path of the backup directory. Skips if a backup
+   *  was made within the last 60 seconds (returns that path instead). */
+  backup: () => invoke<string>("vault_backup"),
 };

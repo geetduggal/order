@@ -111,6 +111,27 @@ export function normalizeWikilinkBrackets(body: string): string {
   return body.replace(WIKI_OCCURRENCE_RE, (_full, _open, inner, _close) => `[[${inner}]]`);
 }
 
+/** Strip the backslash escapes Milkdown's CommonMark serializer inserts
+ *  into link / image destinations on save. A URL like
+ *  `https://x.com/a?b=1&c=2` comes back as `…?b=1\&c=2`, `foo_bar` as
+ *  `foo\_bar`, `Foo_(bar)` as `Foo_\(bar\)`, and so on. URLs never
+ *  legitimately carry backslashes, so every `\<punct>` inside the `(…)`
+ *  destination of a `[label](dest)` / `![alt](dest)` is noise — remove it
+ *  so links round-trip exactly as written (Obsidian-clean, no escaping).
+ *
+ *  The destination is matched as `(?:\\.|[^)])*` so escaped parens
+ *  (`\(` / `\)`) inside the URL are consumed as units and the match
+ *  ends at the real closing `)`, not at a paren that's part of the URL. */
+const LINK_DEST_RE = /\]\(((?:\\.|[^)])*)\)/g;
+// All ASCII punctuation: 0x21-0x2F, 0x3A-0x40, 0x5B-0x60, 0x7B-0x7E.
+const ESCAPED_PUNCT_RE = /\\([!-/:-@[-`{-~])/g;
+
+export function unescapeLinkUrls(body: string): string {
+  return body.replace(LINK_DEST_RE, (_full, dest: string) =>
+    `](${dest.replace(ESCAPED_PUNCT_RE, "$1")})`,
+  );
+}
+
 /** Rewrite every inbound `[[Old]]` (and `[[Old|alias]]`,
  *  `[[Folder/Old]]`) in `body` to use `newName`, preserving alias,
  *  folder qualifier, and bracket-escaping style. Used on rename so

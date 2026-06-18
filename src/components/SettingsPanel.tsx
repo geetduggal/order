@@ -15,20 +15,15 @@ import {
 } from "../lib/todo-txt";
 
 export function SettingsPanel({
-  onChangeVault, onClose, onOpenTodoTxt, onSyncSpacetime, onOpenSpacetime,
+  onChangeVault, onClose, onOpenTodoTxt, onSyncSpacetime, onOpenSpacetime, onRunMigration,
 }: {
-  /** Persist the chosen absolute path (or null to reset to default)
-   *  and reload the vault. */
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
-  /** Create the configured todo.txt file if needed and navigate to it
-   *  as a card. */
   onOpenTodoTxt: () => Promise<void>;
-  /** Diff the on-disk spacetime.yml against the vault and open a review
-   *  of the changes it would apply (create/update/delete notes, folders). */
   onSyncSpacetime: () => void;
-  /** Open spacetime.yml as an editable raw-text card. */
   onOpenSpacetime: () => void;
+  /** Run the vault migration: backup → strip event frontmatter → archive chain files. */
+  onRunMigration?: () => Promise<void>;
 }) {
   const initialTodo = getTodoTxtSettings();
   const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
@@ -202,6 +197,27 @@ export function SettingsPanel({
             anything destructive asks before it runs.
           </span>
         </div>
+        {onRunMigration && (
+          <div className="settings-row">
+            <span className="settings-label">vault migration</span>
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="settings-btn settings-btn-danger"
+                onClick={() => { void onRunMigration(); onClose(); }}
+              >
+                Migrate to spacetime…
+              </button>
+            </div>
+            <span className="settings-hint">
+              Backs up the vault, then strips event YAML frontmatter from notes
+              and archives the chain index files (<code>Areas.md</code>,
+              category files, <code>Seasons.md</code>). After this,{" "}
+              <code>spacetime.yml</code> is the sole source of truth for
+              structure and seasons. Irreversible without the backup.
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

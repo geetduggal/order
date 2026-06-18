@@ -25,6 +25,17 @@
   --coral:      #ff5a48;  /* a touch more saturated for chrome accents */
   --coral-soft: #ffc5b6;  /* deeper coral wash so today / focus reads strongly */
 
+  /* Text selection + search highlight. Defined once in terms of each
+     theme's own accent/background so every theme gets a legible pair:
+     the saturated coral block always stands out, and page-background-
+     colored text on top always contrasts it (an accent is, by design,
+     a color that pops against --bg). The old `--coral-soft`-only rule
+     vanished into the dark themes — a soft wash sits too close to --bg
+     to read as a highlight at all. These re-resolve per theme because
+     CSS custom properties are evaluated at the use site. */
+  --selection-bg: var(--coral);
+  --selection-fg: var(--bg);
+
   /* Iowan Old Style as the reading face keeps the icon's quiet
      formality (the Original mock pairs the rotated logo with serif
      body copy). Inter for chrome stays clean and modern. */
@@ -380,7 +391,24 @@ html, body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
-::selection { background: var(--coral-soft); }
+::selection { background: var(--selection-bg); color: var(--selection-fg); }
+
+/* The Crepe editor ships its own selection rule
+   (`.milkdown .ProseMirror *::selection { background: var(--crepe-color-selected) }`)
+   that sets ONLY a background — a faint wash that, in several themes,
+   sinks into the page and leaves the selected text barely legible
+   (Typewriter's grey-on-grey was the worst). Override it with the same
+   strong pair the rest of the app uses. `!important` beats the library's
+   own (more specific) `selectednode ::selection` reset too, so every
+   in-editor text selection reads. */
+.milkdown .ProseMirror *::selection {
+  background: var(--selection-bg) !important;
+  color: var(--selection-fg) !important;
+}
+.milkdown .ProseMirror *::-moz-selection {
+  background: var(--selection-bg) !important;
+  color: var(--selection-fg) !important;
+}
 
 /* Strip every default browser button shadow / focus ring / inner
    border. Each surface (cards, calendar, sidebar) provides its own
@@ -3257,7 +3285,7 @@ iframe.order-youtube-embed {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
-.raw-text-surface::selection { background: var(--royal-soft); }
+.raw-text-surface::selection { background: var(--selection-bg); color: var(--selection-fg); }
 
 /* ---------- Filter pill stack ---------- */
 /* Vertical column on the left rail: a search icon (opens the command
@@ -5728,8 +5756,8 @@ iframe.order-youtube-embed {
   line-height: 1.4;
 }
 .fts-mark {
-  background: var(--coral-soft);
-  color: var(--coral);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
   padding: 0 2px;
   border-radius: 2px;
 }
