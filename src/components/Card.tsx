@@ -1060,12 +1060,12 @@ export function Card(props: Props) {
             <FolderOpenIcon size={14} strokeWidth={2} />
           </button>
         )}
-        {isMainDoc && !readOnly && !isIosSync() && (
+        {!readOnly && !isIosSync() && (
           <button
             type="button"
             className={"order-card-btn order-card-terminal" + (termOpen ? " is-on" : "")}
             onClick={() => { setTermOpen((t) => !t); setFlipped(false); }}
-            title={termOpen ? "Close terminal" : "Open a terminal in this folder (Cmd+4)"}
+            title={termOpen ? "Close terminal" : "Open a terminal here"}
             aria-label={termOpen ? "Close terminal" : "Open terminal"}
             aria-pressed={termOpen}
           >
@@ -1140,7 +1140,7 @@ export function Card(props: Props) {
           onFlipBack={() => setFlipped(false)}
         />
       )}
-      {termOpen && isMainDoc && !readOnly && vaultRootForFlip && (
+      {termOpen && !readOnly && vaultRootForFlip && (
         <div className="order-card-term-panel">
           <div className="order-card-term-head">
             <button
@@ -1153,7 +1153,7 @@ export function Card(props: Props) {
               <XIcon size={13} strokeWidth={2.2} />
             </button>
             <span className="order-card-term-title">
-              <TerminalIcon size={12} strokeWidth={2} /> {folderName}
+              <TerminalIcon size={12} strokeWidth={2} /> {folderRelForFlip || folderName}
             </span>
           </div>
           <OrderTerminal cwd={`${vaultRootForFlip}/${folderRelForFlip}`} />
