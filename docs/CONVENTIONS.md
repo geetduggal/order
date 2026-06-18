@@ -61,8 +61,6 @@ as a vault grows.
 - **Composability** — can a brood be split across files and rejoined cleanly?
 - **Habitability** — can you live in the file, edit one line, and save without
   knowing the rules?
-- **Readability at a glance** — does a new viewer understand the file cold?
-- **Alignment** — do temporal records read as a table without extra tooling?
 
 Current lean: Markwhen. The heading-and-list structure maps cleanly to the brain's
 spatial model, and the date-first event lines read as a timeline without any markup
