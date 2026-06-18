@@ -1841,16 +1841,22 @@ export function CardGrid() {
       // Let the mirror know this is intentional so it doesn't clobber
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
-      // If .mw carries events not yet in the vault, materialize them
-      // (same path as the markwhen-note materializer).
-      const existingKeys = new Set(
-        currentSt.events.map((e) => `${e.date}|${e.time ?? ""}|${e.title.toLowerCase()}`),
-      );
+      // Sync events from .mw to backing notes. The identity key is
+      // `date|title` (NOT including time) so that changing only the time
+      // for an existing event updates it in place rather than creating a
+      // duplicate. A `date|title` match → update frontmatter; no match → create.
+      const cur = notesRef.current ?? [];
+      const noteByDateTitle = new Map<string, typeof cur[0]>();
+      for (const n of cur) {
+        const d = toIsoDateValue(n.frontmatter.date);
+        if (!d) continue;
+        const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, "")).toLowerCase();
+        noteByDateTitle.set(`${d}|${t}`, n);
+      }
       const root = await vaultRoot();
       for (const ev of parsed.events) {
-        const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
-        if (existingKeys.has(k)) continue;
-        const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
+        const dtKey = `${ev.date}|${ev.title.toLowerCase()}`;
+        const existing = noteByDateTitle.get(dtKey);
         const fm: Frontmatter = {
           allDay: ev.allDay === true || !ev.time,
           date: ev.date,
@@ -1859,7 +1865,23 @@ export function CardGrid() {
           ...(ev.endDate ? { endDate: ev.endDate }   : {}),
           ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
         };
-        await uniqueWrite(dir, basenameForEvent(ev.date, ev.title), joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
+        if (existing) {
+          // Update time/folder in place — patch only the changed frontmatter keys
+          const raw = await readVault(toVaultRel(existing.path)).catch(() => "");
+          if (raw) {
+            const { frontmatter: curFm, body } = splitFrontmatter(raw);
+            const next: Frontmatter = { ...curFm, ...fm };
+            // Remove keys the new fm explicitly clears (e.g. allDay: false clears startTime)
+            if (!ev.time)    { delete next.startTime; delete next.endTime; }
+            if (!ev.endDate) delete next.endDate;
+            await writeVault(toVaultRel(existing.path), joinFrontmatter(next, body));
+          }
+        } else {
+          // New event in .mw — create a backing note
+          const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
+          await uniqueWrite(dir, basenameForEvent(ev.date, ev.title),
+            joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
+        }
       }
       await reloadNotes();
     })();
