@@ -1881,6 +1881,37 @@ export function CardGrid() {
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
 
+      // ---- space: materialise new Notable Folders on disk ----
+      // For each leaf node in the new space tree (a Notable Folder), check
+      // whether its directory exists on disk. If not, create it with a Main
+      // Document. Areas and Categories don't need separate directories beyond
+      // what the NF path already implies. Renames are NOT auto-applied here —
+      // the user should use "Apply spacetime to vault…" for structural surgery.
+      if (parsed.space.length > 0) {
+        const root = await vaultRoot();
+        const cur2 = notesRef.current ?? [];
+        // Build the set of NF dir names that already exist on disk
+        const existingDirs = new Set(
+          cur2.map((n) => {
+            const rel = toVaultRel(n.path);
+            const parts = rel.split("/");
+            return parts.length >= 2 ? parts[parts.length - 2] : "";
+          }).filter(Boolean)
+        );
+        for (const area of merged.space) {
+          for (const cat of area.children) {
+            for (const nf of cat.children) {
+              if (existingDirs.has(nf.name)) continue;
+              // Create <Area>/<Category>/<NF>/<NF>.md
+              const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+              const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
+              const fm: Frontmatter = { category: cat.name, area: area.name };
+              await writeVault(relPath, joinFrontmatter(fm, `# ${nf.name}\n`));
+            }
+          }
+        }
+      }
+
       // ---- events: two-way sync ----
       // Only run the event sync when .mw has an events section (even if
       // empty after a deliberate clear). Skip when the .mw body has no
@@ -2194,7 +2225,23 @@ export function CardGrid() {
         const p = op.path;
         if (p.length === 1) await handleAddArea(p[0]);
         else if (p.length === 2) await handleAddCategory(p[1], p[0]);
-        else if (p.length >= 3) await handleCreateFolder(p[2], p[0], p[1]);
+        else if (p.length >= 3) {
+          // Prefer handleCreateFolder (uses noteDirByRef); fall back to
+          // direct path construction from the space tree so this works
+          // even after migration when Category .md files no longer exist.
+          const catDir = noteDirByRef(p[1]);
+          if (catDir) {
+            await handleCreateFolder(p[2], p[0], p[1]);
+          } else {
+            const root = await vaultRoot();
+            const safe = p[2].replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+            const relPath = `${p[0]}/${p[1]}/${safe}/${safe}.md`;
+            const fm: Frontmatter = { category: p[1], area: p[0] };
+            await writeVault(relPath, joinFrontmatter(fm, `# ${p[2]}\n`));
+            await patchSpacetimeSpace({ kind: "addFolder", area: p[0], category: p[1], name: safe });
+            void root; // referenced for fallback clarity
+          }
+        }
       }
       // Reorders: rewrite the parent's chain to the desired order.
       for (const op of space) {
@@ -4187,6 +4234,12 @@ export function CardGrid() {
               keywords: "spacetime yml yaml space time",
               hint: "spacetime · YAML",
               onPick: () => { void openSpacetime(); },
+            },
+            {
+              label: "Apply spacetime to vault…",
+              keywords: "spacetime apply sync vault folders create",
+              hint: "review changes first",
+              onPick: () => { void onSyncSpacetime(); setPaletteOpen(false); },
             },
           ]}
         />
