@@ -1814,22 +1814,35 @@ export function CardGrid() {
   }, [notes, vaultTaxonomy, parsedSpacetime]);
 
   // ---- spacetime.mw → spacetime.yml sync -------------------------
-  // When the user hand-edits spacetime.mw (in the raw-text card or an
-  // external editor), parse it and write the result to spacetime.yml so
-  // the taxonomy + seasons update immediately — the same treatment
-  // spacetime.yml gets. A self-write guard on lastMarkwhenRef prevents
-  // the mirror's own writes from triggering a re-parse loop.
+  // When spacetime.mw changes (user hand-edit in the raw-text card or
+  // external editor), parse it and apply fully:
+  //   • space + seasons → written to spacetime.yml immediately
+  //   • events → full two-way sync against backing notes:
+  //       - in .mw and in vault  → patch frontmatter in place (time, folder…)
+  //       - in .mw but not vault → create backing note
+  //       - in vault but not .mw → strip calendar frontmatter (non-destructive:
+  //                                  file stays, just falls off the calendar)
+  //
+  // The mirror always writes ALL events to .mw, so "not in .mw" reliably
+  // means the user deliberately removed it.
+  //
+  // Re-fire guard: stamp lastMarkwhenRef at the TOP of the handler (before
+  // any await) so that the reloadNotes() at the end doesn't cause the
+  // same user-edited body to re-trigger the handler.
   const lastMarkwhenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!notes) return;
     const mwNote = notes.find((n) => n.filename === "spacetime.mw");
     if (!mwNote?.body) return;
-    // Skip when this is content we wrote (self-write)
     if (mwNote.body === lastMarkwhenRef.current) return;
+    // Stamp NOW (synchronously) before any await so subsequent renders
+    // with the same body are skipped even while the async work runs.
+    lastMarkwhenRef.current = mwNote.body;
+    const mwBody = mwNote.body;
     void (async () => {
-      const parsed = parseMarkwhenFormat(mwNote.body);
-      // Merge: mw wins for space + seasons. Events stay from yml because
-      // they are note-backed — new events in .mw get materialized below.
+      const parsed = parseMarkwhenFormat(mwBody);
+
+      // ---- space + seasons → spacetime.yml ----
       const currentYml = await readVault("spacetime.yml").catch(() => "");
       const currentSt = parseSpacetime(currentYml);
       const merged: Spacetime = {
@@ -1838,51 +1851,91 @@ export function CardGrid() {
         events:  currentSt.events,
       };
       const yml = serializeSpacetime(merged);
-      // Let the mirror know this is intentional so it doesn't clobber
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
-      // Sync events from .mw to backing notes. The identity key is
-      // `date|title` (NOT including time) so that changing only the time
-      // for an existing event updates it in place rather than creating a
-      // duplicate. A `date|title` match → update frontmatter; no match → create.
+
+      // ---- events: two-way sync ----
+      // Only run the event sync when .mw has an events section (even if
+      // empty after a deliberate clear). Skip when the .mw body has no
+      // ## Events heading at all — avoids clobbering the vault if the
+      // user is editing only the space or seasons.
+      if (!mwBody.includes("## Events")) { await reloadNotes(); return; }
+
       const cur = notesRef.current ?? [];
-      const noteByDateTitle = new Map<string, typeof cur[0]>();
+
+      // Build a map of every event note in the vault by date|title key.
+      // Only notes that carry calendar frontmatter (date + startTime or allDay)
+      // are considered — plain dated notes without a time/allDay flag are
+      // references, not events.
+      const EVENT_TIME_KEYS = ["startTime", "endTime", "allDay", "endDate", "folder"] as const;
+      const isEventNote = (fm: Frontmatter) => {
+        if (!toIsoDateValue(fm.date)) return false;
+        if (fm.role || fm.list === "cards" || fm.list === "lines") return false;
+        if (typeof fm.category === "string" && fm.category) return false;
+        return true;
+      };
+      const vaultEventNotes = new Map<string, typeof cur[0]>();
       for (const n of cur) {
-        const d = toIsoDateValue(n.frontmatter.date);
-        if (!d) continue;
+        if (!isEventNote(n.frontmatter)) continue;
+        const d = toIsoDateValue(n.frontmatter.date)!;
         const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, "")).toLowerCase();
-        noteByDateTitle.set(`${d}|${t}`, n);
+        vaultEventNotes.set(`${d}|${t}`, n);
       }
-      const root = await vaultRoot();
+
+      // Build a map of events declared in .mw by the same key.
+      const mwEventMap = new Map<string, SpacetimeEvent>();
       for (const ev of parsed.events) {
-        const dtKey = `${ev.date}|${ev.title.toLowerCase()}`;
-        const existing = noteByDateTitle.get(dtKey);
+        mwEventMap.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+      }
+
+      const root = await vaultRoot();
+
+      // Pass 1: update existing / create new
+      for (const [key, ev] of mwEventMap) {
+        const existing = vaultEventNotes.get(key);
         const fm: Frontmatter = {
-          allDay: ev.allDay === true || !ev.time,
           date: ev.date,
+          allDay: ev.allDay === true || !ev.time,
           ...(ev.time    ? { startTime: ev.time }   : {}),
           ...(ev.endTime ? { endTime: ev.endTime }   : {}),
           ...(ev.endDate ? { endDate: ev.endDate }   : {}),
           ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
         };
         if (existing) {
-          // Update time/folder in place — patch only the changed frontmatter keys
           const raw = await readVault(toVaultRel(existing.path)).catch(() => "");
-          if (raw) {
-            const { frontmatter: curFm, body } = splitFrontmatter(raw);
-            const next: Frontmatter = { ...curFm, ...fm };
-            // Remove keys the new fm explicitly clears (e.g. allDay: false clears startTime)
-            if (!ev.time)    { delete next.startTime; delete next.endTime; }
-            if (!ev.endDate) delete next.endDate;
-            await writeVault(toVaultRel(existing.path), joinFrontmatter(next, body));
-          }
+          if (!raw) continue;
+          const { frontmatter: curFm, body } = splitFrontmatter(raw);
+          const next: Frontmatter = { ...curFm, ...fm };
+          // Clear time keys that are no longer present in the .mw event
+          if (!ev.time)    { delete next.startTime; delete next.endTime; }
+          if (!ev.endDate) delete next.endDate;
+          const updated = joinFrontmatter(next, body);
+          if (updated !== raw) await writeVault(toVaultRel(existing.path), updated);
         } else {
-          // New event in .mw — create a backing note
           const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
           await uniqueWrite(dir, basenameForEvent(ev.date, ev.title),
             joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
         }
       }
+
+      // Pass 2: strip calendar frontmatter from vault events no longer in .mw
+      // Non-destructive: the file stays, it just loses its date/time keys so
+      // it no longer appears on the calendar.
+      for (const [key, note] of vaultEventNotes) {
+        if (mwEventMap.has(key)) continue;
+        const raw = await readVault(toVaultRel(note.path)).catch(() => "");
+        if (!raw) continue;
+        const { frontmatter: curFm, body } = splitFrontmatter(raw);
+        const next: Frontmatter = {};
+        for (const [k, v] of Object.entries(curFm)) {
+          if (!EVENT_TIME_KEYS.includes(k as typeof EVENT_TIME_KEYS[number]) && k !== "date") {
+            next[k] = v;
+          }
+        }
+        const updated = Object.keys(next).length > 0 ? joinFrontmatter(next, body) : body;
+        if (updated !== raw) await writeVault(toVaultRel(note.path), updated);
+      }
+
       await reloadNotes();
     })();
   }, [notes]);
