@@ -1863,21 +1863,15 @@ export function CardGrid() {
 
       const cur = notesRef.current ?? [];
 
-      // Build a map of every event note in the vault by date|title key.
-      // Only notes that carry calendar frontmatter (date + startTime or allDay)
-      // are considered — plain dated notes without a time/allDay flag are
-      // references, not events.
       const EVENT_TIME_KEYS = ["startTime", "endTime", "allDay", "endDate", "folder"] as const;
-      const isEventNote = (fm: Frontmatter) => {
-        if (!toIsoDateValue(fm.date)) return false;
-        if (fm.role || fm.list === "cards" || fm.list === "lines") return false;
-        if (typeof fm.category === "string" && fm.category) return false;
-        return true;
-      };
+
+      // Match ANY note with a date by date|title — no filtering by frontmatter
+      // type. This is the key guard: if a note with that date+title already
+      // exists (even a list:cards or category note), we never create a duplicate.
       const vaultEventNotes = new Map<string, typeof cur[0]>();
       for (const n of cur) {
-        if (!isEventNote(n.frontmatter)) continue;
-        const d = toIsoDateValue(n.frontmatter.date)!;
+        const d = toIsoDateValue(n.frontmatter.date);
+        if (!d) continue;
         const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, "")).toLowerCase();
         vaultEventNotes.set(`${d}|${t}`, n);
       }
