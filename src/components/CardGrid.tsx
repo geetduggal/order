@@ -24,7 +24,8 @@ import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import {
   buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
-  applySpaceMutation, type SpaceMutation, type SpacetimeEvent, type Spacetime,
+  parseMarkwhenFormat, applySpaceMutation, type SpaceMutation,
+  type SpacetimeEvent, type Spacetime,
 } from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
@@ -286,14 +287,14 @@ function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   // frontmatter, but the todo.txt parser needs the whole body to
   // build calendar events. Pre-load so the first calendar render
   // sees them.
-  if (/\.(txt|ya?ml)$/i.test(filename)) return true;
+  if (/\.(txt|ya?ml|mw)$/i.test(filename)) return true;
   return false;
 }
 
-/** Plain-text companion files (todo.txt, spacetime.yml) edited raw, not
- *  as markdown. */
+/** Plain-text companion files (todo.txt, spacetime.yml, spacetime.mw)
+ *  edited raw, not as markdown. */
 function isRawTextFile(filename: string): boolean {
-  return /\.(txt|ya?ml)$/i.test(filename);
+  return /\.(txt|ya?ml|mw)$/i.test(filename);
 }
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
@@ -1805,10 +1806,64 @@ export function CardGrid() {
       }
       lastSpacetimeRef.current = content;
       await writeVault("spacetime.yml", content);
-      // Keep spacetime.mw in sync as a human-readable Markwhen companion.
-      await writeVault("spacetime.mw", serializeMarkwhen(st));
+      // Keep spacetime.mw in sync as a Markwhen companion.
+      const mwContent = serializeMarkwhen(st);
+      lastMarkwhenRef.current = mwContent;
+      await writeVault("spacetime.mw", mwContent);
     })();
   }, [notes, vaultTaxonomy, parsedSpacetime]);
+
+  // ---- spacetime.mw → spacetime.yml sync -------------------------
+  // When the user hand-edits spacetime.mw (in the raw-text card or an
+  // external editor), parse it and write the result to spacetime.yml so
+  // the taxonomy + seasons update immediately — the same treatment
+  // spacetime.yml gets. A self-write guard on lastMarkwhenRef prevents
+  // the mirror's own writes from triggering a re-parse loop.
+  const lastMarkwhenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!notes) return;
+    const mwNote = notes.find((n) => n.filename === "spacetime.mw");
+    if (!mwNote?.body) return;
+    // Skip when this is content we wrote (self-write)
+    if (mwNote.body === lastMarkwhenRef.current) return;
+    void (async () => {
+      const parsed = parseMarkwhenFormat(mwNote.body);
+      // Merge: mw wins for space + seasons. Events stay from yml because
+      // they are note-backed — new events in .mw get materialized below.
+      const currentYml = await readVault("spacetime.yml").catch(() => "");
+      const currentSt = parseSpacetime(currentYml);
+      const merged: Spacetime = {
+        space:   parsed.space.length   > 0 ? parsed.space   : currentSt.space,
+        seasons: parsed.seasons.length > 0 ? parsed.seasons : currentSt.seasons,
+        events:  currentSt.events,
+      };
+      const yml = serializeSpacetime(merged);
+      // Let the mirror know this is intentional so it doesn't clobber
+      lastSpacetimeRef.current = yml;
+      await writeVault("spacetime.yml", yml);
+      // If .mw carries events not yet in the vault, materialize them
+      // (same path as the markwhen-note materializer).
+      const existingKeys = new Set(
+        currentSt.events.map((e) => `${e.date}|${e.time ?? ""}|${e.title.toLowerCase()}`),
+      );
+      const root = await vaultRoot();
+      for (const ev of parsed.events) {
+        const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
+        if (existingKeys.has(k)) continue;
+        const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
+        const fm: Frontmatter = {
+          allDay: ev.allDay === true || !ev.time,
+          date: ev.date,
+          ...(ev.time    ? { startTime: ev.time }   : {}),
+          ...(ev.endTime ? { endTime: ev.endTime }   : {}),
+          ...(ev.endDate ? { endDate: ev.endDate }   : {}),
+          ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
+        };
+        await uniqueWrite(dir, basenameForEvent(ev.date, ev.title), joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
+      }
+      await reloadNotes();
+    })();
+  }, [notes]);
 
   // ---- markwhen → backing notes ---------------------------------
   // A note with `markwhen: true` carries a markwhen timeline in its body.

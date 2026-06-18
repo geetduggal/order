@@ -145,11 +145,12 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
         if is_dir {
             walk_dir(&entry.path(), out);
         } else if name.ends_with(".md") || name.ends_with(".txt")
-            || name.ends_with(".yml") || name.ends_with(".yaml") {
-            // .txt / .yml are here so todo.txt and spacetime.yml (and any
-            // sibling plain-text companion files) flow through the same
-            // load / reload pipeline as markdown notes. Crepe is replaced
-            // with a RawTextSurface for those cards (see Card.tsx).
+            || name.ends_with(".yml") || name.ends_with(".yaml")
+            || name.ends_with(".mw") {
+            // .txt / .yml / .mw are here so todo.txt, spacetime.yml, and
+            // spacetime.mw flow through the same load / reload pipeline as
+            // markdown notes. Crepe is replaced with a RawTextSurface for
+            // those cards (see Card.tsx).
             out.push(WalkEntry {
                 path: entry.path().to_string_lossy().to_string(),
                 name,

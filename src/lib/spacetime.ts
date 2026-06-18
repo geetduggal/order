@@ -410,6 +410,114 @@ export function serializeMarkwhen(st: Spacetime): string {
   return lines.join("\n");
 }
 
+// ---------- Markwhen parser (reverse of serializeMarkwhen) ----------
+
+/** Build a tag → original-name lookup from a space tree so event #tags
+ *  can be resolved back to the exact folder name. */
+function buildTagLookup(space: SpaceNode[]): Map<string, string> {
+  const map = new Map<string, string>();
+  function walk(nodes: SpaceNode[]) {
+    for (const n of nodes) { map.set(toMarkwhenTag(n.name), n.name); walk(n.children); }
+  }
+  walk(space);
+  return map;
+}
+
+/** Parse a `spacetime.mw` file back into a Spacetime model. The format
+ *  produced by `serializeMarkwhen` uses:
+ *  - `# Space` / `# Time` top-level sections
+ *  - `## AreaName` headings for areas inside Space
+ *  - `- Category` / `  - Folder` indented lists under each area
+ *  - `## Seasons` / `## Events` sub-sections inside Time
+ *  - Season lines:  `DATE [/ END]: Title`
+ *  - Event lines:   `DATE [HH:MM[-HH:MM]] [/ END]: Title [#tag]`
+ * All column-padding is stripped via trim(). */
+export function parseMarkwhenFormat(text: string): Spacetime {
+  type Section = "none" | "space" | "seasons" | "events";
+  let section: Section = "none";
+  let currentArea: SpaceNode | null = null;
+  let currentCategory: SpaceNode | null = null;
+
+  const space: SpaceNode[] = [];
+  const seasons: SpacetimeSeason[] = [];
+  const events: SpacetimeEvent[] = [];
+
+  for (const raw of text.split("\n")) {
+    const trimmed = raw.trim();
+
+    // Top-level section switches
+    if (trimmed === "# Space")  { section = "space";  currentArea = null; currentCategory = null; continue; }
+    if (trimmed === "# Time")   { section = "none";   continue; }
+    if (trimmed === "## Seasons") { section = "seasons"; continue; }
+    if (trimmed === "## Events")  { section = "events";  continue; }
+    if (!trimmed) continue;
+
+    // ---- Space ----
+    if (section === "space") {
+      if (trimmed.startsWith("## ")) {
+        const name = trimmed.slice(3).trim();
+        currentArea = { name, children: [] };
+        currentCategory = null;
+        space.push(currentArea);
+      } else if (raw.match(/^- /) && currentArea) {
+        // Category: unindented `- Name`
+        const name = trimmed.slice(2);
+        currentCategory = { name, children: [] };
+        currentArea.children.push(currentCategory);
+      } else if (raw.match(/^  - /) && currentCategory) {
+        // Folder: 2-space-indented `  - Name`
+        const name = trimmed.slice(2);
+        currentCategory.children.push({ name, children: [] });
+      }
+      continue;
+    }
+
+    // ---- Seasons ----
+    if (section === "seasons") {
+      // `2026-06-01 / 2026-08-31: Summer Building`  or  `2026-06-01: Open`
+      const m = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s*(?:\/\s*(\d{4}-\d{2}-\d{2}))?\s*:\s*(.+)$/);
+      if (m) seasons.push({ date: m[1], title: m[3].trim(), ...(m[2] ? { endDate: m[2].trim() } : {}) });
+      continue;
+    }
+
+    // ---- Events ----
+    if (section === "events") {
+      // `2026-06-16 09:00-09:30: Title #tag`  or  `2026-07-01 / 2026-07-05: Title`
+      const m = trimmed.match(
+        /^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2})(?:-(\d{2}:\d{2}))?)?(?:\s*\/\s*(\d{4}-\d{2}-\d{2}))?\s*:\s*(.+)$/,
+      );
+      if (!m) continue;
+      const [, date, time, endTime, endDate, rest] = m;
+      // Separate trailing #tag from title
+      const tagM = rest.trimEnd().match(/\s+(#[\w-]+)$/);
+      const tagSlug = tagM ? tagM[1] : null;
+      const title = tagM ? rest.slice(0, rest.length - tagM[0].length).trim() : rest.trim();
+      // Resolve tag → real folder name via tag lookup (built after full parse)
+      events.push({
+        date, title,
+        ...(tagSlug ? { folder: tagSlug } : {}), // resolved to real name below
+        ...(time    ? { time }   : {}),
+        ...(endTime ? { endTime } : {}),
+        ...(endDate ? { endDate } : {}),
+        ...(!time && !endDate ? { allDay: true } : {}),
+      });
+      continue;
+    }
+  }
+
+  // Resolve #tag slugs in event folder fields to the real folder names
+  if (events.length > 0 && space.length > 0) {
+    const tagLookup = buildTagLookup(space);
+    for (const ev of events) {
+      if (ev.folder && ev.folder.startsWith("#")) {
+        ev.folder = tagLookup.get(ev.folder) ?? ev.folder.slice(1);
+      }
+    }
+  }
+
+  return { space, seasons, events };
+}
+
 // ---------- YAML parsing (reverse of serialize) ----------
 
 /** Parse the nested `space:` block back into SpaceNodes. Each item is
