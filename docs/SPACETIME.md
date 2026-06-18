@@ -62,10 +62,10 @@ time:
     - {date: 2026-06-01, title: Summer Building,    endDate: 2026-08-31}
     - {date: 2026-09-01, title: Community Focus,    endDate: 2026-11-30}
   events:
-    - {date: 2026-06-15, title: Order v0.1.0 Release, folder: Order Build,         allDay: true}
-    - {date: 2026-06-16, title: Team standup,          folder: Frontend,            time: 09:00, endTime: 09:30}
-    - {date: 2026-07-01, title: Summer trip,           folder: Entertainment Spaces, endDate: 2026-07-05}
-    - {date: 2026-08-20, title: Medium deadline,       folder: Order Build,         time: 17:00}
+    - {date: 2026-06-15, title: Order v0.1.0 Release, folder: Order Build, allDay: true}
+    - {date: 2026-06-16, title: Team standup,          folder: Frontend,   time: 09:00, endTime: 09:30}
+    - {date: 2026-07-01, title: Summer trip,           folder: Board Games, endDate: 2026-07-05}
+    - {date: 2026-08-20, title: Medium deadline,       folder: Order Build, time: 17:00}
 ```
 
 ### spacetime.mw
@@ -100,7 +100,7 @@ time:
 
 2026-06-15              : Order v0.1.0 Release  #order-build
 2026-06-16 09:00-09:30  : Team standup          #frontend
-2026-07-01 / 2026-07-05 : Summer trip           #entertainment-spaces
+2026-07-01 / 2026-07-05 : Summer trip           #board-games
 2026-08-20 17:00        : Medium deadline       #order-build
 ```
 
