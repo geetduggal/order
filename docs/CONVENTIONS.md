@@ -141,7 +141,7 @@ and events as date-prefixed lines under `##` subsections).
 
 ### Full example
 
-```
+```markdown
 # Space
 
 ## Entertainment
@@ -169,10 +169,10 @@ and events as date-prefixed lines under `##` subsections).
 
 ## Events
 
-2026-06-15          : Order v0.1.0 Release  #order-build
-2026-06-16 09:00-09:30: Team standup          #frontend
-2026-07-01 / 2026-07-05: Summer trip          #entertainment-spaces
-2026-08-20 17:00    : Medium deadline         #order-build
+2026-06-15              : Order v0.1.0 Release  #order-build
+2026-06-16 09:00-09:30  : Team standup          #frontend
+2026-07-01 / 2026-07-05 : Summer trip           #entertainment-spaces
+2026-08-20 17:00        : Medium deadline       #order-build
 ```
 
 ### Space
