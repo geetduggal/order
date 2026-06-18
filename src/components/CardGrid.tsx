@@ -2085,10 +2085,8 @@ export function CardGrid() {
       const noteKey = (n: LoadedNote): string | null => {
         const d = toIsoDateValue(n.frontmatter.date);
         if (!d) return null;
-        const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
-          ? n.frontmatter.startTime : "";
         const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, ""));
-        return `${d}|${st}|${t.toLowerCase()}`;
+        return `${d}|${t.toLowerCase()}`;
       };
       const byKey = new Map<string, LoadedNote[]>();
       for (const n of cur) {
