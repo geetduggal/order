@@ -1853,6 +1853,15 @@ export function CardGrid() {
     const mwNote = notes.find((n) => n.filename === "spacetime.mw");
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
+    // Cold-boot guard: on first load lastMarkwhenRef is null. Initialise
+    // to the current content and bail — the sync should only fire when
+    // the content CHANGES during this session, not on every app launch.
+    // Without this, every restart re-runs the sync against stale vault
+    // notes and creates numbered duplicates via uniqueWrite.
+    if (lastMarkwhenRef.current === null) {
+      lastMarkwhenRef.current = mwNote.body;
+      return;
+    }
     // Stamp NOW (synchronously) before any await so subsequent renders
     // with the same body are skipped even while the async work runs.
     lastMarkwhenRef.current = mwNote.body;
