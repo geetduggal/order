@@ -1,12 +1,11 @@
 // Thin CodeMirror 6 wrapper for editing raw text files with syntax highlighting.
-// Used for spacetime.yml (YAML) and spacetime.mw (Markdown). Accepts the same
-// basic prop shape as RawTextSurface so callers can swap surfaces by file type.
+// Used for spacetime.yml (YAML) and spacetime.mw (Markdown).
 
 import { useEffect, useRef } from "react";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { oneDark } from "@codemirror/theme-one-dark";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 
@@ -25,7 +24,7 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
-  // Mount once
+  // Mount once per language change
   useEffect(() => {
     if (!host.current) return;
     const langExt = lang === "yaml" ? yaml() : markdown();
@@ -35,10 +34,10 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          syntaxHighlighting(defaultHighlightStyle),
           lineNumbers(),
           langExt,
-          EditorView.lineWrapping,
+          oneDark,
+          // No lineWrapping — horizontal scroll for long lines
           EditorView.editable.of(!readOnly),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current(u.state.doc.toString());
@@ -46,14 +45,7 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
           EditorView.theme({
             "&": { height: "100%", fontSize: "var(--note-font-size, 14px)" },
             ".cm-scroller": { fontFamily: "var(--mono)", overflow: "auto" },
-            ".cm-content": { padding: "12px 16px", minHeight: "100%" },
-            ".cm-gutters": {
-              background: "var(--bg-elev)",
-              borderRight: "1px solid var(--rule-soft)",
-              color: "var(--ink-ghost)",
-            },
-            ".cm-activeLineGutter": { background: "transparent" },
-            ".cm-activeLine": { background: "var(--royal-soft, rgba(0,0,0,0.04))" },
+            ".cm-content": { padding: "12px 16px", minHeight: "100%", whiteSpace: "pre" },
           }),
         ],
       }),
@@ -62,7 +54,7 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
     viewRef.current = view;
     return () => { view.destroy(); viewRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang]); // remount only when language changes
+  }, [lang]);
 
   // Sync external value changes without disrupting cursor
   useEffect(() => {
@@ -70,9 +62,7 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
     if (!view) return;
     const current = view.state.doc.toString();
     if (current === value) return;
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: value },
-    });
+    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
   }, [value]);
 
   return <div ref={host} className="cm-surface" />;
