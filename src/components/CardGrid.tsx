@@ -2998,14 +2998,13 @@ export function CardGrid() {
       setFocusedPath((p) => (p === path ? newPath : p));
       setFocusPath((p) => (p === path ? newPath : p));
       setScrollTargetPath((p) => (p === path ? newPath : p));
-      // Land the user inside the new NF: clear the filter pile, pin
-      // the new folder, switch to Pile, and let the existing
-      // scrollTargetPath ride the user to the moved card.
-      if (folderName) {
-        setView("pile");
+      // Land the user inside the new NF. In calendar views, stay in the
+      // calendar — just update recents. Only switch to Pile when already
+      // in Pile (so a folder reassignment from the Pile stays in Pile).
+      markFolderRecent(folderName ?? "");
+      if (folderName && viewRef.current === "pile") {
         setFilters([{ kind: "include", ref: folderName }]);
         setFocusedFolder(folderName);
-        markFolderRecent(folderName);
       }
       return;
     }

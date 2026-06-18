@@ -317,6 +317,30 @@ function ReadOnlyValue({ value, fieldKey }: { value: unknown; fieldKey: string }
   return <span className="fm-readonly-text" title={text}>{text}</span>;
 }
 
+/** Folder autocomplete that holds a local draft so keystrokes don't
+ *  commit to disk — only an explicit Enter/click calls onSet. */
+function FolderKnownInput({ value, onSet, candidates, recents, colorFor }: {
+  value: unknown;
+  onSet: (v: unknown) => void;
+  candidates: string[];
+  recents?: string[];
+  colorFor?: (ref: string) => string | undefined;
+}) {
+  const inner = unwrapRef(value);
+  const [draft, setDraft] = useState(inner);
+  return (
+    <FolderAutocomplete
+      value={draft}
+      onChange={setDraft}
+      onPick={(name) => { setDraft(name); onSet(rewrapRef(value, name)); }}
+      onCancel={() => setDraft(inner)}
+      candidates={candidates}
+      recents={recents}
+      colorFor={colorFor}
+    />
+  );
+}
+
 function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, folderColorFor }: {
   fieldKey: string;
   value: unknown;
@@ -383,21 +407,20 @@ function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, f
     }
     case "folder": {
       // Wikilink-wrapped refs round-trip — keep the `[[...]]` shape if
-      // the user already wrote it that way. The autocomplete operates
-      // on the bare name; rewrapRef puts the brackets back on save.
-      const inner = unwrapRef(value);
+      // the user already wrote it that way. FolderKnownInput holds a
+      // local draft so keystrokes don't commit; only Enter/click does.
       if (folderCandidates && folderCandidates.length > 0) {
         return (
-          <FolderAutocomplete
-            value={inner}
-            onChange={(next) => onSet(rewrapRef(value, next))}
-            onPick={(name) => onSet(rewrapRef(value, name))}
+          <FolderKnownInput
+            value={value}
+            onSet={onSet}
             candidates={folderCandidates}
             recents={recentFolders}
             colorFor={folderColorFor}
           />
         );
       }
+      const inner = unwrapRef(value);
       return (
         <input
           type="text"
