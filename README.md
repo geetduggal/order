@@ -2,21 +2,20 @@
 
 *Your notes, at home at last.*
 
-A local-first notebook where **plain markdown files are the database**
-and every surface (pile, calendar, seasons, todo.txt, spacetime.yml) is a
-different read of the same files. Obsidian-compatible vault. One Tauri
-codebase ships desktop and iOS.
+A local-first notebook where **plain text files are the database** and every
+surface (pile, calendar, seasons, todo.txt, spacetime) is a different read of
+the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and iOS.
 
 ![Order — a Notable Folder rendered as a newspaper section: the Main Document centered, recent notes orbiting it](img/stream.png)
 
 ## What you get
 
 - **Edit in place** — WYSIWYG markdown cards (Milkdown Crepe). No modes, no preview pane.
-- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10, stored as plain files.
-- **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same frontmatter Obsidian Full Calendar reads.
-- **todo.txt, always in sync** — every calendar event mirrored as one readable line; hand-added lines show up on the calendar too.
-- **Seasons** — name your own date ranges and see each one as a grid of what actually happened, by Area.
-- **spacetime.yml** — a single canonical file at the vault root, the minimal map of your space (the folder hierarchy) and time (events + seasons), regenerated as you work. Edit it by hand and apply the changes back to the vault. See [CONVENTIONS.md](docs/CONVENTIONS.md).
+- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10.
+- **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same notes.
+- **todo.txt, always in sync** — every calendar event mirrored as one readable line.
+- **Seasons** — name your own date ranges and see each one as a grid of what happened, by Area.
+- **Spacetime** — a single canonical map of your space (hierarchy) and time (events + seasons) at the vault root, in two companion formats: `spacetime.yml` and `spacetime.mw`. Edit either one and Order syncs the other immediately. See [CONVENTIONS.md](docs/CONVENTIONS.md).
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
 ## Build & run
@@ -29,11 +28,10 @@ pnpm tauri:ios:dev    # iOS simulator (after tauri:ios:init)
 pnpm test:e2e         # Playwright suite
 ```
 
-Prereqs: Node 20+, pnpm 9+, Rust 1.77+; Xcode 15+ for iOS. First
-launch reads `~/Documents/Dropbox/Home/` (change it in Settings).
+Prereqs: Node 20+, pnpm 9+, Rust 1.77+; Xcode 15+ for iOS. First launch reads
+`~/Documents/Dropbox/Home/` (change it in Settings).
 
-**Using the prebuilt .app from a release?** macOS quarantines
-non-notarized downloads and claims the app "is damaged." It isn't:
+**Using the prebuilt .app from a release?** macOS quarantines non-notarized downloads:
 
 ```bash
 xattr -cr ~/Downloads/Order.app && open ~/Downloads/Order.app
@@ -43,156 +41,109 @@ xattr -cr ~/Downloads/Order.app && open ~/Downloads/Order.app
 
 ```
 <vault>/
-├── Areas.md                      lists the Areas        (role: areas)
-├── Seasons.md                    your named date ranges (role: seasons)
-├── todo.txt                      one-line calendar events
-└── Craft/                        an Area
-    ├── Craft.md                  lists its Categories
-    └── Craft Projects/           a Category
-        ├── Craft Projects.md     lists its Notable Folders
-        └── Map Pipeline v2/      a Notable Folder
+├── spacetime.yml             canonical space + time (YAML)
+├── spacetime.mw              canonical space + time (Markwhen)
+├── todo.txt                  one-line calendar events (optional)
+└── Craft/                    an Area
+    └── Craft Projects/       a Category
+        └── Map Pipeline v2/  a Notable Folder
             ├── Map Pipeline v2.md       the Main Document
-            ├── 2026-06-12 Standup.md    a note (also a calendar event)
+            ├── 2026-06-12 Standup.md    a note
             └── diagram.png              attachments live WITH their notes
 ```
 
-Five frontmatter keys carry all structure:
-
-| Key | Makes a note… |
-|---|---|
-| `role: areas` / `seasons` | one of the two vault-root index files |
-| `list: cards` \| `lines` | render its bullets as a visual list |
-| `category: <Category>` | a Notable Folder's Main Document |
-| `folder: "[[NF]]"` | a member of that Notable Folder |
-| `date` + `startTime` / `allDay` | a calendar event |
-
-Everything opens unchanged in Obsidian: same wikilinks, same
-`![[image.png]]` embeds, same files.
+The vault's structure (which Areas, Categories, and Notable Folders exist, and
+their order) lives in `spacetime.yml` and `spacetime.mw`. The old chain index
+files (`Areas.md`, `<Area>.md`, `<Category>.md`) are still supported as a fallback
+for un-migrated vaults; the migration button in Settings moves them to safe storage
+when you're ready.
 
 ## The surfaces
 
-**Pile.** A masonry of editable cards, newest first. Focus on a
-Notable Folder and it becomes a *newspaper section* — Main Document as
-the centerpiece, recent notes orbiting it. Navigation is a pile: the
-folder you touch goes on top.
+**Pile.** A masonry of editable cards, newest first. Focus on a Notable Folder
+and it becomes a newspaper section — Main Document as the centerpiece, recent
+notes orbiting it. Navigation is a pile: the folder you touch goes on top.
 
-**Lists.** Give a note `list: cards` or `list: lines` and its body
-bullets render as a visual list instead of prose — a reading list, a
-tools index, a wishlist. Each item is a markdown bullet:
+**Terminal.** Every Notable Folder's Main Document has a terminal button (`⌘4`).
+It becomes a real PTY rooted in that folder — `vim`, `htop`, colors, line editing
+all work. Desktop only.
 
-- `cards` is a drag-reorderable grid: an image cover when the item (or
-  its linked note) has one, otherwise a large text-relevant icon so
-  mixed image/non-image lists still read as one cohesive grid.
-- `lines` is a dense table: aligned title and description columns,
-  drag to reorder, click a cell to edit.
+**Calendar.** Day / Week / Month / Year. Drag to create, drag to move, click for
+an action popup. Events are notes with a `date:`.
 
-Add an item at the top or bottom. Typing is **plain text by default**;
-type `[[` and a folder/note autocomplete opens — pick one and the item
-becomes a wikilink that navigates on click. (Same `[[`-trigger you get
-inside the editor.) Paste or drop an image to add it as a cover.
+![Week view — events colored by Notable Folder](img/calendar-week.png)
 
-**Terminal.** Every Notable Folder's Main Document card has a terminal
-button next to its folder-flip button. Click it (or press `⌘4` on the
-focused folder) and the card front becomes a real terminal rooted in
-that folder — a true PTY, so `vim`, `htop`, colors, and line editing all
-work. It paints in the active Order theme and follows your text-size
-zoom. `⌘4` again, the close button, or full-screen all toggle it back to
-the note. Desktop only.
-
-**Calendar.** Day / Week / Month / Year. Drag to create, drag to move,
-click for an action popup (rename inline, move to a day, reassign the
-folder, open, delete). Events are just notes with a `date:`.
-
-![Week view — events colored by Notable Folder, Season next to Year in the view switcher](img/calendar-week.png)
-
-**Seasons.** List your own date ranges in `Seasons.md`:
+**Seasons.** Name your own date ranges in `spacetime.yml` or `spacetime.mw`:
 
 ```
-- 2026-02-15 - 2026-04-30 · Spring Builds
-- 2026-05-01 -            · Frontier
+# spacetime.yml
+time:
+  seasons:
+    - {date: 2026-02-15, title: Spring Builds,  endDate: 2026-04-30}
+    - {date: 2026-05-01, title: Frontier}
+
+# spacetime.mw
+## Seasons
+2026-02-15 / 2026-04-30: Spring Builds
+2026-05-01             : Frontier
 ```
 
-The Season view clusters every notable update (all-day event) by Area
-over the range — which projects went well, which Areas were quiet, at
-a glance. Arrows step between seasons like they step between weeks.
+The Season view clusters every notable update by Area over the range.
 
-**todo.txt.** Flip one toggle in Settings and Order keeps a single
-text file in sync with every calendar event — one line each:
+**todo.txt.** A Settings toggle keeps a plain text file in sync with calendar events:
 
 ```
 due:2026-06-13 07:30  Long run +weekly-hub end:09:30
 due:2026-06-13 15:00  Ship Issue 22 +wide-margins end:17:00
-due:2026-06-13        Ship to prod +map-pipeline-v2
 ```
 
-`+project` fuzzy-matches a Notable Folder (kebab / camel / snake).
-Events Order creates are markdown files (the durable truth — sync
-conflicts can never lose them); lines you add by hand in any editor
-render on the calendar too. Identity `(date, start, title)` binds the
-two backings so each event renders exactly once.
+**Spacetime.** `spacetime.yml` and `spacetime.mw` at the vault root are Order's
+canonical map. Both are regenerated continuously as you work. Open either from
+Settings to hand-edit it as a raw-text card. Edits to either file sync to the
+other immediately and update the sidebar, calendar, and seasons without an explicit
+apply step.
 
-**Publish.** Notes with `public: true` build into a static site +
-hydrated SPA (`Cmd+P`). Permalinks pin to the note, not its path, so
-reorganizing the vault never breaks a link.
+"Apply to vault…" in Settings lets you push structural changes (add/remove/reorder
+folders, edit events) from the YAML back into the vault's note files with a review
+step first.
 
-**Spacetime.** `spacetime.yml` at the vault root is the canonical, minimal
-picture of the whole vault: `space` (the Areas to Categories to Notable
-Folders hierarchy) and `time` (events + seasons). It regenerates
-continuously as you work. Open it from Settings to hand-edit it as a plain
-text card, then **Apply to vault** to push your edits back: creating,
-updating, or deleting notes, and adding, removing, or reordering folders.
-Every apply shows a review first, and anything destructive (deleting a
-note, removing a folder and its notes) asks before it runs. See
-[CONVENTIONS.md](docs/CONVENTIONS.md) for the format.
+See [CONVENTIONS.md](docs/CONVENTIONS.md) for the full Spacetime format reference,
+including the evaluation of both formats and the convergence criteria.
 
-**markwhen (early, experimental).** A note marked `markwhen: true` in its
-frontmatter carries a [markwhen](https://markwhen.com) timeline in its
-body; its events fold into `spacetime.yml` and each one materializes a
-backing event note in the folder. This is an early proof of concept and
-the sync is **one way only**. You can *create* events from a markwhen
-timeline, but:
-
-- editing an event in Order's UI does **not** update the markwhen document;
-- editing an event's title in the markwhen document simply creates a **new**
-  note rather than renaming the existing one.
-
-So the basics work, but round-trip sync is still an open design problem.
-Treat it as a demo, not a daily driver.
+**Publish.** Notes with `public: true` build into a static site (`⌘⇧P`).
+Permalinks pin to the note, not its path.
 
 ## Keyboard
 
 | Keys | Action |
 |---|---|
-| `⌘N` | new note (title popup in calendar views) |
+| `⌘N` | new note |
 | `⌘P` | pile view (top of pile) |
 | `⌘D / W / M / Y / S` | Day / Week / Month / Year / Season |
 | `⌘⌃ ← / →` | back / forward by the view's unit |
-| `⌘O` · `⌘K` | folder palette (folders + todo.txt) |
+| `⌘O` · `⌘K` | folder palette |
 | `⌘F` · `/` | full-text search |
 | `⌘R` | home ⇄ clear-filters toggle |
-| `⌘4` | toggle the in-card terminal for the focused folder (`$` lives on the 4) |
+| `⌘4` | toggle in-card terminal for focused folder |
 | `⌘;` | sidebar · `⌘'` clear filters · `⌘T` theme · `⌘⇧P` publish |
 | `⌘+ / − / 0` | note text size |
 | `?` | shortcut overlay |
 
-The dock mirrors the essentials: **+** (new note), calendar (Week view),
-home (the home pile), pile (jump back to your last pile), search,
-settings, sidebar. Home is sticky in the pile: pile view always keeps the
-home folder and never goes fully unfiltered (only the calendar shows
-everything).
+The dock mirrors the essentials: **+** (new note), calendar, home, pile (last
+pile), search, settings, sidebar.
 
-Nine themes (`⌘T`): light, dark, OLED black, WordPerfect, Terminal,
-Typewriter, America, Christmas, LCARS — each ~15 lines of CSS variables.
+Nine themes (`⌘T`): light, dark, OLED black, WordPerfect, Terminal, Typewriter,
+America, Christmas, LCARS.
 
 ## Going deeper
 
 | Doc | What's in it |
 |---|---|
-| [CONVENTIONS.md](docs/CONVENTIONS.md) | the core conventions + the Spacetime format |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the mental model: code map, data flows, invariants |
-| [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | why it's shaped this way — piles, constraints, one vault two lives |
-| [docs/RELEASING.md](docs/RELEASING.md) | building binaries, refreshing releases, App Store |
-| `tests/e2e/` | Playwright suite + reusable vault linter (`ORDER_VAULT=… pnpm test:e2e consistency`) |
+| [CONVENTIONS.md](docs/CONVENTIONS.md) | the core conventions + the Spacetime format (YAML + Markwhen) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | code map, data flows, invariants |
+| [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | why it's shaped this way |
+| [docs/RELEASING.md](docs/RELEASING.md) | building binaries, App Store |
+| `tests/e2e/` | Playwright suite + pure-node spec files |
 
 ## Principles, in one breath each
 

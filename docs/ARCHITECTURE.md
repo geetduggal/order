@@ -1,67 +1,55 @@
 # Order — architecture
 
-The whole app is one idea applied repeatedly: **plain markdown files are
-the database, and every surface is a different read of the same files.**
-If you understand the file conventions, you understand the app. The
-rest of this doc is how that idea survives contact with a vault of tens
-of thousands of files.
+The whole app is one idea applied repeatedly: **plain text files are the database,
+and every surface is a different read of the same files.** If you understand the
+file conventions, you understand the app. The rest of this doc is how that idea
+survives contact with a vault of tens of thousands of files.
 
 ## The data model (on disk)
 
 ```
 <vault>/
-├── Areas.md                      role: areas — lists the Areas
-├── Seasons.md                    role: seasons — list of date ranges (optional)
-├── todo.txt                      one-line calendar events (optional)
-├── spacetime.yml                 canonical space + time map, generated (see CONVENTIONS.md)
+├── spacetime.yml             canonical space + time map (YAML)
+├── spacetime.mw              canonical space + time map (Markwhen)
+├── todo.txt                  one-line calendar events (optional)
 └── <Area>/
-    ├── <Area>.md                 list: cards — lists the Categories
     └── <Category>/
-        ├── <Category>.md         list: cards — lists the Notable Folders
         └── <NF>/
-            ├── <NF>.md           category: <Category> — the Main Document
-            ├── <note>.md         folder: "[[<NF>]]" — a regular note
-            └── <attachment>      images/PDFs live NEXT TO their notes
+            ├── <NF>.md             the Main Document (category: <Category>)
+            ├── 2026-06-12 Note.md  a note / calendar event
+            └── diagram.png         attachments live WITH their notes
 ```
 
-Five frontmatter keys carry all structure:
-
-| Key | Meaning |
-|---|---|
-| `role: areas` / `role: seasons` | marks the two vault-root index files |
-| `list: cards` \| `lines` | note body's bullets render as a list |
-| `category: <Category>` | this note is a Notable Folder Main Document |
-| `folder: "[[NF]]"` | this note belongs to that Notable Folder |
-| `date` + `startTime`/`allDay` | this note is a calendar event (Obsidian Full Calendar format) |
-
-Everything else (`title`, `home`, `public`, `image`, …) is decoration.
+`spacetime.yml` and `spacetime.mw` are the source of truth for the vault's
+**structure** (the Areas → Categories → Notable Folders hierarchy and its order)
+and **seasons**. Both files are kept in sync; editing either one updates the
+other. See [CONVENTIONS.md](CONVENTIONS.md) for the full format reference.
 
 ## Tech stack — what each layer is for
 
 | Layer | Choice | Why this one |
 |---|---|---|
-| Shell | **Tauri v2** (Rust) | native file IO + system webview; one codebase ships macOS, Linux, Windows, **and iOS**. ~10 MB binaries vs Electron's ~150 |
+| Shell | **Tauri v2** (Rust) | native file IO + system webview; one codebase ships macOS and iOS. ~10 MB binaries |
 | UI | **React 19 + TypeScript**, Vite | one SPA rendered into the webview; HMR in dev |
-| Editor | **Milkdown Crepe** (ProseMirror) | WYSIWYG CommonMark, uncontrolled after mount — typing never round-trips through React state |
-| Calendar | **FullCalendar v6** (Day/Week/Month) | drag/resize/select for free; Year and Season are hand-rolled React (FC buys nothing there) |
-| YAML | js-yaml | frontmatter parse/dump, `noRefs` + quoted strings to stay Obsidian-compatible |
-| Watcher | notify (Rust), 500 ms debounce | external edits reach the UI without polling JS-side |
-| Assets | custom `vaultasset://` URI scheme | images/video stream through the webview's native fetch path with HTTP `Range` support — a 50 MB `![[clip.mov]]` never crosses the IPC bridge |
+| Editor | **Milkdown Crepe** (ProseMirror) | WYSIWYG CommonMark, uncontrolled after mount |
+| Calendar | **FullCalendar v6** | drag/resize/select; Year and Season are hand-rolled |
+| YAML | js-yaml | frontmatter parse/dump, `noRefs` + quoted strings |
+| Watcher | notify (Rust), 500 ms debounce | external edits reach the UI without polling |
+| Assets | `vaultasset://` URI scheme | images/video stream through native fetch with HTTP Range |
 
-State management is deliberately primitive: **no Redux, no Zustand, no
-Context**. `CardGrid.tsx` (~4k lines) owns `notes[]`, the view, and the
-filter pile; everything derives per render. One place to look, one
-place to debug.
+State management is deliberately primitive: **no Redux, no Zustand, no Context**.
+`CardGrid.tsx` (~4k lines) owns `notes[]`, the view, and the filter pile;
+everything derives per render.
 
 ```
 CardGrid ── owns notes[], view, filters; routes every mutation
 ├── Sidebar           Areas → Categories → NFs drill + filter pills
-├── LazyCell[] → Card per note: load → edit (Milkdown) → debounced save
+├── LazyCell[] → Card per note: load → edit → debounced save
 │   ├── MilkdownSurface   Crepe wrapper: paste, links, wikilinks
-│   ├── RawTextSurface    monospace <textarea> for .txt (todo.txt)
-│   ├── ListCards / ListLines   list: cards (grid) / lines (table)
-│   ├── NotableFolderBackside   Main Doc flip side: folder browser + OS drag-drop
-│   └── OrderTerminal    Main Doc front: in-card PTY (xterm.js), ⌘4 / button toggle
+│   ├── RawTextSurface    monospace textarea for .txt/.yml/.mw files
+│   ├── ListCards / ListLines   list: cards/lines rendering
+│   ├── NotableFolderBackside   flip side: folder browser + OS drag-drop
+│   └── OrderTerminal    in-card PTY (xterm.js), ⌘4 / button toggle
 ├── CalendarView      Day / Week / Month (FullCalendar)
 ├── YearLinearView    Year — 12×37 strip
 ├── SeasonView        Season — Areas grid over a date range
@@ -70,161 +58,126 @@ CardGrid ── owns notes[], view, filters; routes every mutation
 
 ## File operations — everything goes through one bridge
 
-The frontend never touches a filesystem API. Every operation calls a
-Rust command via `lib/vault-fs.ts`, with **vault-relative paths** — the
-same code runs on desktop (absolute root) and iOS (security-scoped
-bookmark), and `..` traversal is rejected at the bridge.
+The frontend never touches a filesystem API. Every operation calls a Rust command
+via `lib/vault-fs.ts`, with **vault-relative paths**.
 
 | Command | Used for |
 |---|---|
-| `vault_walk_metadata` | boot: every file's frontmatter, **no bodies** |
+| `vault_walk_metadata` | boot: every file's frontmatter, no bodies |
 | `vault_read_text` / `vault_write_text` | note load on demand / debounced save |
-| `vault_write_binary` | image paste |
-| `vault_rename` / `vault_remove` | rename note (+ inbound wikilink rewrite), delete |
-| `vault_read_dir` / `vault_list_dir` | NF file-browser flip side |
-| `vault_import_files` | OS drag-drop (webview eats HTML5 dataTransfer; Rust copies by path) |
-| `fts_build_index` / `fts_search` | full-text search, index lives Rust-side |
-| `terminal_open` / `_write` / `_resize` / `_close` | real PTY (portable-pty) per in-card terminal — vim/htop/colors work |
-| `open_url` / `open_path` | every external link → OS browser/app, never in-app |
+| `vault_rename` / `vault_remove` | rename note, delete |
+| `vault_backup` | timestamped full-vault snapshot to `.order-legacy/backup-<ts>/` |
+| `fts_build_index` / `fts_search` | full-text search, Rust-side index |
+| `terminal_open` / `_write` / `_resize` / `_close` | real PTY per in-card terminal |
+
+The walk filter includes `.md`, `.txt`, `.yml`, `.yaml`, and `.mw` so
+`spacetime.yml`, `spacetime.mw`, and `todo.txt` flow through the same load/reload
+pipeline as markdown notes.
 
 **The write path.** Card edits debounce 600 ms, then:
 `splitFrontmatter → mutate → joinFrontmatter → vault_write_text`.
-Every write also stamps a 6-second **self-write marker**; the watcher
-and the mtime poller treat stamped paths as "ours" so saving never
-triggers a reload of the card being typed in. A `knownBodies` cache
-lets the watcher distinguish a real external edit from a Dropbox/iCloud
-metadata touch by comparing content, not just mtime.
+Every write stamps a 6-second **self-write marker** so the watcher doesn't reload
+the card being typed in.
 
-**The external-edit path.** notify (Rust, 500 ms debounce) → `vault-changed`
-event → JS coalesces another 250 ms → metadata re-walk → notes matched
-**by path so React ids survive** — a mounted editor keeps its cursor,
-selection, and scroll through a `git pull` happening underneath it.
+**The external-edit path.** notify (Rust, 500 ms debounce) → `vault-changed` event
+→ JS coalesces 250 ms → metadata re-walk → notes matched by path so mounted editors
+keep their cursor through a `git pull` happening underneath.
 
-## Scaling to tens of thousands of files
+## Spacetime: the canonical map
 
-The budget: every interaction under a second (enforced by the E2E
-suite). Five mechanisms carry it:
+`lib/spacetime.ts` is the heart of the data model. It owns the in-memory
+representation (`SpaceNode[]` + `SpacetimeEvent[]` + `SpacetimeSeason[]`),
+the YAML serializer/parser, the Markwhen serializer/parser, and the space-tree
+mutation helpers.
 
-1. **Metadata-only boot.** `vault_walk_metadata` ships one small struct
-   per file — frontmatter YAML string, body byte-length, mtime. At 10⁴
-   notes that's the difference between megabytes and hundreds of
-   megabytes crossing the IPC bridge. Bodies load lazily, per note, the
-   moment a Card actually mounts. Only chain files (Areas/Categories/NF
-   main docs, `list:` folders, `.txt`) get bodies up front, because the
-   sidebar and calendar need their bullets immediately.
+### The mirror
 
-2. **Lazy editor mounting.** A ProseMirror instance per note is the
-   expensive thing — hundreds of synchronous mounts stall the main
-   thread. `LazyCell` wraps each grid cell in an IntersectionObserver:
-   offscreen cells render a sized placeholder; the real Card mounts
-   when scrolled within ~1.5 viewports above / 3 below. Once mounted it
-   stays mounted, so in-progress edits never get torn down by scrolling.
+A continuous `useEffect` in CardGrid regenerates `spacetime.yml` and `spacetime.mw`
+on every notes change:
 
-3. **Pagination before virtualization.** The unfiltered Pile caps at
-   60 cards with a "Show more" tile; filters lift the cap because a
-   filtered set is small by construction. Combined with LazyCell this
-   means cold boot mounts a handful of editors, not thousands.
+```
+notes[] + vaultTaxonomy + parsedSpacetime
+  → buildSpacetime()         preserves existing space+seasons from yml/mw,
+  → serializeSpacetime()       regenerates events from note frontmatter
+  → writeVault("spacetime.yml")
+  → serializeMarkwhen()
+  → writeVault("spacetime.mw")
+```
 
-4. **Masonry without layout thrash.** The Pile is CSS Grid with 8 px
-   auto-rows; each cell's `grid-row-end: span N` comes from its measured
-   height. Re-measure triggers are scoped — a per-card ResizeObserver,
-   a ProseMirror MutationObserver, and a capturing input listener as
-   backstop — so typing in one card never reflows the page.
+A don't-clobber guard (`lastSpacetimeRef`) holds off the mirror write if the
+on-disk file has been hand-edited since the last mirror write, so edits made in
+the raw-text card or an external editor are never silently overwritten.
 
-5. **Derived state, no caches to invalidate.** Taxonomy tree, calendar
-   events, season grids, todo.txt sync sources — all are `useMemo`-style
-   derivations over the single `notes[]` array. There is no secondary
-   store to drift; a 10⁴-element map/filter per render is microseconds,
-   and it's always right.
+### Bidirectional sync
 
-Search is the one thing that can't derive from metadata: `⌘F` queries a
-Rust-side full-text index (built once, loaded from disk on later
-launches) so JS never holds every body in memory.
+Both `spacetime.yml` and `spacetime.mw` are sources of truth:
+
+- **spacetime.yml edit** → `parsedSpacetime` useMemo re-derives → taxonomy and
+  seasons update on the next render cycle.
+- **spacetime.mw edit** → `lastMarkwhenRef` guard detects the change →
+  `parseMarkwhenFormat()` extracts space + seasons → written to `spacetime.yml`
+  → triggers the taxonomy/seasons update. New events in `.mw` materialize as
+  backing `.md` notes.
+
+### Space mutations
+
+All structure mutations (add/remove/reorder area, category, folder from the
+sidebar or the apply-sync flow) call `applySpaceMutation()` in `lib/spacetime.ts`
+and write the result to `spacetime.yml`. This replaces the old chain-file bullet
+writes (`Areas.md`, `<Area>.md`, `<Category>.md`).
+
+### Apply to vault
+
+`lib/spacetime-sync.ts` diffs the on-disk file against the vault into a plan
+(event create/update/delete, season change, folder add/remove/reorder). The plan
+surfaces in a confirm dialog before any write; destructive ops are itemized.
+
+### Vault migration
+
+Settings → **"Migrate to spacetime…"** runs `lib/vault-migrate.ts`:
+1. Full vault backup (`vault_backup` Rust command).
+2. Plan: strip event YAML frontmatter from all event notes; archive `Areas.md`,
+   `Seasons.md`, and category index files to `.order-legacy/chain/`.
+3. Confirm dialog.
+4. Execute.
+
+After migration, `spacetime.yml` / `spacetime.mw` are the only structural records.
+
+## Taxonomy
+
+`lib/taxonomy.ts:buildVaultTaxonomy()` produces the `VaultTaxonomy` that drives
+the sidebar and pile. When `spacetime.yml` carries a non-empty `space` tree, that
+becomes the taxonomy. Otherwise it falls back to the chain index files, so
+un-migrated vaults keep working without any change.
 
 ## Calendar events have two backings
 
-An event is either an `.md` file (frontmatter date/time) or one line in
-`todo.txt` (`due:YYYY-MM-DD HH:MM Title +project`). Identity is the
-triple `(date, startTime, normalized title)`:
+An event is either a `.md` file (frontmatter `date`/`startTime`/`allDay`) or
+one line in `todo.txt` (`due:YYYY-MM-DD HH:MM Title +project`). Identity is
+`(date, startTime, normalized title)` — the calendar renders each once, `.md`
+wins when both exist.
 
-- the calendar renders each identity once — `.md` wins when both exist
-- a sync pass mirrors every `.md` event into todo.txt and prunes stale
-  mirror lines (a localStorage set of last-written keys detects deletes)
-- chip mutations route by path: synthetic `todo.txt#L<n>` paths rewrite
-  the line, real paths rewrite the file
+## Scaling to tens of thousands of files
 
-The `+project` token fuzzy-matches Notable Folder names across kebab /
-camel / snake case (`lib/folders.ts: resolveProjectToNf`).
+1. **Metadata-only boot.** `vault_walk_metadata` ships one small struct per file
+   — frontmatter YAML string, body byte-length, mtime. Bodies load lazily per Card.
+2. **Lazy editor mounting.** `LazyCell` wraps each cell in an IntersectionObserver;
+   offscreen cells render a placeholder.
+3. **Pagination.** Unfiltered pile caps at 60 cards.
+4. **Masonry without layout thrash.** CSS Grid with per-card ResizeObserver.
+5. **Derived state, no caches.** Taxonomy tree, calendar events, season grids — all
+   `useMemo` derivations over `notes[]`. No secondary store to drift.
 
-## Spacetime: the canonical map (`spacetime.yml`)
+## Invariants
 
-`lib/spacetime.ts` projects the whole vault into one file: `space` (the
-taxonomy as nested block lists) and `time` (events from frontmatter +
-seasons), with a hand-rolled column-aligned YAML emitter. A continuous
-mirror in CardGrid regenerates it on every notes change, with a
-don't-clobber guard so a hand-edited file isn't overwritten before you
-apply it.
-
-The reverse direction is opt-in and reviewed: `lib/spacetime-sync.ts`
-diffs the on-disk file against the vault into a plan (event
-create/update/delete, season change, folder add/remove/reorder), surfaced
-in a confirm dialog (destructive ops itemized) before any write. markwhen
-(`lib/markwhen.ts`, `@markwhen/parser`) is an early one-way surface: a
-`markwhen: true` note's timeline folds into `time` and materializes
-backing notes, but UI edits don't flow back to the markwhen text. See
-CONVENTIONS.md.
-
-## UI flows worth knowing
-
-**+ button.** In the Pile it behaves like Cmd+N: the note lands in
-the top-of-pile Notable Folder (falling back to home) and the filter
-pile is left alone. From any calendar view it jumps home — creates in
-the home NF, pins the filter, lands the cursor in the new card.
-Calendar drag/click also creates `.md` files — Order never creates
-todo.txt-only events (a line whose only home is a file two devices
-rewrite concurrently can lose the sync race; an `.md` regenerates its
-mirror line on the next pass no matter what happened to todo.txt).
-
-**Navigation is a pile.** Every surface — sidebar tile, palette pick,
-wikilink, event-popup Open — puts the target NF on top of the
-filter-pill stack. The just-touched section renders at scroll-top, so
-the scroll target has nothing to drift through (matters on iOS).
-
-**Folder move.** Reassigning a note's NF rewrites its YAML, moves the
-file *and its same-folder images*, swaps the filter to the destination,
-and scroll-targets the moved card. The React key survives the path
-change so an open editor doesn't remount.
-
-**Publish.** Collects `public: true` notes → prerenders one static HTML
-page per permalink (real content for `curl` and unfurlers) → ships the
-same React components as a read-only SPA. No template to drift.
-
-**Lists.** A `list:` note's body bullets parse to `ListItem`s
-(`lib/list-folder.ts`): a `- [[Name]]` bullet is a wikilink item
-(`ref`, optional `· meta`); a plain `- text` bullet is a text item
-(`ref === text`, `text` set); a `- ![[img]]` bullet is an image item.
-`ListCards` / `ListLines` render and mutate the array, persisting via
-the host Card's save. Both the add input and inline row-rename use
-`WikiRefInput` — plain text until you type `[[`, which opens the same
-folder autocomplete the Milkdown editor uses; the parent applies
-"exactly `[[Name]]` → wikilink item, else text item."
-
-## Invariants worth knowing
-
-- Quoted dates. `date: "2026-06-12"` — unquoted dates parse as YAML
-  Date objects and need `toIsoDateValue` everywhere they're compared.
-- Attachments live next to their note. No global attachments dir for
-  new content; moving a note drags its images along.
-- Wikilinks resolve by name, not path, so moving folders never rewrites
-  links.
-- The published web viewer reuses the same components read-only — there
-  is no separate template to drift.
+- Quoted dates. `date: "2026-06-12"` — unquoted dates parse as YAML Date objects.
+- Attachments live next to their note. Moving a note drags its images along.
+- Wikilinks resolve by name, not path, so moving folders never rewrites links.
+- The published web viewer reuses the same components read-only — no template drift.
+- Structure mutations write `spacetime.yml` / `spacetime.mw` only — no chain files.
 
 ## Testing
 
-`pnpm test:e2e` runs Playwright against the real app in Chromium with a
-mocked Tauri IPC layer (`tests/e2e/helpers.ts`) — an in-memory vault
-stands in for the Rust bridge, so the full UI exercises real app code.
-Interactive assertions carry a <1 s budget. `ORDER_VAULT=<path> pnpm
-test:e2e consistency` lints any real vault: chain ↔ directory
-integrity, attachment locality, todo.txt ↔ `.md` event sync.
+`pnpm test:e2e` runs Playwright against the real app in Chromium with a mocked Tauri
+IPC layer. Pure-node spec files (`tests/e2e/*.spec.ts`) cover spacetime serialization,
+sync planning, space mutations, and vault migration planning.
