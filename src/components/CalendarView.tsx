@@ -123,9 +123,15 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     // Timed events. If `endDate` is set and differs from `date`, the
     // event spans multiple days — combine endDate with endTime (or
     // fall back to startTime so the event has a positive duration).
-    // Otherwise stay on the same calendar day.
-    const endDayIso = endDate && endDate !== date ? endDate : date;
+    // If endTime ≤ startTime (e.g. 23:00 → 00:00 crossing midnight)
+    // and no explicit endDate was provided, advance the end to the
+    // next calendar day so FullCalendar renders a positive-duration
+    // event instead of collapsing it.
     const endIsoTime = endTime ?? startTime;
+    let endDayIso = endDate && endDate !== date ? endDate : date;
+    if (!endDate && endTime && endTime <= startTime) {
+      endDayIso = addOneDayIso(date);
+    }
     events.push({
       id: note.path,
       title,
