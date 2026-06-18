@@ -24,8 +24,8 @@ import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import {
   buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
-  parseMarkwhenFormat, applySpaceMutation, type SpaceMutation,
-  type SpacetimeEvent, type Spacetime,
+  parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
+  type SpacetimeEvent, type Spacetime, type SpacetimeSource,
 } from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
@@ -685,11 +685,8 @@ export function CardGrid() {
   }, [focusedFolder, navigateAndFocus]);
   useEffect(() => { openTerminalRef.current = openFocusedTerminal; }, [openFocusedTerminal]);
 
-  // Parse spacetime.yml into memory once per notes change. When it carries
-  // a non-empty `space` tree it becomes the source of truth for the
-  // taxonomy (replacing the chain files); `seasons` similarly override
-  // Seasons.md. Falls back to chain / Seasons.md when absent/empty so
-  // un-migrated vaults keep working without any change.
+  // Parse spacetime.yml into memory once per notes change. Used as the
+  // single-file fallback when no vault-wide .mw sources are present.
   const parsedSpacetime = useMemo<Spacetime | undefined>(() => {
     if (!notes) return undefined;
     const st = notes.find((n) => n.filename === "spacetime.yml");
@@ -697,16 +694,37 @@ export function CardGrid() {
     return parseSpacetime(st.body);
   }, [notes]);
 
+  // Collect ALL .mw files in the vault as composable spacetime sources.
+  // spacetime.mw at the root is included (it's the primary single-file
+  // source); other .mw files anywhere in the vault contribute sub-broods.
+  // The root spacetime.yml is handled via parsedSpacetime separately.
+  const mwSources = useMemo<SpacetimeSource[]>(() => {
+    if (!notes) return [];
+    return notes
+      .filter((n) => n.filename.endsWith(".mw") && n.body)
+      .map((n) => ({
+        parsed: parseMarkwhenFormat(n.body),
+        path: n.filename,
+      }));
+  }, [notes]);
+
   // Walk the chain rooted at Areas.md to produce Areas → Categories
-  // → Folder refs. When spacetime.yml has a space tree, that drives the
-  // taxonomy instead; the chain files stay on disk as a fallback.
+  // → Folder refs. When .mw sources or spacetime.yml carry a space tree,
+  // that drives the taxonomy; chain files stay on disk as a fallback.
   const vaultTaxonomy = useMemo(() => {
     if (!notes) return { areas: [], hiddenRefs: new Set<string>() };
+    // When .mw sources are present, derive the effective space from their merge
+    // so the sidebar reflects the composable hierarchy. Fall back to yml, then chain.
+    let effectiveSpacetime = parsedSpacetime;
+    if (mwSources.length > 0) {
+      const r = mergeSpacetimes(mwSources);
+      if (r.spacetime.space.length > 0) effectiveSpacetime = r.spacetime;
+    }
     return buildVaultTaxonomy(
       notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
-      parsedSpacetime,
+      effectiveSpacetime,
     );
-  }, [notes, parsedSpacetime]);
+  }, [notes, parsedSpacetime, mwSources]);
 
   const cardsSubdir = useCallback(async (): Promise<string> => {
     // Name kept for compat with existing callers — returns the vault
@@ -1791,7 +1809,7 @@ export function CardGrid() {
   const lastSpacetimeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!notes) return;
-    const st = buildSpacetime(notes, vaultTaxonomy, parsedSpacetime);
+    const st = buildSpacetime(notes, vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined);
     const content = serializeSpacetime(st);
     if (content === lastSpacetimeRef.current) return;
     void (async () => {
@@ -2063,7 +2081,7 @@ export function CardGrid() {
     try {
       const text = await readVault("spacetime.yml");
       const desired = parseSpacetime(text);
-      const current = buildSpacetime(notesRef.current ?? [], vaultTaxonomy);
+      const current = buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined);
       const plan = planSpacetimeSync(current, desired);
       const desiredSeasons = desired.seasons.map((s) => ({
         start: s.date, end: s.endDate ?? null, ...(s.title ? { name: s.title } : {}),
@@ -2757,7 +2775,7 @@ export function CardGrid() {
     const fullPath = `${root}/${relPath}`;
     const existing = notesRef.current?.find((n) => toVaultRel(n.path) === relPath);
     if (!existing) {
-      const content = serializeSpacetime(buildSpacetime(notesRef.current ?? [], vaultTaxonomy));
+      const content = serializeSpacetime(buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined));
       await writeVault(relPath, content);
       setNotes((prev) => [
         ...(prev ?? []),

@@ -16,6 +16,33 @@ import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
 
+// ---------- Composability types ----------
+
+/** A conflict detected while merging Spacetime sources. */
+export interface SpacetimeConflict {
+  /** "brood"     — two sources define the same parent's children differently.
+   *  "folderRef" — an event references a folder not in the merged space. */
+  kind: "brood" | "folderRef";
+  message: string;
+  /** Vault-relative paths of the files involved. */
+  paths: string[];
+}
+
+/** A parsed Spacetime paired with the vault-relative path it came from. */
+export interface SpacetimeSource {
+  parsed: Spacetime;
+  /** Vault-relative path (e.g. "spacetime.mw", "Work/work-archive.mw"). */
+  path: string;
+}
+
+/** Result of merging multiple Spacetime sources. */
+export interface SpacetimeMergeResult {
+  spacetime: Spacetime;
+  conflicts: SpacetimeConflict[];
+}
+
+// ---------- Space hierarchy ----------
+
 /** One node in the space hierarchy: a name plus its ordered children
  *  (the "brood"). Leaves have an empty children list. */
 export interface SpaceNode {
@@ -69,26 +96,58 @@ function folderOf(n: SpacetimeNote): string | undefined {
   return parts.length >= 2 ? parts[parts.length - 2] : undefined;
 }
 
-/** Build the canonical Spacetime model from the vault. When `existing`
- *  carries a non-empty `space` or `seasons`, those are preserved as
- *  authoritative (spacetime.yml is the source of truth); only `events`
- *  are always regenerated from note frontmatter. Falls back to the
- *  taxonomy / Seasons.md when the existing spacetime is absent/empty. */
+/** Build the canonical Spacetime model from the vault.
+ *
+ *  Space + seasons come from merging all `.mw` sources found in the vault
+ *  (passed via `mwSources`), falling back to `existing` from `spacetime.yml`,
+ *  then to the chain taxonomy / Seasons.md for un-migrated vaults.
+ *
+ *  Events are always regenerated from note frontmatter (notes are the truth
+ *  for event content). Conflicts from the composability merge are returned
+ *  alongside the model. */
 export function buildSpacetime(
   notes: SpacetimeNote[],
   tax: VaultTaxonomy,
   existing?: Spacetime,
-): Spacetime {
-  const space = (existing && existing.space.length > 0)
-    ? existing.space
-    : spaceFromTaxonomy(tax);
+  mwSources?: SpacetimeSource[],
+): Spacetime & { conflicts?: SpacetimeConflict[] } {
 
-  const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-  const seasons: SpacetimeSeason[] = (existing && existing.seasons.length > 0)
-    ? existing.seasons
-    : (seasonsFile ? parseSeasons(seasonsFile.body) : [])
+  let space: SpaceNode[];
+  let seasons: SpacetimeSeason[];
+  let conflicts: SpacetimeConflict[] | undefined;
+
+  if (mwSources && mwSources.length > 0) {
+    // Full composability path: merge all .mw sources
+    const mergeResult = mergeSpacetimes(mwSources);
+    space = mergeResult.spacetime.space.length > 0
+      ? mergeResult.spacetime.space
+      : (existing?.space.length ? existing.space : spaceFromTaxonomy(tax));
+    seasons = mergeResult.spacetime.seasons.length > 0
+      ? mergeResult.spacetime.seasons
+      : (existing?.seasons.length ? existing.seasons : []);
+    if (mergeResult.conflicts.length > 0) conflicts = mergeResult.conflicts;
+  } else if (existing && existing.space.length > 0) {
+    // Single-file path: existing spacetime.yml is authoritative
+    space = existing.space;
+    seasons = existing.seasons.length > 0 ? existing.seasons : [];
+  } else {
+    // Fallback: chain taxonomy + Seasons.md (un-migrated vaults)
+    space = spaceFromTaxonomy(tax);
+    const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+    seasons = (seasonsFile ? parseSeasons(seasonsFile.body) : [])
+      .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // When no seasons from mw/yml yet, fall back to Seasons.md
+  if (seasons.length === 0 && !mwSources?.length && existing?.seasons.length === 0) {
+    const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+    if (seasonsFile) {
+      seasons = parseSeasons(seasonsFile.body)
         .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
         .sort((a, b) => a.date.localeCompare(b.date));
+    }
+  }
 
   const byKey = new Map<string, SpacetimeEvent>();
   for (const n of notes) {
@@ -130,7 +189,7 @@ export function buildSpacetime(
   const events = [...byKey.values()].sort((a, b) =>
     (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")),
   );
-  return { space, seasons, events };
+  return conflicts ? { space, seasons, events, conflicts } : { space, seasons, events };
 }
 
 /** Build a VaultTaxonomy from a parsed spacetime.yml `space` tree.
@@ -215,6 +274,198 @@ export function applySpaceMutation(space: SpaceNode[], m: SpaceMutation): SpaceN
         }),
       });
   }
+}
+
+// ---------- Composability engine ----------
+
+/** Collect all "brood claims" from a space tree into a flat map.
+ *  A brood claim is: "at path P the complete ordered children are [...]".
+ *
+ *  The ROOT LEVEL ("") is intentionally skipped — top-level areas are
+ *  always unioned across sources. Brood claims are only collected at
+ *  depth ≥ 1 (area→categories, category→folders), where the completeness
+ *  invariant matters: if you declare a node's children, you must list all
+ *  of them. A node with no children makes no claim (leaf or placeholder). */
+function collectBroodClaims(
+  nodes: SpaceNode[],
+  parentPath: string,
+  sourcePath: string,
+  out: Map<string, { names: string[]; nodes: SpaceNode[]; source: string }[]>,
+  depth = 0,
+): void {
+  if (nodes.length === 0) return;
+  // Skip root-level claim: the top-level area list is always a UNION across
+  // sources. Only record claims at depth ≥ 1 (non-root nodes).
+  if (depth > 0) {
+    if (!out.has(parentPath)) out.set(parentPath, []);
+    out.get(parentPath)!.push({ names: nodes.map((n) => n.name), nodes, source: sourcePath });
+  }
+  for (const node of nodes) {
+    if (node.children.length > 0) {
+      collectBroodClaims(
+        node.children,
+        `${parentPath}/${node.name}`,
+        sourcePath,
+        out,
+        depth + 1,
+      );
+    }
+  }
+}
+
+/** Reconstruct the merged space tree. The root is built by unioning all
+ *  top-level nodes across sources; every other level is resolved from the
+ *  settled brood-claims map (first claim wins for ordering). */
+function buildMergedSpace(
+  parentPath: string,
+  claims: Map<string, { names: string[]; nodes: SpaceNode[]; source: string }[]>,
+  topLevelNodes: SpaceNode[],
+): SpaceNode[] {
+  if (parentPath === "") {
+    // Union all top-level nodes; children are resolved recursively
+    const seen = new Set<string>();
+    const result: SpaceNode[] = [];
+    for (const n of topLevelNodes) {
+      if (seen.has(n.name)) continue;
+      seen.add(n.name);
+      const childPath = `/${n.name}`;
+      const children = buildMergedSpace(childPath, claims, []);
+      result.push({ name: n.name, children });
+    }
+    return result;
+  }
+  const entry = claims.get(parentPath);
+  if (!entry || entry.length === 0) return [];
+  return entry[0].names.map((name) => ({
+    name,
+    children: buildMergedSpace(`${parentPath}/${name}`, claims, []),
+  }));
+}
+
+/** Merge multiple Spacetime sources following the brood rule.
+ *
+ *  Brood rule: for any given parent node, all sources that define its children
+ *  must agree on the complete, ordered set. Two sources defining the same
+ *  parent with different children is a conflict; two sources with the same
+ *  set (in any order) are compatible (first-source order wins).
+ *
+ *  Events and seasons are concatenated and deduplicated by identity. */
+export function mergeSpacetimes(sources: SpacetimeSource[]): SpacetimeMergeResult {
+  const conflicts: SpacetimeConflict[] = [];
+  const broodClaims = new Map<
+    string,
+    { names: string[]; nodes: SpaceNode[]; source: string }[]
+  >();
+
+  // Collect brood claims (depth ≥ 1) and all top-level nodes (for union)
+  const allTopLevel: SpaceNode[] = [];
+  const seenTopLevel = new Set<string>();
+  for (const { parsed, path } of sources) {
+    if (parsed.space.length > 0) {
+      collectBroodClaims(parsed.space, "", path, broodClaims);
+      // Union top-level nodes in source order (first occurrence wins for order)
+      for (const n of parsed.space) {
+        if (!seenTopLevel.has(n.name)) { seenTopLevel.add(n.name); allTopLevel.push(n); }
+      }
+    }
+  }
+
+  // Detect conflicts: same non-root parent, different child sets
+  for (const [parentPath, entries] of broodClaims) {
+    if (entries.length <= 1) continue;
+    const refSet = new Set(entries[0].names);
+    for (const e of entries.slice(1)) {
+      const eSet = new Set(e.names);
+      const sameSet = refSet.size === eSet.size && [...refSet].every((n) => eSet.has(n));
+      if (!sameSet) {
+        conflicts.push({
+          kind: "brood",
+          message:
+            `Conflicting children at "${parentPath.replace(/^\//, "")}": ` +
+            `[${entries[0].names.join(", ")}] in "${entries[0].source}" vs ` +
+            `[${e.names.join(", ")}] in "${e.source}"`,
+          paths: [entries[0].source, e.source],
+        });
+      }
+    }
+  }
+
+  // Build merged space: top-level is a union; sub-levels use brood claims
+  const space = buildMergedSpace("", broodClaims, allTopLevel);
+
+  // Merge seasons: concatenate, dedup by date+title
+  const seasonSeen = new Set<string>();
+  const seasons: SpacetimeSeason[] = [];
+  for (const { parsed } of sources) {
+    for (const s of parsed.seasons) {
+      const k = `${s.date}|${s.title.toLowerCase()}`;
+      if (!seasonSeen.has(k)) { seasonSeen.add(k); seasons.push(s); }
+    }
+  }
+  seasons.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Merge events: dedup by date|title
+  const eventSeen = new Set<string>();
+  const events: SpacetimeEvent[] = [];
+  for (const { parsed } of sources) {
+    for (const e of parsed.events) {
+      const k = `${e.date}|${e.title.toLowerCase()}`;
+      if (!eventSeen.has(k)) { eventSeen.add(k); events.push(e); }
+    }
+  }
+  events.sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")));
+
+  const merged: Spacetime = { space, seasons, events };
+
+  // Validate folder references
+  conflicts.push(...validateFolderRefs(merged, sources));
+
+  return { spacetime: merged, conflicts };
+}
+
+/** Check every event in merged for a folder that doesn't exist in
+ *  the merged space tree. Returns one conflict per invalid reference. */
+export function validateFolderRefs(
+  merged: Spacetime,
+  sources: SpacetimeSource[],
+): SpacetimeConflict[] {
+  // Build set of all leaf (Notable Folder) names from merged space
+  const folderNames = new Set<string>();
+  function collectFolders(nodes: SpaceNode[]) {
+    for (const n of nodes) {
+      if (n.children.length === 0) folderNames.add(n.name.toLowerCase());
+      else collectFolders(n.children);
+    }
+  }
+  collectFolders(merged.space);
+
+  // Only validate when we actually have a space (avoid false positives on
+  // empty-space vaults where events predate the hierarchy being defined).
+  if (folderNames.size === 0) return [];
+
+  // Build a lookup from event → source file
+  const eventSource = new Map<string, string>();
+  for (const { parsed, path } of sources) {
+    for (const e of parsed.events) {
+      const k = `${e.date}|${e.title.toLowerCase()}`;
+      if (!eventSource.has(k)) eventSource.set(k, path);
+    }
+  }
+
+  const conflicts: SpacetimeConflict[] = [];
+  for (const e of merged.events) {
+    if (!e.folder) continue;
+    if (!folderNames.has(e.folder.toLowerCase())) {
+      const k = `${e.date}|${e.title.toLowerCase()}`;
+      const src = eventSource.get(k) ?? "unknown";
+      conflicts.push({
+        kind: "folderRef",
+        message: `Event "${e.title}" (${e.date}) references folder "${e.folder}" which is not in the space hierarchy`,
+        paths: [src],
+      });
+    }
+  }
+  return conflicts;
 }
 
 /** Build the `space` tree from Order's taxonomy: areas → categories →
