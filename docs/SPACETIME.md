@@ -70,7 +70,7 @@ time:
 
 ### spacetime.mw
 
-```
+```markdown
 # Space
 
 ## Entertainment
@@ -182,7 +182,7 @@ time:
 Top-level `# Space` section. Areas are `##` headings. Categories are unindented list
 items (`- Category`). Notable Folders are 2-space-indented items (`  - Folder`).
 
-```
+```markdown
 # Space
 
 ## Area Name
@@ -198,7 +198,7 @@ items (`- Category`). Notable Folders are 2-space-indented items (`  - Folder`).
 Under `## Events`. Each line is a date prefix, a colon, a title, and an optional
 `#folder-tag`.
 
-```
+```markdown
 # Time
 
 ## Events
@@ -240,7 +240,7 @@ that doesn't match any folder in the merged space is flagged as a conflict.
 
 Under `## Seasons`.
 
-```
+```markdown
 ## Seasons
 
 2026-06-01 / 2026-08-31: Summer Building
@@ -276,7 +276,7 @@ they disagree, Order surfaces a conflict rather than silently resolving it.
 
 **Complete vault in one file:** the ordinary case.
 
-```
+```markdown
 # Space
 ## Entertainment
 - Entertainment Spaces
@@ -290,7 +290,7 @@ they disagree, Order surfaces a conflict rather than silently resolving it.
 **One area as a separate file:** defines only the Entertainment sub-tree.
 Another file can define Work without any conflict.
 
-```
+```markdown
 # Space
 ## Entertainment
 - Entertainment Spaces
@@ -302,7 +302,7 @@ Another file can define Work without any conflict.
 
 **Archived events in a separate file:** space is not required.
 
-```
+```markdown
 # Time
 
 ## Events
@@ -318,7 +318,7 @@ Another file can define Work without any conflict.
 This fragment is invalid because `Work` appears with no children. If you list `Work`,
 you must list all its categories.
 
-```
+```markdown
 # Space
 ## Entertainment
 - Entertainment Spaces
@@ -333,7 +333,7 @@ Order will flag this as a conflict: `Work` is declared but its brood is empty.
 Given two files:
 
 **entertainment.mw**
-```
+```markdown
 # Space
 ## Entertainment
 - Entertainment Spaces
@@ -344,7 +344,7 @@ Given two files:
 ```
 
 **work.mw**
-```
+```markdown
 # Space
 ## Work
 - Work Projects
@@ -355,7 +355,7 @@ Given two files:
 
 Merge result (no conflicts):
 
-```
+```yaml
 space:
   Entertainment:
     Entertainment Spaces: [Board Games, Movies]
@@ -373,11 +373,12 @@ Two files both define `Work Projects` with different children:
 **work-alt.mw** — `Work Projects: [Order Build, New Project]`
 
 Order surfaces:
-```
+```text
 Conflict: Conflicting children at "Work/Work Projects":
   [Order Build, PKM System] in "work.mw"
   [Order Build, New Project] in "work-alt.mw"
 ```
+
 
 No automatic resolution. The user must edit one file to agree with the other.
 
