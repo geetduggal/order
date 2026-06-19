@@ -2157,6 +2157,11 @@ export function CardGrid() {
           if (!raw) continue;
           const { frontmatter: curFm, body } = splitFrontmatter(raw);
           const next: Frontmatter = { ...curFm, ...fm };
+          // Stamp title: on old notes that lack it, so noteTitle() resolves to
+          // the correct event title even under lazy loading (body=""). Without
+          // this, the filename-derived title may be "Event 2" instead of "Event",
+          // causing a key mismatch that re-triggers the duplicate-creation loop.
+          if (ev.title && !next.title) next.title = ev.title;
           // Clear time keys that are no longer present in the .mw event
           if (!ev.time)    { delete next.startTime; delete next.endTime; }
           if (!ev.endDate) delete next.endDate;
@@ -2164,8 +2169,14 @@ export function CardGrid() {
           if (updated !== raw) await writeVault(toVaultRel(existing.path), updated);
         } else {
           const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
+          // Include title: in frontmatter so noteTitle() returns the correct
+          // event title even when the note body is lazy-loaded (body="").
+          // Without this, noteTitle falls back to the deduplicated filename
+          // (e.g. "Clean laptop 2") which never matches the mw event key
+          // ("Clean laptop"), causing an infinite note-creation loop.
+          const createFm = ev.title ? { ...fm, title: ev.title } : fm;
           await uniqueWrite(dir, basenameForEvent(ev.date, ev.title),
-            joinFrontmatter(fm, ev.title ? `# ${ev.title}\n` : ""));
+            joinFrontmatter(createFm, ev.title ? `# ${ev.title}\n` : ""));
         }
       }
 
