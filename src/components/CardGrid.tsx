@@ -11,7 +11,7 @@ import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, confirm as tauriConfirm, message as tauriMessage } from "@tauri-apps/plugin-dialog";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import { useGridLayout } from "../lib/grid-layout";
@@ -24,8 +24,8 @@ import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import {
   buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
-  parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
-  type SpacetimeEvent, type Spacetime, type SpacetimeSource,
+  mergeMwEventsWithVault, parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
+  type SpacetimeEvent, type Spacetime, type SpacetimeSource, type SpaceNode,
 } from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
@@ -1227,7 +1227,10 @@ export function CardGrid() {
     const yml = serializeSpacetime(next);
     lastSpacetimeRef.current = yml;
     await writeVault("spacetime.yml", yml);
-    await writeVault("spacetime.mw", serializeMarkwhen(next));
+    const mwContent = serializeMarkwhen(next);
+    lastMarkwhenRef.current = mwContent;
+    lastMwSpaceRef.current = mwContent.split("# Time")[0];
+    await writeVault("spacetime.mw", mwContent);
   }, []);
 
   const patchSpacetimeSeasons = useCallback(async (seasons: import("../lib/seasons").Season[]): Promise<void> => {
@@ -1244,7 +1247,10 @@ export function CardGrid() {
     const yml = serializeSpacetime(next);
     lastSpacetimeRef.current = yml;
     await writeVault("spacetime.yml", yml);
-    await writeVault("spacetime.mw", serializeMarkwhen(next));
+    const mwContent = serializeMarkwhen(next);
+    lastMarkwhenRef.current = mwContent;
+    lastMwSpaceRef.current = mwContent.split("# Time")[0];
+    await writeVault("spacetime.mw", mwContent);
   }, []);
 
   /** Add an Area = append a bullet to Areas.md. Caps at 10. */
@@ -1824,12 +1830,204 @@ export function CardGrid() {
       }
       lastSpacetimeRef.current = content;
       await writeVault("spacetime.yml", content);
-      // Keep spacetime.mw in sync as a Markwhen companion.
-      const mwContent = serializeMarkwhen(st);
-      lastMarkwhenRef.current = mwContent;
-      await writeVault("spacetime.mw", mwContent);
+      // Splice only the Events block into spacetime.mw — never rewrite the
+      // Space/Seasons sections, so user edits to structure are preserved.
+      const existingMw = await readVault("spacetime.mw").catch(() => "");
+      const newMw = mergeMwEventsWithVault(existingMw, st.events);
+      if (newMw !== existingMw) {
+        lastMarkwhenRef.current = newMw;
+        await writeVault("spacetime.mw", newMw);
+      }
     })();
   }, [notes, vaultTaxonomy, parsedSpacetime]);
+
+  /** Reconcile all renames in the space tree between two spacetime.mw edits.
+   *
+   *  Handles ALL three levels (area → category → notable folder) with a
+   *  single, uniform algorithm:
+   *    1. Items in both old and new: no action.
+   *    2. Items only in old vs only in new: matched positionally → rename.
+   *    3. Any extra unmatched "new" items: left for the materialisation loop.
+   *
+   *  Renames are applied top-down so that after an area dir is renamed, the
+   *  category and folder paths underneath already use the new area name.
+   *
+   *  Safety guards:
+   *    • old path must exist on disk   → won't invent a rename from nothing
+   *    • new path must NOT exist       → won't clobber an existing dir
+   *
+   *  For notable folders: renames dir + index file, syncs `title:`, rewrites
+   *  `[[OldName]]` wikilinks and `folder: [[OldName]]` frontmatter across vault.
+   *  For area / category: renames dir + updates `area:` / `category:` frontmatter. */
+  const reconcileSpaceChanges = useCallback(async (
+    oldSpace: SpaceNode[],
+    newSpace: SpaceNode[],
+  ): Promise<void> => {
+    const san = (n: string) => n.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+
+    type Named = { name: string; safe: string };
+    type RenamePair = { old: Named; new: Named };
+
+    // Returns rename pairs (positional) plus items in old that have no new match.
+    function computeRenames(
+      oldItems: Named[],
+      newItems: Named[],
+    ): { pairs: RenamePair[]; orphaned: Named[] } {
+      const newSafes = new Set(newItems.map((i) => i.safe));
+      const oldSafes = new Set(oldItems.map((i) => i.safe));
+      const removed = oldItems.filter((i) => !newSafes.has(i.safe));
+      const added   = newItems.filter((i) => !oldSafes.has(i.safe));
+      const pairs: RenamePair[] = [];
+      for (let i = 0; i < Math.min(removed.length, added.length); i++) {
+        pairs.push({ old: removed[i], new: added[i] });
+      }
+      return { pairs, orphaned: removed.slice(pairs.length) };
+    }
+
+    const list = notesRef.current ?? [];
+    const folderRefRe = /^\[\[([^\]]+)\]\]$/;
+
+    // Collect orphaned notable folders across all categories so we can
+    // handle them after all renames complete (paths may shift during renames).
+    const orphanedFolders: Array<{ dirPath: string; displayName: string }> = [];
+
+    // ---- Area renames ----
+    const { pairs: areaRenames } = computeRenames(
+      oldSpace.map((a) => ({ name: a.name, safe: san(a.name) })),
+      newSpace.map((a) => ({ name: a.name, safe: san(a.name) })),
+    );
+    for (const { old: oldA, new: newA } of areaRenames) {
+      if (!(await vaultFs.exists(oldA.safe)) || (await vaultFs.exists(newA.safe))) continue;
+      await vaultFs.rename(oldA.safe, newA.safe);
+      for (const n of list) {
+        const raw = await readVault(toVaultRel(n.path)).catch(() => "");
+        if (!raw) continue;
+        const { frontmatter, body } = splitFrontmatter(raw);
+        if (frontmatter.area === oldA.name) {
+          await writeVault(toVaultRel(n.path),
+            joinFrontmatter({ ...frontmatter, area: newA.name }, body));
+        }
+      }
+    }
+
+    // ---- Category and folder renames ----
+    for (const newArea of newSpace) {
+      const newAreaSafe = san(newArea.name);
+      const areaRename = areaRenames.find((r) => r.new.safe === newAreaSafe);
+      const oldAreaSafe = areaRename ? areaRename.old.safe : newAreaSafe;
+      const oldArea = oldSpace.find((a) => san(a.name) === oldAreaSafe);
+      if (!oldArea) continue;
+
+      const { pairs: catRenames } = computeRenames(
+        oldArea.children.map((c) => ({ name: c.name, safe: san(c.name) })),
+        newArea.children.map((c) => ({ name: c.name, safe: san(c.name) })),
+      );
+      for (const { old: oldC, new: newC } of catRenames) {
+        const oldCatPath = `${newAreaSafe}/${oldC.safe}`;
+        const newCatPath = `${newAreaSafe}/${newC.safe}`;
+        if (!(await vaultFs.exists(oldCatPath)) || (await vaultFs.exists(newCatPath))) continue;
+        await vaultFs.rename(oldCatPath, newCatPath);
+        for (const n of list) {
+          const raw = await readVault(toVaultRel(n.path)).catch(() => "");
+          if (!raw) continue;
+          const { frontmatter, body } = splitFrontmatter(raw);
+          if (frontmatter.area === newArea.name && frontmatter.category === oldC.name) {
+            await writeVault(toVaultRel(n.path),
+              joinFrontmatter({ ...frontmatter, category: newC.name }, body));
+          }
+        }
+      }
+
+      for (const newCat of newArea.children) {
+        const newCatSafe = san(newCat.name);
+        const catRename = catRenames.find((r) => r.new.safe === newCatSafe);
+        const oldCatSafe = catRename ? catRename.old.safe : newCatSafe;
+        const oldCat = oldArea.children.find((c) => san(c.name) === oldCatSafe);
+        if (!oldCat) continue;
+
+        const { pairs: folderRenames, orphaned: orphanedHere } = computeRenames(
+          oldCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
+          newCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
+        );
+
+        // Queue orphaned (removed-not-renamed) folders from this category.
+        // After area+cat renames, their dirs live under newAreaSafe/newCatSafe/.
+        for (const orphan of orphanedHere) {
+          orphanedFolders.push({
+            dirPath:     `${newAreaSafe}/${newCatSafe}/${orphan.safe}`,
+            displayName: orphan.name,
+          });
+        }
+
+        for (const { old: oldF, new: newF } of folderRenames) {
+          const oldFolderPath = `${newAreaSafe}/${newCatSafe}/${oldF.safe}`;
+          const newFolderPath = `${newAreaSafe}/${newCatSafe}/${newF.safe}`;
+          if (!(await vaultFs.exists(oldFolderPath)) || (await vaultFs.exists(newFolderPath))) continue;
+
+          // 1. Rename the directory.
+          await vaultFs.rename(oldFolderPath, newFolderPath);
+
+          // 2. Rename the index file (old name, now inside the renamed dir).
+          const oldIndexPath = `${newFolderPath}/${oldF.safe}.md`;
+          const newIndexPath = `${newFolderPath}/${newF.safe}.md`;
+          try { await vaultFs.rename(oldIndexPath, newIndexPath); } catch { /* no index */ }
+
+          // 3. Sync title if it still mirrors the old name.
+          try {
+            const raw = await readVault(newIndexPath);
+            const { frontmatter, body } = splitFrontmatter(raw);
+            const t = frontmatter.title;
+            if (!t || t === oldF.name || t === oldF.safe) {
+              await writeVault(newIndexPath,
+                joinFrontmatter({ ...frontmatter, title: newF.name }, body));
+            }
+          } catch { /* no index */ }
+
+          // 4. Rewrite inbound [[OldName]] wikilinks and folder: [[OldName]] across vault.
+          const target = oldF.name.toLowerCase();
+          for (const n of list) {
+            try {
+              const nPath = toVaultRel(n.path);
+              const raw = await readVault(nPath).catch(() => "");
+              if (!raw) continue;
+              const { frontmatter, body } = splitFrontmatter(raw);
+              let nextBody = body;
+              let nextFm: Frontmatter = frontmatter;
+              let dirty = false;
+              if (body.toLowerCase().includes(target)) {
+                const rb = rewriteWikilinksForRename(body, oldF.name, newF.safe);
+                if (rb !== body) { nextBody = rb; dirty = true; }
+              }
+              const fv = frontmatter.folder;
+              if (typeof fv === "string") {
+                const m = fv.trim().match(folderRefRe);
+                if (m && m[1].trim().toLowerCase() === target) {
+                  nextFm = { ...frontmatter, folder: `[[${newF.safe}]]` };
+                  dirty = true;
+                }
+              }
+              if (dirty) await writeVault(nPath, joinFrontmatter(nextFm, nextBody));
+            } catch { /* skip */ }
+          }
+        }
+      }
+    }
+
+    // ---- Handle orphaned notable folders ----
+    // The sidebar is fully space-tree-driven (spacetimeTaxonomy), so removing
+    // a folder from spacetime.mw already hides it from Order's UI — no
+    // frontmatter changes needed. We only prompt for disk deletion.
+    for (const { dirPath, displayName } of orphanedFolders) {
+      if (!(await vaultFs.exists(dirPath))) continue;
+      const ok = await tauriConfirm(
+        `Delete "${displayName}" and all its files from disk?\n\nThe folder was removed from spacetime.mw. Cancel to keep the files on disk.`,
+        { title: "Remove folder from disk?", kind: "warning" },
+      );
+      if (ok) {
+        try { await vaultFs.remove(dirPath); } catch { /* ignore */ }
+      }
+    }
+  }, [notesRef]);
 
   // ---- spacetime.mw → spacetime.yml sync -------------------------
   // When spacetime.mw changes (user hand-edit in the raw-text card or
@@ -1848,26 +2046,40 @@ export function CardGrid() {
   // any await) so that the reloadNotes() at the end doesn't cause the
   // same user-edited body to re-trigger the handler.
   const lastMarkwhenRef = useRef<string | null>(null);
+  // Track only the Space section of mw so we can skip materialisation when
+  // only events changed (e.g. Effect 1 spliced in updated events).
+  const lastMwSpaceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!notes) return;
     const mwNote = notes.find((n) => n.filename === "spacetime.mw");
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
-    // Cold-boot guard: on first load lastMarkwhenRef is null. Initialise
-    // to the current content and bail — the sync should only fire when
-    // the content CHANGES during this session, not on every app launch.
-    // Without this, every restart re-runs the sync against stale vault
-    // notes and creates numbered duplicates via uniqueWrite.
+    // Cold-boot: initialise refs without syncing. The sync fires only when
+    // content CHANGES during this session.
+    const spaceSection = mwNote.body.split("# Time")[0];
     if (lastMarkwhenRef.current === null) {
       lastMarkwhenRef.current = mwNote.body;
+      lastMwSpaceRef.current = spaceSection;
       return;
     }
-    // Stamp NOW (synchronously) before any await so subsequent renders
-    // with the same body are skipped even while the async work runs.
+    // Capture old space section BEFORE stamping so rename detection can diff.
+    const oldSpaceSection = lastMwSpaceRef.current;
+    // Stamp synchronously before any await.
     lastMarkwhenRef.current = mwNote.body;
+    lastMwSpaceRef.current = spaceSection;
     const mwBody = mwNote.body;
     void (async () => {
       const parsed = parseMarkwhenFormat(mwBody);
+
+      // ---- space: reconcile renames at ALL levels (area → category → folder) ----
+      // Diff the previous space tree against the new one; apply renames top-down
+      // so paths remain consistent as each level is processed.
+      if (parsed.space.length > 0 && oldSpaceSection) {
+        const oldSpace = parseMarkwhenFormat(oldSpaceSection + "\n# Time\n").space;
+        if (oldSpace.length > 0) {
+          await reconcileSpaceChanges(oldSpace, parsed.space);
+        }
+      }
 
       // ---- space + seasons → spacetime.yml ----
       const currentYml = await readVault("spacetime.yml").catch(() => "");
@@ -1882,29 +2094,16 @@ export function CardGrid() {
       await writeVault("spacetime.yml", yml);
 
       // ---- space: materialise new Notable Folders on disk ----
-      // For each leaf node in the new space tree (a Notable Folder), check
-      // whether its directory exists on disk. If not, create it with a Main
-      // Document. Areas and Categories don't need separate directories beyond
-      // what the NF path already implies. Renames are NOT auto-applied here —
-      // the user should use "Apply spacetime to vault…" for structural surgery.
+      // Existence is checked by reading from disk (avoids the notesRef lag
+      // that caused repeated creation). Safe to run on every mw edit because
+      // Effect 1 no longer writes mw — Effect 2 only fires on explicit user edits.
       if (parsed.space.length > 0) {
-        const root = await vaultRoot();
-        const cur2 = notesRef.current ?? [];
-        // Build the set of NF dir names that already exist on disk
-        const existingDirs = new Set(
-          cur2.map((n) => {
-            const rel = toVaultRel(n.path);
-            const parts = rel.split("/");
-            return parts.length >= 2 ? parts[parts.length - 2] : "";
-          }).filter(Boolean)
-        );
         for (const area of merged.space) {
           for (const cat of area.children) {
             for (const nf of cat.children) {
-              if (existingDirs.has(nf.name)) continue;
-              // Create <Area>/<Category>/<NF>/<NF>.md
               const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
               const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
+              try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
               const fm: Frontmatter = { category: cat.name, area: area.name };
               await writeVault(relPath, joinFrontmatter(fm, `# ${nf.name}\n`));
             }
@@ -1990,7 +2189,7 @@ export function CardGrid() {
 
       await reloadNotes();
     })();
-  }, [notes]);
+  }, [notes, reconcileSpaceChanges]);
 
   // ---- markwhen → backing notes ---------------------------------
   // A note with `markwhen: true` carries a markwhen timeline in its body.
@@ -2081,16 +2280,17 @@ export function CardGrid() {
       return !!d && !n.frontmatter.role && n.frontmatter.list !== "cards" && n.frontmatter.list !== "lines" && !n.frontmatter.category;
     }).length;
     const backupPath = await vaultFs.backup().catch((e: unknown) => {
-      window.alert(`Backup failed: ${String(e)}`); return null;
+      void tauriMessage(`Backup failed: ${String(e)}`, { title: "Backup failed", kind: "error" }); return null;
     });
     if (!backupPath) return;
-    const ok = window.confirm(
+    const ok = await tauriConfirm(
       `Vault backed up to:\n${backupPath}\n\n` +
       `This will:\n` +
       `• Strip date/time/folder frontmatter from ~${eventCount} event notes\n` +
       `• Archive Areas.md, Seasons.md, and category index files to .order-legacy/chain/\n\n` +
       `spacetime.yml becomes the sole source of truth for structure and seasons.\n\n` +
-      `Proceed?`
+      `Proceed?`,
+      { title: "Apply spacetime migration", kind: "warning" }
     );
     if (!ok) return;
     // Load raw bodies for all notes (most leaves are body-lazy)
@@ -2112,7 +2312,7 @@ export function CardGrid() {
       }
       done++;
     }
-    window.alert(`Migration complete — ${done} files updated.\nBackup: ${backupPath}`);
+    await tauriMessage(`Migration complete — ${done} files updated.\nBackup: ${backupPath}`, { title: "Migration complete" });
     lastSpacetimeRef.current = null;
     await reloadNotes();
   }, [reloadNotes]);
@@ -2129,7 +2329,7 @@ export function CardGrid() {
       setSyncReview({ plan, desiredSeasons });
     } catch (err) {
       console.error("spacetime sync: couldn't read/parse spacetime.yml", err);
-      window.alert("Couldn't read spacetime.yml at the vault root.");
+      void tauriMessage("Couldn't read spacetime.yml at the vault root.", { title: "Error", kind: "error" });
     }
   }, [vaultTaxonomy]);
 
@@ -3123,6 +3323,7 @@ export function CardGrid() {
     await reloadNotes();
   }, [reloadNotes]);
 
+
   /** Create a new Notable Folder Main Document for the given area +
    *  category. With the nested chain layout the file lives at
    *  <vault>/<Area>/<Category>/<Name>/<Name>.md and the Category's
@@ -3549,8 +3750,9 @@ export function CardGrid() {
           // Setting home on this folder. If another folder already
           // holds `home:`, confirm the takeover first.
           if (current) {
-            const ok = window.confirm(
+            const ok = await tauriConfirm(
               `${current} is currently the home folder. Replace it with ${thisRef}?`,
+              { title: "Replace home folder?", kind: "warning" },
             );
             if (!ok) return;
           }
@@ -4226,13 +4428,13 @@ export function CardGrid() {
               label: "spacetime.mw",
               keywords: "spacetime mw markwhen space time",
               hint: "spacetime · Markwhen",
-              onPick: () => { void openSpacetimeMw(); },
+              onPick: () => { void openSpacetimeMw(); setPaletteOpen(false); },
             },
             {
               label: "spacetime.yml",
               keywords: "spacetime yml yaml space time",
               hint: "spacetime · YAML",
-              onPick: () => { void openSpacetime(); },
+              onPick: () => { void openSpacetime(); setPaletteOpen(false); },
             },
             {
               label: "Apply spacetime to vault…",

@@ -45,18 +45,14 @@ for ln in sys.stdin:
 # ── steps ────────────────────────────────────────────────────────────────────
 
 step_desktop() {
-  title "desktop"
-  local t; t=$(date +%s)
-  cmd pnpm tauri build --target aarch64-apple-darwin --bundles app
-  local app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Order.app"
-  [[ -d "$app" ]] || fail "Order.app not found after build"
-  done_ "built $(elapsed $t)"
-
+  title "desktop · build + dev"
+  # Kill any running dev or production instance first
   osascript -e 'tell application "Order" to quit' 2>/dev/null || true
-  sleep 0.4; pkill -x "Order" 2>/dev/null || true
-  cmd cp -r "$app" /Applications/Order.app
-  cmd open /Applications/Order.app
-  done_ "relaunched"
+  sleep 0.3; pkill -f "tauri dev" 2>/dev/null || true; pkill -x "Order" 2>/dev/null || true
+  # Full frontend build first: catches TS errors and bundles assets.
+  cmd pnpm build
+  # Hot-reload dev shell — stays running while you test.
+  cmd pnpm tauri dev
 }
 
 step_ios() {

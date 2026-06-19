@@ -661,6 +661,91 @@ export function serializeMarkwhen(st: Spacetime): string {
   return lines.join("\n");
 }
 
+/** Replace (or append) only the `## Events` block in an existing spacetime.mw
+ *  body, leaving the Space and Seasons sections exactly as they are.
+ *  Effect 1 uses this so a note-save never rewrites the user's Space layout. */
+export function spliceMwEvents(mw: string, events: SpacetimeEvent[]): string {
+  let evBlock = "## Events\n";
+  if (events.length > 0) {
+    const prefixes = events.map((e) =>
+      e.time
+        ? (e.endTime ? `${e.date} ${e.time}-${e.endTime}` : `${e.date} ${e.time}`)
+        : (e.endDate ? `${e.date} / ${e.endDate}` : e.date),
+    );
+    const w = Math.max(...prefixes.map((p) => p.length));
+    evBlock += "\n" + events.map((e, i) => {
+      const tag = e.folder ? ` ${toMarkwhenTag(e.folder)}` : "";
+      return `${prefixes[i].padEnd(w)}: ${e.title}${tag}`;
+    }).join("\n") + "\n";
+  }
+  const idx = mw.indexOf("## Events");
+  if (idx >= 0) return mw.slice(0, idx) + evBlock;
+  const timeIdx = mw.indexOf("# Time");
+  if (timeIdx >= 0) return mw.trimEnd() + "\n\n" + evBlock;
+  return mw.trimEnd() + "\n\n# Time\n\n" + evBlock;
+}
+
+/** Merge vault-derived events INTO existing mw events, keeping mw as the truth.
+ *  - mw events with a matching vault event: vault metadata (time, endTime, endDate,
+ *    folder, allDay) is overlaid — the Order UI may have changed these.
+ *  - mw-only events (no backing note): preserved as-is (future / hand-typed events).
+ *  - new vault events not yet in mw: appended.
+ *  Returns the original mw string unchanged when nothing structurally changed
+ *  (guards CodeMirror cursor resets and write loops). */
+export function mergeMwEventsWithVault(
+  mw: string,
+  vaultEvents: SpacetimeEvent[],
+): string {
+  const mwEvents = parseMarkwhenFormat(mw).events;
+
+  const vaultByKey = new Map<string, SpacetimeEvent>();
+  for (const ev of vaultEvents) {
+    vaultByKey.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+  }
+
+  const mwKeys = new Set<string>();
+  let changed = false;
+  const merged: SpacetimeEvent[] = [];
+
+  for (const mwEv of mwEvents) {
+    const key = `${mwEv.date}|${mwEv.title.toLowerCase()}`;
+    mwKeys.add(key);
+    const vEv = vaultByKey.get(key);
+    if (!vEv) {
+      merged.push(mwEv);
+      continue;
+    }
+    // Overlay vault metadata; undefined fields are stripped to keep equality checks clean.
+    const updated: SpacetimeEvent = { ...mwEv };
+    if (vEv.time    !== undefined) updated.time    = vEv.time;    else delete updated.time;
+    if (vEv.endTime !== undefined) updated.endTime = vEv.endTime; else delete updated.endTime;
+    if (vEv.endDate !== undefined) updated.endDate = vEv.endDate; else delete updated.endDate;
+    if (vEv.folder  !== undefined) updated.folder  = vEv.folder;  else delete updated.folder;
+    if (vEv.allDay  !== undefined) updated.allDay  = vEv.allDay;  else delete updated.allDay;
+    if (
+      updated.time    !== mwEv.time    ||
+      updated.endTime !== mwEv.endTime ||
+      updated.endDate !== mwEv.endDate ||
+      updated.folder  !== mwEv.folder  ||
+      updated.allDay  !== mwEv.allDay
+    ) changed = true;
+    merged.push(updated);
+  }
+
+  // Append vault events that don't exist in mw yet.
+  for (const vEv of vaultEvents) {
+    const key = `${vEv.date}|${vEv.title.toLowerCase()}`;
+    if (!mwKeys.has(key)) { merged.push(vEv); changed = true; }
+  }
+
+  if (!changed) return mw;
+
+  merged.sort((a, b) =>
+    (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")),
+  );
+  return spliceMwEvents(mw, merged);
+}
+
 // ---------- Markwhen parser (reverse of serializeMarkwhen) ----------
 
 /** Build a tag → original-name lookup from a space tree so event #tags
