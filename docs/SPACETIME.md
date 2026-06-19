@@ -1,4 +1,4 @@
-# Spacetime specification
+# Spacetime convention
 
 Spacetime is Order's canonical data format: a minimal map of where your work lives
 (space) and when things happen (time). It is the single source of truth for the vault's
