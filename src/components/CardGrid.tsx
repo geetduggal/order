@@ -332,18 +332,11 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
           }
         }
       } else {
-        // Leaf: try to migrate calendar frontmatter even without a body
-        // (body stays empty in memory until Card mounts). suggestCalendarPatch
-        // only reads frontmatter for the date/time fields it injects.
-        // Guard against YAML parse failures (Readwise summaries with bad
-        // indentation, etc.): if the on-disk frontmatter block is non-empty
-        // but parsed to {}, treat the note as having authored frontmatter
-        // and skip the auto-stamp.
-        const hasAuthoredFrontmatter = !!m.frontmatterYaml && m.frontmatterYaml.trim().length > 0;
-        if (!hasAuthoredFrontmatter) {
-          const patch = suggestCalendarPatch(frontmatter, "");
-          if (patch) frontmatter = { ...frontmatter, ...patch };
-        }
+        // Leaf: body stays "" until Card mounts. We intentionally skip
+        // suggestCalendarPatch here because bodyHasH1("") is always false,
+        // which would incorrectly stamp files like spacetime.md (which start
+        // with # Space) as calendar events. Calendar injection for new notes
+        // happens correctly when the Card mounts and loads the real body.
       }
       out.push({
         id: newNoteId(),
