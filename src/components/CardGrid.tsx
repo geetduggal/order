@@ -2042,6 +2042,10 @@ export function CardGrid() {
   // Track only the Space section of mw so we can skip materialisation when
   // only events changed (e.g. Effect 1 spliced in updated events).
   const lastMwSpaceRef = useRef<string | null>(null);
+  // Authoritative event index from the mw — keyed by "date|title.toLowerCase()".
+  // Everything that needs event metadata (folder, time) reads from here first;
+  // note frontmatter is only used as a fallback for notes not yet in the mw.
+  const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(new Map());
   useEffect(() => {
     if (!notes) return;
     const mwNote = notes.find((n) => n.filename === "spacetime.mw");
@@ -2053,6 +2057,12 @@ export function CardGrid() {
     if (lastMarkwhenRef.current === null) {
       lastMarkwhenRef.current = mwNote.body;
       lastMwSpaceRef.current = spaceSection;
+      // Populate the event index on cold-boot so display is correct from the
+      // first render, even before the user makes any changes.
+      const boot = parseMarkwhenFormat(mwNote.body);
+      const bootIdx = new Map<string, SpacetimeEvent>();
+      for (const ev of boot.events) bootIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+      mwEventIndexRef.current = bootIdx;
       return;
     }
     // Capture old space section BEFORE stamping so rename detection can diff.
@@ -2063,6 +2073,15 @@ export function CardGrid() {
     const mwBody = mwNote.body;
     void (async () => {
       const parsed = parseMarkwhenFormat(mwBody);
+
+      // Keep the authoritative event index up-to-date immediately after parsing.
+      // All event metadata reads (folder, time) go here first, so display is
+      // always driven by the mw, never by potentially-stale note frontmatter.
+      const newIdx = new Map<string, SpacetimeEvent>();
+      for (const ev of parsed.events) {
+        newIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+      }
+      mwEventIndexRef.current = newIdx;
 
       // ---- space: reconcile renames at ALL levels (area → category → folder) ----
       // Diff the previous space tree against the new one; apply renames top-down
@@ -2527,18 +2546,24 @@ export function CardGrid() {
       const note = notesRef.current?.find((n) => n.path === path);
       if (note) {
         title = note.title;
-        d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
-        f = noteFolder(note.frontmatter) ?? null;
-        // Defensively resolve any legacy #tag-style folder reference to the
-        // real Notable Folder name. This can happen when Effect 2 ran on a mw
-        // that had an empty Space section (loop corruption), leaving notes
-        // with folder: "[[#order]]" instead of folder: "[[Order]]".
-        if (f && f.startsWith("#")) {
-          const tag = f;
-          const resolved = notableFoldersRef.current?.find(
-            (name) => "#" + name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") === tag
-          );
-          if (resolved) f = resolved;
+        // Derive the mw lookup key from the note. The mw is the source of truth
+        // for all scheduling metadata (date, time, folder). If the note is
+        // backed by an mw entry, we prefer the mw values so stale or corrupt
+        // note frontmatter never pollutes the display.
+        const noteDateRaw = typeof note.frontmatter.date === "string"
+          ? note.frontmatter.date
+          : null;
+        const noteKey = noteDateRaw
+          ? `${noteDateRaw.slice(0, 10)}|${title.toLowerCase()}`
+          : null;
+        const mwEv = noteKey ? mwEventIndexRef.current.get(noteKey) : null;
+        if (mwEv) {
+          d = mwEv.date;
+          f = mwEv.folder ?? null;
+        } else {
+          // Fallback for notes not yet indexed in the mw (e.g. freshly created).
+          d = noteDateRaw;
+          f = noteFolder(note.frontmatter) ?? null;
         }
       }
     }
