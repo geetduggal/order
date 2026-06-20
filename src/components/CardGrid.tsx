@@ -538,6 +538,25 @@ export function CardGrid() {
   }, []);
   // Forward-ref binding for Cmd+' (declared earlier in the component).
   useEffect(() => { resetToDefaultRef.current = resetToDefault; }, [resetToDefault]);
+
+  // A note's effective Notable Folder for display + membership. The space
+  // tree maps each folder to a directory (Area/Category/Folder) and notes
+  // live directly inside it, so a note's PARENT DIRECTORY *is* its folder —
+  // that is the canonical home (#geet-duggal → Geet Duggal → .../Geet Duggal/).
+  // The `folder:` frontmatter field is consulted only as a fallback for a
+  // note that sits OUTSIDE any folder dir (e.g. a loose note at the vault
+  // root). This is why a folder page shows every note in its directory, not
+  // just the few that happen to carry a `folder:` field — and regardless of
+  // whether the note backs a spacetime.mw event (the pile isn't mw-gated).
+  const folderDirIndexRef = useRef<Map<string, string>>(new Map());
+  const effectiveFolder = useCallback((n: LoadedNote): string | null => {
+    const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
+    if (parent) {
+      const canonical = folderDirIndexRef.current.get(parent.toLowerCase());
+      if (canonical) return canonical;
+    }
+    return noteFolder(n.frontmatter);
+  }, []);
   /** Scroll the pile to a card and pin focus on it. Single entry
    *  point used by every navigation surface (sidebar tile, calendar
    *  Open, command palette, wikilink, filter-pill jump) so the
@@ -564,7 +583,7 @@ export function CardGrid() {
       const ownRef = note.filename.replace(/\.md$/i, "");
       const targetFolder = isNotableFolder(note.frontmatter)
         ? ownRef
-        : (noteFolder(note.frontmatter) ?? null);
+        : effectiveFolder(note);
       if (targetFolder) {
         // Pin the target NF at the FRONT of the include set so its
         // newspaper section renders at the top of the Pile. Any
@@ -721,6 +740,23 @@ export function CardGrid() {
       effectiveSpacetime,
     );
   }, [notes, parsedSpacetime, mwSources]);
+
+  // Index each Notable Folder's on-disk directory name → its canonical name
+  // so effectiveFolder() can resolve a note's parent directory to the folder
+  // it lives in. Keyed by both the raw and the filesystem-sanitized name (the
+  // directory uses the sanitized form, e.g. "Foo: Bar" → "Foo- Bar").
+  const folderDirIndex = useMemo(() => {
+    const san = (s: string) => s.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+    const m = new Map<string, string>();
+    for (const a of vaultTaxonomy.areas)
+      for (const c of a.categories)
+        for (const f of c.folders) {
+          m.set(f.toLowerCase(), f);
+          m.set(san(f).toLowerCase(), f);
+        }
+    return m;
+  }, [vaultTaxonomy]);
+  folderDirIndexRef.current = folderDirIndex;
 
   const cardsSubdir = useCallback(async (): Promise<string> => {
     // Name kept for compat with existing callers — returns the vault
@@ -2515,7 +2551,7 @@ export function CardGrid() {
         if (note) {
           title = note.title;
           d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
-          f = noteFolder(note.frontmatter) ?? null;
+          f = effectiveFolder(note);
         }
       }
     }
@@ -3180,6 +3216,24 @@ export function CardGrid() {
     setNotes((prev) => prev?.filter((n) => n.id !== id) ?? null);
   }, []);
 
+  // Refresh the in-memory copy of a structural file after the user
+  // hand-edits it in its card. The watcher filters our own writes, so a
+  // self-write to spacetime.mw / .yml (or a list folder) otherwise leaves
+  // `notes` — and everything derived from it (the sidebar taxonomy,
+  // mwSources, the mw→yml mirror in Effect 2) — stale. Reordering the
+  // hierarchy in spacetime.mw then looked like a no-op.
+  //
+  // Gated to needsBodyUpfront files only: leaf notes own their body in the
+  // Card, and churning `notes` on every leaf autosave would re-render the
+  // whole grid for no benefit.
+  const handleCardPersisted = useCallback((path: string, frontmatter: Frontmatter, body: string) => {
+    const rel = toVaultRel(path);
+    const filename = rel.split("/").pop() ?? rel;
+    if (!needsBodyUpfront(frontmatter, filename)) return;
+    setNotes((prev) => prev?.map((n) =>
+      toVaultRel(n.path) === rel ? { ...n, frontmatter, body } : n) ?? null);
+  }, []);
+
   /** Assign (or clear) a regular note's Notable Folder. Writes the
    *  `folder: [[Name]]` field into the file's YAML AND moves the file
    *  into that folder's directory on disk so the layout matches the
@@ -3661,7 +3715,7 @@ export function CardGrid() {
   //   - an Area name (the note's inferred area equals `ref`)
   const belongsTo = (n: LoadedNote, ref: string): boolean => {
     if (n.filename.replace(/\.md$/, "") === ref) return true;
-    if (noteFolder(n.frontmatter) === ref) return true;
+    if (effectiveFolder(n) === ref) return true;
     const cat = parseRef(n.frontmatter.category);
     if (cat === ref) return true;
     if (inferredArea(n) === ref) return true;
@@ -3767,7 +3821,7 @@ export function CardGrid() {
   const cardNode = (n: LoadedNote, capHeight?: number) => {
     const isMain = isNotableFolder(n.frontmatter);
     const ref = n.filename.replace(/\.md$/, "");
-    const folderName = isMain ? ref : noteFolder(n.frontmatter);
+    const folderName = isMain ? ref : effectiveFolder(n);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
     // Permalink only for a public note whose slug is pinned (after a
@@ -3784,7 +3838,7 @@ export function CardGrid() {
         color={c}
         area={isMain ? inferredArea(n) ?? undefined : undefined}
         category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
-        currentFolder={isMain ? undefined : (noteFolder(n.frontmatter) ?? null)}
+        currentFolder={isMain ? undefined : effectiveFolder(n)}
         availableFolders={availableFolderRefs}
         onSetFrontmatter={(patch) => handleSetFrontmatter(n.path, patch)}
         liveFrontmatter={n.frontmatter}
@@ -3801,6 +3855,7 @@ export function CardGrid() {
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
         onDelete={(path) => handleCardDelete(n.id, path)}
+        onPersisted={handleCardPersisted}
         onCreateUpdate={isMain ? async (description) => {
           // Notable Update: stamp an all-day note in this folder for
           // today with the description as both the H1 title and the
@@ -3936,7 +3991,7 @@ export function CardGrid() {
           )
           ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
         const sectionNotes = filteredNotes
-          .filter((n) => !isNotableFolder(n.frontmatter) && noteFolder(n.frontmatter) === ref)
+          .filter((n) => !isNotableFolder(n.frontmatter) && effectiveFolder(n) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
         // Key is just the stable note id — external body edits are now
         // delivered in-place via the externalBodyVersion prop, so we

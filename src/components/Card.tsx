@@ -104,6 +104,14 @@ interface Props {
   /** Called when the user confirms deletion of this card. Card flushes
    *  pending saves first so we don't recreate the file after delete. */
   onDelete?: (path: string) => Promise<void>;
+  /** Called after a successful save with the persisted frontmatter + body.
+   *  Lets the parent refresh its in-memory copy of structural files
+   *  (spacetime.mw / .yml, list folders) so derived state — the sidebar
+   *  taxonomy, calendar, and the mw→yml mirror — reflects hand-edits made
+   *  in the card. Without it, a self-write is filtered by the watcher and
+   *  the parent's `notes` stays stale, so e.g. reordering the hierarchy in
+   *  spacetime.mw never reaches the UI. */
+  onPersisted?: (path: string, frontmatter: Frontmatter, body: string) => void;
   /** Optional Notable Folder color. Renders as a left-border accent
    *  so cards visually group by folder in the Pile. */
   color?: string;
@@ -216,6 +224,7 @@ export function Card(props: Props) {
     onRenamed,
     onTitleChanged,
     onDelete,
+    onPersisted,
     color,
     area,
     category,
@@ -396,8 +405,10 @@ export function Card(props: Props) {
 
   const onRenamedRef = useRef(onRenamed);
   const onTitleChangedRef = useRef(onTitleChanged);
+  const onPersistedRef = useRef(onPersisted);
   useEffect(() => { onRenamedRef.current = onRenamed; }, [onRenamed]);
   useEffect(() => { onTitleChangedRef.current = onTitleChanged; }, [onTitleChanged]);
+  useEffect(() => { onPersistedRef.current = onPersisted; }, [onPersisted]);
 
   // When the watcher bumps externalBodyVersion, re-read the file and
   // replace the Milkdown document in-place (no remount, no flicker).
@@ -628,6 +639,12 @@ export function Card(props: Props) {
       // it after slow-sync delays) is correctly identified as a
       // no-op when the on-disk content matches what we just wrote.
       markKnownBody(path, persistedBody);
+      // Hand the persisted content back to the parent so it can refresh
+      // its in-memory `notes` for structural files (spacetime.mw / .yml,
+      // list folders). The watcher filters our own writes, so without this
+      // a hand-edit — e.g. reordering the hierarchy in spacetime.mw — never
+      // reaches the derived sidebar taxonomy / calendar.
+      onPersistedRef.current?.(path, outFrontmatter, persistedBody);
 
       // Auto-rename whenever the body's first line of text changes —
       // heading or not. firstLineTitle strips leading markdown markers
