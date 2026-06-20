@@ -639,19 +639,20 @@ export function serializeMarkwhen(st: Spacetime): string {
     lines.push("");
   }
 
-  // Events
+  // Events — always emitted in stable date+time order.
   if (st.events.length > 0) {
     lines.push("## Events", "");
+    const events = sortMwEvents(st.events);
     // Build date+time prefix per event for alignment
-    const prefixes = st.events.map((e) => {
+    const prefixes = events.map((e) => {
       const dt = e.time
         ? (e.endTime ? `${e.date} ${e.time}-${e.endTime}` : `${e.date} ${e.time}`)
         : (e.endDate ? `${e.date} / ${e.endDate}` : e.date);
       return dt;
     });
     const prefixW = Math.max(...prefixes.map((p) => p.length));
-    for (let i = 0; i < st.events.length; i++) {
-      const e = st.events[i];
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
       const tag = e.folder ? ` ${toMarkwhenTag(e.folder)}` : "";
       lines.push(`${prefixes[i].padEnd(prefixW)}: ${e.title}${tag}`);
     }
@@ -664,7 +665,9 @@ export function serializeMarkwhen(st: Spacetime): string {
 /** Replace (or append) only the `## Events` block in an existing spacetime.mw
  *  body, leaving the Space and Seasons sections exactly as they are.
  *  Effect 1 uses this so a note-save never rewrites the user's Space layout. */
-export function spliceMwEvents(mw: string, events: SpacetimeEvent[]): string {
+export function spliceMwEvents(mw: string, eventsIn: SpacetimeEvent[]): string {
+  // Always write the events block in stable date+time order.
+  const events = sortMwEvents(eventsIn);
   let evBlock = "## Events\n";
   if (events.length > 0) {
     const prefixes = events.map((e) =>
@@ -692,9 +695,23 @@ export function spliceMwEvents(mw: string, events: SpacetimeEvent[]): string {
 
 const mwEventKey = (date: string, title: string) => `${date}|${title.toLowerCase()}`;
 
+/** Stable sort of events by date then time (all-day / untimed events sort first
+ *  within a day). Array.prototype.sort is stable, so events sharing the same
+ *  (date, time) keep their existing relative order — an edit only relocates the
+ *  one event whose date/time changed, never reshuffling unrelated lines. */
+function sortMwEvents(events: SpacetimeEvent[]): SpacetimeEvent[] {
+  return [...events].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const at = a.time ?? "", bt = b.time ?? "";
+    if (at !== bt) return at < bt ? -1 : 1;
+    return 0;
+  });
+}
+
 /** Apply a partial update to the event matching (oldDate, oldTitle).
  *  Fields set to `undefined` in `next` are removed (e.g. clearing time for an
- *  all-day event). Returns the original mw unchanged when no event matches. */
+ *  all-day event). The block is re-sorted by date+time (stable). Returns the
+ *  original mw unchanged when no event matches. */
 export function mwUpdateEvent(
   mw: string,
   oldDate: string,
@@ -722,8 +739,8 @@ export function mwDeleteEvent(mw: string, date: string, title: string): string {
   return spliceMwEvents(mw, kept);
 }
 
-/** Add an event. No-op (returns mw unchanged) if an event with the same
- *  (date, title) already exists, so creates can't duplicate. */
+/** Add an event in its sorted (date+time) position. No-op (returns mw
+ *  unchanged) if an event with the same (date, title) already exists. */
 export function mwAddEvent(mw: string, ev: SpacetimeEvent): string {
   const st = parseMarkwhenFormat(mw);
   const k = mwEventKey(ev.date, ev.title);
