@@ -5,7 +5,7 @@ Spacetime is Order's canonical data format: a minimal map of where your work liv
 hierarchy and schedule.
 
 Order is currently evaluating two surface formats for Spacetime — a YAML dialect
-(`spacetime.yml`) and a Markwhen-derived plain-text format (`spacetime.mw`). Both
+(`spacetime.yml`) and a Markdown-based plain-text format (`spacetime.md`). Both
 represent the same information; Order keeps them in sync. The goal is to converge on
 whichever proves more habitable as a vault scales, particularly for composability.
 
@@ -68,7 +68,7 @@ time:
     - {date: 2026-08-20, title: Medium deadline,       folder: Order Build, time: 17:00}
 ```
 
-### spacetime.mw
+### spacetime.md
 
 ```markdown
 # Space
@@ -175,7 +175,7 @@ time:
 
 ---
 
-## Markwhen format reference
+## Markdown format reference
 
 ### Space
 
@@ -219,7 +219,7 @@ Date prefixes:
 | `YYYY-MM-DD HH:MM-HH:MM` | Event with start and end time |
 | `YYYY-MM-DD / YYYY-MM-DD` | Multi-day span (inclusive) |
 
-As with YAML events, each `.mw` event corresponds to a backing note at
+As with YAML events, each event here corresponds to a backing note at
 `<Notable Folder>/YYYY-MM-DD <Title>.md`. Order creates the file when the event
 is new and updates it when the event changes.
 
@@ -332,7 +332,7 @@ Order will flag this as a conflict: `Work` is declared but its brood is empty.
 
 Given two files:
 
-**entertainment.mw**
+**entertainment.md**
 ```markdown
 # Space
 ## Entertainment
@@ -343,7 +343,7 @@ Given two files:
   - 2026 Living Room Refresh
 ```
 
-**work.mw**
+**work.md**
 ```markdown
 # Space
 ## Work
@@ -369,14 +369,14 @@ space:
 
 Two files both define `Work Projects` with different children:
 
-**work.mw** — `Work Projects: [Order Build, PKM System]`  
-**work-alt.mw** — `Work Projects: [Order Build, New Project]`
+**work.md** — `Work Projects: [Order Build, PKM System]`  
+**work-alt.md** — `Work Projects: [Order Build, New Project]`
 
 Order surfaces:
 ```text
 Conflict: Conflicting children at "Work/Work Projects":
-  [Order Build, PKM System] in "work.mw"
-  [Order Build, New Project] in "work-alt.mw"
+  [Order Build, PKM System] in "work.md"
+  [Order Build, New Project] in "work-alt.md"
 ```
 
 
@@ -386,15 +386,15 @@ No automatic resolution. The user must edit one file to agree with the other.
 
 ## Sync model
 
-- Order regenerates `spacetime.yml` and `spacetime.mw` at the vault root continuously
+- Order regenerates `spacetime.yml` and `spacetime.md` at the vault root continuously
   as notes change. These root files always reflect the full merged vault state.
 - Editing either root file by hand triggers a re-parse that updates the taxonomy
   and seasons immediately without needing an explicit "apply" step.
-- Additional `.mw` files anywhere in the vault are included in the vault-wide merge.
+- Additional `.md` spacetime files anywhere in the vault are included in the vault-wide merge.
   Adding or editing them updates the merged state after the file watcher fires.
 - Events are always note-backed. Each event is a real `.md` file with content.
   Spacetime files carry the schedule; the notes carry the substance.
-- New events added to `.mw` files materialize as backing `.md` notes in the
+- New events added to `.md` spacetime files materialize as backing `.md` notes in the
   appropriate Notable Folder.
 - The "Apply to vault…" button in Settings pushes structural changes (add/remove/
   reorder folders, edit events) from `spacetime.yml` into the vault's note files

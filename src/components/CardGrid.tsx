@@ -2042,30 +2042,42 @@ export function CardGrid() {
   // Track only the Space section of mw so we can skip materialisation when
   // only events changed (e.g. Effect 1 spliced in updated events).
   const lastMwSpaceRef = useRef<string | null>(null);
-  // Authoritative event list parsed directly from spacetime.mw.
-  // Stored as React state so changes trigger a re-render of calendarNotes.
-  // Everything that needs event metadata reads from here — note frontmatter
-  // is only used as a fallback for events not yet in the mw.
-  const [mwEventList, setMwEventList] = useState<SpacetimeEvent[]>([]);
-  const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(new Map());
+  // ---- spacetime.mw is THE source of truth for calendar events --------
+  // The event list and its index are derived SYNCHRONOUSLY from the parsed
+  // mw during render. spacetime.mw's body is loaded up front
+  // (needsBodyUpfront matches `.mw`), so this is available on the first
+  // paint — no effect timing, no async gap, no dependency on note YAML.
+  // Note frontmatter is irrelevant to what appears on the calendar.
+  const mwEvents = useMemo<SpacetimeEvent[]>(() => {
+    const mwNote = notes?.find((n) => n.filename === "spacetime.mw");
+    if (!mwNote?.body) return [];
+    return parseMarkwhenFormat(mwNote.body).events;
+  }, [notes]);
+  const mwEventIndex = useMemo<Map<string, SpacetimeEvent>>(() => {
+    const idx = new Map<string, SpacetimeEvent>();
+    for (const ev of mwEvents) idx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
+    return idx;
+  }, [mwEvents]);
+  // Mirror the latest index into a ref so event-handler callbacks
+  // (handleEventClick, openEventNote) can read it without re-binding.
+  const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(mwEventIndex);
+  mwEventIndexRef.current = mwEventIndex;
+
+  // The mw→vault SIDE-EFFECT sync: when spacetime.mw content changes during
+  // a session, materialize/update backing notes, reconcile space renames,
+  // and mirror to spacetime.yml. Display does NOT depend on this — it only
+  // keeps the vault's backing notes consistent with the mw.
   useEffect(() => {
     if (!notes) return;
     const mwNote = notes.find((n) => n.filename === "spacetime.mw");
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
-    // Cold-boot: initialise refs without syncing. The sync fires only when
+    // Cold-boot: stamp refs without syncing. The sync fires only when
     // content CHANGES during this session.
     const spaceSection = mwNote.body.split("# Time")[0];
     if (lastMarkwhenRef.current === null) {
       lastMarkwhenRef.current = mwNote.body;
       lastMwSpaceRef.current = spaceSection;
-      // Populate the event index and state on cold-boot so the calendar
-      // renders correctly from the first paint.
-      const boot = parseMarkwhenFormat(mwNote.body);
-      const bootIdx = new Map<string, SpacetimeEvent>();
-      for (const ev of boot.events) bootIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
-      mwEventIndexRef.current = bootIdx;
-      setMwEventList(boot.events);
       return;
     }
     // Capture old space section BEFORE stamping so rename detection can diff.
@@ -2076,16 +2088,8 @@ export function CardGrid() {
     const mwBody = mwNote.body;
     void (async () => {
       const parsed = parseMarkwhenFormat(mwBody);
-
-      // Keep the authoritative event index up-to-date immediately after parsing.
-      // All event metadata reads (folder, time) go here first, so display is
-      // always driven by the mw, never by potentially-stale note frontmatter.
-      const newIdx = new Map<string, SpacetimeEvent>();
-      for (const ev of parsed.events) {
-        newIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
-      }
-      mwEventIndexRef.current = newIdx;
-      setMwEventList(parsed.events);
+      // Display reads from the mwEvents/mwEventIndex memos (derived in render),
+      // so this side-effect path no longer needs to feed the index.
 
       // ---- space: reconcile renames at ALL levels (area → category → folder) ----
       // Diff the previous space tree against the new one; apply renames top-down
@@ -3956,34 +3960,74 @@ export function CardGrid() {
   // notable-folders-only). The dock's left button is now an explicit
   // one-tap cycle, so applying it everywhere matches user
   // expectation — what you toggle is what you see, on every surface.
+  // Calendar events are driven ENTIRELY by spacetime.mw. Every event in the
+  // mw becomes a chip using the MW's date, time, and folder — note YAML
+  // frontmatter never decides what shows or when. A backing note (matched
+  // by date+title, or folder+title when the note's date was stripped)
+  // supplies the click-through path and lets the pile / public / pileMode
+  // filters apply. Events with no backing note use a synthetic `mw-event:`
+  // path that openEventNote materializes on demand.
+  const noteByDateTitle = new Map<string, LoadedNote>();
+  const noteByFolderTitle = new Map<string, LoadedNote>();
+  for (const n of notes) {
+    if (isRawTextFile(n.filename)) continue;
+    const t = n.title.toLowerCase();
+    const d = toIsoDateValue(n.frontmatter.date);
+    if (d && !noteByDateTitle.has(`${d}|${t}`)) noteByDateTitle.set(`${d}|${t}`, n);
+    const f = noteFolder(n.frontmatter);
+    if (f) {
+      const fk = `${f.toLowerCase()}|${t}`;
+      if (!noteByFolderTitle.has(fk)) noteByFolderTitle.set(fk, n);
+    }
+  }
+
   const markdownCalendarNotes: NoteMeta[] = (() => {
     const out: NoteMeta[] = [];
     const seen = new Set<string>();
-    for (const n of pileCandidates) {
-      if (!filterMatches(n)) continue;
-      if (publicOnly && n.frontmatter.public !== true) continue;
-      if (pileMode !== "all") {
-        const isNF = isNotableFolder(n.frontmatter);
-        if (pileMode === "notes" ? isNF : !isNF) continue;
+    for (const ev of mwEvents) {
+      const t = ev.title.toLowerCase();
+      const backing =
+        noteByDateTitle.get(`${ev.date}|${t}`) ??
+        (ev.folder ? noteByFolderTitle.get(`${ev.folder.toLowerCase()}|${t}`) : undefined);
+
+      // Apply pile / public / pileMode filters. With a backing note we filter
+      // on it; without one we filter on the mw folder directly (such events
+      // are ordinary, non-NF, non-public notes).
+      if (backing) {
+        if (!filterMatches(backing)) continue;
+        if (publicOnly && backing.frontmatter.public !== true) continue;
+        if (pileMode !== "all") {
+          const isNF = isNotableFolder(backing.frontmatter);
+          if (pileMode === "notes" ? isNF : !isNF) continue;
+        }
+      } else {
+        if (includeRefs.length > 0 && !(ev.folder && includeRefs.includes(ev.folder))) continue;
+        if (ev.folder && excludeRefs.includes(ev.folder)) continue;
+        if (publicOnly) continue;
+        if (pileMode === "folders") continue;
       }
-      // Dedup overlapping events by identity so a vault with many
-      // .md files sharing the same (date, startTime, title) renders
-      // one chip — not a tower of overlapping ones. First .md wins.
-      const fm = n.frontmatter;
-      const date = toIsoDateValue(fm.date);
-      if (date) {
-        const startTime = typeof fm.startTime === "string" ? fm.startTime : undefined;
-        const k = eventKey({ date, startTime, title: n.title });
-        if (seen.has(k)) continue;
-        seen.add(k);
-      }
-      const f = noteFolder(fm);
+
+      // Dedup by (date, time, title) so a duplicated mw line can't stack
+      // into a tower of identical chips.
+      const k = eventKey({ date: ev.date, startTime: ev.time, title: ev.title });
+      if (seen.has(k)) continue;
+      seen.add(k);
+
+      const fm: Frontmatter = {
+        date: ev.date,
+        allDay: ev.allDay ?? (!ev.time && !ev.endDate),
+        ...(ev.time    ? { startTime: ev.time }    : {}),
+        ...(ev.endTime ? { endTime: ev.endTime }    : {}),
+        ...(ev.endDate ? { endDate: ev.endDate }    : {}),
+        ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
+        title: ev.title,
+      };
       out.push({
-        path: n.path,
-        filename: n.filename,
-        title: n.title,
+        path: backing ? backing.path : `mw-event:${ev.date}|${t}`,
+        filename: backing ? backing.filename : `${ev.date} ${ev.title}.md`,
+        title: ev.title,
         frontmatter: fm,
-        color: f ? folderColor(f) : undefined,
+        color: ev.folder ? folderColor(ev.folder) : undefined,
       });
     }
     return out;
@@ -4067,39 +4111,9 @@ export function CardGrid() {
         })
     : [];
 
-  // Augment the note-backed calendar entries with any mw events that don't
-  // have a corresponding vault note (e.g. backing note's date was stripped).
-  // The mw is authoritative — every event declared there must appear on the
-  // calendar regardless of what the vault notes' frontmatter says.
-  const noteBackedKeys = new Set<string>();
-  for (const n of markdownCalendarNotes) {
-    const d = toIsoDateValue(n.frontmatter.date);
-    if (d) noteBackedKeys.add(`${d}|${n.title.toLowerCase()}`);
-  }
-  const mwOnlyEntries: NoteMeta[] = [];
-  for (const ev of mwEventList) {
-    const key = `${ev.date}|${ev.title.toLowerCase()}`;
-    if (noteBackedKeys.has(key)) continue;
-    const fm: Frontmatter = {
-      date: ev.date,
-      allDay: ev.allDay ?? (!ev.time && !ev.endDate),
-      ...(ev.time    ? { startTime: ev.time }    : {}),
-      ...(ev.endTime ? { endTime: ev.endTime }    : {}),
-      ...(ev.endDate ? { endDate: ev.endDate }    : {}),
-      ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
-      title: ev.title,
-    };
-    mwOnlyEntries.push({
-      // Synthetic path signals there is no backing note yet. handleEventClick
-      // detects this prefix and reads metadata straight from mwEventIndexRef.
-      path: `mw-event:${key}`,
-      filename: `${ev.date} ${ev.title}.md`,
-      title: ev.title,
-      frontmatter: fm,
-      color: ev.folder ? folderColor(ev.folder) : undefined,
-    });
-  }
-  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...mwOnlyEntries, ...todoCalendarNotes];
+  // markdownCalendarNotes already holds every mw event (mw is the source of
+  // truth); todo.txt is a parallel calendar source merged in alongside it.
+  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
 
   /** The new-note flow — extracted so the dock button can call it.
    *
