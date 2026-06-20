@@ -2495,36 +2495,26 @@ export function CardGrid() {
           }
         }
       }
-    } else if (path.startsWith("mw-event:")) {
-      // Synthetic path: this event exists in the mw but has no backing note
-      // yet (e.g. backing note's date was stripped). All metadata comes
-      // directly from the mw index — no note frontmatter involved.
-      const key = path.slice("mw-event:".length);
-      const mwEv = mwEventIndexRef.current.get(key);
-      if (mwEv) {
-        title = mwEv.title;
-        d = mwEv.date;
-        f = mwEv.folder ?? null;
-      }
     } else {
-      const note = notesRef.current?.find((n) => n.path === path);
-      if (note) {
-        title = note.title;
-        // The mw is the source of truth for scheduling metadata. Look up the
-        // event in the mw index by date+title so stale note frontmatter never
-        // pollutes the display.
-        const noteDateRaw = typeof note.frontmatter.date === "string"
-          ? note.frontmatter.date
-          : null;
-        const noteKey = noteDateRaw
-          ? `${noteDateRaw.slice(0, 10)}|${title.toLowerCase()}`
-          : null;
-        const mwEv = noteKey ? mwEventIndexRef.current.get(noteKey) : null;
-        if (mwEv) {
-          d = mwEv.date;
-          f = mwEv.folder ?? null;
-        } else {
-          d = noteDateRaw;
+      // Every calendar chip is mapped to its authoritative mw event in the chip
+      // map, keyed by the exact path FullCalendar used. The mw is the source of
+      // truth for title / date / folder — note frontmatter (which can be stale
+      // or missing) is never consulted for these.
+      const chip = eventChipRef.current.get(path);
+      if (chip) {
+        title = chip.ev.title;
+        d = chip.ev.date;
+        f = chip.ev.folder ?? null;
+      } else if (path.startsWith("mw-event:")) {
+        // Fallback for a synthetic path not in the current chip map.
+        const mwEv = mwEventIndexRef.current.get(path.slice("mw-event:".length));
+        if (mwEv) { title = mwEv.title; d = mwEv.date; f = mwEv.folder ?? null; }
+      } else {
+        // Last resort: a real note with no chip entry.
+        const note = notesRef.current?.find((n) => n.path === path);
+        if (note) {
+          title = note.title;
+          d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
           f = noteFolder(note.frontmatter) ?? null;
         }
       }
