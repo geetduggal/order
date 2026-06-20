@@ -732,11 +732,14 @@ export function mergeMwEventsWithVault(
     merged.push(updated);
   }
 
-  // Append vault events that don't exist in mw yet.
-  for (const vEv of vaultEvents) {
-    const key = `${vEv.date}|${vEv.title.toLowerCase()}`;
-    if (!mwKeys.has(key)) { merged.push(vEv); changed = true; }
-  }
+  // NOTE: We intentionally do NOT append vault events that don't exist in the
+  // mw. The mw is the canonical source for which events exist; vault notes
+  // only BACK events that are already declared there. Adding new events from
+  // the vault caused an infinite duplication loop: lazy-loaded notes get a
+  // filename-derived title that differs from the mw event title by a numeric
+  // suffix (e.g. "FW Weekly 3" vs "FW Weekly"), so they're always treated as
+  // new — generating a new mw entry, a new backing note, another mismatch, ad
+  // infinitum. New events enter the mw via the calendar UI or direct editing.
 
   if (!changed) return mw;
 
