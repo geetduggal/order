@@ -682,7 +682,9 @@ export function CardGrid() {
   // single-file fallback when no vault-wide .mw sources are present.
   const parsedSpacetime = useMemo<Spacetime | undefined>(() => {
     if (!notes) return undefined;
-    const st = notes.find((n) => n.filename === "spacetime.yml");
+    // Root spacetime.yml only — sub-folder copies (Craft/spacetime.yml) are
+    // partial mirrors and must not shadow the canonical root file.
+    const st = notes.find((n) => toVaultRel(n.path) === "spacetime.yml");
     if (!st || !st.body) return undefined;
     return parseSpacetime(st.body);
   }, [notes]);
@@ -2049,7 +2051,10 @@ export function CardGrid() {
   // paint — no effect timing, no async gap, no dependency on note YAML.
   // Note frontmatter is irrelevant to what appears on the calendar.
   const mwEvents = useMemo<SpacetimeEvent[]>(() => {
-    const mwNote = notes?.find((n) => n.filename === "spacetime.mw");
+    // Match the ROOT spacetime.mw specifically — sub-folder .mw files (e.g.
+    // Craft/spacetime.mw) share the same filename but hold only a subset of
+    // events. Selecting by vault-relative path avoids grabbing the wrong one.
+    const mwNote = notes?.find((n) => toVaultRel(n.path) === "spacetime.mw");
     if (!mwNote?.body) return [];
     return parseMarkwhenFormat(mwNote.body).events;
   }, [notes]);
@@ -2069,7 +2074,7 @@ export function CardGrid() {
   // keeps the vault's backing notes consistent with the mw.
   useEffect(() => {
     if (!notes) return;
-    const mwNote = notes.find((n) => n.filename === "spacetime.mw");
+    const mwNote = notes.find((n) => toVaultRel(n.path) === "spacetime.mw");
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
     // Cold-boot: stamp refs without syncing. The sync fires only when
