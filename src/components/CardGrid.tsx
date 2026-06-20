@@ -2542,14 +2542,24 @@ export function CardGrid() {
           }
         }
       }
+    } else if (path.startsWith("mw-event:")) {
+      // Synthetic path: this event exists in the mw but has no backing note
+      // yet (e.g. backing note's date was stripped). All metadata comes
+      // directly from the mw index — no note frontmatter involved.
+      const key = path.slice("mw-event:".length);
+      const mwEv = mwEventIndexRef.current.get(key);
+      if (mwEv) {
+        title = mwEv.title;
+        d = mwEv.date;
+        f = mwEv.folder ?? null;
+      }
     } else {
       const note = notesRef.current?.find((n) => n.path === path);
       if (note) {
         title = note.title;
-        // Derive the mw lookup key from the note. The mw is the source of truth
-        // for all scheduling metadata (date, time, folder). If the note is
-        // backed by an mw entry, we prefer the mw values so stale or corrupt
-        // note frontmatter never pollutes the display.
+        // The mw is the source of truth for scheduling metadata. Look up the
+        // event in the mw index by date+title so stale note frontmatter never
+        // pollutes the display.
         const noteDateRaw = typeof note.frontmatter.date === "string"
           ? note.frontmatter.date
           : null;
@@ -2561,7 +2571,6 @@ export function CardGrid() {
           d = mwEv.date;
           f = mwEv.folder ?? null;
         } else {
-          // Fallback for notes not yet indexed in the mw (e.g. freshly created).
           d = noteDateRaw;
           f = noteFolder(note.frontmatter) ?? null;
         }
@@ -2643,6 +2652,33 @@ export function CardGrid() {
   }, []);
 
   const openEventNote = useCallback((path: string) => {
+    if (path.startsWith("mw-event:")) {
+      // No backing note exists yet. Materialise it by creating the note
+      // directly from the mw event data, then navigate to it.
+      const key = path.slice("mw-event:".length);
+      const mwEv = mwEventIndexRef.current.get(key);
+      if (!mwEv) return;
+      void (async () => {
+        const root = await vaultRoot();
+        const dir = (mwEv.folder && noteDirByRef(mwEv.folder)) || root;
+        const fm: Frontmatter = {
+          date: mwEv.date,
+          allDay: mwEv.allDay ?? (!mwEv.time && !mwEv.endDate),
+          ...(mwEv.time    ? { startTime: mwEv.time }    : {}),
+          ...(mwEv.endTime ? { endTime: mwEv.endTime }    : {}),
+          ...(mwEv.endDate ? { endDate: mwEv.endDate }    : {}),
+          ...(mwEv.folder  ? { folder: `[[${mwEv.folder}]]` } : {}),
+          title: mwEv.title,
+        };
+        const notePath = await uniqueWrite(
+          dir,
+          basenameForEvent(mwEv.date, mwEv.title),
+          joinFrontmatter(fm, `# ${mwEv.title}\n`),
+        );
+        navigateAndFocus(notePath);
+      })();
+      return;
+    }
     if (isTodoTxtPath(path)) {
       const split = splitTodoTxtPath(path);
       if (!split) return;
@@ -4027,7 +4063,38 @@ export function CardGrid() {
         })
     : [];
 
-  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
+  // Augment the note-backed calendar entries with any mw events that don't
+  // have a corresponding vault note (e.g. backing note's date was stripped).
+  // The mw is authoritative — every event declared there must appear on the
+  // calendar regardless of what the vault notes' frontmatter says.
+  const noteBackedKeys = new Set<string>();
+  for (const n of markdownCalendarNotes) {
+    const d = toIsoDateValue(n.frontmatter.date);
+    if (d) noteBackedKeys.add(`${d}|${n.title.toLowerCase()}`);
+  }
+  const mwOnlyEntries: NoteMeta[] = [];
+  for (const [key, ev] of mwEventIndexRef.current) {
+    if (noteBackedKeys.has(key)) continue;
+    const fm: Frontmatter = {
+      date: ev.date,
+      allDay: ev.allDay ?? (!ev.time && !ev.endDate),
+      ...(ev.time    ? { startTime: ev.time }    : {}),
+      ...(ev.endTime ? { endTime: ev.endTime }    : {}),
+      ...(ev.endDate ? { endDate: ev.endDate }    : {}),
+      ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
+      title: ev.title,
+    };
+    mwOnlyEntries.push({
+      // Synthetic path signals there is no backing note yet. handleEventClick
+      // detects this prefix and reads metadata straight from mwEventIndexRef.
+      path: `mw-event:${key}`,
+      filename: `${ev.date} ${ev.title}.md`,
+      title: ev.title,
+      frontmatter: fm,
+      color: ev.folder ? folderColor(ev.folder) : undefined,
+    });
+  }
+  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...mwOnlyEntries, ...todoCalendarNotes];
 
   /** The new-note flow — extracted so the dock button can call it.
    *
