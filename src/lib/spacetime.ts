@@ -685,6 +685,53 @@ export function spliceMwEvents(mw: string, events: SpacetimeEvent[]): string {
   return mw.trimEnd() + "\n\n# Time\n\n" + evBlock;
 }
 
+// ---------- spacetime.mw event mutations (mw is the source of truth) ----------
+// These read the mw, modify the `## Events` block, and re-serialize via
+// spliceMwEvents — Space and Seasons are preserved byte-for-byte. Matching is
+// by `${date}|${title.toLowerCase()}`, the same identity the calendar uses.
+
+const mwEventKey = (date: string, title: string) => `${date}|${title.toLowerCase()}`;
+
+/** Apply a partial update to the event matching (oldDate, oldTitle).
+ *  Fields set to `undefined` in `next` are removed (e.g. clearing time for an
+ *  all-day event). Returns the original mw unchanged when no event matches. */
+export function mwUpdateEvent(
+  mw: string,
+  oldDate: string,
+  oldTitle: string,
+  next: Partial<SpacetimeEvent>,
+): string {
+  const st = parseMarkwhenFormat(mw);
+  const k = mwEventKey(oldDate, oldTitle);
+  const i = st.events.findIndex((e) => mwEventKey(e.date, e.title) === k);
+  if (i < 0) return mw;
+  const merged: SpacetimeEvent = { ...st.events[i], ...next };
+  // Normalize the allDay flag against the resulting time fields.
+  if (merged.time) delete merged.allDay;
+  else if (!merged.endDate) merged.allDay = true;
+  st.events[i] = merged;
+  return spliceMwEvents(mw, st.events);
+}
+
+/** Remove the event matching (date, title). No-op if absent. */
+export function mwDeleteEvent(mw: string, date: string, title: string): string {
+  const st = parseMarkwhenFormat(mw);
+  const k = mwEventKey(date, title);
+  const kept = st.events.filter((e) => mwEventKey(e.date, e.title) !== k);
+  if (kept.length === st.events.length) return mw;
+  return spliceMwEvents(mw, kept);
+}
+
+/** Add an event. No-op (returns mw unchanged) if an event with the same
+ *  (date, title) already exists, so creates can't duplicate. */
+export function mwAddEvent(mw: string, ev: SpacetimeEvent): string {
+  const st = parseMarkwhenFormat(mw);
+  const k = mwEventKey(ev.date, ev.title);
+  if (st.events.some((e) => mwEventKey(e.date, e.title) === k)) return mw;
+  st.events.push(ev);
+  return spliceMwEvents(mw, st.events);
+}
+
 /** Merge vault-derived events INTO existing mw events, keeping mw as the truth.
  *  - mw events with a matching vault event: vault metadata (time, endTime, endDate,
  *    folder, allDay) is overlaid — the Order UI may have changed these.

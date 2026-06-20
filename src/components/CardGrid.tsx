@@ -24,7 +24,8 @@ import { SeasonView, type SeasonViewHandle } from "./SeasonView";
 import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../lib/seasons";
 import {
   buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
-  mergeMwEventsWithVault, parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
+  parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
+  mwUpdateEvent, mwDeleteEvent, mwAddEvent,
   type SpacetimeEvent, type Spacetime, type SpacetimeSource, type SpaceNode,
 } from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
@@ -1211,48 +1212,52 @@ export function CardGrid() {
     setTimeout(() => setCapWarning((c) => (c === msg ? null : c)), 2500);
   }, []);
 
-  // ---- spacetime.yml space/season mutation helpers ---------------
+  // ---- spacetime.mw space/season mutation helpers ----------------
   // All structure edits (add/remove/reorder area, category, folder; season
-  // writes) go through these helpers so the YAML is the only write target.
+  // writes) read from and write to spacetime.mw — the single source of truth.
+  // Reading from the mw (not the yml) is essential: the mw holds the full,
+  // current event list, so re-serializing preserves events. Basing these off a
+  // possibly-stale yml would erase events from the mw. spacetime.yml is then
+  // mirrored from the same model so external yml readers stay consistent.
 
-  const patchSpacetimeSpace = useCallback(async (mutation: SpaceMutation): Promise<void> => {
-    const raw = await readVault("spacetime.yml").catch(() => "");
-    const st = parseSpacetime(raw);
-    const next: Spacetime = { ...st, space: applySpaceMutation(st.space, mutation) };
-    const yml = serializeSpacetime(next);
-    lastSpacetimeRef.current = yml;
-    await writeVault("spacetime.yml", yml);
+  /** Persist a full Spacetime model to both mw and yml, and optimistically
+   *  update the in-memory mw note so the sidebar/calendar recompute now. */
+  const writeSpacetimeModel = useCallback(async (next: Spacetime): Promise<void> => {
     const mwContent = serializeMarkwhen(next);
     lastMarkwhenRef.current = mwContent;
     lastMwSpaceRef.current = mwContent.split("# Time")[0];
     await writeVault("spacetime.mw", mwContent);
+    const yml = serializeSpacetime(next);
+    lastSpacetimeRef.current = yml;
+    await writeVault("spacetime.yml", yml);
+    setNotes((prev) => prev?.map((n) =>
+      toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: mwContent } : n) ?? null);
   }, []);
 
+  const patchSpacetimeSpace = useCallback(async (mutation: SpaceMutation): Promise<void> => {
+    const mw = await readVault("spacetime.mw").catch(() => "");
+    const st = parseMarkwhenFormat(mw);
+    await writeSpacetimeModel({ ...st, space: applySpaceMutation(st.space, mutation) });
+  }, [writeSpacetimeModel]);
+
   const patchSpacetimeSeasons = useCallback(async (seasons: import("../lib/seasons").Season[]): Promise<void> => {
-    const raw = await readVault("spacetime.yml").catch(() => "");
-    const st = parseSpacetime(raw);
-    const next: Spacetime = {
+    const mw = await readVault("spacetime.mw").catch(() => "");
+    const st = parseMarkwhenFormat(mw);
+    await writeSpacetimeModel({
       ...st,
       seasons: seasons.map((s) => ({
         date: s.start,
         title: s.name ?? "",
         ...(s.end ? { endDate: s.end } : {}),
       })),
-    };
-    const yml = serializeSpacetime(next);
-    lastSpacetimeRef.current = yml;
-    await writeVault("spacetime.yml", yml);
-    const mwContent = serializeMarkwhen(next);
-    lastMarkwhenRef.current = mwContent;
-    lastMwSpaceRef.current = mwContent.split("# Time")[0];
-    await writeVault("spacetime.mw", mwContent);
-  }, []);
+    });
+  }, [writeSpacetimeModel]);
 
   /** Add an Area = append a bullet to Areas.md. Caps at 10. */
   const handleAddArea = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const cur = parseSpacetime(await readVault("spacetime.yml").catch(() => ""));
+    const cur = parseMarkwhenFormat(await readVault("spacetime.mw").catch(() => ""));
     if (cur.space.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return; }
     await patchSpacetimeSpace({ kind: "addArea", name: trimmed });
     await reloadNotes();
@@ -1267,7 +1272,8 @@ export function CardGrid() {
     const trimmed = name.trim();
     const trimmedArea = areaName.trim();
     if (!trimmed || !trimmedArea) return;
-    const cur = parseSpacetime(await readVault("spacetime.yml").catch(() => ""));
+    // Read from the mw (source of truth) so events are preserved on rewrite.
+    const cur = parseMarkwhenFormat(await readVault("spacetime.mw").catch(() => ""));
     const area = cur.space.find((a) => a.name === trimmedArea);
     if (area && area.children.length >= 10) {
       flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return;
@@ -1275,12 +1281,9 @@ export function CardGrid() {
     // Ensure Area exists in space, then add the category
     let next = area ? cur : { ...cur, space: applySpaceMutation(cur.space, { kind: "addArea", name: trimmedArea }) };
     next = { ...next, space: applySpaceMutation(next.space, { kind: "addCategory", area: trimmedArea, name: trimmed }) };
-    const yml = serializeSpacetime(next);
-    lastSpacetimeRef.current = yml;
-    await writeVault("spacetime.yml", yml);
-    await writeVault("spacetime.mw", serializeMarkwhen(next));
+    await writeSpacetimeModel(next);
     await reloadNotes();
-  }, [reloadNotes, flashCap]);
+  }, [reloadNotes, flashCap, writeSpacetimeModel]);
 
   const handleRemoveCategory = useCallback(async (name: string, areaName: string) => {
     await patchSpacetimeSpace({ kind: "removeCategory", area: areaName, name });
@@ -1308,17 +1311,43 @@ export function CardGrid() {
     if (ok) await reloadNotes();
   }, [reloadNotes]);
 
+  // Single-step up/down reorders. The hierarchy lives in spacetime.mw, so these
+  // compute the new order from the mw-derived taxonomy and apply a reorder
+  // mutation to the mw (the old list-file bullet edits were vestigial — the
+  // sidebar reads its order from the mw, not the chain files).
+  const swapOrder = (refs: string[], name: string, dir: "up" | "down"): string[] | null => {
+    const i = refs.findIndex((r) => r.toLowerCase() === name.toLowerCase());
+    const j = dir === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= refs.length) return null;
+    const out = [...refs];
+    [out[i], out[j]] = [out[j], out[i]];
+    return out;
+  };
+
   const handleReorderArea = useCallback(async (name: string, dir: "up" | "down") => {
-    await reorderIn(areasNotePath() ?? (await join(await cardsSubdir(), AREAS_FILENAME)), name, dir);
-  }, [reorderIn, cardsSubdir]);
+    const order = swapOrder(vaultTaxonomy.areas.map((a) => a.ref), name, dir);
+    if (!order) return;
+    await patchSpacetimeSpace({ kind: "reorderAreas", names: order });
+    await reloadNotes();
+  }, [vaultTaxonomy, patchSpacetimeSpace, reloadNotes]);
 
   const handleReorderCategory = useCallback(async (name: string, areaName: string, dir: "up" | "down") => {
-    await reorderIn(notePathByRef(areaName), name, dir);
-  }, [reorderIn]);
+    const area = vaultTaxonomy.areas.find((a) => a.ref === areaName);
+    if (!area) return;
+    const order = swapOrder(area.categories.map((c) => c.ref), name, dir);
+    if (!order) return;
+    await patchSpacetimeSpace({ kind: "reorderCategories", area: areaName, names: order });
+    await reloadNotes();
+  }, [vaultTaxonomy, patchSpacetimeSpace, reloadNotes]);
 
-  const handleReorderFolder = useCallback(async (name: string, _areaName: string, categoryName: string, dir: "up" | "down") => {
-    await reorderIn(notePathByRef(categoryName), name, dir);
-  }, [reorderIn]);
+  const handleReorderFolder = useCallback(async (name: string, areaName: string, categoryName: string, dir: "up" | "down") => {
+    const cat = vaultTaxonomy.areas.find((a) => a.ref === areaName)?.categories.find((c) => c.ref === categoryName);
+    if (!cat) return;
+    const order = swapOrder(cat.folders, name, dir);
+    if (!order) return;
+    await patchSpacetimeSpace({ kind: "reorderFolders", area: areaName, category: categoryName, names: order });
+    await reloadNotes();
+  }, [vaultTaxonomy, patchSpacetimeSpace, reloadNotes]);
 
   // Remove a Notable Folder from a Category: drop it from spacetime.yml
   // space tree. The note itself is kept (non-destructive).
@@ -1802,39 +1831,13 @@ export function CardGrid() {
     ) ?? null);
   }, [notes, todoSettings.enabled, todoSettings.path]);
 
-  // ---- spacetime.yml + spacetime.mw mirror ----------------------
-  // Regenerate spacetime.yml continuously. When spacetime.yml already
-  // carries space/seasons (post-migration), those are authoritative and
-  // preserved; only time.events is regenerated from note frontmatter.
-  // spacetime.mw is always regenerated as a companion Markwhen view.
+  // NOTE: The old "vault notes → spacetime.mw/.yml" mirror effect was REMOVED.
+  // spacetime.mw is the single source of truth: every edit in Order writes the
+  // mw directly, and Effect 2 (below) propagates the mw to backing notes and
+  // mirrors it to spacetime.yml. A reverse notes→mw sync would re-introduce the
+  // bidirectional loop that caused runaway event duplication. lastSpacetimeRef
+  // is retained because the space-mutation handlers and migration still use it.
   const lastSpacetimeRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!notes) return;
-    const st = buildSpacetime(notes, vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined);
-    const content = serializeSpacetime(st);
-    if (content === lastSpacetimeRef.current) return;
-    void (async () => {
-      // Don't clobber a hand-edited spacetime.yml: if what's on disk isn't
-      // what we last generated, the user edited it — hold off rewriting
-      // until they "Apply spacetime.yml to vault", which resets this ref.
-      if (lastSpacetimeRef.current !== null) {
-        try {
-          const onDisk = await readVault("spacetime.yml");
-          if (onDisk !== lastSpacetimeRef.current) return;
-        } catch { /* missing → write it */ }
-      }
-      lastSpacetimeRef.current = content;
-      await writeVault("spacetime.yml", content);
-      // Splice only the Events block into spacetime.mw — never rewrite the
-      // Space/Seasons sections, so user edits to structure are preserved.
-      const existingMw = await readVault("spacetime.mw").catch(() => "");
-      const newMw = mergeMwEventsWithVault(existingMw, st.events);
-      if (newMw !== existingMw) {
-        lastMarkwhenRef.current = newMw;
-        await writeVault("spacetime.mw", newMw);
-      }
-    })();
-  }, [notes, vaultTaxonomy, parsedSpacetime]);
 
   /** Reconcile all renames in the space tree between two spacetime.mw edits.
    *
@@ -2067,6 +2070,25 @@ export function CardGrid() {
   // (handleEventClick, openEventNote) can read it without re-binding.
   const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(mwEventIndex);
   mwEventIndexRef.current = mwEventIndex;
+  // Maps each rendered calendar chip's `path` → the mw event it represents,
+  // so move/edit/delete handlers can locate the authoritative mw line. Also
+  // records the backing note path (if any) so the same edit can keep that
+  // note's filename + frontmatter in sync. Populated during render below.
+  const eventChipRef = useRef<Map<string, { ev: SpacetimeEvent; notePath: string | null }>>(new Map());
+
+  /** Apply a transform to the root spacetime.mw and persist it. Optimistically
+   *  updates the in-memory mw note body so the calendar (which reads mwEvents)
+   *  reflects the change on the next render; Effect 2 then mirrors to yml and
+   *  reconciles any space changes. spacetime.mw is the single source of truth. */
+  const applyMwEdit = useCallback(async (transform: (mw: string) => string) => {
+    const mw = await readVault("spacetime.mw").catch(() => "");
+    if (!mw) return;
+    const next = transform(mw);
+    if (next === mw) return;
+    await writeVault("spacetime.mw", next);
+    setNotes((prev) => prev?.map((n) =>
+      toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
+  }, []);
 
   // The mw→vault SIDE-EFFECT sync: when spacetime.mw content changes during
   // a session, materialize/update backing notes, reconcile space renames,
@@ -2106,14 +2128,11 @@ export function CardGrid() {
         }
       }
 
-      // ---- space + seasons → spacetime.yml ----
-      const currentYml = await readVault("spacetime.yml").catch(() => "");
-      const currentSt = parseSpacetime(currentYml);
-      const merged: Spacetime = {
-        space:   parsed.space.length   > 0 ? parsed.space   : currentSt.space,
-        seasons: parsed.seasons.length > 0 ? parsed.seasons : currentSt.seasons,
-        events:  currentSt.events,
-      };
+      // ---- mirror the full mw → spacetime.yml ----
+      // The mw is the source of truth, so the yml is a straight mirror of it
+      // (space + seasons + events). Effect 1 used to own yml events; now that
+      // it's gone, Effect 2 keeps the whole yml in sync with the mw.
+      const merged: Spacetime = parsed;
       const yml = serializeSpacetime(merged);
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
@@ -2136,93 +2155,14 @@ export function CardGrid() {
         }
       }
 
-      // ---- events: two-way sync ----
-      // Only run the event sync when .mw has an events section (even if
-      // empty after a deliberate clear). Skip when the .mw body has no
-      // ## Events heading at all — avoids clobbering the vault if the
-      // user is editing only the space or seasons.
-      if (!mwBody.includes("## Events")) { await reloadNotes(); return; }
-
-      const cur = notesRef.current ?? [];
-
-      const EVENT_TIME_KEYS = ["startTime", "endTime", "allDay", "endDate", "folder"] as const;
-
-      // Match ANY note with a date by date|title — no filtering by frontmatter
-      // type. This is the key guard: if a note with that date+title already
-      // exists (even a list:cards or category note), we never create a duplicate.
-      const vaultEventNotes = new Map<string, typeof cur[0]>();
-      for (const n of cur) {
-        const d = toIsoDateValue(n.frontmatter.date);
-        if (!d) continue;
-        const t = noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, "")).toLowerCase();
-        vaultEventNotes.set(`${d}|${t}`, n);
-      }
-
-      // Build a map of events declared in .mw by the same key.
-      const mwEventMap = new Map<string, SpacetimeEvent>();
-      for (const ev of parsed.events) {
-        mwEventMap.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
-      }
-
-      const root = await vaultRoot();
-
-      // Pass 1: update existing / create new
-      for (const [key, ev] of mwEventMap) {
-        const existing = vaultEventNotes.get(key);
-        const fm: Frontmatter = {
-          date: ev.date,
-          allDay: ev.allDay === true || !ev.time,
-          ...(ev.time    ? { startTime: ev.time }   : {}),
-          ...(ev.endTime ? { endTime: ev.endTime }   : {}),
-          ...(ev.endDate ? { endDate: ev.endDate }   : {}),
-          ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
-        };
-        if (existing) {
-          const raw = await readVault(toVaultRel(existing.path)).catch(() => "");
-          if (!raw) continue;
-          const { frontmatter: curFm, body } = splitFrontmatter(raw);
-          const next: Frontmatter = { ...curFm, ...fm };
-          // Stamp title: on old notes that lack it, so noteTitle() resolves to
-          // the correct event title even under lazy loading (body=""). Without
-          // this, the filename-derived title may be "Event 2" instead of "Event",
-          // causing a key mismatch that re-triggers the duplicate-creation loop.
-          if (ev.title && !next.title) next.title = ev.title;
-          // Clear time keys that are no longer present in the .mw event
-          if (!ev.time)    { delete next.startTime; delete next.endTime; }
-          if (!ev.endDate) delete next.endDate;
-          const updated = joinFrontmatter(next, body);
-          if (updated !== raw) await writeVault(toVaultRel(existing.path), updated);
-        } else {
-          const dir = (ev.folder && noteDirByRef(ev.folder)) || root;
-          // Include title: in frontmatter so noteTitle() returns the correct
-          // event title even when the note body is lazy-loaded (body="").
-          // Without this, noteTitle falls back to the deduplicated filename
-          // (e.g. "Clean laptop 2") which never matches the mw event key
-          // ("Clean laptop"), causing an infinite note-creation loop.
-          const createFm = ev.title ? { ...fm, title: ev.title } : fm;
-          await uniqueWrite(dir, basenameForEvent(ev.date, ev.title),
-            joinFrontmatter(createFm, ev.title ? `# ${ev.title}\n` : ""));
-        }
-      }
-
-      // Pass 2: strip calendar frontmatter from vault events no longer in .mw
-      // Non-destructive: the file stays, it just loses its date/time keys so
-      // it no longer appears on the calendar.
-      for (const [key, note] of vaultEventNotes) {
-        if (mwEventMap.has(key)) continue;
-        const raw = await readVault(toVaultRel(note.path)).catch(() => "");
-        if (!raw) continue;
-        const { frontmatter: curFm, body } = splitFrontmatter(raw);
-        const next: Frontmatter = {};
-        for (const [k, v] of Object.entries(curFm)) {
-          if (!EVENT_TIME_KEYS.includes(k as typeof EVENT_TIME_KEYS[number]) && k !== "date") {
-            next[k] = v;
-          }
-        }
-        const updated = Object.keys(next).length > 0 ? joinFrontmatter(next, body) : body;
-        if (updated !== raw) await writeVault(toVaultRel(note.path), updated);
-      }
-
+      // ---- events ----
+      // No event note sync here. The calendar renders directly from the mw
+      // (mwEvents), so backing notes are NOT required for an event to display,
+      // and their calendar frontmatter is never load-bearing. Backing notes
+      // are created lazily when the user opens an event (openEventNote), and
+      // event edits write the mw directly. This deliberately drops the old
+      // two-way create/update/strip passes that caused the duplication loop
+      // and the date-stripping bugs.
       await reloadNotes();
     })();
   }, [notes, reconcileSpaceChanges]);
@@ -2641,28 +2581,32 @@ export function CardGrid() {
       ) ?? null);
       return;
     }
-    // .md path: rewrite frontmatter title and the H1 first-line so
-    // deriveTitle picks it up on the next reload.
-    const raw = await readVault(path);
-    const { frontmatter, body } = splitFrontmatter(raw);
-    const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
-    const lines = body.split(/\r?\n/);
-    let h1Replaced = false;
-    for (let i = 0; i < lines.length; i++) {
-      const t = lines[i].trim();
-      if (!t) continue;
-      if (t.startsWith("#")) {
-        lines[i] = `# ${cleanTitle}`;
-        h1Replaced = true;
+    // mw event: the calendar reads the title from spacetime.mw, so the rename
+    // must update the mw event first (source of truth for display).
+    const chip = eventChipRef.current.get(path);
+    if (!chip) return;
+    const { ev, notePath } = chip;
+    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, { title: cleanTitle }));
+    // If a backing note exists, also rewrite its frontmatter title + H1 so the
+    // note's own content matches the renamed event.
+    if (notePath) {
+      const raw = await readVault(toVaultRel(notePath)).catch(() => "");
+      if (raw) {
+        const { frontmatter, body } = splitFrontmatter(raw);
+        const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
+        const lines = body.split(/\r?\n/);
+        let h1Replaced = false;
+        for (let i = 0; i < lines.length; i++) {
+          const t = lines[i].trim();
+          if (!t) continue;
+          if (t.startsWith("#")) { lines[i] = `# ${cleanTitle}`; h1Replaced = true; }
+          break;
+        }
+        const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
+        await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, newBody));
       }
-      break;
     }
-    const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
-    await writeVault(path, joinFrontmatter(nextFm, newBody));
-    setNotes((prev) => prev?.map((n) =>
-      n.path === path ? { ...n, frontmatter: nextFm, title: cleanTitle, body: newBody } : n,
-    ) ?? null);
-  }, []);
+  }, [applyMwEdit]);
 
   const openEventNote = useCallback((path: string) => {
     if (path.startsWith("mw-event:")) {
@@ -2792,10 +2736,22 @@ export function CardGrid() {
       ) ?? null);
       return;
     }
+    // mw event: remove it from spacetime.mw (source of truth → off the
+    // calendar). Also delete the backing note file if one exists.
+    const chip = eventChipRef.current.get(path);
+    if (chip) {
+      await applyMwEdit((mw) => mwDeleteEvent(mw, chip.ev.date, chip.ev.title));
+      if (chip.notePath) {
+        const note = notesRef.current?.find((n) => n.path === chip.notePath);
+        if (note) await handleCardDelete(note.id, chip.notePath);
+      }
+      return;
+    }
+    // Fallback: a direct note path with no chip entry.
     const note = notesRef.current?.find((n) => n.path === path);
     if (!note) return;
     await handleCardDelete(note.id, path);
-  }, []);
+  }, [applyMwEdit]);
   /** Rewrite a calendar event's date to `newDate` (YYYY-MM-DD), keeping the
    *  startTime / endTime / allDay flag untouched — "move to same time on
    *  another day." Forward-ref so the action menu (declared earlier) can
@@ -3048,6 +3004,22 @@ export function CardGrid() {
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: title || "Untitled", body: seedBody, mtime: Date.now() },
     ]);
+    // A dated create is a calendar event — register it in spacetime.mw (the
+    // source of truth the calendar renders from). The .md just written is its
+    // backing note; the chip will resolve to it by date+title. Undated creates
+    // (plain notes via Cmd+N / dock +) never touch the mw.
+    if (typeof frontmatter.date === "string") {
+      const ev: SpacetimeEvent = {
+        date: frontmatter.date,
+        title: title || "Untitled",
+        ...(folderRef ? { folder: folderRef } : {}),
+        ...(typeof frontmatter.startTime === "string" ? { time: frontmatter.startTime } : {}),
+        ...(typeof frontmatter.endTime === "string"   ? { endTime: frontmatter.endTime } : {}),
+        ...(typeof frontmatter.endDate === "string"   ? { endDate: frontmatter.endDate } : {}),
+        ...(frontmatter.allDay === true ? { allDay: true } : {}),
+      };
+      await applyMwEdit((mw) => mwAddEvent(mw, ev));
+    }
     // Visibility safety net: if a filter is active and the new note's
     // folder isn't part of the include set, additively add it so the
     // card lands on screen instead of being hidden behind a filter
@@ -3065,7 +3037,7 @@ export function CardGrid() {
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Pile sorts it
     // into place by date+startTime.
-  }, []);
+  }, [applyMwEdit]);
   // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
   // sits earlier in this component, can invoke the latest createNote.
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
@@ -3255,7 +3227,21 @@ export function CardGrid() {
       ) ?? null);
       return;
     }
-    const raw = await readVault(path);
+    // mw event chip: the calendar reads an event's folder from its #tag in
+    // spacetime.mw, so re-folder updates the mw event first (source of truth).
+    // Then, if a backing note exists, move/retag the file to match below.
+    const chip = eventChipRef.current.get(path);
+    let notePath = path;
+    if (chip) {
+      await applyMwEdit((mw) =>
+        mwUpdateEvent(mw, chip.ev.date, chip.ev.title, { folder: folderName ?? undefined }));
+      markFolderRecent(folderName ?? "");
+      if (!chip.notePath) return; // synthetic event — no file to move
+      notePath = chip.notePath;
+    }
+
+    const raw = await readVault(toVaultRel(notePath)).catch(() => "");
+    if (!raw) return;
     const { frontmatter, body } = splitFrontmatter(raw);
     const next: Frontmatter = { ...frontmatter };
     if (folderName) next.folder = `[[${folderName}]]`;
@@ -3266,11 +3252,11 @@ export function CardGrid() {
     // differs from where the file currently lives. write-new + delete-
     // old (via uniqueWrite) handles name collisions in the target.
     const targetDir = folderName ? noteDirByRef(folderName) : null;
-    const curDir = path.slice(0, path.lastIndexOf("/"));
+    const curDir = notePath.slice(0, notePath.lastIndexOf("/"));
     if (targetDir && targetDir !== curDir) {
-      const filename = path.split("/").pop() ?? "note.md";
+      const filename = notePath.split("/").pop() ?? "note.md";
       const newPath = await uniqueWrite(targetDir, filename, content);
-      await vaultFs.remove(toVaultRel(path));
+      await vaultFs.remove(toVaultRel(notePath));
       // Move the note's same-folder images along with it so the ![[…]]
       // embeds keep resolving from the new folder.
       for (const file of embeddedImageFiles(body)) {
@@ -3279,14 +3265,14 @@ export function CardGrid() {
         } catch { /* missing or already present — skip */ }
       }
       setNotes((prev) => prev?.map((n) =>
-        n.path === path
+        n.path === notePath
           ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }
           : n) ?? null);
       // Forward path-tracking state so the focused card's React key
       // stays stable across the move (otherwise edit mode is lost).
-      setFocusedPath((p) => (p === path ? newPath : p));
-      setFocusPath((p) => (p === path ? newPath : p));
-      setScrollTargetPath((p) => (p === path ? newPath : p));
+      setFocusedPath((p) => (p === notePath ? newPath : p));
+      setFocusPath((p) => (p === notePath ? newPath : p));
+      setScrollTargetPath((p) => (p === notePath ? newPath : p));
       // Land the user inside the new NF. In calendar views, stay in the
       // calendar — just update recents. Only switch to Pile when already
       // in Pile (so a folder reassignment from the Pile stays in Pile).
@@ -3298,9 +3284,9 @@ export function CardGrid() {
       return;
     }
 
-    await writeVault(path, content);
-    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
-  }, []);
+    await writeVault(toVaultRel(notePath), content);
+    setNotes((prev) => prev?.map((n) => (n.path === notePath ? { ...n, frontmatter: next } : n)) ?? null);
+  }, [applyMwEdit]);
 
   /** Generic frontmatter patcher driving the FrontmatterInspector.
    *  Read, mutate, write, sync state. Keys set to `null` are deleted;
@@ -3408,9 +3394,27 @@ export function CardGrid() {
       flashCap(`Rename failed: ${String(err)}`);
       return;
     }
-    // 5. Pick up everything fresh — paths, refs, chain order all moved.
+    // 5. Rename the folder in spacetime.mw (source of truth): rename the node
+    //    in the `# Space` tree AND re-tag every event that pointed at it.
+    //    writeSpacetimeModel stamps lastMarkwhenRef, so Effect 2 won't try to
+    //    re-reconcile (and re-rename) the directory we already moved on disk.
+    try {
+      const mw = await readVault("spacetime.mw").catch(() => "");
+      if (mw) {
+        const st = parseMarkwhenFormat(mw);
+        const walk = (nodes: SpaceNode[]) => {
+          for (const n of nodes) { if (n.name === oldName) n.name = safe; walk(n.children); }
+        };
+        walk(st.space);
+        for (const ev of st.events) if (ev.folder === oldName) ev.folder = safe;
+        await writeSpacetimeModel(st);
+      }
+    } catch (err) {
+      console.warn("mw folder rename sync skipped", err);
+    }
+    // 6. Pick up everything fresh — paths, refs, chain order all moved.
     await reloadNotes();
-  }, [reloadNotes]);
+  }, [reloadNotes, writeSpacetimeModel]);
 
 
   /** Create a new Notable Folder Main Document for the given area +
@@ -3459,28 +3463,31 @@ export function CardGrid() {
   }, [flashCap, patchSpacetimeSpace]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
-    // Todo.txt synthetic paths (`<vault-rel>.txt#L<index>`) route to
-    // the line-rewrite path instead of the markdown frontmatter
-    // merger. The patch shape coming from CalendarView is the same —
-    // date / startTime / endTime / endDate / allDay — but the writer
-    // is line-based, not YAML.
+    // Todo.txt items are a parallel calendar source — route to the line writer.
+    // The patch shape from CalendarView is the same (date / startTime / endTime
+    // / endDate / allDay) but the writer is line-based, not YAML.
     if (isTodoTxtPath(path)) {
       await mutateTodoTxtFromPatch(path, patch);
       return;
     }
-    const raw = await readVault(path);
-    const { frontmatter, body } = splitFrontmatter(raw);
-    const next: Frontmatter = { ...frontmatter };
-    // Patch protocol: `undefined` removes a key, anything else assigns.
-    // Lets CalendarView drop startTime/endTime when an event is dragged
-    // into the all-day strip.
-    for (const [k, v] of Object.entries(patch)) {
-      if (v === undefined) delete next[k];
-      else next[k] = v;
-    }
-    await writeVault(path, joinFrontmatter(next, body));
-    setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
-  }, []);
+    // Every other calendar chip is an mw event. Locate it via the chip map and
+    // apply the move/edit to spacetime.mw — the source of truth the calendar
+    // reads from. (Writing note frontmatter here would be ignored on re-render
+    // and the event would snap back to its mw position.)
+    const chip = eventChipRef.current.get(path);
+    if (!chip) return;
+    const { ev } = chip;
+    const next: Partial<SpacetimeEvent> = {};
+    if ("date" in patch)      next.date    = typeof patch.date === "string" ? patch.date : ev.date;
+    if ("startTime" in patch) next.time    = patch.startTime === undefined ? undefined : String(patch.startTime);
+    if ("endTime" in patch)   next.endTime = patch.endTime   === undefined ? undefined : String(patch.endTime);
+    if ("endDate" in patch)   next.endDate = patch.endDate   === undefined ? undefined : String(patch.endDate);
+    if (patch.allDay === true)  { next.allDay = true; next.time = undefined; next.endTime = undefined; }
+    if (patch.allDay === false) { next.allDay = undefined; }
+    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, next));
+    // mutateTodoTxtFromPatch is a stable useCallback declared just below; it is
+    // intentionally omitted from deps to avoid a temporal-dead-zone reference.
+  }, [applyMwEdit]);
 
   /** Apply a CalendarView-shape patch to a single todo.txt line.
    *  Reads the file fresh so concurrent edits don't clobber. */
@@ -3974,6 +3981,11 @@ export function CardGrid() {
   // path that openEventNote materializes on demand.
   const noteByDateTitle = new Map<string, LoadedNote>();
   const noteByFolderTitle = new Map<string, LoadedNote>();
+  // Also index by the `YYYY-MM-DD Title` encoded in the FILENAME. Event notes
+  // are named that way (basenameForEvent), so even when a note's calendar
+  // frontmatter was stripped, its filename still identifies which mw event it
+  // backs — this prevents openEventNote from creating a duplicate file.
+  const noteByFilenameKey = new Map<string, LoadedNote>();
   for (const n of notes) {
     if (isRawTextFile(n.filename)) continue;
     const t = n.title.toLowerCase();
@@ -3984,8 +3996,14 @@ export function CardGrid() {
       const fk = `${f.toLowerCase()}|${t}`;
       if (!noteByFolderTitle.has(fk)) noteByFolderTitle.set(fk, n);
     }
+    const fnMatch = n.filename.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)\.md$/i);
+    if (fnMatch) {
+      const fk = `${fnMatch[1]}|${fnMatch[2].toLowerCase()}`;
+      if (!noteByFilenameKey.has(fk)) noteByFilenameKey.set(fk, n);
+    }
   }
 
+  const chipMap = new Map<string, { ev: SpacetimeEvent; notePath: string | null }>();
   const markdownCalendarNotes: NoteMeta[] = (() => {
     const out: NoteMeta[] = [];
     const seen = new Set<string>();
@@ -3993,6 +4011,7 @@ export function CardGrid() {
       const t = ev.title.toLowerCase();
       const backing =
         noteByDateTitle.get(`${ev.date}|${t}`) ??
+        noteByFilenameKey.get(`${ev.date}|${t}`) ??
         (ev.folder ? noteByFolderTitle.get(`${ev.folder.toLowerCase()}|${t}`) : undefined);
 
       // Apply pile / public / pileMode filters. With a backing note we filter
@@ -4027,8 +4046,10 @@ export function CardGrid() {
         ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
         title: ev.title,
       };
+      const path = backing ? backing.path : `mw-event:${ev.date}|${t}`;
+      chipMap.set(path, { ev, notePath: backing ? backing.path : null });
       out.push({
-        path: backing ? backing.path : `mw-event:${ev.date}|${t}`,
+        path,
         filename: backing ? backing.filename : `${ev.date} ${ev.title}.md`,
         title: ev.title,
         frontmatter: fm,
@@ -4037,6 +4058,7 @@ export function CardGrid() {
     }
     return out;
   })();
+  eventChipRef.current = chipMap;
 
   // Todo.txt is a parallel calendar source. Each dated `due:` line
   // becomes a virtual NoteMeta with a synthetic
