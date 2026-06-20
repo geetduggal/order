@@ -2042,9 +2042,11 @@ export function CardGrid() {
   // Track only the Space section of mw so we can skip materialisation when
   // only events changed (e.g. Effect 1 spliced in updated events).
   const lastMwSpaceRef = useRef<string | null>(null);
-  // Authoritative event index from the mw — keyed by "date|title.toLowerCase()".
-  // Everything that needs event metadata (folder, time) reads from here first;
-  // note frontmatter is only used as a fallback for notes not yet in the mw.
+  // Authoritative event list parsed directly from spacetime.mw.
+  // Stored as React state so changes trigger a re-render of calendarNotes.
+  // Everything that needs event metadata reads from here — note frontmatter
+  // is only used as a fallback for events not yet in the mw.
+  const [mwEventList, setMwEventList] = useState<SpacetimeEvent[]>([]);
   const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(new Map());
   useEffect(() => {
     if (!notes) return;
@@ -2057,12 +2059,13 @@ export function CardGrid() {
     if (lastMarkwhenRef.current === null) {
       lastMarkwhenRef.current = mwNote.body;
       lastMwSpaceRef.current = spaceSection;
-      // Populate the event index on cold-boot so display is correct from the
-      // first render, even before the user makes any changes.
+      // Populate the event index and state on cold-boot so the calendar
+      // renders correctly from the first paint.
       const boot = parseMarkwhenFormat(mwNote.body);
       const bootIdx = new Map<string, SpacetimeEvent>();
       for (const ev of boot.events) bootIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
       mwEventIndexRef.current = bootIdx;
+      setMwEventList(boot.events);
       return;
     }
     // Capture old space section BEFORE stamping so rename detection can diff.
@@ -2082,6 +2085,7 @@ export function CardGrid() {
         newIdx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
       }
       mwEventIndexRef.current = newIdx;
+      setMwEventList(parsed.events);
 
       // ---- space: reconcile renames at ALL levels (area → category → folder) ----
       // Diff the previous space tree against the new one; apply renames top-down
@@ -4073,7 +4077,8 @@ export function CardGrid() {
     if (d) noteBackedKeys.add(`${d}|${n.title.toLowerCase()}`);
   }
   const mwOnlyEntries: NoteMeta[] = [];
-  for (const [key, ev] of mwEventIndexRef.current) {
+  for (const ev of mwEventList) {
+    const key = `${ev.date}|${ev.title.toLowerCase()}`;
     if (noteBackedKeys.has(key)) continue;
     const fm: Frontmatter = {
       date: ev.date,
