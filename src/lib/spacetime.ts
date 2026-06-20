@@ -11,7 +11,7 @@
 
 import yaml from "js-yaml";
 import type { VaultTaxonomy, AreaNode, CategoryNode } from "./taxonomy";
-import { type Frontmatter, toIsoDateValue, noteTitle, deriveNoteTitleFromBody } from "./frontmatter";
+import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
 import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
@@ -163,14 +163,6 @@ export function buildSpacetime(
     const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
     const folder = folderOf(n);
     const title = noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
-    // Skip notes whose title is purely filename-derived: no fm.title AND body is
-    // lazy-empty (or has no usable first line). A filename-derived title like
-    // "# 2" or "- 4" is a loop artifact — letting it reach mergeMwEventsWithVault
-    // would add it as a new mw event, restarting the duplication cascade.
-    const hasTitleAuthority =
-      (typeof fm.title === "string" && fm.title.trim().length > 0) ||
-      (n.body.length > 0 && deriveNoteTitleFromBody(n.body) !== null);
-    if (!hasTitleAuthority) continue;
     const ev: SpacetimeEvent = {
       date, title,
       ...(folder ? { folder } : {}),
