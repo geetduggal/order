@@ -2529,6 +2529,17 @@ export function CardGrid() {
         title = note.title;
         d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
         f = noteFolder(note.frontmatter) ?? null;
+        // Defensively resolve any legacy #tag-style folder reference to the
+        // real Notable Folder name. This can happen when Effect 2 ran on a mw
+        // that had an empty Space section (loop corruption), leaving notes
+        // with folder: "[[#order]]" instead of folder: "[[Order]]".
+        if (f && f.startsWith("#")) {
+          const tag = f;
+          const resolved = notableFoldersRef.current?.find(
+            (name) => "#" + name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") === tag
+          );
+          if (resolved) f = resolved;
+        }
       }
     }
     setEventMenu({
