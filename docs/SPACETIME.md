@@ -4,10 +4,13 @@ Spacetime is Order's canonical data format: a minimal map of where your work liv
 (space) and when things happen (time). It is the single source of truth for the vault's
 hierarchy and schedule.
 
-Order is currently evaluating two surface formats for Spacetime — a YAML dialect
-(`spacetime.yml`) and a Markdown-based plain-text format (`spacetime.md`). Both
-represent the same information; Order keeps them in sync. The goal is to converge on
-whichever proves more habitable as a vault scales, particularly for composability.
+Order has two surface formats for Spacetime: a Markwhen-based plain-text format
+(`spacetime.mw`) and a YAML dialect (`spacetime.yml`). They represent the same
+information, but they are **not** co-equal: `spacetime.mw` is the canonical source of
+truth, and `spacetime.yml` is a derived mirror Order keeps current for external/YAML
+readers. Edit the mw; the yml follows. (The Markdown reference below describes the
+same `# Space` / `# Time` structure the `.mw` file uses.) See **Sync model** for how
+hand-edits to `spacetime.mw` are reviewed before they restructure the vault.
 
 ---
 
@@ -386,16 +389,85 @@ No automatic resolution. The user must edit one file to agree with the other.
 
 ## Sync model
 
-- Order regenerates `spacetime.yml` and `spacetime.md` at the vault root continuously
-  as notes change. These root files always reflect the full merged vault state.
-- Editing either root file by hand triggers a re-parse that updates the taxonomy
-  and seasons immediately without needing an explicit "apply" step.
-- Additional `.md` spacetime files anywhere in the vault are included in the vault-wide merge.
-  Adding or editing them updates the merged state after the file watcher fires.
-- Events are always note-backed. Each event is a real `.md` file with content.
-  Spacetime files carry the schedule; the notes carry the substance.
-- New events added to `.md` spacetime files materialize as backing `.md` notes in the
-  appropriate Notable Folder.
-- The "Apply to vault…" button in Settings pushes structural changes (add/remove/
-  reorder folders, edit events) from `spacetime.yml` into the vault's note files
-  after a review step.
+`spacetime.mw` (the Markwhen plain-text surface) at the vault root is the **single
+source of truth** for the hierarchy and schedule. `spacetime.yml` is a derived mirror
+of it, kept current for external/YAML readers. The on-disk directory tree
+(`<Area>/<Category>/<Notable Folder>/`) is expected to match the mw's `# Space`
+section exactly — the mw is authoritative, the directories follow it.
+
+### Display is always live, restructuring is reviewed
+
+Order draws the sidebar taxonomy and the calendar directly from the in-memory parse
+of `spacetime.mw`, so any edit to the mw is reflected in the UI immediately (a live
+preview). What is **not** automatic is changing the vault's files on disk.
+
+When you hand-edit `spacetime.mw` — in Order's editor card or an external editor — and
+pause, Order diffs the edit against the last-applied baseline and, if there are
+structural or seasons changes, opens a **review dialog** instead of silently
+restructuring the vault. The dialog itemizes exactly what would happen (collapsing to
+counts past ~8 items):
+
+- **Rename** a folder/category/area → the matching directory is renamed and inbound
+  `[[wikilinks]]` / `folder:` references are rewritten.
+- **New** folder/category/area → its directory is created.
+- **Remove** a folder → its directory and every file in it is deleted (destructive;
+  shown with a file count and an explicit `Apply (deletes N)` button).
+- **Reorder** siblings → order is recorded (no files move).
+- **Seasons** changes.
+
+From the dialog you can:
+
+- **Apply** — restructure the vault to match the mw, mirror `spacetime.yml`, and
+  advance the baseline. Renames are positional (a removed name paired with an added
+  name at the same parent), matching what the summary showed.
+- **Keep editing** (decline) — your file edits are preserved, nothing on disk changes,
+  and a subtle **"spacetime · N pending"** indicator (bottom-left) stays until you
+  apply. Click it to reopen the review. The baseline is persisted per vault, so the
+  pending state — and the indicator — survive an app reload.
+
+Rules of thumb for what triggers a review:
+
+- **Hand-edits to `spacetime.mw`** that change space or seasons → reviewed.
+- **Event-only** mw edits → no disk consequence, so `spacetime.yml` is mirrored
+  silently with no dialog.
+- **Direct UI manipulation** (sidebar tile drag/add/remove, calendar event
+  create/move/delete) → applied immediately and never reviewed; these advance the
+  baseline as they write, so they never register as "pending."
+
+### Drift flagging (disk vs. mw)
+
+Because the mw is the source of truth, anything on disk that the mw does **not**
+account for is drift. The review dialog lists, under **"On disk but not in
+spacetime.mw,"** every Notable Folder directory missing from the mw space tree (for
+example, a folder removed from the mw whose directory was kept, or stale cruft from
+an earlier bug).
+
+A Notable Folder is recognised **structurally**, never from frontmatter: its main
+document lives at `<Area>/<Category>/<Folder>/<Folder>.md` (the file names its own
+directory), and its Area + Category are read straight from that path. A note's
+`area:` / `category:` frontmatter is irrelevant to placement — the directory tree and
+spacetime.mw are the only authorities.
+
+For each orphan you can:
+
+- **Add to spacetime.mw** — the dialog pre-fills the Area and Category from the
+  folder's location; edit them if you want it filed elsewhere, then add. Order
+  ensures the area, category, and folder all exist in the mw and, if you changed the
+  placement, moves the directory to match. No frontmatter is written.
+- **Remove from disk** — delete the directory and its files (confirmed).
+
+The pending indicator counts these alongside un-applied mw edits, so the two
+representations are never allowed to silently diverge.
+
+### Events
+
+Events are mw-authoritative: the calendar renders straight from `spacetime.mw`, so a
+backing note is not required for an event to appear. Backing notes (`<Notable
+Folder>/YYYY-MM-DD <Title>.md`) are created lazily when you open an event. This avoids
+the two-way create/update loop earlier versions suffered.
+
+### Manual YAML apply
+
+A separate **"Apply spacetime.yml…"** action in Settings still exists for the reverse
+direction: it diffs a hand-edited `spacetime.yml` against the vault and applies the
+plan after its own review. Day to day, prefer editing `spacetime.mw`.

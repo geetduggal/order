@@ -28,7 +28,7 @@ import {
   mwUpdateEvent, mwDeleteEvent, mwAddEvent,
   type SpacetimeEvent, type Spacetime, type SpacetimeSource, type SpaceNode,
 } from "../lib/spacetime";
-import { planSpacetimeSync, summarizePlan, type SyncPlan } from "../lib/spacetime-sync";
+import { planSpacetimeSync, summarizePlan, summarizeMwChanges, type SyncPlan, type MwChangeItem } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
@@ -134,6 +134,25 @@ function readRecentFolders(): string[] {
 }
 function writeRecentFolders(list: string[]): void {
   try { localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify(list.slice(0, RECENT_FOLDERS_MAX))); }
+  catch { /* non-fatal */ }
+}
+
+// spacetime.mw sync baseline: the mw content the vault's on-disk structure
+// currently reflects (i.e. the last applied/accepted version). Persisted per
+// vault root so a declined-but-kept edit still shows the "pending sync"
+// indicator after a reload. Compared against the live mw to detect pending
+// structural changes.
+const MW_BASELINE_KEY = "order.mwSyncBaseline";
+function readMwBaseline(root: string): string | null {
+  try {
+    const raw = localStorage.getItem(MW_BASELINE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return o && o.root === root && typeof o.content === "string" ? o.content : null;
+  } catch { return null; }
+}
+function writeMwBaseline(root: string, content: string): void {
+  try { localStorage.setItem(MW_BASELINE_KEY, JSON.stringify({ root, content })); }
   catch { /* non-fatal */ }
 }
 
@@ -758,6 +777,33 @@ export function CardGrid() {
   }, [vaultTaxonomy]);
   folderDirIndexRef.current = folderDirIndex;
 
+  // Drift detection (spacetime.mw is the source of truth): Notable Folder main
+  // docs that exist on disk but are NOT in the mw space tree. These are cruft —
+  // e.g. a folder removed from spacetime.mw whose directory was kept, or a
+  // stale dir left by an earlier bug. Surfaced in the sync review so the user
+  // can reconcile (remove the directory, or re-add it to spacetime.mw).
+  // A Notable Folder is identified STRUCTURALLY, not by frontmatter: its main
+  // doc lives at `<Area>/<Category>/<Folder>/<Folder>.md` (filename === its own
+  // directory). Area + Category are read straight from the path. The note's
+  // `area:` / `category:` frontmatter is NOT consulted — the directory tree and
+  // spacetime.mw are the only sources of truth.
+  const orphanedFolders = useMemo<{ name: string; path: string; fileCount: number; area: string; category: string }[]>(() => {
+    if (!notes) return [];
+    const out: { name: string; path: string; fileCount: number; area: string; category: string }[] = [];
+    for (const n of notes) {
+      const rel = toVaultRel(n.path);
+      const parts = rel.split("/");
+      if (parts.length !== 4) continue;                       // Area/Category/Folder/Folder.md
+      const folder = parts[2];
+      if (parts[3].replace(/\.md$/i, "") !== folder) continue; // main doc names its own dir
+      if (folderDirIndex.has(folder.toLowerCase())) continue;  // already in spacetime.mw
+      const dir = vaultDir(rel);
+      const fileCount = notes.filter((x) => toVaultRel(x.path).startsWith(dir + "/")).length;
+      out.push({ name: folder, path: n.path, fileCount, area: parts[0], category: parts[1] });
+    }
+    return out;
+  }, [notes, folderDirIndex]);
+
   const cardsSubdir = useCallback(async (): Promise<string> => {
     // Name kept for compat with existing callers — returns the vault
     // root (the "cards" subdir concept has gone away with the new
@@ -1256,6 +1302,19 @@ export function CardGrid() {
   // possibly-stale yml would erase events from the mw. spacetime.yml is then
   // mirrored from the same model so external yml readers stay consistent.
 
+  // ---- spacetime.mw hand-edit review baseline ----
+  // mwBaselineRef holds the mw content the on-disk structure reflects (the
+  // last APPLIED/accepted version). A hand-edit that diverges from it stages
+  // a review (see Effect 2) rather than auto-applying. Declared here so
+  // writeSpacetimeModel can advance it; the rest of the review state lives
+  // further down with Effect 2.
+  const mwBaselineRef = useRef<string | null>(null);
+  const mwVaultRootRef = useRef<string>("");
+  const persistMwBaseline = useCallback((content: string) => {
+    mwBaselineRef.current = content;
+    if (mwVaultRootRef.current) writeMwBaseline(mwVaultRootRef.current, content);
+  }, []);
+
   /** Persist a full Spacetime model to both mw and yml, and optimistically
    *  update the in-memory mw note so the sidebar/calendar recompute now. */
   const writeSpacetimeModel = useCallback(async (next: Spacetime): Promise<void> => {
@@ -1266,9 +1325,13 @@ export function CardGrid() {
     const yml = serializeSpacetime(next);
     lastSpacetimeRef.current = yml;
     await writeVault("spacetime.yml", yml);
+    // Programmatic structure edits (sidebar tiles, calendar) are applied
+    // immediately and ARE the accepted path, so advance the hand-edit review
+    // baseline to match — they must never register as a "pending" mw change.
+    persistMwBaseline(mwContent);
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: mwContent } : n) ?? null);
-  }, []);
+  }, [persistMwBaseline]);
 
   const patchSpacetimeSpace = useCallback(async (mutation: SpaceMutation): Promise<void> => {
     const mw = await readVault("spacetime.mw").catch(() => "");
@@ -2048,18 +2111,13 @@ export function CardGrid() {
     }
 
     // ---- Handle orphaned notable folders ----
-    // The sidebar is fully space-tree-driven (spacetimeTaxonomy), so removing
-    // a folder from spacetime.mw already hides it from Order's UI — no
-    // frontmatter changes needed. We only prompt for disk deletion.
-    for (const { dirPath, displayName } of orphanedFolders) {
+    // A folder removed in this mw edit. reconcileSpaceChanges only runs from
+    // the accepted apply path now, and the review dialog already listed each
+    // removal as destructive ("Remove folder X and its N files") behind an
+    // "Apply (deletes N)" button — so delete directly, no second prompt.
+    for (const { dirPath } of orphanedFolders) {
       if (!(await vaultFs.exists(dirPath))) continue;
-      const ok = await tauriConfirm(
-        `Delete "${displayName}" and all its files from disk?\n\nThe folder was removed from spacetime.mw. Cancel to keep the files on disk.`,
-        { title: "Remove folder from disk?", kind: "warning" },
-      );
-      if (ok) {
-        try { await vaultFs.remove(dirPath); } catch { /* ignore */ }
-      }
+      try { await vaultFs.remove(dirPath); } catch { /* ignore */ }
     }
   }, [notesRef]);
 
@@ -2083,6 +2141,115 @@ export function CardGrid() {
   // Track only the Space section of mw so we can skip materialisation when
   // only events changed (e.g. Effect 1 spliced in updated events).
   const lastMwSpaceRef = useRef<string | null>(null);
+
+  // ---- spacetime.mw hand-edit review (gated structural sync) ----------
+  // (mwBaselineRef / persistMwBaseline are declared earlier, before
+  // writeSpacetimeModel, since that callback advances the baseline.)
+  const mwInitRef = useRef(false);
+  // The staged review (null = no pending changes). `mwBody` is the edited mw
+  // the review describes; applying it advances the baseline to it. The dialog
+  // is NEVER auto-opened — a detected change only lights the bottom-left
+  // indicator, which the user clicks to open the review when ready (so editing
+  // spacetime.mw is never interrupted by a popup).
+  const [mwReview, setMwReview] = useState<{ items: MwChangeItem[]; mwBody: string; destructive: boolean } | null>(null);
+  const [mwReviewOpen, setMwReviewOpen] = useState(false);
+  const [mwApplying, setMwApplying] = useState(false);
+  // Per-orphan Area/Category overrides keyed by note path; defaults come from
+  // the folder's on-disk path. Lets the user re-file an orphan when reconciling.
+  const [orphanEdits, setOrphanEdits] = useState<Record<string, { area: string; category: string }>>({});
+
+  // Count note files under a (to-be-removed) space path, for the deletion
+  // summary. Area/Category dirs carry the raw name and the folder dir the
+  // sanitized one; matching the raw join is good enough for a file count.
+  const countFilesUnder = useCallback((oldPath: string[]): number => {
+    if (oldPath.length === 0) return 0;
+    const prefix = oldPath.join("/") + "/";
+    let n = 0;
+    for (const note of notesRef.current ?? [])
+      if (toVaultRel(note.path).startsWith(prefix)) n++;
+    return n;
+  }, []);
+
+  // Apply an accepted mw hand-edit: restructure the vault to match `mwBody`.
+  // This is the OLD Effect-2 body, now gated behind the review dialog —
+  // reconcile renames, mirror yml, materialize new folder dirs, then advance
+  // the baseline so the change is no longer "pending".
+  const applyMwSync = useCallback(async (mwBody: string): Promise<void> => {
+    setMwApplying(true);
+    try {
+      const baseline = mwBaselineRef.current ?? "";
+      const oldSpace = baseline ? parseMarkwhenFormat(baseline).space : [];
+      const newSt = parseMarkwhenFormat(mwBody);
+      if (newSt.space.length > 0 && oldSpace.length > 0)
+        await reconcileSpaceChanges(oldSpace, newSt.space);
+      const yml = serializeSpacetime(newSt);
+      lastSpacetimeRef.current = yml;
+      await writeVault("spacetime.yml", yml);
+      for (const area of newSt.space)
+        for (const cat of area.children)
+          for (const nf of cat.children) {
+            const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+            const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
+            try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
+            await writeVault(relPath, joinFrontmatter({ category: cat.name, area: area.name }, `# ${nf.name}\n`));
+          }
+      persistMwBaseline(mwBody);
+      await reloadNotes();
+    } finally {
+      setMwApplying(false);
+      setMwReview(null);
+      setMwReviewOpen(false);
+    }
+  }, [reconcileSpaceChanges, reloadNotes, persistMwBaseline]);
+
+  const declineMwSync = useCallback(() => {
+    // Just close the dialog. The file edits and the pending indicator stay
+    // (mwReview is non-null) until the user applies or reverts in the editor.
+    setMwReviewOpen(false);
+  }, []);
+
+  // Reconcile an orphaned folder into spacetime.mw under the chosen Area /
+  // Category (defaulted from its path, editable in the dialog). spacetime.mw is
+  // the source of truth, so we (1) ensure the area, category, and folder all
+  // exist in it, and (2) keep the directory where the space tree says it lives
+  // — if the chosen placement differs from the current location, move the
+  // folder. No frontmatter is written: placement = directory + spacetime.mw.
+  const reconcileOrphan = useCallback(async (path: string, areaIn: string, categoryIn: string) => {
+    const area = areaIn.trim();
+    const category = categoryIn.trim();
+    const note = notesRef.current?.find((n) => n.path === path);
+    if (!note) return;
+    const name = note.filename.replace(/\.md$/i, "");
+    if (!area || !category) { flashCap(`Pick an area and category for ${name}.`); return; }
+    await patchSpacetimeSpace({ kind: "addArea", name: area });
+    await patchSpacetimeSpace({ kind: "addCategory", area, name: category });
+    await patchSpacetimeSpace({ kind: "addFolder", area, category, name });
+    const curDir = vaultDir(toVaultRel(path));
+    const targetDir = `${area}/${category}/${name}`;
+    if (curDir !== targetDir) {
+      try {
+        if (await vaultFs.exists(targetDir)) flashCap(`${name}: ${targetDir} already exists — left in place.`);
+        else await vaultFs.rename(curDir, targetDir);
+      } catch (e) { console.error("orphan move failed", e); }
+    }
+    await reloadNotes();
+  }, [patchSpacetimeSpace, reloadNotes, flashCap]);
+
+  // Reconcile an orphaned folder the destructive way: delete its directory and
+  // every file in it. Confirmed first — this can't be undone.
+  const removeOrphanFolder = useCallback(async (path: string, name: string) => {
+    const ok = await tauriConfirm(
+      `Delete the “${name}” folder and all of its files from disk? It isn't in spacetime.mw. This can't be undone.`,
+      { title: "Remove folder from disk?", kind: "warning" },
+    );
+    if (!ok) return;
+    const dir = vaultDir(toVaultRel(path));
+    if (!dir) return;
+    try { await vaultFs.remove(dir); }
+    catch (e) { console.error("remove orphan folder failed", e); flashCap("Couldn't remove the folder."); return; }
+    await reloadNotes();
+  }, [reloadNotes, flashCap]);
+
   // ---- spacetime.mw is THE source of truth for calendar events --------
   // The event list and its index are derived SYNCHRONOUSLY from the parsed
   // mw during render. spacetime.mw's body is loaded up front
@@ -2126,82 +2293,81 @@ export function CardGrid() {
       toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
   }, []);
 
-  // The mw→vault SIDE-EFFECT sync: when spacetime.mw content changes during
-  // a session, materialize/update backing notes, reconcile space renames,
-  // and mirror to spacetime.yml. Display does NOT depend on this — it only
-  // keeps the vault's backing notes consistent with the mw.
+  // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
+  // no longer applied automatically: when the live mw diverges from the
+  // applied baseline we STAGE a review (the dialog below) — Accept restructures
+  // the vault, Decline keeps the file edits and leaves a pending indicator.
+  // Event-only edits have no disk consequence, so they're mirrored to yml
+  // silently. Programmatic writes (sidebar/calendar) stamp lastMarkwhenRef AND
+  // advance the baseline, so they never reach this path.
   useEffect(() => {
     if (!notes) return;
     const mwNote = notes.find((n) => toVaultRel(n.path) === "spacetime.mw");
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
-    // Cold-boot: stamp refs without syncing. The sync fires only when
-    // content CHANGES during this session.
     const spaceSection = mwNote.body.split("# Time")[0];
     if (lastMarkwhenRef.current === null) {
+      // Cold boot: stamp the change-detector only. The init effect below
+      // establishes the sync baseline and flags any boot-time drift.
       lastMarkwhenRef.current = mwNote.body;
       lastMwSpaceRef.current = spaceSection;
       return;
     }
-    // Capture old space section BEFORE stamping so rename detection can diff.
-    const oldSpaceSection = lastMwSpaceRef.current;
-    // Stamp synchronously before any await.
+    // A real in-memory mw change (hand-edit in the card, or external editor
+    // picked up by the watcher). Stamp the detector before any async work.
     lastMarkwhenRef.current = mwNote.body;
     lastMwSpaceRef.current = spaceSection;
     const mwBody = mwNote.body;
+    const baseline = mwBaselineRef.current ?? mwBody;
+    const items = summarizeMwChanges(
+      parseMarkwhenFormat(baseline),
+      parseMarkwhenFormat(mwBody),
+      countFilesUnder,
+    );
+    if (items.length === 0) {
+      // No structural / seasons change (e.g. only events were edited). Nothing
+      // to restructure on disk — mirror the yml and advance the baseline so the
+      // edit isn't treated as pending, and clear any stale review/mute.
+      void (async () => {
+        const yml = serializeSpacetime(parseMarkwhenFormat(mwBody));
+        lastSpacetimeRef.current = yml;
+        await writeVault("spacetime.yml", yml);
+        persistMwBaseline(mwBody);
+      })();
+      setMwReview(null);
+      return;
+    }
+    // Structural / seasons changes → stage a review (indicator only; the dialog
+    // is opened by the user, never auto-popped, so it can't interrupt editing).
+    setMwReview({ items, mwBody, destructive: items.some((i) => i.destructive) });
+  }, [notes, countFilesUnder, persistMwBaseline]);
+
+  // First-load baseline + boot-time drift flag. Establishes the sync baseline
+  // from localStorage (per vault root); if the persisted baseline differs from
+  // the mw on disk (a previously-declined-but-kept edit), surface it as a
+  // pending review — indicator only, no auto-popped dialog on launch.
+  useEffect(() => {
+    if (mwInitRef.current || !notes) return;
+    const mwNote = notes.find((n) => toVaultRel(n.path) === "spacetime.mw");
+    if (!mwNote?.body) return;
+    mwInitRef.current = true;
+    const mwBody = mwNote.body;
     void (async () => {
-      const parsed = parseMarkwhenFormat(mwBody);
-      // Display reads from the mwEvents/mwEventIndex memos (derived in render),
-      // so this side-effect path no longer needs to feed the index.
-
-      // ---- space: reconcile renames at ALL levels (area → category → folder) ----
-      // Diff the previous space tree against the new one; apply renames top-down
-      // so paths remain consistent as each level is processed.
-      if (parsed.space.length > 0 && oldSpaceSection) {
-        const oldSpace = parseMarkwhenFormat(oldSpaceSection + "\n# Time\n").space;
-        if (oldSpace.length > 0) {
-          await reconcileSpaceChanges(oldSpace, parsed.space);
+      const root = await vaultRoot().catch(() => "");
+      mwVaultRootRef.current = root;
+      const stored = root ? readMwBaseline(root) : null;
+      mwBaselineRef.current = stored ?? mwBody;
+      if (stored === null && root) writeMwBaseline(root, mwBody); // first run: disk reflects mw
+      if (stored !== null && stored !== mwBody) {
+        const items = summarizeMwChanges(
+          parseMarkwhenFormat(stored), parseMarkwhenFormat(mwBody), countFilesUnder,
+        );
+        if (items.length > 0) {
+          setMwReview({ items, mwBody, destructive: items.some((i) => i.destructive) });
         }
       }
-
-      // ---- mirror the full mw → spacetime.yml ----
-      // The mw is the source of truth, so the yml is a straight mirror of it
-      // (space + seasons + events). Effect 1 used to own yml events; now that
-      // it's gone, Effect 2 keeps the whole yml in sync with the mw.
-      const merged: Spacetime = parsed;
-      const yml = serializeSpacetime(merged);
-      lastSpacetimeRef.current = yml;
-      await writeVault("spacetime.yml", yml);
-
-      // ---- space: materialise new Notable Folders on disk ----
-      // Existence is checked by reading from disk (avoids the notesRef lag
-      // that caused repeated creation). Safe to run on every mw edit because
-      // Effect 1 no longer writes mw — Effect 2 only fires on explicit user edits.
-      if (parsed.space.length > 0) {
-        for (const area of merged.space) {
-          for (const cat of area.children) {
-            for (const nf of cat.children) {
-              const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
-              const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
-              try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
-              const fm: Frontmatter = { category: cat.name, area: area.name };
-              await writeVault(relPath, joinFrontmatter(fm, `# ${nf.name}\n`));
-            }
-          }
-        }
-      }
-
-      // ---- events ----
-      // No event note sync here. The calendar renders directly from the mw
-      // (mwEvents), so backing notes are NOT required for an event to display,
-      // and their calendar frontmatter is never load-bearing. Backing notes
-      // are created lazily when the user opens an event (openEventNote), and
-      // event edits write the mw directly. This deliberately drops the old
-      // two-way create/update/strip passes that caused the duplication loop
-      // and the date-stripping bugs.
-      await reloadNotes();
     })();
-  }, [notes, reconcileSpaceChanges]);
+  }, [notes, countFilesUnder]);
 
   // ---- markwhen → backing notes ---------------------------------
   // A note with `markwhen: true` carries a markwhen timeline in its body.
@@ -3637,12 +3803,22 @@ export function CardGrid() {
     for (const c of a.categories) areaByCategory.set(c.ref, a.ref);
   }
 
+  // Area + Category come from the PATH, not frontmatter: a note inside
+  // `<Area>/<Category>/<Folder>/…` belongs to that Area and Category. Frontmatter
+  // is only a fallback for loose notes that don't live inside a folder directory.
   function inferredArea(n: LoadedNote): string {
+    const parts = toVaultRel(n.path).split("/");
+    if (parts.length >= 4) return parts[parts.length - 4];
     const yaml = parseRef(n.frontmatter.area);
     if (yaml) return yaml;
     const cat = parseRef(n.frontmatter.category);
     if (cat) return areaByCategory.get(cat) ?? "";
     return "";
+  }
+  function inferredCategory(n: LoadedNote): string {
+    const parts = toVaultRel(n.path).split("/");
+    if (parts.length >= 4) return parts[parts.length - 3];
+    return parseRef(n.frontmatter.category) ?? "";
   }
 
   // Seasons: prefer spacetime.yml when it carries season records; fall back
@@ -3661,7 +3837,7 @@ export function CardGrid() {
     .map((n) => ({
       name: n.filename.replace(/\.md$/, ""),
       area: inferredArea(n),
-      category: parseRef(n.frontmatter.category) ?? "",
+      category: inferredCategory(n),
       frontmatter: n.frontmatter,
       path: n.path,
     }));
@@ -3836,8 +4012,8 @@ export function CardGrid() {
         externalBodyVersion={externalChangeVersion[n.path] ?? 0}
         permalink={permalink}
         color={c}
-        area={isMain ? inferredArea(n) ?? undefined : undefined}
-        category={isMain ? parseRef(n.frontmatter.category) ?? undefined : undefined}
+        area={isMain ? inferredArea(n) || undefined : undefined}
+        category={isMain ? inferredCategory(n) || undefined : undefined}
         currentFolder={isMain ? undefined : effectiveFolder(n)}
         availableFolders={availableFolderRefs}
         onSetFrontmatter={(patch) => handleSetFrontmatter(n.path, patch)}
@@ -4719,6 +4895,101 @@ export function CardGrid() {
               )}
             </div>
           </div>
+        );
+      })()}
+
+      {/* spacetime.mw review: gated structural sync + on-disk drift flags. */}
+      {mwReviewOpen && (mwReview || orphanedFolders.length > 0) && (() => {
+        const items = mwReview?.items ?? [];
+        const dangerCount = items.filter((i) => i.destructive).length;
+        return (
+          <div className="settings-overlay" role="dialog" aria-label="Review spacetime.mw changes" onMouseDown={() => !mwApplying && setMwReviewOpen(false)}>
+            <div className="settings-panel mw-review-panel" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="settings-head">
+                <h2 className="settings-title">spacetime.mw changed</h2>
+                <button type="button" className="settings-close" onClick={() => setMwReviewOpen(false)} disabled={mwApplying} aria-label="Close">✕</button>
+              </div>
+
+              <div className="mw-review-body">
+                {mwReview && (
+                  <section className="mw-review-section">
+                    <p className="mw-review-lead">{items.length} change{items.length === 1 ? "" : "s"} to apply to your vault.</p>
+                    <ul className="mw-change-list">
+                      {items.map((it, idx) => (
+                        <li key={idx} className={"mw-change" + (it.destructive ? " is-delete" : "")}>
+                          <span className={"mw-change-kind kind-" + it.kind}>{it.kind}</span>
+                          <span className="mw-change-text">{it.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+              {orphanedFolders.length > 0 && (
+                <div className="sync-deletes">
+                  <strong>On disk but not in spacetime.mw:</strong>
+                  <p className="mw-orphan-hint">Set where each belongs, then add it to spacetime.mw — placement comes from the folder's location, never frontmatter.</p>
+                  <datalist id="mw-area-options">
+                    {vaultTaxonomy.areas.map((a) => <option key={a.ref} value={a.ref} />)}
+                  </datalist>
+                  <datalist id="mw-cat-options">
+                    {vaultTaxonomy.areas.flatMap((a) => a.categories.map((c) => <option key={`${a.ref}/${c.ref}`} value={c.ref} />))}
+                  </datalist>
+                  <ul>
+                    {orphanedFolders.map((o) => {
+                      const edit = orphanEdits[o.path] ?? { area: o.area, category: o.category };
+                      const setEdit = (patch: Partial<{ area: string; category: string }>) =>
+                        setOrphanEdits((prev) => ({ ...prev, [o.path]: { ...edit, ...patch } }));
+                      return (
+                        <li key={o.path} className="mw-orphan-row">
+                          <span className="mw-orphan-name">📁 {o.name}{o.fileCount > 0 ? ` (${o.fileCount} file${o.fileCount === 1 ? "" : "s"})` : ""}</span>
+                          <span className="mw-orphan-fields">
+                            <input className="mw-orphan-input" list="mw-area-options" placeholder="Area" value={edit.area} disabled={mwApplying} onChange={(e) => setEdit({ area: e.target.value })} />
+                            <span className="mw-orphan-sep">›</span>
+                            <input className="mw-orphan-input" list="mw-cat-options" placeholder="Category" value={edit.category} disabled={mwApplying} onChange={(e) => setEdit({ category: e.target.value })} />
+                          </span>
+                          <span className="mw-orphan-actions">
+                            <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void reconcileOrphan(o.path, edit.area, edit.category); }}>Add to spacetime.mw</button>
+                            <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanFolder(o.path, o.name); }}>Remove from disk</button>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+              </div>
+
+              <div className="settings-actions">
+                {mwReview ? (
+                  <>
+                    <button type="button" className="settings-btn" onClick={declineMwSync} disabled={mwApplying}>Keep editing</button>
+                    <button type="button" className={"settings-btn" + (dangerCount > 0 ? " is-danger" : "")} onClick={() => { if (mwReview) void applyMwSync(mwReview.mwBody); }} disabled={mwApplying}>
+                      {mwApplying ? "Applying…" : dangerCount > 0 ? `Apply (deletes ${dangerCount})` : "Apply"}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="settings-btn" onClick={() => setMwReviewOpen(false)} disabled={mwApplying}>Close</button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Subtle reminder when there are unsynced spacetime.mw changes or drift. */}
+      {!mwReviewOpen && (mwReview || orphanedFolders.length > 0) && (() => {
+        const n = (mwReview?.items.length ?? 0) + orphanedFolders.length;
+        return (
+          <button
+            type="button"
+            className="mw-pending-indicator"
+            onClick={() => setMwReviewOpen(true)}
+            title="spacetime.mw has unsynced changes — click to review"
+          >
+            <span className="mw-pending-dot" />
+            spacetime · {n} pending
+          </button>
         );
       })()}
 
