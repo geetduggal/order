@@ -1958,23 +1958,34 @@ export function CardGrid() {
   ): Promise<void> => {
     const san = (n: string) => n.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
 
-    type Named = { name: string; safe: string };
+    type Named = { name: string; safe: string; key: string };
     type RenamePair = { old: Named; new: Named };
 
-    // Returns rename pairs (positional) plus items in old that have no new match.
+    // Identity is the NORMALIZED match key (folderMatchKey): em-dash vs
+    // hyphen vs NBSP, and the 78-char directory truncation, all collapse to
+    // one identity — so re-serializing the mw with a different dash (or a
+    // long name vs its truncated dir) is NEVER seen as a rename.
+    //
+    // A rename is inferred ONLY when it is unambiguous: exactly one folder
+    // disappeared and exactly one appeared. Positionally zipping multiple
+    // removed/added entries pairs UNRELATED folders and renames one dir
+    // (and its content) onto another's name — that is what scrambled
+    // article folders. When it's ambiguous we rename nothing; the removed
+    // entries fall through as orphans (non-destructive — files stay put).
     function computeRenames(
       oldItems: Named[],
       newItems: Named[],
     ): { pairs: RenamePair[]; orphaned: Named[] } {
-      const newSafes = new Set(newItems.map((i) => i.safe));
-      const oldSafes = new Set(oldItems.map((i) => i.safe));
-      const removed = oldItems.filter((i) => !newSafes.has(i.safe));
-      const added   = newItems.filter((i) => !oldSafes.has(i.safe));
-      const pairs: RenamePair[] = [];
-      for (let i = 0; i < Math.min(removed.length, added.length); i++) {
-        pairs.push({ old: removed[i], new: added[i] });
-      }
-      return { pairs, orphaned: removed.slice(pairs.length) };
+      const newKeys = new Set(newItems.map((i) => i.key));
+      const oldKeys = new Set(oldItems.map((i) => i.key));
+      const removed = oldItems.filter((i) => !newKeys.has(i.key));
+      const added   = newItems.filter((i) => !oldKeys.has(i.key));
+      const pairs: RenamePair[] =
+        removed.length === 1 && added.length === 1
+          ? [{ old: removed[0], new: added[0] }]
+          : [];
+      const orphaned = removed.filter((r) => !pairs.some((p) => p.old === r));
+      return { pairs, orphaned };
     }
 
     const list = notesRef.current ?? [];
@@ -1982,8 +1993,8 @@ export function CardGrid() {
 
     // ---- Area renames ----
     const { pairs: areaRenames } = computeRenames(
-      oldSpace.map((a) => ({ name: a.name, safe: san(a.name) })),
-      newSpace.map((a) => ({ name: a.name, safe: san(a.name) })),
+      oldSpace.map((a) => ({ name: a.name, safe: san(a.name), key: folderMatchKey(a.name) })),
+      newSpace.map((a) => ({ name: a.name, safe: san(a.name), key: folderMatchKey(a.name) })),
     );
     for (const { old: oldA, new: newA } of areaRenames) {
       if (!(await vaultFs.exists(oldA.safe)) || (await vaultFs.exists(newA.safe))) continue;
@@ -2002,14 +2013,15 @@ export function CardGrid() {
     // ---- Category and folder renames ----
     for (const newArea of newSpace) {
       const newAreaSafe = san(newArea.name);
-      const areaRename = areaRenames.find((r) => r.new.safe === newAreaSafe);
-      const oldAreaSafe = areaRename ? areaRename.old.safe : newAreaSafe;
-      const oldArea = oldSpace.find((a) => san(a.name) === oldAreaSafe);
+      const newAreaKey = folderMatchKey(newArea.name);
+      const areaRename = areaRenames.find((r) => r.new.key === newAreaKey);
+      const oldAreaKey = areaRename ? areaRename.old.key : newAreaKey;
+      const oldArea = oldSpace.find((a) => folderMatchKey(a.name) === oldAreaKey);
       if (!oldArea) continue;
 
       const { pairs: catRenames } = computeRenames(
-        oldArea.children.map((c) => ({ name: c.name, safe: san(c.name) })),
-        newArea.children.map((c) => ({ name: c.name, safe: san(c.name) })),
+        oldArea.children.map((c) => ({ name: c.name, safe: san(c.name), key: folderMatchKey(c.name) })),
+        newArea.children.map((c) => ({ name: c.name, safe: san(c.name), key: folderMatchKey(c.name) })),
       );
       for (const { old: oldC, new: newC } of catRenames) {
         const oldCatPath = `${newAreaSafe}/${oldC.safe}`;
@@ -2029,9 +2041,10 @@ export function CardGrid() {
 
       for (const newCat of newArea.children) {
         const newCatSafe = san(newCat.name);
-        const catRename = catRenames.find((r) => r.new.safe === newCatSafe);
-        const oldCatSafe = catRename ? catRename.old.safe : newCatSafe;
-        const oldCat = oldArea.children.find((c) => san(c.name) === oldCatSafe);
+        const newCatKey = folderMatchKey(newCat.name);
+        const catRename = catRenames.find((r) => r.new.key === newCatKey);
+        const oldCatKey = catRename ? catRename.old.key : newCatKey;
+        const oldCat = oldArea.children.find((c) => folderMatchKey(c.name) === oldCatKey);
         if (!oldCat) continue;
 
         // Renames only — applying an mw edit is NON-DESTRUCTIVE. A folder
@@ -2039,8 +2052,8 @@ export function CardGrid() {
         // (on disk, not in spacetime.mw) that the user resolves explicitly in
         // the review's "On disk but not in spacetime.mw" section.
         const { pairs: folderRenames } = computeRenames(
-          oldCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
-          newCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
+          oldCat.children.map((f) => ({ name: f.name, safe: san(f.name), key: folderMatchKey(f.name) })),
+          newCat.children.map((f) => ({ name: f.name, safe: san(f.name), key: folderMatchKey(f.name) })),
         );
 
         for (const { old: oldF, new: newF } of folderRenames) {
@@ -2170,6 +2183,12 @@ export function CardGrid() {
       for (const area of newSt.space)
         for (const cat of area.children)
           for (const nf of cat.children) {
+            // Skip if a folder for this node already exists under ANY name
+            // variant. folderMatchKey is truncation- AND dash-aware, so a
+            // folder whose full name exceeds the 78-char dir cap still matches.
+            // Without this the truncated relPath below wouldn't find it and we'd
+            // spawn an empty truncated duplicate (the Apply-creates-stubs bug).
+            if (folderDirIndexRef.current?.has(folderMatchKey(nf.name))) continue;
             const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
             const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
             try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
@@ -2254,7 +2273,7 @@ export function CardGrid() {
   // every file in it. Confirmed first — this can't be undone.
   const removeOrphanFolder = useCallback(async (path: string, name: string) => {
     const ok = await tauriConfirm(
-      `Delete the “${name}” folder and all of its files from disk? It isn't in spacetime.mw. This can't be undone.`,
+      `Delete the “${name}” folder and all of its files from disk? It isn't in spacetime. This can't be undone.`,
       { title: "Remove folder from disk?", kind: "warning" },
     );
     if (!ok) return;
@@ -4849,7 +4868,7 @@ export function CardGrid() {
               onPick: () => { void openTodoTxt(); },
             }] : []),
             {
-              label: "spacetime.mw",
+              label: "spacetime",
               keywords: "spacetime mw markwhen space time",
               hint: "spacetime · Markwhen",
               onPick: () => { void openSpacetimeMw(); setPaletteOpen(false); },
@@ -4956,10 +4975,10 @@ export function CardGrid() {
         const items = (mwReview?.items ?? []).filter((i) => i.kind !== "remove");
         const dangerCount = items.filter((i) => i.destructive).length;
         return (
-          <div className="settings-overlay" role="dialog" aria-label="Review spacetime.mw changes" onMouseDown={() => !mwApplying && setMwReviewOpen(false)}>
+          <div className="settings-overlay" role="dialog" aria-label="Review spacetime changes" onMouseDown={() => !mwApplying && setMwReviewOpen(false)}>
             <div className="settings-panel mw-review-panel" onMouseDown={(e) => e.stopPropagation()}>
               <div className="settings-head">
-                <h2 className="settings-title">spacetime.mw changed</h2>
+                <h2 className="settings-title">spacetime changed</h2>
                 <button type="button" className="settings-close" onClick={() => setMwReviewOpen(false)} disabled={mwApplying} aria-label="Close">✕</button>
               </div>
 
@@ -4980,8 +4999,8 @@ export function CardGrid() {
 
               {orphanedFolders.length > 0 && (
                 <div className="sync-deletes">
-                  <strong>On disk but not in spacetime.mw:</strong>
-                  <p className="mw-orphan-hint">Set where each belongs, then add it to spacetime.mw — placement comes from the folder's location, never frontmatter.</p>
+                  <strong>On disk but not in spacetime:</strong>
+                  <p className="mw-orphan-hint">Set where each belongs, then add it to spacetime — placement comes from the folder's location, never frontmatter.</p>
                   <datalist id="mw-area-options">
                     {vaultTaxonomy.areas.map((a) => <option key={a.ref} value={a.ref} />)}
                   </datalist>
@@ -5002,7 +5021,7 @@ export function CardGrid() {
                             <input className="mw-orphan-input" list="mw-cat-options" placeholder="Category" value={edit.category} disabled={mwApplying} onChange={(e) => setEdit({ category: e.target.value })} />
                           </span>
                           <span className="mw-orphan-actions">
-                            <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void reconcileOrphan(o.path, edit.area, edit.category); }}>Add to spacetime.mw</button>
+                            <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void reconcileOrphan(o.path, edit.area, edit.category); }}>Add to spacetime</button>
                             <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanFolder(o.path, o.name); }}>Remove from disk</button>
                           </span>
                         </li>
@@ -5038,7 +5057,7 @@ export function CardGrid() {
             type="button"
             className="mw-pending-indicator"
             onClick={() => setMwReviewOpen(true)}
-            title="spacetime.mw has unsynced changes — click to review"
+            title="spacetime has unsynced changes — click to review"
           >
             <span className="mw-pending-dot" />
             spacetime · {n} pending
