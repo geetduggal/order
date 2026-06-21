@@ -422,11 +422,11 @@ function LineRow({
   const Wrapper = expansion ? "section" : "div";
   return (
     <Wrapper
-      className={(expansion ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "") + (draggable ? " draggable" : "")}
+      className={(expansion ? "list-line-section" : "list-line") + (dragging ? " is-dragging" : "") + (draggable ? " draggable" : "") + (editingTitle ? " is-input" : "")}
       data-tile-ref={item.ref}
       onPointerDown={draggable ? (e) => onTilePointerDown(e, item.ref) : undefined}
     >
-    <div className={"list-line" + (dragging && !expansion ? " is-dragging" : "")}>
+    <div className={"list-line" + (dragging && !expansion ? " is-dragging" : "") + (editingTitle ? " is-input" : "")}>
       {draggable && (
         <span className="lr-handle" title="Drag to reorder">
           <GripVertical size={14} strokeWidth={1.6} />

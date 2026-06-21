@@ -35,7 +35,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, isNotableFolder, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isNotableFolder, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import {
   DEFAULT_TODO_TXT_PATH,
   eventKey,
@@ -571,7 +571,7 @@ export function CardGrid() {
   const effectiveFolder = useCallback((n: LoadedNote): string | null => {
     const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
     if (parent) {
-      const canonical = folderDirIndexRef.current.get(parent.toLowerCase());
+      const canonical = folderDirIndexRef.current.get(folderMatchKey(parent));
       if (canonical) return canonical;
     }
     return noteFolder(n.frontmatter);
@@ -765,14 +765,10 @@ export function CardGrid() {
   // it lives in. Keyed by both the raw and the filesystem-sanitized name (the
   // directory uses the sanitized form, e.g. "Foo: Bar" → "Foo- Bar").
   const folderDirIndex = useMemo(() => {
-    const san = (s: string) => s.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
     const m = new Map<string, string>();
     for (const a of vaultTaxonomy.areas)
       for (const c of a.categories)
-        for (const f of c.folders) {
-          m.set(f.toLowerCase(), f);
-          m.set(san(f).toLowerCase(), f);
-        }
+        for (const f of c.folders) m.set(folderMatchKey(f), f);
     return m;
   }, [vaultTaxonomy]);
   folderDirIndexRef.current = folderDirIndex;
@@ -796,7 +792,7 @@ export function CardGrid() {
       if (parts.length !== 4) continue;                       // Area/Category/Folder/Folder.md
       const folder = parts[2];
       if (parts[3].replace(/\.md$/i, "") !== folder) continue; // main doc names its own dir
-      if (folderDirIndex.has(folder.toLowerCase())) continue;  // already in spacetime.mw
+      if (folderDirIndex.has(folderMatchKey(folder))) continue; // already in spacetime.mw (normalized + truncation-aware)
       const dir = vaultDir(rel);
       const fileCount = notes.filter((x) => toVaultRel(x.path).startsWith(dir + "/")).length;
       out.push({ name: folder, path: n.path, fileCount, area: parts[0], category: parts[1] });
@@ -1984,10 +1980,6 @@ export function CardGrid() {
     const list = notesRef.current ?? [];
     const folderRefRe = /^\[\[([^\]]+)\]\]$/;
 
-    // Collect orphaned notable folders across all categories so we can
-    // handle them after all renames complete (paths may shift during renames).
-    const orphanedFolders: Array<{ dirPath: string; displayName: string }> = [];
-
     // ---- Area renames ----
     const { pairs: areaRenames } = computeRenames(
       oldSpace.map((a) => ({ name: a.name, safe: san(a.name) })),
@@ -2042,19 +2034,14 @@ export function CardGrid() {
         const oldCat = oldArea.children.find((c) => san(c.name) === oldCatSafe);
         if (!oldCat) continue;
 
-        const { pairs: folderRenames, orphaned: orphanedHere } = computeRenames(
+        // Renames only — applying an mw edit is NON-DESTRUCTIVE. A folder
+        // dropped from the mw is NOT deleted here; it simply becomes an orphan
+        // (on disk, not in spacetime.mw) that the user resolves explicitly in
+        // the review's "On disk but not in spacetime.mw" section.
+        const { pairs: folderRenames } = computeRenames(
           oldCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
           newCat.children.map((f) => ({ name: f.name, safe: san(f.name) })),
         );
-
-        // Queue orphaned (removed-not-renamed) folders from this category.
-        // After area+cat renames, their dirs live under newAreaSafe/newCatSafe/.
-        for (const orphan of orphanedHere) {
-          orphanedFolders.push({
-            dirPath:     `${newAreaSafe}/${newCatSafe}/${orphan.safe}`,
-            displayName: orphan.name,
-          });
-        }
 
         for (const { old: oldF, new: newF } of folderRenames) {
           const oldFolderPath = `${newAreaSafe}/${newCatSafe}/${oldF.safe}`;
@@ -2110,15 +2097,8 @@ export function CardGrid() {
       }
     }
 
-    // ---- Handle orphaned notable folders ----
-    // A folder removed in this mw edit. reconcileSpaceChanges only runs from
-    // the accepted apply path now, and the review dialog already listed each
-    // removal as destructive ("Remove folder X and its N files") behind an
-    // "Apply (deletes N)" button — so delete directly, no second prompt.
-    for (const { dirPath } of orphanedFolders) {
-      if (!(await vaultFs.exists(dirPath))) continue;
-      try { await vaultFs.remove(dirPath); } catch { /* ignore */ }
-    }
+    // No folder deletion here: applying an mw edit never removes files. Folders
+    // dropped from the mw stay on disk as orphans for explicit reconciliation.
   }, [notesRef]);
 
   // ---- spacetime.mw → spacetime.yml sync -------------------------
@@ -2158,12 +2138,14 @@ export function CardGrid() {
   // the folder's on-disk path. Lets the user re-file an orphan when reconciling.
   const [orphanEdits, setOrphanEdits] = useState<Record<string, { area: string; category: string }>>({});
 
-  // Count note files under a (to-be-removed) space path, for the deletion
-  // summary. Area/Category dirs carry the raw name and the folder dir the
-  // sanitized one; matching the raw join is good enough for a file count.
+  // Count note files under a space path. The Area/Category segments use raw
+  // names, but the leaf folder directory is sanitized + truncated to 78 chars,
+  // so the leaf must go through folderDirName or the prefix won't match (and
+  // the rename guard / file count would read 0).
   const countFilesUnder = useCallback((oldPath: string[]): number => {
     if (oldPath.length === 0) return 0;
-    const prefix = oldPath.join("/") + "/";
+    const segs = oldPath.map((s, i) => (i === oldPath.length - 1 ? folderDirName(s) : s));
+    const prefix = segs.join("/") + "/";
     let n = 0;
     for (const note of notesRef.current ?? [])
       if (toVaultRel(note.path).startsWith(prefix)) n++;
@@ -2209,11 +2191,13 @@ export function CardGrid() {
   }, []);
 
   // Reconcile an orphaned folder into spacetime.mw under the chosen Area /
-  // Category (defaulted from its path, editable in the dialog). spacetime.mw is
-  // the source of truth, so we (1) ensure the area, category, and folder all
-  // exist in it, and (2) keep the directory where the space tree says it lives
-  // — if the chosen placement differs from the current location, move the
-  // folder. No frontmatter is written: placement = directory + spacetime.mw.
+  // Category (defaulted from its path, editable in the dialog). Placement lives
+  // in the directory tree + spacetime.mw, never frontmatter. Since the folder's
+  // directory already exists on disk, we add it to BOTH the live mw AND the
+  // baseline (the baseline reflects the disk), so it stops being an orphan
+  // without generating a spurious "add" and without absorbing other un-applied
+  // mw edits. Idempotent: a folder already present (by normalized key) is never
+  // duplicated.
   const reconcileOrphan = useCallback(async (path: string, areaIn: string, categoryIn: string) => {
     const area = areaIn.trim();
     const category = categoryIn.trim();
@@ -2221,19 +2205,50 @@ export function CardGrid() {
     if (!note) return;
     const name = note.filename.replace(/\.md$/i, "");
     if (!area || !category) { flashCap(`Pick an area and category for ${name}.`); return; }
-    await patchSpacetimeSpace({ kind: "addArea", name: area });
-    await patchSpacetimeSpace({ kind: "addCategory", area, name: category });
-    await patchSpacetimeSpace({ kind: "addFolder", area, category, name });
+    const key = folderMatchKey(name);
+    const hasFolder = (space: SpaceNode[]) =>
+      space.some((a) => a.children.some((c) => c.children.some((f) => folderMatchKey(f.name) === key)));
+    const addAll = (space: SpaceNode[]) =>
+      applySpaceMutation(
+        applySpaceMutation(
+          applySpaceMutation(space, { kind: "addArea", name: area }),
+          { kind: "addCategory", area, name: category }),
+        { kind: "addFolder", area, category, name });
+
+    const mwAbs = notesRef.current?.find((n) => toVaultRel(n.path) === "spacetime.mw")?.path;
+    const mw = await readVault("spacetime.mw").catch(() => "");
+    const cur = parseMarkwhenFormat(mw);
+    const next = hasFolder(cur.space) ? mw : serializeMarkwhen({ ...cur, space: addAll(cur.space) });
+    // Mirror the same add into the baseline (the directory exists, so the disk
+    // already reflects this folder) — keeps it from showing as a pending add.
+    if (mwBaselineRef.current) {
+      const base = parseMarkwhenFormat(mwBaselineRef.current);
+      if (!hasFolder(base.space)) persistMwBaseline(serializeMarkwhen({ ...base, space: addAll(base.space) }));
+    }
+
+    // Move the directory only if the chosen placement differs from where it is.
     const curDir = vaultDir(toVaultRel(path));
     const targetDir = `${area}/${category}/${name}`;
-    if (curDir !== targetDir) {
+    let moved = false;
+    if (curDir && curDir !== targetDir) {
       try {
         if (await vaultFs.exists(targetDir)) flashCap(`${name}: ${targetDir} already exists — left in place.`);
-        else await vaultFs.rename(curDir, targetDir);
+        else { await vaultFs.rename(curDir, targetDir); moved = true; }
       } catch (e) { console.error("orphan move failed", e); }
     }
-    await reloadNotes();
-  }, [patchSpacetimeSpace, reloadNotes, flashCap]);
+
+    if (next !== mw) await writeVault("spacetime.mw", next);
+    if (moved) {
+      await reloadNotes();
+    } else {
+      // Update in place and refresh the open editor card so it shows the add
+      // (and doesn't clobber it on its next autosave). Don't stamp
+      // lastMarkwhenRef — let the detector recompute the (now smaller) review.
+      setNotes((prev) => prev?.map((n) =>
+        toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
+      if (mwAbs) { delete focusedKeyVersionRef.current[mwAbs]; bumpExternal([mwAbs]); }
+    }
+  }, [reloadNotes, flashCap, persistMwBaseline, bumpExternal]);
 
   // Reconcile an orphaned folder the destructive way: delete its directory and
   // every file in it. Confirmed first — this can't be undone.
@@ -3843,9 +3858,37 @@ export function CardGrid() {
     }));
   notableFoldersRef.current = notableFolders.map((f) => f.name);
 
+  // The hierarchy comes from spacetime.mw, NOT note frontmatter. Build the
+  // folder list straight from the mw space tree (vaultTaxonomy), attaching each
+  // folder's on-disk main document (matched by normalized key, truncation/dash
+  // aware) only for navigation + color. A folder present in the mw shows even
+  // if its main doc lacks `category`/`folder` frontmatter, and order follows
+  // the mw exactly. This is the source of truth for the sidebar + folder picker.
+  const mainDocByFolderKey = new Map<string, LoadedNote>();
+  for (const n of notes) {
+    const parts = toVaultRel(n.path).split("/");
+    if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2]) {
+      mainDocByFolderKey.set(folderMatchKey(parts[2]), n);
+    }
+  }
+  const mwFolders: NotableFolder[] = vaultTaxonomy.areas.flatMap((a) =>
+    a.categories.flatMap((c) =>
+      c.folders.map((f) => {
+        const doc = mainDocByFolderKey.get(folderMatchKey(f));
+        return {
+          name: f,
+          area: a.ref,
+          category: c.ref,
+          frontmatter: doc?.frontmatter ?? {},
+          path: doc?.path ?? `${a.ref}/${c.ref}/${f}`,
+        };
+      }),
+    ),
+  );
+
   // Flat list of folder names + their deterministic colors, fed to the
-  // folder picker in each non-Notable card's footer.
-  const availableFolderRefs = notableFolders.map((f) => ({
+  // folder picker in each non-Notable card's footer — also mw-sourced.
+  const availableFolderRefs = mwFolders.map((f) => ({
     name: f.name,
     color: folderColor(f.name, f.frontmatter.color),
   }));
@@ -3948,6 +3991,13 @@ export function CardGrid() {
       const m = String(raw.getUTCMonth() + 1).padStart(2, "0");
       const day = String(raw.getUTCDate()).padStart(2, "0");
       d = `${y}-${m}-${day}`;
+    } else {
+      // No `date` frontmatter (Geets / articles carry the date in the
+      // FILENAME — "YYYY-MM-DD - Title"). Fall back to that leading date so
+      // they sort chronologically alongside dated notes instead of sinking
+      // to the bottom as 0000-00-00.
+      const m = n.filename.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (m) d = m[1];
     }
     const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
     return `${d} ${t}`;
@@ -4717,7 +4767,7 @@ export function CardGrid() {
         <Sidebar
           view={view}
           onSelectView={setView}
-          folders={notableFolders}
+          folders={mwFolders}
           // Sidebar folder click is a real toggle now: filtered → unfilter
           // (drop the include pill); not filtered → switch to the Pile,
           // add the include, and scroll to the NF's main doc.
@@ -4786,7 +4836,7 @@ export function CardGrid() {
 
       {paletteOpen && (
         <CommandPalette
-          folders={notableFolders}
+          folders={mwFolders}
           selected={includeSet}
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
@@ -4900,7 +4950,10 @@ export function CardGrid() {
 
       {/* spacetime.mw review: gated structural sync + on-disk drift flags. */}
       {mwReviewOpen && (mwReview || orphanedFolders.length > 0) && (() => {
-        const items = mwReview?.items ?? [];
+        // Removals aren't applied (apply is non-destructive) — a dropped folder
+        // becomes an orphan, shown in the section below. So the apply list shows
+        // only renames / adds / reorders / seasons.
+        const items = (mwReview?.items ?? []).filter((i) => i.kind !== "remove");
         const dangerCount = items.filter((i) => i.destructive).length;
         return (
           <div className="settings-overlay" role="dialog" aria-label="Review spacetime.mw changes" onMouseDown={() => !mwApplying && setMwReviewOpen(false)}>

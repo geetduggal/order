@@ -31,6 +31,39 @@ export function isNotableFolder(fm: Frontmatter): boolean {
   return parseRef(fm.category) !== null;
 }
 
+/** Normalized comparison key so look-alike folder names collapse to one
+ *  identity: Unicode NFC, no-break spaces -> normal space, en/em/figure dashes
+ *  -> hyphen, spaces around a hyphen dropped, whitespace collapsed, lowercased.
+ *  Lets a directory match its spacetime.mw entry and keeps re-adds idempotent:
+ *  "Tech Habits — X", "Tech Habits- X" and "Tech Habits - X" all map to the
+ *  same key. For MATCHING only — keep the original spelling for display. */
+export function folderKey(name: string): string {
+  return name
+    .normalize("NFC")
+    .replace(/[   ]/g, " ")        // no-break / figure / narrow-no-break space
+    .replace(/[‒–—―]/g, "-")  // figure / en / em / horizontal dash
+    .replace(/\s*-\s*/g, "-")                      // drop spaces around hyphens
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** The on-disk directory name for a folder: unsafe chars → "-", capped at 78
+ *  chars. spacetime.mw stores the FULL name, but the directory is truncated, so
+ *  matching a directory to its mw entry must go through this. Mirrors the cap
+ *  used when folders are created. */
+export function folderDirName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+}
+
+/** Canonical identity for matching a folder across its full mw name and its
+ *  (possibly truncated / differently-dashed) on-disk directory: `folderDirName`
+ *  first (the 78-char truncation), then `folderKey` (dash/space/case). Two names
+ *  that resolve to the same directory share this key. */
+export function folderMatchKey(name: string): string {
+  return folderKey(folderDirName(name));
+}
+
 /** A note's parent Notable Folder, if any. */
 export function noteFolder(fm: Frontmatter): string | null {
   return parseRef(fm.folder);

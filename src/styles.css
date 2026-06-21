@@ -4380,6 +4380,10 @@ iframe.order-youtube-embed {
   box-sizing: border-box;
   overflow: hidden;
 }
+/* Rows that host an input (the add row, or an item being edited) must NOT clip:
+   the `[[` folder-autocomplete dropdown is absolutely positioned below the
+   input and would be hidden by the row's overflow:hidden otherwise. */
+.list-line.is-input { overflow: visible; }
 .list-line input { user-select: text; -webkit-user-select: text; }
 .list-line:hover { background: var(--bg-elev, var(--bg)); }
 .list-line.is-dragging { opacity: 0.5; }

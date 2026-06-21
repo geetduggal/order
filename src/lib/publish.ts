@@ -79,12 +79,6 @@ export interface PublishedSite {
   generatedAt: string;
 }
 
-function parseRef(val: unknown): string | null {
-  if (typeof val !== "string") return null;
-  const m = val.match(/^\s*\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]\s*$/);
-  return m ? m[1].trim() : val.trim() || null;
-}
-
 function refOf(filename: string): string {
   return filename.replace(/\.md$/i, "");
 }
@@ -146,13 +140,26 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
     const slug = typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "";
     const rewritten = rewritePublishedImages(tightenListSpacing(n.body), slug, n.dir, sub);
     assets.push(...rewritten.assets);
+    // A note's place in the space hierarchy IS its directory — `<Area>/
+    // <Category>/<Folder>/`. The directory is the source of truth; the
+    // `folder:` / `category:` frontmatter is never consulted (many notes don't
+    // carry it, and it must never decide placement).
+    //
+    // `category` is special: the viewer uses it to mean "this note is a Notable
+    // Folder MAIN DOC" (vs a regular note). A main doc is `<Folder>/<Folder>.md`
+    // — its filename equals its own directory. So ONLY main docs get a category
+    // (their parent = the category dir); every other note gets category:null so
+    // it renders as a note, not a folder.
+    const dirSegs = (n.dir ?? "").split("/").filter(Boolean);
+    const folderName = dirSegs[dirSegs.length - 1] ?? null;
+    const isMainDoc = !!folderName && refOf(n.filename) === folderName;
     return {
       ref: refOf(n.filename),
       title: pickTitle(n),
       slug,
       body: rewritten.body,
-      folder: parseRef(n.frontmatter.folder),
-      category: parseRef(n.frontmatter.category),
+      folder: folderName,
+      category: isMainDoc ? (dirSegs[dirSegs.length - 2] ?? null) : null,
       listRender: lr,
       listItems: items,
       isHome: refOf(n.filename) === home.name,

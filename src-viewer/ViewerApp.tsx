@@ -425,7 +425,13 @@ export function ViewerApp(
     // "cover"); any other state is a flat recency timeline keyed off
     // date + startTime frontmatter.
     const dateKey = (n: PublishedNote) => {
-      const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "0000-00-00";
+      // Prefer a `date:` field; otherwise fall back to a leading YYYY-MM-DD in
+      // the note's ref/filename ("2024-07-25 - Title"), so Geets/articles (which
+      // carry the date in the filename, not frontmatter) sort chronologically
+      // instead of all collapsing to 0000-00-00 and sinking to the bottom.
+      let d = typeof n.frontmatter.date === "string" && /^\d{4}-\d{2}-\d{2}/.test(n.frontmatter.date)
+        ? n.frontmatter.date.slice(0, 10) : "";
+      if (!d) { const m = n.ref.match(/^(\d{4}-\d{2}-\d{2})/); d = m ? m[1] : "0000-00-00"; }
       const t = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "00:00";
       return `${d} ${t}`;
     };
