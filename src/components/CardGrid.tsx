@@ -35,7 +35,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, folderDirName, folderMatchKey, isNotableFolder, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isMainDocPath, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import {
   DEFAULT_TODO_TXT_PATH,
   eventKey,
@@ -295,6 +295,14 @@ function isOrphanEventNote(
   const link = linkMap?.get(n.id);
   if (link && mwEventIndex.has(`${link.date}|${link.title.toLowerCase()}`)) return false;
   return true;
+}
+
+/** A Notable Folder's main document, identified STRUCTURALLY: a note named
+ *  after its own parent directory — `<NF>/<NF>.md`. This replaces the
+ *  `category` frontmatter heuristic (isNotableFolder) so main-doc identity is
+ *  derived from structure (which mirrors spacetime), never the note's YAML. */
+function isMainDoc(n: LoadedNote): boolean {
+  return isMainDocPath(n.path);
 }
 
 let nextNoteId = 0;
@@ -619,12 +627,16 @@ export function CardGrid() {
         // (<NF>/<NF>.md) and dated notes (<NF>/YYYY-MM-DD *.md) belong; anything
         // else is an orphan file (flagged via orphanedNotes), hidden from views.
         const base = n.filename.replace(/\.md$/i, "");
-        const isMain = isNotableFolder(n.frontmatter) || folderMatchKey(base) === folderMatchKey(parent);
+        const isMain = folderMatchKey(base) === folderMatchKey(parent);
         const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
         return (isMain || isDated) ? canonical : null;
       }
     }
-    return noteFolder(n.frontmatter);
+    // Not inside a spacetime Notable Folder directory → not a member. Placement
+    // is the directory's (spacetime's) job, never the note's `folder:` YAML, so
+    // there's deliberately no frontmatter fallback here: a note that sits
+    // outside every spacetime NF is drift, not silently re-homed by its YAML.
+    return null;
   }, []);
   /** Scroll the pile to a card and pin focus on it. Single entry
    *  point used by every navigation surface (sidebar tile, calendar
@@ -650,7 +662,7 @@ export function CardGrid() {
         writePublicOnly(false);
       }
       const ownRef = note.filename.replace(/\.md$/i, "");
-      const targetFolder = isNotableFolder(note.frontmatter)
+      const targetFolder = isMainDoc(note)
         ? ownRef
         : effectiveFolder(note);
       if (targetFolder) {
@@ -2451,7 +2463,7 @@ export function CardGrid() {
       const canonical = parent ? folderDirIndex.get(folderMatchKey(parent)) : undefined;
       if (!canonical) continue;                                        // not in a Notable Folder
       const base = n.filename.replace(/\.md$/i, "");
-      const isMain = isNotableFolder(n.frontmatter) || folderMatchKey(base) === folderMatchKey(parent);
+      const isMain = folderMatchKey(base) === folderMatchKey(parent);
       const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
       if (!isMain && !isDated) out.push({ title: base, path: n.path, folder: canonical });
     }
@@ -3789,7 +3801,7 @@ export function CardGrid() {
     if (!safe || safe === oldName) return;
     const list = notesRef.current ?? [];
     const main = list.find(
-      (n) => n.filename.replace(/\.md$/i, "") === oldName && isNotableFolder(n.frontmatter),
+      (n) => n.filename.replace(/\.md$/i, "") === oldName && isMainDoc(n),
     );
     if (!main) return;
     const oldRel = toVaultRel(main.path);
@@ -4080,7 +4092,7 @@ export function CardGrid() {
   // Their title comes from the filename minus the .md (which is also
   // the slug other notes use to point at them via `folder: [[Name]]`).
   const notableFolders: NotableFolder[] = notes
-    .filter((n) => isNotableFolder(n.frontmatter))
+    .filter((n) => isMainDoc(n))
     .map((n) => ({
       name: n.filename.replace(/\.md$/, ""),
       area: inferredArea(n),
@@ -4194,7 +4206,7 @@ export function CardGrid() {
     // notes (keep only NF main docs); "all" keeps both.
     .filter((n) => {
       if (pileMode === "all") return true;
-      const isNF = isNotableFolder(n.frontmatter);
+      const isNF = isMainDoc(n);
       return pileMode === "notes" ? !isNF : isNF;
     })
     // "Public only": drop notes without `public: true` in YAML.
@@ -4210,10 +4222,17 @@ export function CardGrid() {
   // The Pile is one recency-ordered timeline (newest first), keyed
   // off the note's date + startTime frontmatter.
   const sortKey = (n: LoadedNote): string => {
-    // Accept both string and js-yaml Date for `date` so unquoted
-    // YAML (Readwise sync, hand-typed bare dates) sorts alongside the
-    // quoted strings we emit via isoDate(). Without this Readwise
-    // entries sank to the bottom of every Pile view.
+    // Source of truth first: if the note backs a spacetime event, order by the
+    // EVENT's date/time — the note's own date/filename may differ or be absent
+    // (e.g. a note written today for a future all-day event).
+    const evLink = noteEventLinkRef.current.get(n.id);
+    if (evLink) {
+      const ev = mwEventIndex.get(`${evLink.date}|${evLink.title.toLowerCase()}`);
+      if (ev) return `${ev.date} ${ev.time ?? "00:00"}`;
+    }
+    // Otherwise the note's own date. Accept both string and js-yaml Date for
+    // `date` so unquoted YAML (Readwise sync, hand-typed bare dates) sorts
+    // alongside the quoted strings we emit via isoDate().
     const raw = n.frontmatter.date;
     let d = "0000-00-00";
     if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
@@ -4242,7 +4261,7 @@ export function CardGrid() {
     : null;
   const isPinnedMain = (n: LoadedNote): boolean =>
     pinnedRef !== null
-    && isNotableFolder(n.frontmatter)
+    && isMainDoc(n)
     && n.filename.replace(/\.md$/, "") === pinnedRef;
   // Notable Folder Main Documents float to the top of the Pile by
   // default — they're the "covers" of each folder and read like a
@@ -4254,8 +4273,8 @@ export function CardGrid() {
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
-    const aNF = isNotableFolder(a.frontmatter);
-    const bNF = isNotableFolder(b.frontmatter);
+    const aNF = isMainDoc(a);
+    const bNF = isMainDoc(b);
     if (aNF !== bNF) return aNF ? -1 : 1;
     if (aNF && bNF) {
       return a.filename.localeCompare(b.filename);
@@ -4277,19 +4296,17 @@ export function CardGrid() {
   // Render one note as a <Card>. Shared by the temporal flat grid and
   // the newspaper sections; capHeight is only set in newspaper mode.
   const cardNode = (n: LoadedNote, capHeight?: number) => {
-    const isMain = isNotableFolder(n.frontmatter);
+    const isMain = isMainDoc(n);
     const ref = n.filename.replace(/\.md$/, "");
     const folderName = isMain ? ref : effectiveFolder(n);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
-    // Resolve the note's authoritative spacetime event (source of truth for its
-    // date + all-day-ness) — via the stable link first, else a direct date|title
-    // match. The note's own YAML is NOT consulted for this; that's the whole
-    // point (an event's all-day flag lives in spacetime.mw, not the note).
+    // The note's authoritative spacetime event (source of truth for its date +
+    // all-day-ness), found via the stable spacetime link — set when an event
+    // matched this note by TITLE. The note's own YAML / disk location is NOT
+    // consulted; the event in spacetime decides.
     const evLink = noteEventLinkRef.current.get(n.id);
-    const evDate = evLink?.date || toIsoDateValue(n.frontmatter.date) || n.filename.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
-    const evTitle = (evLink?.title || n.title || n.filename.replace(/\.md$/i, "").replace(/^\d{4}-\d{2}-\d{2}\s+/, "")).toLowerCase();
-    const matchedEvent = evDate ? mwEventIndex.get(`${evDate}|${evTitle}`) : undefined;
+    const matchedEvent = evLink ? mwEventIndex.get(`${evLink.date}|${evLink.title.toLowerCase()}`) : undefined;
     const spacetimeEvent = matchedEvent
       ? { date: matchedEvent.date, allDay: matchedEvent.allDay ?? (!matchedEvent.time && !matchedEvent.endDate) }
       : undefined;
@@ -4457,11 +4474,11 @@ export function CardGrid() {
         // as that section's centerpiece instead of an empty section.
         const mainNote =
           filteredNotes.find(
-            (n) => isNotableFolder(n.frontmatter) && n.filename.replace(/\.md$/, "") === ref,
+            (n) => isMainDoc(n) && n.filename.replace(/\.md$/, "") === ref,
           )
           ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
         const sectionNotes = filteredNotes
-          .filter((n) => !isNotableFolder(n.frontmatter) && effectiveFolder(n) === ref)
+          .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
           .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
         // Key is just the stable note id — external body edits are now
         // delivered in-place via the externalBodyVersion prop, so we
@@ -4495,7 +4512,12 @@ export function CardGrid() {
   // filters apply. Events with no backing note use a synthetic `mw-event:`
   // path that openEventNote materializes on demand.
   const noteByDateTitle = new Map<string, LoadedNote>();
-  const noteByFolderTitle = new Map<string, LoadedNote>();
+  // Title alone → note. A spacetime event's TITLE is its stable, spacetime-
+  // derived identity, so this is the primary way an event finds its backing
+  // note — independent of the note's date, frontmatter, or disk location, any
+  // of which may have drifted from spacetime (drift is reconciled separately,
+  // not used as a matching key).
+  const noteByTitle = new Map<string, LoadedNote>();
   // Also index by the `YYYY-MM-DD Title` encoded in the FILENAME. Event notes
   // are named that way (basenameForEvent), so even when a note's calendar
   // frontmatter was stripped, its filename still identifies which mw event it
@@ -4504,13 +4526,9 @@ export function CardGrid() {
   for (const n of notes) {
     if (isRawTextFile(n.filename)) continue;
     const t = n.title.toLowerCase();
+    if (t && !noteByTitle.has(t)) noteByTitle.set(t, n);
     const d = toIsoDateValue(n.frontmatter.date);
     if (d && !noteByDateTitle.has(`${d}|${t}`)) noteByDateTitle.set(`${d}|${t}`, n);
-    const f = noteFolder(n.frontmatter);
-    if (f) {
-      const fk = `${f.toLowerCase()}|${t}`;
-      if (!noteByFolderTitle.has(fk)) noteByFolderTitle.set(fk, n);
-    }
     const fnMatch = n.filename.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)\.md$/i);
     if (fnMatch) {
       const fk = `${fnMatch[1]}|${fnMatch[2].toLowerCase()}`;
@@ -4525,9 +4543,15 @@ export function CardGrid() {
     for (const ev of mwEvents) {
       const t = ev.title.toLowerCase();
       const backing =
-        noteByDateTitle.get(`${ev.date}|${t}`) ??
-        noteByFilenameKey.get(`${ev.date}|${t}`) ??
-        (ev.folder ? noteByFolderTitle.get(`${ev.folder.toLowerCase()}|${t}`) : undefined);
+        noteByDateTitle.get(`${ev.date}|${t}`) ??   // same date AND title (most specific)
+        noteByFilenameKey.get(`${ev.date}|${t}`) ?? // filename encodes date+title
+        noteByTitle.get(t);                         // title alone — the spacetime key
+      // Remember this note backs this event, keyed by the note's stable id —
+      // set BEFORE any filter/dedup `continue` so the link always exists. It
+      // survives title edits AND date mismatches (a note written today for a
+      // future all-day event), powering the card's date/star chip + the
+      // modified-event detection without date|title needing to stay aligned.
+      if (backing) noteEventLinkRef.current.set(backing.id, { date: ev.date, title: ev.title });
 
       // Apply pile / public / pileMode filters. With a backing note we filter
       // on it; without one we filter on the mw folder directly (such events
@@ -4536,7 +4560,7 @@ export function CardGrid() {
         if (!filterMatches(backing)) continue;
         if (publicOnly && backing.frontmatter.public !== true) continue;
         if (pileMode !== "all") {
-          const isNF = isNotableFolder(backing.frontmatter);
+          const isNF = isMainDoc(backing);
           if (pileMode === "notes" ? isNF : !isNF) continue;
         }
       } else {
@@ -4563,11 +4587,6 @@ export function CardGrid() {
       };
       const path = backing ? backing.path : `mw-event:${ev.date}|${t}`;
       chipMap.set(path, { ev, notePath: backing ? backing.path : null });
-      // Remember this note backs this event, keyed by the note's stable id.
-      // If the user later edits the title (breaking the date|title match) the
-      // link survives, so the note is treated as "this event, being modified"
-      // rather than a fresh orphan.
-      if (backing) noteEventLinkRef.current.set(backing.id, { date: ev.date, title: ev.title });
       out.push({
         path,
         filename: backing ? backing.filename : `${ev.date} ${ev.title}.md`,
@@ -5254,7 +5273,7 @@ export function CardGrid() {
                   <strong>Events on disk but not in spacetime:</strong>
                   <p className="mw-orphan-hint">These notes carry calendar-event frontmatter but aren't in spacetime.mw, so Order hides them. "Add to spacetime" registers the event (its date, time, and folder are inferred from the note); "Remove" deletes the stray note.</p>
                   <ul>
-                    {orphanedEvents.slice(0, 20).map((o) => (
+                    {orphanedEvents.map((o) => (
                       <li key={o.path} className="mw-orphan-row">
                         <span className="mw-orphan-name">🗓 {o.date} {o.title}</span>
                         <span className="mw-orphan-actions">
@@ -5263,7 +5282,6 @@ export function CardGrid() {
                         </span>
                       </li>
                     ))}
-                    {orphanedEvents.length > 20 && <li className="mw-orphan-row">+ {orphanedEvents.length - 20} more…</li>}
                   </ul>
                   <span className="mw-orphan-actions">
                     <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addOrphanEventsToSpacetime(orphanedEvents.map((o) => o.path)); }}>Add all {orphanedEvents.length} to spacetime</button>
@@ -5276,7 +5294,7 @@ export function CardGrid() {
                   <strong>Events edited (note retitled):</strong>
                   <p className="mw-orphan-hint">These notes back a real spacetime event but were renamed, so the note and the spacetime line no longer match. "Update spacetime" rewrites the event's title to match the note.</p>
                   <ul>
-                    {modifiedEvents.slice(0, 20).map((m) => (
+                    {modifiedEvents.map((m) => (
                       <li key={m.noteId} className="mw-orphan-row">
                         <span className="mw-orphan-name">✎ {m.date} <s>{m.oldTitle}</s> → {m.newTitle}</span>
                         <span className="mw-orphan-actions">
@@ -5284,7 +5302,6 @@ export function CardGrid() {
                         </span>
                       </li>
                     ))}
-                    {modifiedEvents.length > 20 && <li className="mw-orphan-row">+ {modifiedEvents.length - 20} more…</li>}
                   </ul>
                   <span className="mw-orphan-actions">
                     <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void applyModifiedEvents(modifiedEvents.map((m) => m.noteId)); }}>Update all {modifiedEvents.length}</button>
@@ -5296,7 +5313,7 @@ export function CardGrid() {
                   <strong>Files that aren't notes or main docs:</strong>
                   <p className="mw-orphan-hint">These live inside a Notable Folder but aren't the main document or a dated note (YYYY-MM-DD …), so they aren't part of Order. "Add date" renames it into a dated note; "Remove" deletes it.</p>
                   <ul>
-                    {orphanedNotes.slice(0, 20).map((o) => (
+                    {orphanedNotes.map((o) => (
                       <li key={o.path} className="mw-orphan-row">
                         <span className="mw-orphan-name">📄 {o.folder}/{o.title}</span>
                         <span className="mw-orphan-actions">
@@ -5305,7 +5322,6 @@ export function CardGrid() {
                         </span>
                       </li>
                     ))}
-                    {orphanedNotes.length > 20 && <li className="mw-orphan-row">+ {orphanedNotes.length - 20} more…</li>}
                   </ul>
                   <span className="mw-orphan-actions">
                     <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addDateToOrphanNotes(orphanedNotes.map((o) => o.path)); }}>Add date to all {orphanedNotes.length}</button>

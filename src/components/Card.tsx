@@ -35,7 +35,7 @@ import {
 import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
-import { folderColor, isNotableFolder, noteFolder, parseRef } from "../lib/folders";
+import { folderColor, isMainDocPath, noteFolder, parseRef } from "../lib/folders";
 import { resolveWikilink } from "../lib/wikilink";
 import {
   attachmentAssetPrefix,
@@ -671,7 +671,7 @@ export function Card(props: Props) {
       // IS the folder's identity (other notes reference it via
       // `folder: [[Books]]` and that link would break on rename).
       const title = deriveNoteTitleFromBody(body);
-      const isMain = isNotableFolder(frontmatter);
+      const isMain = isMainDocPath(path);
       if (!isMain && title && title !== lastTitleRef.current) {
         const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
         const desired = basenameForEvent(date, title);
@@ -945,7 +945,7 @@ export function Card(props: Props) {
   // (same accent as the navigation pulse) and the user always reads
   // an NF cover at a glance — no need to remember which card you
   // just navigated to.
-  const isMainDoc = isNotableFolder(state.frontmatter);
+  const isMainDoc = isMainDocPath(initialPath);
   // Folded: render the spine until revealed. The persistent flag lives
   // in YAML; pendingFolded gives an optimistic flip on the toggle.
   const isFolded = pendingFolded !== null

@@ -31,6 +31,19 @@ export function isNotableFolder(fm: Frontmatter): boolean {
   return parseRef(fm.category) !== null;
 }
 
+/** A Notable Folder main document, identified STRUCTURALLY from its path: a
+ *  note named after its own parent directory — `<NF>/<NF>.md`. Prefer this over
+ *  isNotableFolder(frontmatter) so main-doc identity comes from structure
+ *  (which mirrors spacetime), not the note's `category:` YAML. Returns false
+ *  for synthetic paths (e.g. `mw-event:…`) with no parent directory. */
+export function isMainDocPath(path: string): boolean {
+  const parts = path.split("/");
+  if (parts.length < 2) return false;
+  const file = parts[parts.length - 1].replace(/\.md$/i, "");
+  const dir = parts[parts.length - 2];
+  return folderMatchKey(file) === folderMatchKey(dir);
+}
+
 /** Normalized comparison key so look-alike folder names collapse to one
  *  identity: Unicode NFC, no-break spaces -> normal space, en/em/figure dashes
  *  -> hyphen, spaces around a hyphen dropped, whitespace collapsed, lowercased.
