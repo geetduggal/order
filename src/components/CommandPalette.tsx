@@ -35,6 +35,9 @@ interface Props {
 export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras }: Props) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // Hover only selects after a real mouse move — opening with the keyboard, or
+  // items scrolling under a resting cursor, must not steal the selection.
+  const mouseMovedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -109,11 +112,13 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
     if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      mouseMovedRef.current = false;
       setActive((i) => Math.min(matches.length - 1, i + 1));
       return;
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
+      mouseMovedRef.current = false;
       setActive((i) => Math.max(0, i - 1));
       return;
     }
@@ -134,6 +139,7 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
         role="dialog"
         aria-label="Filter folders"
         onMouseDown={(e) => e.stopPropagation()}
+        onMouseMove={() => { mouseMovedRef.current = true; }}
         onKeyDown={onKeyDown}
       >
         <input
@@ -156,7 +162,7 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
                     role="option"
                     aria-selected={i === active}
                     className={"cmdk-item cmdk-item-extra" + (i === active ? " is-active" : "")}
-                    onMouseEnter={() => setActive(i)}
+                    onMouseEnter={() => { if (mouseMovedRef.current) setActive(i); }}
                     onClick={() => { m.extra.onPick(); onClose(); }}
                   >
                     <span className="cmdk-item-name">{m.extra.label}</span>
@@ -177,7 +183,7 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
                   role="option"
                   aria-selected={i === active}
                   className={"cmdk-item" + (i === active ? " is-active" : "") + (isRecent ? " is-recent" : "")}
-                  onMouseEnter={() => setActive(i)}
+                  onMouseEnter={() => { if (mouseMovedRef.current) setActive(i); }}
                   onClick={() => { onToggle(f.name); onClose(); }}
                 >
                   <Icon size={14} strokeWidth={1.8} style={{ color }} />

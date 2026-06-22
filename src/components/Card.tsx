@@ -16,9 +16,8 @@ import { CodeMirrorSurface } from "./CodeMirrorSurface";
 import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
   basenameForEvent,
-  firstLineTitle,
+  deriveNoteTitleFromBody,
   isoDate,
-  isoTime,
   joinFrontmatter,
   splitFrontmatter,
   toIsoDateValue,
@@ -51,7 +50,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon } from "lucide-react";
+import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
@@ -59,14 +58,25 @@ import { isIosSync } from "../lib/vault";
 const SAVE_DEBOUNCE_MS = 600;
 
 function attachmentName(file: File): string {
-  const baseName = (file.name || "image").split(/[/\\]/).pop() ?? "image";
-  const dot = baseName.lastIndexOf(".");
-  const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
-  const extFromName = dot > 0 ? baseName.slice(dot + 1).toLowerCase() : null;
+  const raw = (file.name || "").split(/[/\\]/).pop() ?? "";
+  const dot = raw.lastIndexOf(".");
+  const rawStem = dot > 0 ? raw.slice(0, dot) : raw;
+  const extFromName = dot > 0 ? raw.slice(dot + 1).toLowerCase() : null;
   const extFromMime = file.type.startsWith("image/") ? file.type.slice("image/".length) : null;
   const ext = (extFromName || extFromMime || "png").replace(/[^a-z0-9]/g, "");
-  const stamp = `${isoDate()}-${isoTime().replace(":", "")}`;
-  return `${stem}-${stamp}.${ext}`;
+  // Pasted / screenshot images usually carry no meaningful name (empty,
+  // "image", "Pasted Image", "Untitled", a temp hash, an IMG_#### blob).
+  // Sanitize the source stem and fall back to a clean, sortable date+time
+  // stamp so the on-disk name is predictable: `image-YYYY-MM-DD-HHMMSS.png`.
+  const cleanStem = rawStem.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
+  const generic =
+    !cleanStem ||
+    cleanStem.length > 60 ||
+    /^(image|images|pasted[ _-]?image|screen ?shot|untitled|photo|clipboard|unknown|img[ _-]?\d*)$/i.test(cleanStem);
+  const now = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${isoDate(now)}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  return `${generic ? "image" : cleanStem}-${stamp}.${ext}`;
 }
 
 /** Rename a file to `<dir>/<basename>`, appending ` 2`, ` 3`, … to the
@@ -139,6 +149,11 @@ interface Props {
    *  inspector reads this so edits re-render immediately. Falls back to
    *  the locally-loaded state.frontmatter when not provided. */
   liveFrontmatter?: Frontmatter;
+  /** The note's authoritative spacetime event (source of truth for its date +
+   *  all-day-ness), resolved by CardGrid from spacetime.mw — NOT the note's own
+   *  YAML. Drives the top-left chip's date + the all-day star. Absent when the
+   *  note isn't a calendar event. */
+  spacetimeEvent?: { date: string; allDay: boolean };
   /** Minimal vault index for resolving `- [[Name]]` bullets (and for
    *  evaluating `base` blocks) when this card is a list folder. Each
    *  entry carries just enough info for the renders + base evaluator. */
@@ -233,6 +248,7 @@ export function Card(props: Props) {
     recentFolders,
     onSetFrontmatter,
     liveFrontmatter,
+    spacetimeEvent,
     vaultNotes,
     onNavigate,
     onAddFilter,
@@ -509,7 +525,7 @@ export function Card(props: Props) {
             initialItems = split.items;
           }
         }
-        lastTitleRef.current = firstLineTitle(editorInitial);
+        lastTitleRef.current = deriveNoteTitleFromBody(editorInitial);
         setState({ kind: "ready", body: editorInitial, frontmatter, rawFm });
         setEditorBody(editorInitial);
         setListItems(initialItems);
@@ -654,7 +670,7 @@ export function Card(props: Props) {
       // Notable Folder Main Documents skip rename because their filename
       // IS the folder's identity (other notes reference it via
       // `folder: [[Books]]` and that link would break on rename).
-      const title = firstLineTitle(body);
+      const title = deriveNoteTitleFromBody(body);
       const isMain = isNotableFolder(frontmatter);
       if (!isMain && title && title !== lastTitleRef.current) {
         const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
@@ -972,10 +988,14 @@ export function Card(props: Props) {
   // back to the locally-loaded one. The `{date}` toggle label uses the
   // same date field — bare braces when there's no date yet.
   const fmLive: Frontmatter = liveFrontmatter ?? state.frontmatter;
-  const fmDateRaw = typeof fmLive.date === "string"
-    ? fmLive.date
-    : toIsoDateValue(fmLive.date) ?? "";
-  const fmToggleLabel = fmDateRaw ? `{${fmDateRaw}}` : "{ }";
+  // The date + all-day-ness come from the note's spacetime event when it has
+  // one (the source of truth); the note's own YAML is only a fallback for
+  // non-event notes that carry a bare `date:`.
+  const fmDateRaw = spacetimeEvent?.date
+    || (typeof fmLive.date === "string" ? fmLive.date : toIsoDateValue(fmLive.date) ?? "");
+  // An all-day event gets a filled star (in the theme's other colour) in place
+  // of the calendar glyph, so a marked day reads at a glance.
+  const isAllDayEvent = !!fmDateRaw && (spacetimeEvent ? spacetimeEvent.allDay : fmLive.allDay === true);
 
   return (
     <article
@@ -984,12 +1004,11 @@ export function Card(props: Props) {
       ref={articleRef}
       onMouseDown={onCardFocus}
     >
-      {/* Top-left frontmatter inspector toggle — mirrors the card-
-          controls cluster on the right. Label is `{YYYY-MM-DD}` when
-          the note carries a date, otherwise just `{ }`. Click to drop
-          the FrontmatterInspector in above the editor body. Shows on
-          the read-only viewer too so visitors can see the YAML and
-          click URL-valued fields. */}
+      {/* Top-left date chip — a lightweight calendar icon plus the note's
+          date, always visible (subtle). Doubles as the frontmatter inspector
+          toggle: click to drop the FrontmatterInspector in above the editor
+          body. Shows on the read-only viewer too. When the note has no date,
+          just the icon shows. */}
       {!flipped && !termOpen && !showSpine && (
         <button
           type="button"
@@ -999,7 +1018,10 @@ export function Card(props: Props) {
           aria-label={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
           aria-expanded={inspectorOpen}
         >
-          {fmToggleLabel}
+          {isAllDayEvent
+            ? <StarIcon size={11} strokeWidth={2} fill="currentColor" className="order-card-fm-star" />
+            : <CalendarIcon size={11} strokeWidth={2} />}
+          {fmDateRaw && <span className="order-card-fm-date">{fmDateRaw}</span>}
         </button>
       )}
       {/* Unified card chrome — single sticky row of icons in the top

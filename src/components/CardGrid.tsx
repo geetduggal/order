@@ -271,6 +271,32 @@ interface LoadedNote {
   mtime: number;
 }
 
+/** A note is a calendar EVENT when it carries a date plus a time or the
+ *  all-day flag. spacetime.mw is the source of truth for events, so an event
+ *  note whose (date, title) is NOT in the mw is drift — an "orphan event": it
+ *  must be flagged for reconciliation, never shown in a folder / pile view. */
+function isOrphanEventNote(
+  n: LoadedNote,
+  mwEventIndex: Map<string, SpacetimeEvent>,
+  linkMap?: Map<string, { date: string; title: string }>,
+  focusedPath?: string | null,
+): boolean {
+  const date = toIsoDateValue(n.frontmatter.date);
+  if (!date) return false;
+  const st = typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "";
+  const isEvent = n.frontmatter.allDay === true || /^\d{2}:\d{2}$/.test(st);
+  if (!isEvent) return false;
+  const title = (n.title || n.filename.replace(/\.md$/i, "")).toLowerCase();
+  if (mwEventIndex.has(`${date}|${title}`)) return false; // already in spacetime
+  // The note being actively edited is never "drift" — its title is mid-flight.
+  if (focusedPath && n.path === focusedPath) return false;
+  // A note still linked to a real spacetime event is an event BEING MODIFIED,
+  // not an orphan: keep it visible (it's surfaced for review via modifiedEvents).
+  const link = linkMap?.get(n.id);
+  if (link && mwEventIndex.has(`${link.date}|${link.title.toLowerCase()}`)) return false;
+  return true;
+}
+
 let nextNoteId = 0;
 function newNoteId(): string { return `n${nextNoteId++}`; }
 
@@ -413,6 +439,16 @@ export function CardGrid() {
    *  card mid-edit). Cleared when the user picks a different card or
    *  the focused note is gone (deleted / out of view). */
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  // Ref mirror so the []-dep effectiveFolder callback can see the live value.
+  const focusedPathRef = useRef<string | null>(null);
+  focusedPathRef.current = focusedPath;
+  // Stable note→event link: a note's durable id → the spacetime event it last
+  // backed (date+title). The id survives title edits AND renames, so when the
+  // user edits an event's note the title diverges from the mw line but the link
+  // persists — Order recognises "this event is being modified" instead of
+  // orphaning the note. Populated when the calendar matches notes to events
+  // (chipMap build); never cleared (validity is checked against the live mw).
+  const noteEventLinkRef = useRef<Map<string, { date: string; title: string }>>(new Map());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
   // Recently-opened Notable Folders — surfaced by the command palette
   // on an empty query so the search button doubles as a back-history.
@@ -569,10 +605,24 @@ export function CardGrid() {
   // whether the note backs a spacetime.mw event (the pile isn't mw-gated).
   const folderDirIndexRef = useRef<Map<string, string>>(new Map());
   const effectiveFolder = useCallback((n: LoadedNote): string | null => {
+    // spacetime.mw is the source of truth for events. A note carrying
+    // calendar-event frontmatter (a date plus a time or the all-day flag) IS an
+    // event; if that event is NOT in the mw it's drift, and must not surface in
+    // any folder / pile view — it's flagged in the reconciliation indicator
+    // (see orphanedEvents) for the user to add to spacetime.mw or remove.
+    if (isOrphanEventNote(n, mwEventIndexRef.current, noteEventLinkRef.current, focusedPathRef.current)) return null;
     const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
     if (parent) {
       const canonical = folderDirIndexRef.current.get(folderMatchKey(parent));
-      if (canonical) return canonical;
+      if (canonical) {
+        // Strict membership: inside a Notable Folder only the main doc
+        // (<NF>/<NF>.md) and dated notes (<NF>/YYYY-MM-DD *.md) belong; anything
+        // else is an orphan file (flagged via orphanedNotes), hidden from views.
+        const base = n.filename.replace(/\.md$/i, "");
+        const isMain = isNotableFolder(n.frontmatter) || folderMatchKey(base) === folderMatchKey(parent);
+        const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
+        return (isMain || isDated) ? canonical : null;
+      }
     }
     return noteFolder(n.frontmatter);
   }, []);
@@ -1283,6 +1333,7 @@ export function CardGrid() {
           || n.filename.replace(/\.md$/i, ""),
         folderRef: noteFolder(n.frontmatter) ?? null,
         path: n.path,
+        mtime: n.mtime,
       }));
   }, [notes]);
   const flashCap = useCallback((msg: string) => {
@@ -1499,7 +1550,7 @@ export function CardGrid() {
   // Popover state for the new-note picker (shows when multiple
   // folders are selected and the user clicks the + FAB).
   const [creatorOpen, setCreatorOpen] = useState(false);
-  // Cmd+O opens the sidebar; Cmd+K opens the centered command palette.
+  // Cmd+K opens the centered command palette (open a folder by name).
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [ftsOpen, setFtsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -1618,21 +1669,11 @@ export function CardGrid() {
         }
         return;
       }
-      if (e.key === "o" || e.key === "O") {
-        // Cmd+O — "open a Notable Folder". Pops the centered folder
-        // palette (was Cmd+K). The palette is the single way the
-        // user opens a folder by name now that the dock no longer
-        // carries a folder-marker affordance.
-        e.preventDefault();
-        setPaletteOpen((open) => !open);
-        return;
-      }
       if (e.key === "k" || e.key === "K") {
-        // Cmd+K is owned by Milkdown's link tooltip when typing
-        // inside an editor — selected text → link prompt. We only
-        // intercept it OUTSIDE the editor (where it would otherwise
-        // be inert), as a no-op alias for Cmd+O so muscle memory
-        // from the old binding doesn't pop a missing surface.
+        // Cmd+K opens the centered folder palette — the single way to
+        // open a folder by name. Inside an editor Cmd+K belongs to
+        // Milkdown's link tooltip (selected text → link prompt), so we
+        // only intercept it outside the editor.
         if (isTyping(e.target)) return;
         e.preventDefault();
         setPaletteOpen((open) => !open);
@@ -2284,6 +2325,59 @@ export function CardGrid() {
     await reloadNotes();
   }, [reloadNotes, flashCap]);
 
+  // Delete orphan event NOTES from disk (calendar-event notes not in
+  // spacetime.mw). Bulk-capable so a flood of stray stubs can be cleared in one
+  // confirm. Can't be undone.
+  const removeOrphanEvents = useCallback(async (paths: string[], label: string) => {
+    if (paths.length === 0) return;
+    const ok = await tauriConfirm(
+      paths.length === 1
+        ? `Delete the note “${label}” from disk? It's a calendar event that isn't in spacetime. This can't be undone.`
+        : `Delete ${paths.length} event notes that aren't in spacetime from disk? This can't be undone.`,
+      { title: "Remove event notes?", kind: "warning" },
+    );
+    if (!ok) return;
+    for (const p of paths) {
+      try { await vaultFs.remove(toVaultRel(p)); }
+      catch (e) { console.error("remove orphan event failed", p, e); }
+    }
+    await reloadNotes();
+  }, [reloadNotes]);
+
+  // Delete orphan FILES (inside an NF but neither the main doc nor a dated note).
+  const removeOrphanNotes = useCallback(async (paths: string[], label: string) => {
+    if (paths.length === 0) return;
+    const ok = await tauriConfirm(
+      paths.length === 1
+        ? `Delete the note “${label}” from disk? It isn't a dated note or main document, so it isn't part of Order. This can't be undone.`
+        : `Delete ${paths.length} stray notes from disk? They aren't dated notes or main documents. This can't be undone.`,
+      { title: "Remove notes?", kind: "warning" },
+    );
+    if (!ok) return;
+    for (const p of paths) {
+      try { await vaultFs.remove(toVaultRel(p)); }
+      catch (e) { console.error("remove orphan note failed", p, e); }
+    }
+    await reloadNotes();
+  }, [reloadNotes]);
+
+  // Make an orphan note conform by prefixing a date: <NF>/Foo.md → <NF>/<date> Foo.md
+  // (a valid dated note). Date = the note's own frontmatter date, else today.
+  const addDateToOrphanNotes = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    for (const p of paths) {
+      const n = notesRef.current?.find((x) => x.path === p);
+      if (!n || /^\d{4}-\d{2}-\d{2}/.test(n.filename)) continue;
+      const date = toIsoDateValue(n.frontmatter.date) ?? today;
+      const rel = toVaultRel(p);
+      const newRel = `${vaultDir(rel)}/${date} ${n.filename}`;
+      try { await vaultFs.rename(rel, newRel); }
+      catch (e) { console.error("add-date rename failed", p, e); }
+    }
+    await reloadNotes();
+  }, [reloadNotes]);
+
   // ---- spacetime.mw is THE source of truth for calendar events --------
   // The event list and its index are derived SYNCHRONOUSLY from the parsed
   // mw during render. spacetime.mw's body is loaded up front
@@ -2307,6 +2401,73 @@ export function CardGrid() {
   // (handleEventClick, openEventNote) can read it without re-binding.
   const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(mwEventIndex);
   mwEventIndexRef.current = mwEventIndex;
+  // Drift: notes that ARE calendar events (date + time/all-day) but whose event
+  // isn't in spacetime.mw. effectiveFolder hides them from every view; here we
+  // collect them so the reconciliation indicator can flag them for the user to
+  // add to spacetime.mw or delete.
+  const orphanedEvents = useMemo<{ title: string; path: string; date: string }[]>(() => {
+    if (!notes) return [];
+    return notes
+      .filter((n) => isOrphanEventNote(n, mwEventIndex, noteEventLinkRef.current, focusedPath))
+      .map((n) => ({
+        title: n.title || n.filename.replace(/\.md$/i, ""),
+        path: n.path,
+        date: toIsoDateValue(n.frontmatter.date) ?? "",
+      }));
+  }, [notes, mwEventIndex, focusedPath]);
+  // Events whose backing note was EDITED so it no longer matches the spacetime
+  // line (almost always a retitle on auto-save). The note still carries a live
+  // link to a real mw event (noteEventLinkRef), so it is NOT orphaned — instead
+  // it's surfaced for the user to push the change into spacetime.mw (the source
+  // of truth) or leave alone. This is the "modified, not orphaned" path.
+  const modifiedEvents = useMemo<{ noteId: string; path: string; date: string; oldTitle: string; newTitle: string }[]>(() => {
+    if (!notes) return [];
+    const out: { noteId: string; path: string; date: string; oldTitle: string; newTitle: string }[] = [];
+    for (const n of notes) {
+      const link = noteEventLinkRef.current.get(n.id);
+      if (!link) continue;
+      // The linked event must still exist in the mw (else it's a true orphan).
+      if (!mwEventIndex.has(`${link.date}|${link.title.toLowerCase()}`)) continue;
+      const cur = (n.title || n.filename.replace(/\.md$/i, "")).trim();
+      if (cur && cur.toLowerCase() !== link.title.toLowerCase()) {
+        out.push({ noteId: n.id, path: n.path, date: link.date, oldTitle: link.title, newTitle: cur });
+      }
+    }
+    return out;
+  }, [notes, mwEventIndex]);
+  // Files inside a Notable Folder that are neither the main doc (<NF>/<NF>.md)
+  // nor a dated note (<NF>/YYYY-MM-DD *.md). By the membership rule these aren't
+  // part of Order — surfaced for the user to date (rename) or remove. Orphan
+  // EVENTS and modified events are handled above and excluded here.
+  const orphanedNotes = useMemo<{ title: string; path: string; folder: string }[]>(() => {
+    if (!notes) return [];
+    const out: { title: string; path: string; folder: string }[] = [];
+    for (const n of notes) {
+      if (!n.filename.toLowerCase().endsWith(".md")) continue;
+      if (n.path === focusedPath) continue;                            // being edited
+      if (noteEventLinkRef.current.has(n.id)) continue;                // linked/modified event
+      if (isOrphanEventNote(n, mwEventIndex, noteEventLinkRef.current, focusedPath)) continue; // orphan event
+      const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
+      const canonical = parent ? folderDirIndex.get(folderMatchKey(parent)) : undefined;
+      if (!canonical) continue;                                        // not in a Notable Folder
+      const base = n.filename.replace(/\.md$/i, "");
+      const isMain = isNotableFolder(n.frontmatter) || folderMatchKey(base) === folderMatchKey(parent);
+      const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
+      if (!isMain && !isDated) out.push({ title: base, path: n.path, folder: canonical });
+    }
+    return out;
+  }, [notes, folderDirIndex, mwEventIndex, focusedPath]);
+  // Auto-reset the review's OPEN flag once everything it could show is resolved.
+  // The dialog only renders when `mwReviewOpen && (review || orphan folders ||
+  // orphan events)`, so when the content empties the dialog vanishes but the
+  // flag stays true — and the next orphan (e.g. an event you're mid-typing)
+  // would silently RE-open it. Resetting here keeps reopening an explicit pill
+  // click: new drift only lights the bottom-left indicator, never pops a modal.
+  useEffect(() => {
+    if (mwReviewOpen && !mwReview && orphanedFolders.length === 0 && orphanedEvents.length === 0 && modifiedEvents.length === 0 && orphanedNotes.length === 0) {
+      setMwReviewOpen(false);
+    }
+  }, [mwReviewOpen, mwReview, orphanedFolders.length, orphanedEvents.length, modifiedEvents.length, orphanedNotes.length]);
   // Maps each rendered calendar chip's `path` → the mw event it represents,
   // so move/edit/delete handlers can locate the authoritative mw line. Also
   // records the backing note path (if any) so the same edit can keep that
@@ -3269,6 +3430,58 @@ export function CardGrid() {
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
 
+  // Reconcile orphan event notes INTO spacetime.mw (the inverse of removing
+  // them). The event is rebuilt from the note's own frontmatter — date, time,
+  // all-day — and its location is inferred from `folder:` (or, failing that,
+  // the note's own directory) and appended to the # Time/Events section. Once
+  // it's in the mw it stops being an orphan and renders normally. Bulk-capable;
+  // one mw write for the whole batch.
+  const addOrphanEventsToSpacetime = useCallback(async (paths: string[]) => {
+    const events: SpacetimeEvent[] = [];
+    for (const p of paths) {
+      const n = notesRef.current?.find((x) => x.path === p);
+      if (!n) continue;
+      const date = toIsoDateValue(n.frontmatter.date);
+      if (!date) continue;
+      const folderRef = parseRef(n.frontmatter.folder)
+        ?? (vaultDir(toVaultRel(n.path)).split("/").pop() || undefined);
+      const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
+        ? n.frontmatter.startTime : undefined;
+      events.push({
+        date,
+        title: n.title || n.filename.replace(/\.md$/i, ""),
+        ...(folderRef ? { folder: folderRef } : {}),
+        ...(st ? { time: st } : {}),
+        ...(typeof n.frontmatter.endTime === "string" ? { endTime: n.frontmatter.endTime } : {}),
+        ...(typeof n.frontmatter.endDate === "string" ? { endDate: String(n.frontmatter.endDate).slice(0, 10) } : {}),
+        ...(n.frontmatter.allDay === true ? { allDay: true } : {}),
+      });
+    }
+    if (events.length === 0) return;
+    await applyMwEdit((mw) => events.reduce((acc, ev) => mwAddEvent(acc, ev), mw));
+    await reloadNotes();
+  }, [applyMwEdit, reloadNotes]);
+
+  // Push a modified event's new title into spacetime.mw — the user confirming
+  // "yes, this retitle is real." Updates the mw line and re-points the stable
+  // link at the new title so it stops being flagged. Bulk-capable.
+  const applyModifiedEvents = useCallback(async (noteIds: string[]) => {
+    const edits: { date: string; oldTitle: string; newTitle: string; id: string }[] = [];
+    for (const id of noteIds) {
+      const n = notesRef.current?.find((x) => x.id === id);
+      const link = noteEventLinkRef.current.get(id);
+      if (!n || !link) continue;
+      const newTitle = (n.title || n.filename.replace(/\.md$/i, "")).trim();
+      if (!newTitle || newTitle.toLowerCase() === link.title.toLowerCase()) continue;
+      edits.push({ date: link.date, oldTitle: link.title, newTitle, id });
+    }
+    if (edits.length === 0) return;
+    await applyMwEdit((mw) => edits.reduce(
+      (acc, e) => mwUpdateEvent(acc, e.date, e.oldTitle, { title: e.newTitle }), mw));
+    for (const e of edits) noteEventLinkRef.current.set(e.id, { date: e.date, title: e.newTitle });
+    await reloadNotes();
+  }, [applyMwEdit, reloadNotes]);
+
   /** Settings → "Open todo.txt": create the configured file if it
    *  doesn't exist yet, then show ONLY that file in the Pile by
    *  replacing the active filter set with a single include pinned to
@@ -3859,7 +4072,7 @@ export function CardGrid() {
   // to Seasons.md so un-migrated vaults keep working.
   const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
   const seasons: Season[] = (parsedSpacetime && parsedSpacetime.seasons.length > 0)
-    ? parsedSpacetime.seasons.map((s) => ({ start: s.date, end: s.endDate ?? "", name: s.title }))
+    ? parsedSpacetime.seasons.map((s) => ({ start: s.date, end: s.endDate ?? null, name: s.title }))
     : (seasonsFile ? parseSeasons(seasonsFile.body) : []);
   const seasonsPath = seasonsFile?.path ?? null;
 
@@ -4069,6 +4282,17 @@ export function CardGrid() {
     const folderName = isMain ? ref : effectiveFolder(n);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
+    // Resolve the note's authoritative spacetime event (source of truth for its
+    // date + all-day-ness) — via the stable link first, else a direct date|title
+    // match. The note's own YAML is NOT consulted for this; that's the whole
+    // point (an event's all-day flag lives in spacetime.mw, not the note).
+    const evLink = noteEventLinkRef.current.get(n.id);
+    const evDate = evLink?.date || toIsoDateValue(n.frontmatter.date) || n.filename.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+    const evTitle = (evLink?.title || n.title || n.filename.replace(/\.md$/i, "").replace(/^\d{4}-\d{2}-\d{2}\s+/, "")).toLowerCase();
+    const matchedEvent = evDate ? mwEventIndex.get(`${evDate}|${evTitle}`) : undefined;
+    const spacetimeEvent = matchedEvent
+      ? { date: matchedEvent.date, allDay: matchedEvent.allDay ?? (!matchedEvent.time && !matchedEvent.endDate) }
+      : undefined;
     // Permalink only for a public note whose slug is pinned (after a
     // publish) and when a home target exists to build the URL from.
     const slug = typeof n.frontmatter.slug === "string" ? n.frontmatter.slug : "";
@@ -4087,6 +4311,7 @@ export function CardGrid() {
         availableFolders={availableFolderRefs}
         onSetFrontmatter={(patch) => handleSetFrontmatter(n.path, patch)}
         liveFrontmatter={n.frontmatter}
+        spacetimeEvent={spacetimeEvent}
         recentFolders={recentFolders}
         vaultNotes={vaultNotesIndex}
         onNavigate={navigateToRef}
@@ -4338,6 +4563,11 @@ export function CardGrid() {
       };
       const path = backing ? backing.path : `mw-event:${ev.date}|${t}`;
       chipMap.set(path, { ev, notePath: backing ? backing.path : null });
+      // Remember this note backs this event, keyed by the note's stable id.
+      // If the user later edits the title (breaking the date|title match) the
+      // link survives, so the note is treated as "this event, being modified"
+      // rather than a fresh orphan.
+      if (backing) noteEventLinkRef.current.set(backing.id, { date: ev.date, title: ev.title });
       out.push({
         path,
         filename: backing ? backing.filename : `${ev.date} ${ev.title}.md`,
@@ -4545,7 +4775,7 @@ export function CardGrid() {
           type="button"
           className="dock-btn dock-btn-search"
           onClick={() => setPaletteOpen(true)}
-          title="Open Notable Folder (Cmd+O)"
+          title="Open Notable Folder (Cmd+K)"
           aria-label="Search"
         >
           <SearchIcon size={20} strokeWidth={2.1} />
@@ -4873,18 +5103,6 @@ export function CardGrid() {
               hint: "spacetime · Markwhen",
               onPick: () => { void openSpacetimeMw(); setPaletteOpen(false); },
             },
-            {
-              label: "spacetime.yml",
-              keywords: "spacetime yml yaml space time",
-              hint: "spacetime · YAML",
-              onPick: () => { void openSpacetime(); setPaletteOpen(false); },
-            },
-            {
-              label: "Apply spacetime to vault…",
-              keywords: "spacetime apply sync vault folders create",
-              hint: "review changes first",
-              onPick: () => { void onSyncSpacetime(); setPaletteOpen(false); },
-            },
           ]}
         />
       )}
@@ -4968,7 +5186,7 @@ export function CardGrid() {
       })()}
 
       {/* spacetime.mw review: gated structural sync + on-disk drift flags. */}
-      {mwReviewOpen && (mwReview || orphanedFolders.length > 0) && (() => {
+      {mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0 || orphanedNotes.length > 0) && (() => {
         // Removals aren't applied (apply is non-destructive) — a dropped folder
         // becomes an orphan, shown in the section below. So the apply list shows
         // only renames / adds / reorders / seasons.
@@ -5030,6 +5248,71 @@ export function CardGrid() {
                   </ul>
                 </div>
               )}
+
+              {orphanedEvents.length > 0 && (
+                <div className="sync-deletes">
+                  <strong>Events on disk but not in spacetime:</strong>
+                  <p className="mw-orphan-hint">These notes carry calendar-event frontmatter but aren't in spacetime.mw, so Order hides them. "Add to spacetime" registers the event (its date, time, and folder are inferred from the note); "Remove" deletes the stray note.</p>
+                  <ul>
+                    {orphanedEvents.slice(0, 20).map((o) => (
+                      <li key={o.path} className="mw-orphan-row">
+                        <span className="mw-orphan-name">🗓 {o.date} {o.title}</span>
+                        <span className="mw-orphan-actions">
+                          <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addOrphanEventsToSpacetime([o.path]); }}>Add to spacetime</button>
+                          <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanEvents([o.path], o.title); }}>Remove</button>
+                        </span>
+                      </li>
+                    ))}
+                    {orphanedEvents.length > 20 && <li className="mw-orphan-row">+ {orphanedEvents.length - 20} more…</li>}
+                  </ul>
+                  <span className="mw-orphan-actions">
+                    <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addOrphanEventsToSpacetime(orphanedEvents.map((o) => o.path)); }}>Add all {orphanedEvents.length} to spacetime</button>
+                    <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanEvents(orphanedEvents.map((o) => o.path), `${orphanedEvents.length} notes`); }}>Remove all {orphanedEvents.length}</button>
+                  </span>
+                </div>
+              )}
+              {modifiedEvents.length > 0 && (
+                <div className="sync-deletes">
+                  <strong>Events edited (note retitled):</strong>
+                  <p className="mw-orphan-hint">These notes back a real spacetime event but were renamed, so the note and the spacetime line no longer match. "Update spacetime" rewrites the event's title to match the note.</p>
+                  <ul>
+                    {modifiedEvents.slice(0, 20).map((m) => (
+                      <li key={m.noteId} className="mw-orphan-row">
+                        <span className="mw-orphan-name">✎ {m.date} <s>{m.oldTitle}</s> → {m.newTitle}</span>
+                        <span className="mw-orphan-actions">
+                          <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void applyModifiedEvents([m.noteId]); }}>Update spacetime</button>
+                        </span>
+                      </li>
+                    ))}
+                    {modifiedEvents.length > 20 && <li className="mw-orphan-row">+ {modifiedEvents.length - 20} more…</li>}
+                  </ul>
+                  <span className="mw-orphan-actions">
+                    <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void applyModifiedEvents(modifiedEvents.map((m) => m.noteId)); }}>Update all {modifiedEvents.length}</button>
+                  </span>
+                </div>
+              )}
+              {orphanedNotes.length > 0 && (
+                <div className="sync-deletes">
+                  <strong>Files that aren't notes or main docs:</strong>
+                  <p className="mw-orphan-hint">These live inside a Notable Folder but aren't the main document or a dated note (YYYY-MM-DD …), so they aren't part of Order. "Add date" renames it into a dated note; "Remove" deletes it.</p>
+                  <ul>
+                    {orphanedNotes.slice(0, 20).map((o) => (
+                      <li key={o.path} className="mw-orphan-row">
+                        <span className="mw-orphan-name">📄 {o.folder}/{o.title}</span>
+                        <span className="mw-orphan-actions">
+                          <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addDateToOrphanNotes([o.path]); }}>Add date</button>
+                          <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanNotes([o.path], o.title); }}>Remove</button>
+                        </span>
+                      </li>
+                    ))}
+                    {orphanedNotes.length > 20 && <li className="mw-orphan-row">+ {orphanedNotes.length - 20} more…</li>}
+                  </ul>
+                  <span className="mw-orphan-actions">
+                    <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void addDateToOrphanNotes(orphanedNotes.map((o) => o.path)); }}>Add date to all {orphanedNotes.length}</button>
+                    <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanNotes(orphanedNotes.map((o) => o.path), `${orphanedNotes.length} notes`); }}>Remove all {orphanedNotes.length}</button>
+                  </span>
+                </div>
+              )}
               </div>
 
               <div className="settings-actions">
@@ -5050,8 +5333,8 @@ export function CardGrid() {
       })()}
 
       {/* Subtle reminder when there are unsynced spacetime.mw changes or drift. */}
-      {!mwReviewOpen && (mwReview || orphanedFolders.length > 0) && (() => {
-        const n = (mwReview?.items.length ?? 0) + orphanedFolders.length;
+      {!mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0 || orphanedNotes.length > 0) && (() => {
+        const n = (mwReview?.items.length ?? 0) + orphanedFolders.length + orphanedEvents.length + modifiedEvents.length + orphanedNotes.length;
         return (
           <button
             type="button"

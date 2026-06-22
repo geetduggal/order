@@ -13,6 +13,7 @@ import { Sidebar, type NotableFolder } from "../src/components/Sidebar";
 import { CommandPalette } from "../src/components/CommandPalette";
 import { Card } from "../src/components/Card";
 import { CalendarView, type NoteMeta } from "../src/components/CalendarView";
+import { openExternalUrl, EXTERNAL_SCHEME_RE } from "../src/lib/open-external";
 import { YearLinearView } from "../src/components/YearLinearView";
 import { FilterPillStack } from "../src/components/FilterPillStack";
 import { NotebookSection, type SectionCell } from "../src/components/NotebookSection";
@@ -117,6 +118,23 @@ export function ViewerApp(
     window.addEventListener("mousedown", onDocClick);
     return () => window.removeEventListener("mousedown", onDocClick);
   }, [toolsMenuOpen]);
+
+  // Every external link in the published viewer opens in a new tab — note
+  // bodies, frontmatter URLs, prerendered anchors. One document-capture
+  // listener so no surface leaks a same-tab navigation that loses the page.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const a = (e.target as HTMLElement | null)?.closest?.("a[href]");
+      if (!(a instanceof HTMLAnchorElement)) return;
+      const href = a.getAttribute("href") ?? "";
+      if (!EXTERNAL_SCHEME_RE.test(href)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openExternalUrl(href);
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, []);
   // Initial filters: a `?f=` query wins (in-app/back-forward URL), else
   // an arrival deep-link, else the home Notable Folder as the default
   // include. (The desktop app starts with no filters at all, but on the

@@ -988,28 +988,36 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
+  gap: 4px;
   padding: 2px 8px;
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.01em;
-  color: var(--ink-faint);
+  /* The theme's coral accent (the alternate to royal) — a contrasting,
+     always-legible date that still reads as metadata. Brightens to full on
+     card hover / focus / when open. */
+  color: var(--coral);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.72;
   transition:
     opacity 0.15s var(--ease-out),
     color 0.12s var(--ease-out),
     background-color 0.12s var(--ease-out),
     border-color 0.12s var(--ease-out);
 }
-.order-card:hover .order-card-fm-toggle { opacity: 0.7; }
+.order-card:hover .order-card-fm-toggle { opacity: 0.85; }
 .order-card-fm-toggle:hover,
 .order-card-fm-toggle:focus-visible,
 .order-card-fm-toggle.is-on {
   opacity: 1;
-  color: var(--royal);
-  border-color: color-mix(in srgb, var(--royal) 35%, transparent);
-  background: var(--royal-soft);
+  color: var(--coral);
+  border-color: color-mix(in srgb, var(--coral) 35%, transparent);
+  background: var(--coral-soft);
 }
+/* All-day events: the calendar glyph becomes a filled star in royal — the
+   theme's other accent — so a "marked day" stands out next to the coral date.
+   Its own colour overrides the chip's coral in every state. */
+.order-card-fm-star { color: var(--royal); }
 
 /* Permalink + copy buttons inherit .order-card-btn — see unified strip. */
 
@@ -3811,6 +3819,20 @@ iframe.order-youtube-embed {
   font-size: 12px;
   color: var(--ink);
 }
+.publish-list-mark {
+  flex: none;
+  width: 1ch;
+  text-align: center;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-weight: 700;
+}
+.publish-list-item.is-add .publish-list-mark { color: #2e9e5b; }
+.publish-list-item.is-upd .publish-list-mark { color: #c98a16; }
+.publish-list-item.is-rem .publish-list-mark { color: #c0392b; }
+.publish-list-item.is-rem .publish-list-title {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
 .publish-list-folder {
   margin-left: auto;
   font-size: 10px;
@@ -5376,11 +5398,10 @@ iframe.order-youtube-embed {
 /* ---------- Card height cap (newspaper "Read more") ---------- */
 .order-card-content {
   position: relative;
-  /* The top-right card-controls cluster + the top-left {date} toggle
-     sit absolutely positioned at top:6. Reserve a small strip of air
-     so the first editor line clears them — matched to the card's
-     12px bottom padding so the chrome feels symmetric top↔bottom. */
-  padding-top: 12px;
+  /* The top-right card-controls cluster + the always-visible top-left date
+     chip sit absolutely positioned at top:6. Reserve enough air that the
+     first editor line / H1 clears the date chip with a comfortable gap. */
+  padding-top: 30px;
 }
 /* Fade overlay at the bottom of a capped card. */
 .order-card-fade {
@@ -5501,14 +5522,21 @@ iframe.order-youtube-embed {
   border-radius: 8px;
 }
 
-/* Published view: strip ALL remaining edit chrome so a published image is
-   just the image — no resize handle, no grey selection overlay. */
+/* Published view: also strip the resize handle so a published image is just
+   the image. */
 .viewer-shell .milkdown-image-block > .image-wrapper > .image-resize-handle {
   display: none !important;
 }
-.viewer-shell .milkdown-image-block.selected > .image-wrapper::before,
-.viewer-shell .milkdown-image-block.selected > .image-edit::before {
+/* No grey selection overlay ANYWHERE (editor + published). Selecting an image
+   to resize / copy / delete shows only the corner resize handle (editor),
+   never a translucent block painted over the picture — that overlay read as a
+   permanent "highlight" and, by sitting on top, made the image awkward to
+   click and copy. pointer-events:none lets clicks fall through to the image
+   and its handle. */
+.milkdown-image-block.selected > .image-wrapper::before,
+.milkdown-image-block.selected > .image-edit::before {
   background: transparent !important;
+  pointer-events: none;
 }
 
 /* Card / preview view (not fullscreen): crop a large image to a clean
@@ -5536,6 +5564,24 @@ iframe.order-youtube-embed {
   aspect-ratio: auto;
   object-fit: contain;
   max-width: 100%;
+}
+
+/* Fullscreen ("expand the note"): show the image large. Crepe renders the
+   <img> as a SIBLING of .image-wrapper (the wrapper holds only the resize
+   chrome) and pins the size with an inline `height:` (the stored resize value).
+   So we target `.milkdown-image-block img` DIRECTLY and override that inline
+   height — fill the card width, contained, up to a tall cap. */
+.order-card.is-fullscreen .milkdown-image-block {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block;
+}
+.order-card.is-fullscreen .milkdown-image-block img {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 82vh !important;
+  object-fit: contain;
+  margin: 0 auto;
 }
 
 /* ---------- Notable Folder backside (flip-card) ---------- */
@@ -6473,6 +6519,11 @@ iframe.order-youtube-embed {
 .fm-readonly-url .fm-readonly-text {
   color: var(--royal);
 }
+/* The URL value is a real anchor so it's clickable (routed to the OS
+   browser by the app-wide external-link handler), styled to match the
+   inspector rather than the browser's default blue underline. */
+.fm-readonly-link { cursor: pointer; text-decoration: none; }
+.fm-readonly-link:hover { text-decoration: underline; }
 .fm-url-open {
   flex: 0 0 auto;
   display: inline-flex;

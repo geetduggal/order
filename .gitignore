@@ -31,3 +31,6 @@ dist-viewer/*
 !dist-viewer/.gitkeep
 test-results/
 playwright-report/
+
+# One-time, local-only vault/spacetime recovery scripts — never committed.
+scripts/*.mjs

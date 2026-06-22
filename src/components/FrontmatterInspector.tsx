@@ -292,7 +292,14 @@ function ReadOnlyValue({ value, fieldKey }: { value: unknown; fieldKey: string }
     const url = (value as string).trim();
     return (
       <span className="fm-readonly-url">
-        <span className="fm-readonly-text" title={url}>{url}</span>
+        <a
+          className="fm-readonly-text fm-readonly-link"
+          href={url}
+          title={url}
+          onClick={(e) => { e.preventDefault(); openInBrowser(url); }}
+        >
+          {url}
+        </a>
         <button
           type="button"
           className="fm-url-open"

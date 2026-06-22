@@ -4,7 +4,7 @@
 // carry `home:`, and stubs the actual build/push (that lands in
 // Phase 3).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X as XIcon, Info } from "lucide-react";
 import { isIosSync } from "../lib/vault";
 
@@ -13,6 +13,9 @@ export interface PublishableNote {
   title: string;          // display title
   folderRef: string | null;
   path: string;
+  /** Last-modified time (Unix ms) — diffed against the last-published
+   *  manifest to flag which notes changed. */
+  mtime: number;
 }
 
 export interface HomeFolder {
@@ -42,6 +45,24 @@ interface Props {
 
 const TOKEN_KEY = "order.githubToken";
 
+// Per-target snapshot of what was last published — `{ ref: mtime }` — so the
+// panel can show what's changed since. Keyed by the home target so each site
+// tracks independently.
+const MANIFEST_PREFIX = "order.publishManifest.";
+function readManifest(target: string): Record<string, number> | null {
+  try {
+    const raw = localStorage.getItem(MANIFEST_PREFIX + target);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : null;
+  } catch { return null; }
+}
+function writeManifest(target: string, notes: PublishableNote[]): void {
+  try {
+    const m: Record<string, number> = {};
+    for (const n of notes) m[n.filename] = n.mtime;
+    localStorage.setItem(MANIFEST_PREFIX + target, JSON.stringify(m));
+  } catch { /* non-fatal */ }
+}
+
 export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Props) {
   const ios = isIosSync();
   const [token, setToken] = useState<string>(() => {
@@ -62,10 +83,22 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
     | { kind: "ok"; outcome: PublishOutcome }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
+  // Bumped after a successful publish so the changes view re-reads the manifest.
+  const [publishedTick, setPublishedTick] = useState(0);
+  // Always points at the latest runPublish so the keydown listener (bound once)
+  // fires the current closure.
+  const runPublishRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && status.kind !== "publishing") { e.preventDefault(); onClose(); }
+      if (status.kind === "publishing") return;
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key === "Enter") {
+        // Enter anywhere in the panel — including the single-line token /
+        // commit fields — fires Publish.
+        e.preventDefault();
+        runPublishRef.current();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -75,6 +108,25 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
     () => homes.find((h) => h.name === selectedHome) ?? null,
     [homes, selectedHome],
   );
+
+  // What's changed since the last publish to this target: brand-new public
+  // notes, notes whose mtime advanced, and refs that were published before but
+  // aren't public anymore. `first` when there's no prior manifest for it.
+  const changes = useMemo(() => {
+    if (!current) return null;
+    const manifest = readManifest(current.target);
+    if (!manifest) return { first: true, added: publishableNotes, updated: [] as PublishableNote[], removed: [] as string[] };
+    const added: PublishableNote[] = [];
+    const updated: PublishableNote[] = [];
+    for (const n of publishableNotes) {
+      const prev = manifest[n.filename];
+      if (prev === undefined) added.push(n);
+      else if (n.mtime > prev) updated.push(n);
+    }
+    const live = new Set(publishableNotes.map((n) => n.filename));
+    const removed = Object.keys(manifest).filter((ref) => !live.has(ref));
+    return { first: false, added, updated, removed };
+  }, [current, publishableNotes, publishedTick]);
 
   async function runPublish() {
     if (!current) return;
@@ -88,11 +140,15 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
         githubToken: token.trim() || undefined,
         commitMessage: commitMsg.trim() || undefined,
       });
+      // Snapshot what we just published so the next open shows a fresh diff.
+      writeManifest(current.target, publishableNotes);
+      setPublishedTick((t) => t + 1);
       setStatus({ kind: "ok", outcome });
     } catch (err) {
       setStatus({ kind: "error", message: typeof err === "string" ? err : (err instanceof Error ? err.message : String(err)) });
     }
   }
+  runPublishRef.current = () => { void runPublish(); };
 
   return (
     <div className="publish-backdrop" onMouseDown={onClose}>
@@ -147,28 +203,43 @@ export function PublishPanel({ homes, publishableNotes, onPublish, onClose }: Pr
             </div>
 
             <div className="publish-summary">
-              {publishableNotes.length}
-              {" "}{publishableNotes.length === 1 ? "note is" : "notes are"} marked
-              <code> public</code>.
+              {!changes || changes.first ? (
+                <>{publishableNotes.length}{" "}{publishableNotes.length === 1 ? "note" : "notes"} marked <code>public</code> — first publish.</>
+              ) : changes.added.length + changes.updated.length + changes.removed.length === 0 ? (
+                <>No changes since last publish — {publishableNotes.length} {publishableNotes.length === 1 ? "note" : "notes"} live.</>
+              ) : (
+                <>
+                  <strong>{changes.added.length}</strong> new{" · "}
+                  <strong>{changes.updated.length}</strong> updated{" · "}
+                  <strong>{changes.removed.length}</strong> removed
+                </>
+              )}
             </div>
 
-            {publishableNotes.length > 0 && (
-              <ul className="publish-list">
-                {publishableNotes.slice(0, 50).map((n) => (
-                  <li key={n.path} className="publish-list-item">
-                    <span className="publish-list-title">{n.title}</span>
-                    {n.folderRef && (
-                      <span className="publish-list-folder">{n.folderRef}</span>
-                    )}
-                  </li>
-                ))}
-                {publishableNotes.length > 50 && (
-                  <li className="publish-list-more">
-                    + {publishableNotes.length - 50} more…
-                  </li>
-                )}
-              </ul>
-            )}
+            {(() => {
+              const rows = (!changes || changes.first)
+                ? publishableNotes.map((n) => ({ key: n.path, mark: "", cls: "", title: n.title, folder: n.folderRef }))
+                : [
+                    ...changes.added.map((n) => ({ key: "a:" + n.path, mark: "+", cls: " is-add", title: n.title, folder: n.folderRef })),
+                    ...changes.updated.map((n) => ({ key: "u:" + n.path, mark: "~", cls: " is-upd", title: n.title, folder: n.folderRef })),
+                    ...changes.removed.map((ref) => ({ key: "r:" + ref, mark: "−", cls: " is-rem", title: ref, folder: null as string | null })),
+                  ];
+              if (rows.length === 0) return null;
+              return (
+                <ul className="publish-list">
+                  {rows.slice(0, 50).map((row) => (
+                    <li key={row.key} className={"publish-list-item" + row.cls}>
+                      {row.mark && <span className="publish-list-mark" aria-hidden>{row.mark}</span>}
+                      <span className="publish-list-title">{row.title}</span>
+                      {row.folder && <span className="publish-list-folder">{row.folder}</span>}
+                    </li>
+                  ))}
+                  {rows.length > 50 && (
+                    <li className="publish-list-more">+ {rows.length - 50} more…</li>
+                  )}
+                </ul>
+              );
+            })()}
 
             {ios && (
               <div className="publish-ios">
