@@ -619,23 +619,27 @@ export function CardGrid() {
     // any folder / pile view — it's flagged in the reconciliation indicator
     // (see orphanedEvents) for the user to add to spacetime.mw or remove.
     if (isOrphanEventNote(n, mwEventIndexRef.current, noteEventLinkRef.current, focusedPathRef.current)) return null;
-    const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
-    if (parent) {
-      const canonical = folderDirIndexRef.current.get(folderMatchKey(parent));
+    // A note is a FLAT member of a Notable Folder only when it sits directly in
+    // one: <Area>/<Category>/<NF>/<note>.md (4 path segments). We key off the NF
+    // POSITION (parts[2]) — not the immediate parent dir NAME — so a note nested
+    // in a subfolder (e.g. Readwise/Articles/…) is never matched to a same-named
+    // NF elsewhere in the tree. Anything nested deeper than the NF is library
+    // content surfaced by that folder's list/base query, not the flat pile, and
+    // is never an orphan. Placement is the directory's (spacetime's) job — there
+    // is deliberately no `folder:` frontmatter fallback.
+    const parts = toVaultRel(n.path).split("/");
+    if (parts.length === 4) {
+      const canonical = folderDirIndexRef.current.get(folderMatchKey(parts[2]));
       if (canonical) {
-        // Strict membership: inside a Notable Folder only the main doc
-        // (<NF>/<NF>.md) and dated notes (<NF>/YYYY-MM-DD *.md) belong; anything
-        // else is an orphan file (flagged via orphanedNotes), hidden from views.
+        // Strict membership: only the main doc (<NF>/<NF>.md) and dated notes
+        // (<NF>/YYYY-MM-DD *.md) belong; anything else is an orphan file
+        // (flagged via orphanedNotes), hidden from views.
         const base = n.filename.replace(/\.md$/i, "");
-        const isMain = folderMatchKey(base) === folderMatchKey(parent);
+        const isMain = folderMatchKey(base) === folderMatchKey(parts[2]);
         const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
         return (isMain || isDated) ? canonical : null;
       }
     }
-    // Not inside a spacetime Notable Folder directory → not a member. Placement
-    // is the directory's (spacetime's) job, never the note's `folder:` YAML, so
-    // there's deliberately no frontmatter fallback here: a note that sits
-    // outside every spacetime NF is drift, not silently re-homed by its YAML.
     return null;
   }, []);
   /** Scroll the pile to a card and pin focus on it. Single entry
@@ -2459,11 +2463,17 @@ export function CardGrid() {
       if (n.path === focusedPath) continue;                            // being edited
       if (noteEventLinkRef.current.has(n.id)) continue;                // linked/modified event
       if (isOrphanEventNote(n, mwEventIndex, noteEventLinkRef.current, focusedPath)) continue; // orphan event
-      const parent = vaultDir(toVaultRel(n.path)).split("/").pop() ?? "";
-      const canonical = parent ? folderDirIndex.get(folderMatchKey(parent)) : undefined;
-      if (!canonical) continue;                                        // not in a Notable Folder
+      // Only notes sitting DIRECTLY in an NF (Area/Category/NF/note.md = 4
+      // segments) are subject to the flat date-rule. Keyed off the NF position
+      // (parts[2]), not the immediate parent name, so library content nested in
+      // subfolders (e.g. Readwise/Articles/…) is never matched to a same-named
+      // NF elsewhere and never flagged.
+      const parts = toVaultRel(n.path).split("/");
+      if (parts.length !== 4) continue;                                // subfolder/library content
+      const canonical = folderDirIndex.get(folderMatchKey(parts[2]));
+      if (!canonical) continue;                                        // not in a spacetime NF
       const base = n.filename.replace(/\.md$/i, "");
-      const isMain = folderMatchKey(base) === folderMatchKey(parent);
+      const isMain = folderMatchKey(base) === folderMatchKey(parts[2]);
       const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
       if (!isMain && !isDated) out.push({ title: base, path: n.path, folder: canonical });
     }
