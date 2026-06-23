@@ -3029,7 +3029,7 @@ export function CardGrid() {
         const dir = (mwEv.folder && noteDirByRef(mwEv.folder)) || root;
         const fm: Frontmatter = {
           date: mwEv.date,
-          allDay: mwEv.allDay ?? (!mwEv.time && !mwEv.endDate),
+          allDay: mwEv.allDay ?? !mwEv.time,
           ...(mwEv.time    ? { startTime: mwEv.time }    : {}),
           ...(mwEv.endTime ? { endTime: mwEv.endTime }    : {}),
           ...(mwEv.endDate ? { endDate: mwEv.endDate }    : {}),
@@ -4588,7 +4588,10 @@ export function CardGrid() {
 
       const fm: Frontmatter = {
         date: ev.date,
-        allDay: ev.allDay ?? (!ev.time && !ev.endDate),
+        // An event with no start time is all-day — including multi-day date
+        // ranges (date / endDate). Gating on !endDate here left those with
+        // allDay:false and no startTime, so CalendarView skipped them.
+        allDay: ev.allDay ?? !ev.time,
         ...(ev.time    ? { startTime: ev.time }    : {}),
         ...(ev.endTime ? { endTime: ev.endTime }    : {}),
         ...(ev.endDate ? { endDate: ev.endDate }    : {}),
