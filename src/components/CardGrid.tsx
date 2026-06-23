@@ -2239,22 +2239,23 @@ export function CardGrid() {
       const yml = serializeSpacetime(newSt);
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
-      // Notable Folders that already have a main doc ON DISK, by normalized
+      // Notable Folders whose main doc already exists ON DISK, by normalized
       // key (truncation- AND dash-aware so a >78-char or em-dash variant still
-      // matches). This must come from the loaded notes, NOT folderDirIndex:
-      // folderDirIndex mirrors the live spacetime taxonomy, which already lists
-      // the just-added folder, so using it would skip exactly the folders whose
-      // main doc still needs creating (the "no main document" bug).
-      const onDiskFolders = new Set(
-        (notesRef.current ?? [])
-          .filter(isMainDoc)
-          .map((n) => folderMatchKey(toVaultRel(n.path).split("/")[2])),
-      );
-      console.log("[DIAGMAT] onDiskFolders", [...onDiskFolders], "newSpace", JSON.stringify(newSt.space));
+      // matches). A Notable Folder main doc lives at the depth-4 path
+      // <Area>/<Category>/<Folder>/<Folder>.md (filename === its dir). This must
+      // come from the loaded notes, NOT folderDirIndex: folderDirIndex mirrors
+      // the live spacetime taxonomy, which already lists the just-added folder,
+      // so using it would skip exactly the folders whose main doc still needs
+      // creating (the "added via spacetime edit → no main document" bug).
+      const onDiskFolders = new Set<string>();
+      for (const n of notesRef.current ?? []) {
+        const parts = toVaultRel(n.path).split("/");
+        if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2])
+          onDiskFolders.add(folderMatchKey(parts[2]));
+      }
       for (const area of newSt.space)
         for (const cat of area.children)
           for (const nf of cat.children) {
-            console.log("[DIAGMAT] nf", nf.name, "skip?", onDiskFolders.has(folderMatchKey(nf.name)));
             // Skip only when the folder's main doc already exists on disk —
             // otherwise materialize it below so a folder added via a spacetime
             // edit gets its <NF>/<NF>.md cover.

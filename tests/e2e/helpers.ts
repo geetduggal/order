@@ -49,12 +49,16 @@ export async function fixtureFiles(): Promise<Record<string, string | null>> {
 export interface BootOptions {
   /** Enable todo.txt mode (Settings toggle) before load. */
   todoTxt?: boolean;
+  /** Extra vault files merged over the fixture (e.g. a seeded
+   *  spacetime.mw so the taxonomy is spacetime-driven). A `null`
+   *  value marks a binary/opaque file. */
+  extraFiles?: Record<string, string | null>;
 }
 
 /** Install the Tauri IPC mock + seed localStorage, then load the app
  *  and wait for the dock (i.e. notes loaded). */
 export async function bootVault(page: Page, opts: BootOptions = {}): Promise<void> {
-  const files = await fixtureFiles();
+  const files = { ...(await fixtureFiles()), ...(opts.extraFiles ?? {}) };
   const seeds: Record<string, string> = {
     "order.vaultPath": "/Vault",
     "order.theme": "light",
@@ -104,6 +108,12 @@ function installMock(arg: { files: Record<string, string | null>; seeds: Record<
 
   const norm = (rel: string) => rel.replace(/^\.?\//, "");
   const isMd = (p: string) => p.endsWith(".md");
+  // The real Rust vault_walk loads .md, .txt, .yml AND .mw so todo.txt,
+  // spacetime.yml, and spacetime.mw flow through the same pipeline (see
+  // src-tauri/src/vault_fs.rs). Mirror that here or the mocked taxonomy
+  // silently falls back to the Areas.md chain instead of spacetime.
+  const isNote = (p: string) =>
+    isMd(p) || p.endsWith(".txt") || p.endsWith(".yml") || p.endsWith(".mw");
   const base = (p: string) => p.split("/").pop() ?? p;
   const splitFm = (raw: string): [string, number] => {
     const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
@@ -132,10 +142,10 @@ function installMock(arg: { files: Record<string, string | null>; seeds: Record<
     vault_set_root: () => null,
     vault_is_ios: () => false,
     vault_walk: () =>
-      [...files.keys()].filter(isMd).map((p) => ({ path: `${ROOT}/${p}`, name: base(p) })),
+      [...files.keys()].filter(isNote).map((p) => ({ path: `${ROOT}/${p}`, name: base(p) })),
     vault_walk_metadata: () =>
       [...files.keys()]
-        .filter((p) => isMd(p) || p.endsWith(".txt"))
+        .filter(isNote)
         .map((p) => {
           const raw = files.get(p) ?? "";
           const [fm, bodyLen] = typeof raw === "string" ? splitFm(raw) : ["", 0];

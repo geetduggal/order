@@ -150,11 +150,14 @@ export function OrderTerminal({ cwd }: Props) {
       void invoke("terminal_write", { session, data }).catch(() => { /* closed */ });
     });
 
-    // Defer the first fit to the next frame so the card's layout (and
-    // the full-bleed margins) have settled, then open the PTY at the
-    // correct column count and focus. A second fit after the web font
-    // loads corrects the cell width once Menlo replaces the fallback.
-    requestAnimationFrame(() => {
+    // Open the PTY only AFTER the web font has loaded AND the card layout
+    // (full-bleed margins) has settled. fit() measured with the fallback font
+    // computes the wrong cell width, so opening first made the shell paint its
+    // welcome screen at the wrong column count and put the cursor a cell off —
+    // and the later refit resized the PTY but never reflowed that first paint.
+    // Waiting for fonts.ready before the open means the grid is correct the
+    // first time, so width and cursor line up.
+    const openPty = () => {
       if (disposed) return;
       applyFit();
       lastW = host.clientWidth;
@@ -162,10 +165,10 @@ export function OrderTerminal({ cwd }: Props) {
       void invoke("terminal_open", { session, cwd, cols: term.cols, rows: term.rows })
         .then(() => term.focus())
         .catch((err) => term.write(`\x1b[38;2;255;127;80m${String(err)}\x1b[0m\r\n`));
-    });
-    void (document as Document & { fonts?: FontFaceSet }).fonts?.ready.then(() => {
-      if (!disposed) applyFit();
-    });
+    };
+    const fontsReady = (document as Document & { fonts?: FontFaceSet }).fonts?.ready;
+    if (fontsReady) void fontsReady.then(() => requestAnimationFrame(openPty));
+    else requestAnimationFrame(openPty);
     // One more fit after the first output settles — when `ls` overflows
     // and the scrollbar gutter is claimed, the usable width changes and
     // the column count must shrink so the last column / right-prompt
