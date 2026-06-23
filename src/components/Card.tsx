@@ -50,7 +50,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon } from "lucide-react";
+import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
@@ -229,6 +229,15 @@ interface Props {
    *  through {none → cards → lines → none}. Parent writes YAML. */
   listMode?: "none" | "cards" | "lines";
   onCycleList?: () => Promise<void> | void;
+  /** File Piles (session-only). Present only for non-main cards in the
+   *  single-folder "Notable Folder view". onAddToPile moves this card to the
+   *  top of the folder's stream; onClosePile hides it for the session. */
+  onAddToPile?: () => void;
+  onClosePile?: () => void;
+  /** File browser (backside) row actions — present only on the NF Main Doc. */
+  onBrowserAddToPile?: (filename: string) => void;
+  onBrowserRename?: (oldName: string, newName: string) => Promise<void> | void;
+  onBrowserDelete?: (name: string) => Promise<void> | void;
 }
 
 const DELETE_CONFIRM_TIMEOUT_MS = 4000;
@@ -267,6 +276,11 @@ export function Card(props: Props) {
     listMode,
     onCycleList,
     externalBodyVersion,
+    onAddToPile,
+    onClosePile,
+    onBrowserAddToPile,
+    onBrowserRename,
+    onBrowserDelete,
   } = props;
   const milkdownRef = useRef<MilkdownHandle | null>(null);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -1141,6 +1155,17 @@ export function Card(props: Props) {
             <Trash2 size={14} strokeWidth={2} />
           </button>
         ))}
+        {onAddToPile && (
+          <button
+            type="button"
+            className="order-card-btn order-card-topile"
+            onClick={onAddToPile}
+            title="Move to top of pile"
+            aria-label="Move to top of pile"
+          >
+            <ArrowUpToLineIcon size={14} strokeWidth={2} />
+          </button>
+        )}
         <button
           type="button"
           className="order-card-btn order-card-fullscreen"
@@ -1161,6 +1186,17 @@ export function Card(props: Props) {
             <XIcon size={14} strokeWidth={2.4} />
           </button>
         )}
+        {onClosePile && (
+          <button
+            type="button"
+            className="order-card-btn order-card-dismiss"
+            onClick={onClosePile}
+            title="Close card"
+            aria-label="Close card"
+          >
+            <XIcon size={14} strokeWidth={2.4} />
+          </button>
+        )}
       </div>
       {isMainDoc && !readOnly && !flipped && onCreateUpdate && updateOpen && (
         <NotableUpdateBar
@@ -1177,6 +1213,9 @@ export function Card(props: Props) {
           folderRel={folderRelForFlip}
           folderName={folderName}
           onFlipBack={() => setFlipped(false)}
+          onAddToPile={onBrowserAddToPile ? (filename: string) => { onBrowserAddToPile(filename); setFlipped(false); } : undefined}
+          onRenameFile={onBrowserRename}
+          onDeleteFile={onBrowserDelete}
         />
       )}
       {termOpen && !readOnly && vaultRootForFlip && (
