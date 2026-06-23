@@ -36,6 +36,7 @@ import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcom
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import { computePileOrder } from "../lib/file-piles";
 import {
   DEFAULT_TODO_TXT_PATH,
   eventKey,
@@ -2442,6 +2443,71 @@ export function CardGrid() {
   // note's filename + frontmatter in sync. Populated during render below.
   const eventChipRef = useRef<Map<string, { ev: SpacetimeEvent; notePath: string | null }>>(new Map());
 
+  // File Piles (session-only display state; never persisted). Keyed by folder
+  // ref (canonical Notable Folder name). pileFront = paths moved/added to the
+  // top in order; pileHidden = cards closed this session. Reset on restart.
+  const [pileFront, setPileFront] = useState<Map<string, string[]>>(new Map());
+  const [pileHidden, setPileHidden] = useState<Map<string, Set<string>>>(new Map());
+
+  const addToPile = useCallback((folder: string, path: string) => {
+    setPileFront((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(folder) ?? [];
+      next.set(folder, [path, ...cur.filter((p) => p !== path)]);
+      return next;
+    });
+    setPileHidden((prev) => {
+      const cur = prev.get(folder);
+      if (!cur || !cur.has(path)) return prev;
+      const next = new Map(prev);
+      const s = new Set(cur);
+      s.delete(path);
+      next.set(folder, s);
+      return next;
+    });
+  }, []);
+
+  const closeFromPile = useCallback((folder: string, path: string) => {
+    setPileHidden((prev) => {
+      const next = new Map(prev);
+      const s = new Set(next.get(folder) ?? []);
+      s.add(path);
+      next.set(folder, s);
+      return next;
+    });
+    setPileFront((prev) => {
+      const cur = prev.get(folder);
+      if (!cur || !cur.includes(path)) return prev;
+      const next = new Map(prev);
+      next.set(folder, cur.filter((p) => p !== path));
+      return next;
+    });
+  }, []);
+
+  // Resolve a file-browser row (folderRel + filename) to its loaded note path,
+  // then surface it at the top of folderRef's pile.
+  const addToPileByName = useCallback((folderRef: string, folderRel: string, filename: string) => {
+    const rel = folderRel ? `${folderRel}/${filename}` : filename;
+    const note = notesRef.current?.find((n) => toVaultRel(n.path) === rel);
+    if (note) addToPile(folderRef, note.path);
+  }, [addToPile]);
+
+  const renameVaultFile = useCallback(async (folderRel: string, oldName: string, newName: string) => {
+    const from = folderRel ? `${folderRel}/${oldName}` : oldName;
+    const to = folderRel ? `${folderRel}/${newName}` : newName;
+    if (from === to) return;
+    await vaultFs.rename(from, to);
+    await reloadNotes();
+  }, [reloadNotes]);
+
+  const deleteVaultFile = useCallback(async (folderRel: string, name: string) => {
+    const ok = await tauriConfirm(`Delete "${name}"? This can't be undone.`, { title: "Delete file?", kind: "warning" });
+    if (!ok) return;
+    const rel = folderRel ? `${folderRel}/${name}` : name;
+    await vaultFs.remove(rel);
+    await reloadNotes();
+  }, [reloadNotes]);
+
   /** Apply a transform to the root spacetime.mw and persist it. Optimistically
    *  updates the in-memory mw note body so the calendar (which reads mwEvents)
    *  reflects the change on the next render; Effect 2 then mirrors to yml and
@@ -4249,12 +4315,14 @@ export function CardGrid() {
     : sortedNotesFull;
   const hasMore = sortedNotes.length < sortedNotesFull.length;
 
+  const vaultDirRelFor = (n: LoadedNote) => vaultDir(toVaultRel(n.path));
+
   // Render one note as a <Card>. Shared by the temporal flat grid and
   // the newspaper sections; capHeight is only set in newspaper mode.
-  const cardNode = (n: LoadedNote, capHeight?: number) => {
+  const cardNode = (n: LoadedNote, capHeight?: number, pile?: { folder: string }) => {
     const isMain = isMainDoc(n);
     const ref = n.filename.replace(/\.md$/, "");
-    const folderName = isMain ? ref : effectiveFolder(n);
+    const folderName = isMain ? ref : (effectiveFolder(n) ?? pile?.folder ?? null);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
     // The note's authoritative spacetime event (source of truth for its date +
@@ -4290,6 +4358,11 @@ export function CardGrid() {
         onNavigate={navigateToRef}
         onAddFilter={addFolderToFilter}
         onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
+        onClosePile={pile && !isMain ? () => closeFromPile(pile.folder, n.path) : undefined}
+        onAddToPile={pile && !isMain ? () => addToPile(pile.folder, n.path) : undefined}
+        onBrowserAddToPile={isMain ? (filename: string) => addToPileByName(ref, vaultDirRelFor(n), filename) : undefined}
+        onBrowserRename={isMain ? (oldName: string, newName: string) => renameVaultFile(vaultDirRelFor(n), oldName, newName) : undefined}
+        onBrowserDelete={isMain ? (name: string) => deleteVaultFile(vaultDirRelFor(n), name) : undefined}
         autoFocus={focusPath === n.path}
         focused={focusedPath === n.path}
         onFocus={() => setFocusedPath(n.path)}
@@ -4422,6 +4495,7 @@ export function CardGrid() {
   // several stacked sections, cap each Main Doc to keep visual weight
   // even.
   const mainCap = includeRefs.length > 1 ? MAIN_CAP : undefined;
+  const noteByPath = new Map(notes.map((n) => [n.path, n] as const));
   const sections = newspaperMode
     ? includeRefs.map((ref) => {
         // Prefer an NF Main Doc with that filename; fall back to any
@@ -4446,9 +4520,27 @@ export function CardGrid() {
         const centerpiece: SectionCell | null = mainNote
           ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
-        const noteCells: SectionCell[] = sectionNotes.map((n) => ({
-          key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP),
-        }));
+        // Single-folder view = the "Notable Folder view". Apply File Piles:
+        // surface session-added files at the top, drop closed ones, and pass
+        // each card its close/add controls. Multi-folder/home newspaper is
+        // unchanged (no pile controls, default dated order).
+        let noteCells: SectionCell[];
+        if (includeRefs.length === 1) {
+          const front = pileFront.get(ref) ?? [];
+          const hidden = pileHidden.get(ref) ?? new Set<string>();
+          const datedPaths = sectionNotes.map((n) => n.path);
+          const ordered = computePileOrder(datedPaths, front, hidden, mainNote?.path ?? null);
+          noteCells = ordered
+            .map((p) => noteByPath.get(p))
+            .filter((n): n is LoadedNote => !!n)
+            .map((n) => ({
+              key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP, { folder: ref }),
+            }));
+        } else {
+          noteCells = sectionNotes.map((n) => ({
+            key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP),
+          }));
+        }
         return { ref, centerpiece, noteCells };
       })
     : [];
