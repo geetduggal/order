@@ -5813,7 +5813,7 @@ iframe.order-youtube-embed {
 }
 .nf-flip-row {
   display: grid;
-  grid-template-columns: 18px 1fr auto auto;
+  grid-template-columns: 18px 1fr auto auto auto;
   gap: 8px;
   align-items: center;
   padding: 5px 6px;
@@ -5848,6 +5848,12 @@ iframe.order-youtube-embed {
   color: var(--ink-faint);
   white-space: nowrap;
 }
+.nf-flip-row-actions { display: inline-flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
+.nf-flip-row:hover .nf-flip-row-actions { opacity: 1; }
+.nf-flip-row-btn { display: inline-flex; align-items: center; justify-content: center; padding: 2px; border: none; background: transparent; color: var(--ink-faint); cursor: pointer; border-radius: 4px; }
+.nf-flip-row-btn:hover { background: var(--bg-elev); color: var(--ink); }
+.nf-flip-row-btn.is-danger:hover { color: #d9534f; }
+.nf-flip-row-rename { font: inherit; padding: 1px 4px; border: 1px solid var(--ink-faint); border-radius: 4px; background: var(--paper); color: var(--ink); }
 .nf-flip-drop-overlay {
   position: absolute;
   inset: 0;

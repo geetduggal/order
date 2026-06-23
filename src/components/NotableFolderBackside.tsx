@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ArrowDownAZ, Clock4, FolderOpen, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon } from "lucide-react";
+import { ArrowDownAZ, Clock4, FolderOpen, FileText, FileImage, FileVideo, Folder as FolderIcon, File as FileIcon, ArrowUpToLine, Pencil, Trash2 } from "lucide-react";
 import { vaultFs, type VaultDirEntryStat } from "../lib/vault-fs";
 import { isIosSync } from "../lib/vault";
 
@@ -54,6 +54,9 @@ export function NotableFolderBackside({
   folderRel,
   folderName,
   onFlipBack,
+  onAddToPile,
+  onRenameFile,
+  onDeleteFile,
 }: {
   /** Absolute path to the vault root — joined with folderRel for the
    *  OS-side `open_path` / `reveal_path` / `open_terminal` commands. */
@@ -64,6 +67,12 @@ export function NotableFolderBackside({
   /** Display name (the folder's basename) for the header. */
   folderName: string;
   onFlipBack: () => void;
+  /** File Piles: surface this markdown file at the top of the folder's pile. */
+  onAddToPile?: (filename: string) => void;
+  /** Rename a file in this folder. Resolves after the on-disk rename + reload. */
+  onRenameFile?: (oldName: string, newName: string) => Promise<void> | void;
+  /** Delete a file in this folder. Resolves after the on-disk remove + reload. */
+  onDeleteFile?: (name: string) => Promise<void> | void;
 }) {
   const [entries, setEntries] = useState<VaultDirEntryStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +83,10 @@ export function NotableFolderBackside({
   /** Names freshly imported by a drop — used to scroll-into-view and
    *  pulse the matching row(s) once the list reloads. */
   const [justImported, setJustImported] = useState<Set<string>>(new Set());
+
+  // Inline rename: the row name being edited, and its working text.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
 
   const absPath = useMemo(() => {
     const base = vaultRoot.replace(/\/+$/, "");
@@ -233,6 +246,27 @@ export function NotableFolderBackside({
     [folderRel],
   );
 
+  const isMd = (name: string) => /\.md$/i.test(name);
+
+  const commitRename = useCallback(async (oldName: string) => {
+    const next = renameText.trim();
+    setRenaming(null);
+    if (!next || next === oldName || !onRenameFile) return;
+    // Preserve the .md extension if the user dropped it.
+    const finalName = /\.md$/i.test(next) ? next : `${next}.md`;
+    try { await onRenameFile(oldName, finalName); await reload(); }
+    catch (e) { console.error("rename failed", e); }
+  }, [renameText, onRenameFile, reload]);
+
+  const doDelete = useCallback(async (name: string) => {
+    if (!onDeleteFile) return;
+    // The confirm prompt lives in CardGrid.deleteVaultFile (tauriConfirm,
+    // cross-platform). If the user cancels there, the file simply remains and
+    // the reload is a no-op.
+    try { await onDeleteFile(name); await reload(); }
+    catch (e) { console.error("delete failed", e); }
+  }, [onDeleteFile, reload]);
+
   return (
     <div
       ref={panelRef}
@@ -301,17 +335,69 @@ export function NotableFolderBackside({
                   (e.isDir ? " is-dir" : "") +
                   (highlighted ? " is-just-imported" : "")
                 }
-                draggable={!e.isDir}
+                draggable={!e.isDir && renaming !== e.name}
                 onDragStart={!e.isDir ? (ev) => onRowDragStart(ev, e.name) : undefined}
-                onClick={() => { void openFile(e.name); }}
+                onClick={renaming === e.name ? undefined : () => { void openFile(e.name); }}
                 title={e.name}
               >
                 <Icon size={13} strokeWidth={2} className="nf-flip-row-icon" />
-                <span className="nf-flip-row-name">{e.name}</span>
+                {renaming === e.name ? (
+                  <input
+                    className="nf-flip-row-rename"
+                    autoFocus
+                    value={renameText}
+                    onChange={(ev) => setRenameText(ev.target.value)}
+                    onClick={(ev) => ev.stopPropagation()}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") { ev.preventDefault(); void commitRename(e.name); }
+                      else if (ev.key === "Escape") { ev.preventDefault(); setRenaming(null); }
+                    }}
+                    onBlur={() => void commitRename(e.name)}
+                  />
+                ) : (
+                  <span className="nf-flip-row-name">{e.name}</span>
+                )}
                 <span className="nf-flip-row-meta">
                   {e.isDir ? "" : formatSize(e.size)}
                 </span>
                 <span className="nf-flip-row-mtime">{formatMtime(e.mtime)}</span>
+                {!e.isDir && renaming !== e.name && (
+                  <span className="nf-flip-row-actions">
+                    {onAddToPile && isMd(e.name) && (
+                      <button
+                        type="button"
+                        className="nf-flip-row-btn"
+                        onClick={(ev) => { ev.stopPropagation(); onAddToPile(e.name); }}
+                        title="Add to pile (top)"
+                        aria-label="Add to pile"
+                      >
+                        <ArrowUpToLine size={13} strokeWidth={2} />
+                      </button>
+                    )}
+                    {onRenameFile && (
+                      <button
+                        type="button"
+                        className="nf-flip-row-btn"
+                        onClick={(ev) => { ev.stopPropagation(); setRenameText(e.name); setRenaming(e.name); }}
+                        title="Rename"
+                        aria-label="Rename"
+                      >
+                        <Pencil size={13} strokeWidth={2} />
+                      </button>
+                    )}
+                    {onDeleteFile && (
+                      <button
+                        type="button"
+                        className="nf-flip-row-btn is-danger"
+                        onClick={(ev) => { ev.stopPropagation(); void doDelete(e.name); }}
+                        title="Delete"
+                        aria-label="Delete"
+                      >
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    )}
+                  </span>
+                )}
               </li>
             );
           })}
