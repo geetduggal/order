@@ -253,7 +253,7 @@ export function NotableFolderBackside({
     setRenaming(null);
     if (!next || next === oldName || !onRenameFile) return;
     // Preserve the .md extension if the user dropped it.
-    const finalName = /\.md$/i.test(next) ? next : `${next}.md`;
+    const finalName = (isMd(oldName) && !/\.md$/i.test(next)) ? `${next}.md` : next;
     try { await onRenameFile(oldName, finalName); await reload(); }
     catch (e) { console.error("rename failed", e); }
   }, [renameText, onRenameFile, reload]);
