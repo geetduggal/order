@@ -2239,15 +2239,26 @@ export function CardGrid() {
       const yml = serializeSpacetime(newSt);
       lastSpacetimeRef.current = yml;
       await writeVault("spacetime.yml", yml);
+      // Notable Folders that already have a main doc ON DISK, by normalized
+      // key (truncation- AND dash-aware so a >78-char or em-dash variant still
+      // matches). This must come from the loaded notes, NOT folderDirIndex:
+      // folderDirIndex mirrors the live spacetime taxonomy, which already lists
+      // the just-added folder, so using it would skip exactly the folders whose
+      // main doc still needs creating (the "no main document" bug).
+      const onDiskFolders = new Set(
+        (notesRef.current ?? [])
+          .filter(isMainDoc)
+          .map((n) => folderMatchKey(toVaultRel(n.path).split("/")[2])),
+      );
+      console.log("[DIAGMAT] onDiskFolders", [...onDiskFolders], "newSpace", JSON.stringify(newSt.space));
       for (const area of newSt.space)
         for (const cat of area.children)
           for (const nf of cat.children) {
-            // Skip if a folder for this node already exists under ANY name
-            // variant. folderMatchKey is truncation- AND dash-aware, so a
-            // folder whose full name exceeds the 78-char dir cap still matches.
-            // Without this the truncated relPath below wouldn't find it and we'd
-            // spawn an empty truncated duplicate (the Apply-creates-stubs bug).
-            if (folderDirIndexRef.current?.has(folderMatchKey(nf.name))) continue;
+            console.log("[DIAGMAT] nf", nf.name, "skip?", onDiskFolders.has(folderMatchKey(nf.name)));
+            // Skip only when the folder's main doc already exists on disk —
+            // otherwise materialize it below so a folder added via a spacetime
+            // edit gets its <NF>/<NF>.md cover.
+            if (onDiskFolders.has(folderMatchKey(nf.name))) continue;
             const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
             const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
             try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
@@ -4360,7 +4371,7 @@ export function CardGrid() {
         onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
         onClosePile={pile && !isMain ? () => closeFromPile(pile.folder, n.path) : undefined}
         onAddToPile={pile && !isMain ? () => addToPile(pile.folder, n.path) : undefined}
-        onBrowserAddToPile={isMain ? (filename: string) => addToPileByName(ref, vaultDirRelFor(n), filename) : undefined}
+        onBrowserAddToPile={isMain ? (filename: string) => { addToPileByName(ref, vaultDirRelFor(n), filename); focusFolder(ref); } : undefined}
         onBrowserRename={isMain ? (oldName: string, newName: string) => renameVaultFile(vaultDirRelFor(n), oldName, newName) : undefined}
         onBrowserDelete={isMain ? (name: string) => deleteVaultFile(vaultDirRelFor(n), name) : undefined}
         autoFocus={focusPath === n.path}
@@ -4520,27 +4531,22 @@ export function CardGrid() {
         const centerpiece: SectionCell | null = mainNote
           ? { key: keyFor(mainNote), dataPath: mainNote.path, node: cardNode(mainNote, mainCap) }
           : null;
-        // Single-folder view = the "Notable Folder view". Apply File Piles:
-        // surface session-added files at the top, drop closed ones, and pass
-        // each card its close/add controls. Multi-folder/home newspaper is
-        // unchanged (no pile controls, default dated order).
-        let noteCells: SectionCell[];
-        if (includeRefs.length === 1) {
-          const front = pileFront.get(ref) ?? [];
-          const hidden = pileHidden.get(ref) ?? new Set<string>();
-          const datedPaths = sectionNotes.map((n) => n.path);
-          const ordered = computePileOrder(datedPaths, front, hidden, mainNote?.path ?? null);
-          noteCells = ordered
-            .map((p) => noteByPath.get(p))
-            .filter((n): n is LoadedNote => !!n)
-            .map((n) => ({
-              key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP, { folder: ref }),
-            }));
-        } else {
-          noteCells = sectionNotes.map((n) => ({
-            key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP),
+        // File Piles applies to every folder section (single-folder view AND
+        // each section of the home/multi-folder newspaper). Surface
+        // session-added files at the top, drop closed ones, and give each card
+        // its close/add controls. When a folder's pile is untouched, front and
+        // hidden are empty and computePileOrder returns the default dated order
+        // — so an unpiled folder renders exactly as before.
+        const front = pileFront.get(ref) ?? [];
+        const hidden = pileHidden.get(ref) ?? new Set<string>();
+        const datedPaths = sectionNotes.map((n) => n.path);
+        const ordered = computePileOrder(datedPaths, front, hidden, mainNote?.path ?? null);
+        const noteCells: SectionCell[] = ordered
+          .map((p) => noteByPath.get(p))
+          .filter((n): n is LoadedNote => !!n)
+          .map((n) => ({
+            key: keyFor(n), dataPath: n.path, node: cardNode(n, NOTE_CAP, { folder: ref }),
           }));
-        }
         return { ref, centerpiece, noteCells };
       })
     : [];
