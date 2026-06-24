@@ -3,7 +3,7 @@
 // the user pick a different folder (native dialog) or reset to the
 // default. The parent persists the choice and reloads the vault.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos } from "../lib/vault";
@@ -33,6 +33,17 @@ export function SettingsPanel({
   const [fallback, setFallback] = useState<string>("");
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
   const [busy, setBusy] = useState(false);
+
+  const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false });
+  const [gcalId, setGcalId] = useState("");
+  const [gcalSecret, setGcalSecret] = useState("");
+  const [gcalBusy, setGcalBusy] = useState(false);
+  const [gcalError, setGcalError] = useState<string | null>(null);
+  const refreshGcal = useCallback(async () => {
+    try { setGcal(await import("../lib/gcal-accounts").then((m) => m.listAccounts())); }
+    catch (e) { setGcalError(String(e)); }
+  }, []);
+  useEffect(() => { void refreshGcal(); }, [refreshGcal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +175,49 @@ export function SettingsPanel({
             calendar event — one line per event, readable and editable in any
             text editor. Events you create in Order are markdown files; lines
             you add by hand show up on the calendar too.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Google Calendar</span>
+          {gcalError && <span className="settings-hint" style={{ color: "#d9534f" }}>{gcalError}</span>}
+          <span className="settings-value">
+            <input type="text" className="settings-input" placeholder="OAuth Client ID"
+              value={gcalId} onChange={(e) => setGcalId(e.target.value)} />
+            <input type="password" className="settings-input" placeholder="OAuth Client Secret"
+              value={gcalSecret} onChange={(e) => setGcalSecret(e.target.value)} />
+            <button type="button" className="settings-btn" disabled={gcalBusy || !gcalId || !gcalSecret}
+              onClick={async () => {
+                setGcalBusy(true); setGcalError(null);
+                try { const m = await import("../lib/gcal-accounts"); await m.setCredentials(gcalId, gcalSecret); await refreshGcal(); }
+                catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); }
+              }}>Save credentials</button>
+          </span>
+          <span className="settings-value">
+            <button type="button" className="settings-btn" disabled={gcalBusy || !gcal.has_credentials}
+              onClick={async () => {
+                setGcalBusy(true); setGcalError(null);
+                try { const m = await import("../lib/gcal-accounts"); await m.connectAccount(); await refreshGcal(); }
+                catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); }
+              }}>{gcalBusy ? "Connecting…" : "Connect Google account"}</button>
+          </span>
+          <ul className="gcal-account-list">
+            {gcal.accounts.map((a) => (
+              <li key={a} className="gcal-account-row">
+                <label className="settings-toggle">
+                  <input type="radio" name="gcal-default" checked={gcal.default === a}
+                    onChange={async () => { const m = await import("../lib/gcal-accounts"); await m.setDefault(a); await refreshGcal(); }} />
+                  <span>{a}{gcal.default === a ? " (default)" : ""}</span>
+                </label>
+                <button type="button" className="settings-btn is-danger"
+                  onClick={async () => { const m = await import("../lib/gcal-accounts"); await m.disconnect(a); await refreshGcal(); }}>Disconnect</button>
+              </li>
+            ))}
+          </ul>
+          <span className="settings-hint">
+            Connect a Google account to sync curated events. Credentials come from your own
+            Google Cloud project (OAuth "Desktop app" client). The default account hosts
+            events that don't name one. Desktop only for now.
           </span>
         </div>
 

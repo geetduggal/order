@@ -6632,3 +6632,6 @@ iframe.order-youtube-embed {
   cursor: pointer;
 }
 
+.gcal-account-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gcal-account-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
