@@ -6673,3 +6673,9 @@ iframe.order-youtube-embed {
   border-radius: 3px;
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
+
+/* ---------- Per-day GCal import icon in Day/Week headers ---------- */
+.fc-day-header-inner { display: inline-flex; align-items: center; gap: 4px; justify-content: center; }
+.fc-day-import-btn { display: inline-flex; align-items: center; justify-content: center; padding: 1px; border: none; background: transparent; color: var(--ink-faint); cursor: pointer; border-radius: 3px; opacity: 0; }
+.fc-col-header-cell:hover .fc-day-import-btn { opacity: 1; }
+.fc-day-import-btn:hover { color: var(--royal); background: var(--royal-soft); }

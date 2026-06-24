@@ -1,5 +1,6 @@
 // Thin bridge to the Rust gcal account commands (desktop OAuth, Plan 2).
 import { invoke } from "@tauri-apps/api/core";
+import type { ImportedEvent } from "./gcal-import";
 
 export interface AccountsView {
   accounts: string[];
@@ -27,3 +28,6 @@ export interface PushEventInput {
 }
 
 export const pushEvent = (input: PushEventInput) => invoke<string>("gcal_push_event", { input });
+
+export const listDayEvents = (account: string, date: string) =>
+  invoke<ImportedEvent[]>("gcal_list_day_events", { account, date });

@@ -9,6 +9,7 @@
 // LinearView plugin we haven't ported yet.
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Download as DownloadIcon } from "lucide-react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -52,6 +53,9 @@ interface Props {
   /** Switch to a different calendar view. Routed to the parent so
    *  state stays in CardGrid / ViewerApp. */
   onSelectView?: (v: "day" | "week" | "month" | "year" | "season") => void;
+  /** Called with an ISO date string when the user clicks the per-day
+   *  import icon in Day / Week time-grid headers. */
+  onImportDay?: (dateIso: string) => void;
 }
 
 /** Add one day to a `YYYY-MM-DD` string (UTC-safe via the Date ctor).
@@ -281,7 +285,7 @@ function deriveFirstDay(hidden: ReadonlySet<number>): number {
 }
 
 export const CalendarView = forwardRef<CalendarViewHandle, Props>(function CalendarView(props, navRef) {
-  const { notes, initialView, onMoveEvent } = props;
+  const { notes, initialView, onMoveEvent, onImportDay } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   useImperativeHandle(navRef, () => ({
@@ -542,6 +546,26 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
         displayEventTime={false}
         eventContent={renderEventContent}
+        dayHeaderContent={(arg) => {
+          const iso = arg.date.toISOString().slice(0, 10);
+          const isTimeGrid = arg.view.type === "timeGridDay" || arg.view.type === "timeGridWeek";
+          return (
+            <span className="fc-day-header-inner">
+              <span>{arg.text}</span>
+              {isTimeGrid && onImportDay && (
+                <button
+                  type="button"
+                  className="fc-day-import-btn"
+                  title="Import this day from Google"
+                  aria-label="Import this day from Google"
+                  onClick={(e) => { e.stopPropagation(); onImportDay(iso); }}
+                >
+                  <DownloadIcon size={11} strokeWidth={2.2} />
+                </button>
+              )}
+            </span>
+          );
+        }}
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
         // Month view: collapse overflow into a "+N more" popover (Full
         // Calendar Plus convention).
