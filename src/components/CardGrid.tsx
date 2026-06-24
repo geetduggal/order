@@ -2479,6 +2479,67 @@ export function CardGrid() {
   const gcalPendingRef = useRef<PushIntent[]>([]);
   gcalPendingRef.current = gcalPending;
 
+  // Import review modal: the day being imported, the rows (checked = accept),
+  // the chosen account, and the target folder.
+  const [importReview, setImportReview] = useState<{ date: string; account: string; rows: (import("../lib/gcal-import").ImportRow & { accept: boolean })[]; folder: string } | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+
+  const mwEventsRefForImport = useRef<SpacetimeEvent[]>([]);
+  mwEventsRefForImport.current = mwEvents;
+
+  const startImport = useCallback(async (dateIso: string) => {
+    try {
+      const m = await import("../lib/gcal-accounts");
+      const acc = await m.listAccounts();
+      if (acc.accounts.length === 0) { await tauriMessage("Connect a Google account in Settings first.", { title: "Import" }); return; }
+      const account = acc.default ?? acc.accounts[0];
+      const fetched = await m.listDayEvents(account, dateIso);
+      if (fetched.length === 0) { await tauriMessage(`No Google events on ${dateIso}.`, { title: "Import" }); return; }
+      const { classifyImports } = await import("../lib/gcal-import");
+      const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
+      const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
+      setImportReview({ date: dateIso, account, rows, folder: homeFolderRef.current ?? "" });
+    } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
+  }, []);
+
+  const applyImport = useCallback(async () => {
+    const review = importReview;
+    if (!review) return;
+    setImportBusy(true);
+    try {
+      const accepted = review.rows.filter((r) => r.accept);
+      const root = await vaultRoot();
+      const dir = (review.folder && noteDirByRef(review.folder)) || root;
+      // Create a backing note (description body) for each accepted event, then
+      // add all events to spacetime.mw in one edit (tagged with the source
+      // account email so they're recognized as that calendar's events).
+      for (const r of accepted) {
+        const fm: Frontmatter = {
+          date: r.date,
+          allDay: r.allDay,
+          ...(r.time ? { startTime: r.time } : {}),
+          ...(r.endTime ? { endTime: r.endTime } : {}),
+          ...(review.folder ? { folder: `[[${review.folder}]]` } : {}),
+          title: r.title,
+        };
+        const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
+        await uniqueWrite(dir, basenameForEvent(r.date, r.title), joinFrontmatter(fm, body));
+      }
+      await applyMwEdit((mw) => accepted.reduce((acc, r) => mwAddEvent(acc, {
+        date: r.date,
+        title: r.title,
+        ...(r.time ? { time: r.time } : {}),
+        ...(r.endTime ? { endTime: r.endTime } : {}),
+        ...(r.allDay ? { allDay: true } : {}),
+        ...(review.folder ? { folder: review.folder } : {}),
+        emails: [review.account],
+      }), mw));
+      setImportReview(null);
+      await tauriMessage(`Imported ${accepted.length} event(s) into ${review.folder || "home"}.`, { title: "Import" });
+    } catch (e) { await tauriMessage(`Import apply failed: ${String(e)}`, { title: "Import", kind: "error" }); }
+    finally { setImportBusy(false); }
+  }, [importReview]);
+
   // Push all pending events to Google; mark synced ones so they leave the
   // pending list. Description = each event's backing note body.
   const applyGcalSync = useCallback(async () => {
@@ -5115,6 +5176,7 @@ export function CardGrid() {
             onCreate={promptCreate}
             currentView="day"
             onSelectView={setView}
+            onImportDay={(iso) => { void startImport(iso); }}
           />
         )}
         {view === "week" && (
@@ -5128,6 +5190,7 @@ export function CardGrid() {
             onCreate={promptCreate}
             currentView="week"
             onSelectView={setView}
+            onImportDay={(iso) => { void startImport(iso); }}
           />
         )}
         {view === "month" && (
@@ -5489,6 +5552,38 @@ export function CardGrid() {
           </div>
         );
       })()}
+
+      {importReview && (
+        <div className="settings-overlay" onMouseDown={() => { if (!importBusy) setImportReview(null); }}>
+          <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
+            <h2 className="settings-title">Import {importReview.date} from Google</h2>
+            <p className="mw-orphan-hint">From {importReview.account}. New events are pre-checked; events you already have are unchecked. Accepted events are added to spacetime in the chosen folder.</p>
+            <div className="settings-row">
+              <span className="settings-label">Folder</span>
+              <input className="settings-input" list="mw-folder-options" placeholder="home"
+                value={importReview.folder}
+                onChange={(e) => setImportReview((r) => r ? { ...r, folder: e.target.value } : r)} />
+            </div>
+            <ul className="gcal-account-list">
+              {importReview.rows.map((r, i) => (
+                <li key={`${r.date}|${r.time ?? ""}|${r.title}`} className="gcal-account-row">
+                  <label className="settings-toggle">
+                    <input type="checkbox" checked={r.accept}
+                      onChange={(e) => setImportReview((rv) => rv ? { ...rv, rows: rv.rows.map((x, j) => j === i ? { ...x, accept: e.target.checked } : x) } : rv)} />
+                    <span>{r.date}{r.time ? ` ${r.time}` : ""} {r.title || "(untitled)"}{r.isNew ? "" : " · already have"}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="settings-actions">
+              <button type="button" className="settings-btn" disabled={importBusy} onClick={() => setImportReview(null)}>Cancel</button>
+              <button type="button" className="settings-btn" disabled={importBusy} onClick={() => { void applyImport(); }}>
+                {importBusy ? "Importing…" : `Import ${importReview.rows.filter((r) => r.accept).length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Subtle reminder when there are unsynced spacetime.mw changes or drift. */}
       {!mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0 || gcalPending.length > 0) && (() => {
