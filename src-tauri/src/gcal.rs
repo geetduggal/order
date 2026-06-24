@@ -1,6 +1,7 @@
 // Google Calendar OAuth (desktop, PKCE loopback) + Keychain token storage.
 // Desktop (macOS) only in this plan; iOS is a separate plan.
 use base64::Engine;
+use chrono::{Local, NaiveDate, NaiveTime, TimeZone};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -439,6 +440,98 @@ pub fn find_event_id(
         }
     }
     None
+}
+
+const CAL_BASE: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+
+/// Format a local date+time as an RFC3339 string with the correct local offset
+/// for that date (handles DST), e.g. "2026-06-25T14:00:00-07:00".
+fn local_rfc3339(date: &str, hhmm: &str) -> Result<String, String> {
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("date: {e}"))?;
+    let t = NaiveTime::parse_from_str(hhmm, "%H:%M").map_err(|e| format!("time: {e}"))?;
+    let naive = d.and_time(t);
+    let dt = Local.from_local_datetime(&naive).single().ok_or("ambiguous local time")?;
+    Ok(dt.to_rfc3339())
+}
+
+/// Add one day to an ISO date (exclusive end for all-day events).
+fn next_day(date: &str) -> Result<String, String> {
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("date: {e}"))?;
+    Ok((d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushEventInput {
+    pub host: String,
+    pub date: String,
+    pub time: Option<String>,
+    pub end_time: Option<String>,
+    pub all_day: bool,
+    pub title: String,
+    pub description: String,
+    pub attendees: Vec<String>,
+}
+
+fn cal_get(token: &str, url: &str) -> Result<(u16, String), String> {
+    let resp = agent().get(url).set("Authorization", &format!("Bearer {token}")).call();
+    match resp {
+        Ok(r) => Ok((r.status(), r.into_string().map_err(|e| format!("body: {e}"))?)),
+        Err(ureq::Error::Status(s, r)) => Ok((s, r.into_string().unwrap_or_default())),
+        Err(e) => Err(format!("transport: {e}")),
+    }
+}
+
+fn cal_send(token: &str, method: &str, url: &str, body: &serde_json::Value) -> Result<(u16, String), String> {
+    let req = agent().request(method, url).set("Authorization", &format!("Bearer {token}"));
+    let resp = req.send_json(body.clone());
+    match resp {
+        Ok(r) => Ok((r.status(), r.into_string().map_err(|e| format!("body: {e}"))?)),
+        Err(ureq::Error::Status(s, r)) => Ok((s, r.into_string().unwrap_or_default())),
+        Err(e) => Err(format!("transport: {e}")),
+    }
+}
+
+/// Push one curated event to the host account's primary calendar: find an
+/// existing match by natural key, then insert (create) or patch (update), with
+/// sendUpdates=all so invitees are notified. Returns "created" or "updated".
+#[tauri::command]
+pub async fn gcal_push_event(app: tauri::AppHandle, input: PushEventInput) -> Result<String, String> {
+    let cfg = load_config(&config_dir(&app)?);
+    let token = fetch_access_token(&cfg, &input.host)?;
+
+    let (start, end) = if input.all_day {
+        (EventTime::AllDay { date: input.date.clone() },
+         EventTime::AllDay { date: next_day(&input.date)? })
+    } else {
+        let t = input.time.as_deref().ok_or("timed event missing time")?;
+        let et = input.end_time.as_deref().unwrap_or(t);
+        (EventTime::Timed { date_time: local_rfc3339(&input.date, t)? },
+         EventTime::Timed { date_time: local_rfc3339(&input.date, et)? })
+    };
+    let body = event_json(&input.title, &input.description, &start, &end, &input.attendees);
+
+    // List the day to find an existing natural-key match.
+    let (tmin, tmax) = (local_rfc3339(&input.date, "00:00")?, local_rfc3339(&next_day(&input.date)?, "00:00")?);
+    let list_url = format!(
+        "{CAL_BASE}?singleEvents=true&timeMin={}&timeMax={}",
+        enc(&tmin), enc(&tmax)
+    );
+    let (ls, lb) = cal_get(&token, &list_url)?;
+    if ls >= 400 {
+        return Err(format!("calendar list failed ({ls}): {lb}"));
+    }
+    let existing = find_event_id(&lb, &input.title, &input.date, input.time.as_deref());
+
+    let (method, url, action) = match &existing {
+        Some(id) => ("PATCH".to_string(), format!("{CAL_BASE}/{id}?sendUpdates=all", id = enc(id)), "updated"),
+        None => ("POST".to_string(), format!("{CAL_BASE}?sendUpdates=all"), "created"),
+    };
+    let (ws, wb) = cal_send(&token, &method, &url, &body)?;
+    if ws >= 400 {
+        return Err(format!("calendar {action} failed ({ws}): {wb}"));
+    }
+    Ok(action.to_string())
 }
 
 #[cfg(test)]
