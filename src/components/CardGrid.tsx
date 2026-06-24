@@ -1150,7 +1150,10 @@ export function CardGrid() {
     }
   }, [reloadNotes]);
 
-  const [capWarning, setCapWarning] = useState<string | null>(null);
+  // Lightweight inline toast (bottom-center pill). `warn` = coral nudge
+  // (caps, blocked actions); `ok` = calm confirmation that replaces what used
+  // to be obtrusive native "success" dialogs.
+  const [capWarning, setCapWarning] = useState<{ text: string; kind: "warn" | "ok" } | null>(null);
 
   /** Every Notable Folder whose YAML carries `home: "<user>/<repo>/<path>"`.
    *  Drives both the Publish panel (lets the user pick when multiple)
@@ -1362,9 +1365,9 @@ export function CardGrid() {
         mtime: n.mtime,
       }));
   }, [notes]);
-  const flashCap = useCallback((msg: string) => {
-    setCapWarning(msg);
-    setTimeout(() => setCapWarning((c) => (c === msg ? null : c)), 2500);
+  const flashCap = useCallback((msg: string, kind: "warn" | "ok" = "warn") => {
+    setCapWarning({ text: msg, kind });
+    setTimeout(() => setCapWarning((c) => (c?.text === msg ? null : c)), 2500);
   }, []);
 
   // ---- spacetime.mw space/season mutation helpers ----------------
@@ -2502,13 +2505,19 @@ export function CardGrid() {
       } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
     }
     if (done.size > 0) setGcalSyncedSig((prev) => new Set([...prev, ...done]));
-    await tauriMessage(
-      `Synced to Google: ${created} created, ${updated} updated`
-      + (errors.length ? `\n${errors.length} failed:\n${errors.join("\n")}` : ""),
-      { title: "Sync to Google", kind: errors.length ? "warning" : "info" },
-    );
+    // Clean success → quiet inline toast. Failures DO want attention, so those
+    // keep the native dialog (it also lists which events failed).
+    if (errors.length) {
+      await tauriMessage(
+        `Synced to Google: ${created} created, ${updated} updated`
+        + `\n${errors.length} failed:\n${errors.join("\n")}`,
+        { title: "Sync to Google", kind: "warning" },
+      );
+    } else {
+      flashCap(`Synced to Google — ${created} created, ${updated} updated`, "ok");
+    }
     } finally { setGcalSyncing(false); }
-  }, []);
+  }, [flashCap]);
 
   // Auto-reset the review's OPEN flag once everything it could show is resolved.
   // The dialog only renders when `mwReviewOpen && (review || orphan folders ||
@@ -2803,10 +2812,14 @@ export function CardGrid() {
       }
       done++;
     }
-    await tauriMessage(`Migration complete — ${done} files updated.\nBackup: ${backupPath}`, { title: "Migration complete" });
+    // Quiet inline confirmation instead of a blocking dialog; the backup path
+    // is rarely needed in the moment, so log it for recovery rather than
+    // interrupting with it.
+    console.log(`[migration] complete — ${done} files updated. Backup: ${backupPath}`);
+    flashCap(`Migration complete — ${done} files updated`, "ok");
     lastSpacetimeRef.current = null;
     await reloadNotes();
-  }, [reloadNotes]);
+  }, [reloadNotes, flashCap]);
 
   const onSyncSpacetime = useCallback(async () => {
     try {
@@ -5494,7 +5507,7 @@ export function CardGrid() {
       })()}
 
       {capWarning && (
-        <div className="cap-warning" role="status">{capWarning}</div>
+        <div className={"cap-warning" + (capWarning.kind === "ok" ? " is-ok" : "")} role="status">{capWarning.text}</div>
       )}
 
       {titlePrompt && (() => {

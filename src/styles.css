@@ -3921,6 +3921,9 @@ iframe.order-youtube-embed {
   box-shadow: 0 8px 24px rgba(20, 20, 20, 0.18);
   animation: cap-fade 200ms var(--ease-out);
 }
+/* Success confirmation (e.g. a finished sync/migration) — calmer than the
+   coral warning so it reads as "done", not "watch out". */
+.cap-warning.is-ok { background: var(--royal, #6b8cff); }
 @keyframes cap-fade {
   from { opacity: 0; transform: translate(-50%, 8px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
