@@ -5,6 +5,7 @@ mod publish;
 mod publish_ios;
 mod fts;
 mod terminal;
+mod gcal;
 
 use std::sync::Mutex;
 use tauri::Manager;
