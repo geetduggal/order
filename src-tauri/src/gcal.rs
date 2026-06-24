@@ -421,7 +421,7 @@ pub fn find_event_id(
         if it.get("summary").and_then(|s| s.as_str()) != Some(summary) {
             continue;
         }
-        let start = it.get("start")?;
+        let Some(start) = it.get("start") else { continue };
         match start_time {
             None => {
                 if start.get("date").and_then(|d| d.as_str()) == Some(start_date) {
