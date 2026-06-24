@@ -282,9 +282,21 @@ fn config_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_config_dir().map_err(|e| format!("config dir: {e}"))
 }
 
+/// iOS stub: the desktop loopback flow (TcpListener + system-browser redirect)
+/// can't run in the iOS sandbox. Real iOS OAuth (ASWebAuthenticationSession +
+/// custom-scheme redirect) is a separate plan; until then, fail cleanly so the
+/// phone shows guidance instead of timing out. Events still reach iOS because
+/// the synced spacetime.mw carries them once you connect on desktop.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn gcal_connect_account(_app: tauri::AppHandle) -> Result<String, String> {
+    Err("Connecting a Google account isn't supported on iOS yet — connect in the desktop app. Your synced spacetime.mw carries the events to your phone.".into())
+}
+
 /// Run the full desktop OAuth flow: build PKCE, open the browser, capture the
 /// code on a loopback listener, exchange it, store the refresh token in the
 /// Keychain, and register the account in config. Returns the account email.
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 pub async fn gcal_connect_account(app: tauri::AppHandle) -> Result<String, String> {
     let dir = config_dir(&app)?;
