@@ -9,7 +9,9 @@ use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
+// `openid email` lets us read the account's email (userinfo) to key the
+// connection; `calendar.events` is the actual data scope.
+const SCOPE: &str = "openid email https://www.googleapis.com/auth/calendar.events";
 
 // Percent-encode query-value characters that are not unreserved (RFC 3986).
 // Unreserved chars (never encoded): A-Z a-z 0-9 - . _ ~
@@ -410,7 +412,7 @@ mod tests {
         assert!(url.contains("prompt=consent"));
         // redirect + scope are percent-encoded
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5599%2Fcb"));
-        assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events"));
+        assert!(url.contains("scope=openid%20email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events"));
     }
 
     #[test]
