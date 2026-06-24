@@ -538,9 +538,100 @@ pub async fn gcal_push_event(app: tauri::AppHandle, input: PushEventInput) -> Re
     Ok(action.to_string())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]  // end_time→endTime, all_day→allDay for the TS bridge
+pub struct ImportedEvent {
+    pub title: String,
+    pub date: String,
+    pub time: Option<String>,
+    pub end_time: Option<String>,
+    pub all_day: bool,
+    pub description: String,
+}
+
+/// Map a Calendar events.list response into normalized ImportedEvents. Takes
+/// the wall-clock date + HH:MM straight from the returned dateTime (which is in
+/// the calendar's timezone). Items without a usable start are skipped.
+pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
+    let v: serde_json::Value = match serde_json::from_str(list_body) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let items = match v.get("items").and_then(|i| i.as_array()) {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for it in items {
+        let title = it.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        let description = it.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
+        let start = match it.get("start") { Some(s) => s, None => continue };
+        let hhmm = |obj: &serde_json::Value, key: &str| -> Option<String> {
+            obj.get(key).and_then(|d| d.as_str()).and_then(|dt| dt.get(11..16).map(|s| s.to_string()))
+        };
+        if let Some(date) = start.get("date").and_then(|d| d.as_str()) {
+            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, all_day: true, description });
+        } else if let Some(dt) = start.get("dateTime").and_then(|d| d.as_str()) {
+            let date = dt.get(0..10).unwrap_or("").to_string();
+            if date.is_empty() { continue; }
+            let time = dt.get(11..16).map(|s| s.to_string());
+            let end_time = it.get("end").and_then(|e| hhmm(e, "dateTime"));
+            out.push(ImportedEvent { title, date, time, end_time, all_day: false, description });
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn gcal_list_day_events(app: tauri::AppHandle, account: String, date: String) -> Result<Vec<ImportedEvent>, String> {
+    let cfg = load_config(&config_dir(&app)?);
+    let token = fetch_access_token(&cfg, &account)?;
+    let tmin = local_rfc3339(&date, "00:00")?;
+    let tmax = local_rfc3339(&next_day(&date)?, "00:00")?;
+    let url = format!(
+        "{CAL_BASE}?singleEvents=true&orderBy=startTime&timeMin={}&timeMax={}",
+        enc(&tmin), enc(&tmax)
+    );
+    let (s, b) = cal_get(&token, &url)?;
+    if s >= 400 {
+        return Err(format!("calendar list failed ({s}): {b}"));
+    }
+    Ok(parse_day_events(&b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_day_events_mixed() {
+        let body = r#"{"items":[
+          {"summary":"Standup","start":{"dateTime":"2026-06-25T09:00:00-07:00"},"end":{"dateTime":"2026-06-25T09:15:00-07:00"},"description":"daily"},
+          {"summary":"Holiday","start":{"date":"2026-06-25"},"end":{"date":"2026-06-26"}},
+          {"start":{"dateTime":"2026-06-25T12:00:00-07:00"}}
+        ]}"#;
+        let v = parse_day_events(body);
+        assert_eq!(v.len(), 3);
+        assert_eq!(v[0].title, "Standup");
+        assert_eq!(v[0].date, "2026-06-25");
+        assert_eq!(v[0].time.as_deref(), Some("09:00"));
+        assert_eq!(v[0].end_time.as_deref(), Some("09:15"));
+        assert!(!v[0].all_day);
+        assert_eq!(v[0].description, "daily");
+        assert_eq!(v[1].title, "Holiday");
+        assert!(v[1].all_day);
+        assert_eq!(v[1].date, "2026-06-25");
+        assert_eq!(v[1].time, None);
+        // Missing summary → empty title; still parsed (timed).
+        assert_eq!(v[2].title, "");
+        assert_eq!(v[2].time.as_deref(), Some("12:00"));
+    }
+
+    #[test]
+    fn parse_day_events_skips_no_start() {
+        let body = r#"{"items":[{"summary":"Cancelled"}]}"#;
+        assert!(parse_day_events(body).is_empty());
+    }
 
     #[test]
     fn pkce_challenge_is_s256_of_verifier() {

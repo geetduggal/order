@@ -143,6 +143,7 @@ pub fn run() {
             gcal::gcal_disconnect,
             gcal::gcal_set_credentials,
             gcal::gcal_push_event,
+            gcal::gcal_list_day_events,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,
