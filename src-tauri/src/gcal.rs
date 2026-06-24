@@ -1,7 +1,7 @@
 // Google Calendar OAuth (desktop, PKCE loopback) + Keychain token storage.
 // Desktop (macOS) only in this plan; iOS is a separate plan.
 use base64::Engine;
-use chrono::{Local, NaiveDate, NaiveTime, TimeZone};
+use chrono::{Local, LocalResult, NaiveDate, NaiveTime, TimeZone};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -450,7 +450,11 @@ fn local_rfc3339(date: &str, hhmm: &str) -> Result<String, String> {
     let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| format!("date: {e}"))?;
     let t = NaiveTime::parse_from_str(hhmm, "%H:%M").map_err(|e| format!("time: {e}"))?;
     let naive = d.and_time(t);
-    let dt = Local.from_local_datetime(&naive).single().ok_or("ambiguous local time")?;
+    let dt = match Local.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(_, _) => return Err(format!("ambiguous local time (DST overlap): {date} {hhmm}")),
+        LocalResult::None => return Err(format!("local time does not exist (DST gap): {date} {hhmm}")),
+    };
     Ok(dt.to_rfc3339())
 }
 
