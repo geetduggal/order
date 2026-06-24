@@ -200,7 +200,8 @@ export function SettingsPanel({
               <ol>
                 <li>Open the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create a project.</li>
                 <li><strong>APIs &amp; Services → Library</strong> → enable <strong>Google Calendar API</strong>.</li>
-                <li><strong>OAuth consent screen</strong> → <em>External</em> → add your name/email; under <strong>Test users</strong>, add the Google account(s) you'll connect. (Testing mode needs no verification.)</li>
+                <li><strong>OAuth consent screen / Branding</strong> → <em>External</em> → add your app name + email.</li>
+                <li><strong>Audience</strong> → <strong>Test users</strong> → <strong>Add users</strong> → add the exact Google account(s) you'll connect, and Save. (Required — even in Testing mode, only listed test users can sign in; otherwise you get a <code>403 access_denied</code>.)</li>
                 <li><strong>Credentials → Create Credentials → OAuth client ID</strong> → application type <strong>Desktop app</strong>.</li>
                 <li>Copy the <strong>Client ID</strong> and <strong>Client secret</strong> into the fields below and Save.</li>
               </ol>
