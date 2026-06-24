@@ -2,6 +2,7 @@
 // Desktop (macOS) only in this plan; iOS is a separate plan.
 use base64::Engine;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -95,6 +96,57 @@ pub fn parse_token_response(body: &str) -> Result<TokenResponse, String> {
     Ok(TokenResponse { access_token, refresh_token, expires_in })
 }
 
+const KEYRING_SERVICE: &str = "com.geetduggal.order.gcal";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AccountsConfig {
+    #[serde(default)]
+    pub accounts: Vec<String>,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: String,
+}
+
+fn config_path(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("gcal-accounts.json")
+}
+
+/// Load the accounts config; a missing/invalid file yields an empty default
+/// (so first run just works).
+pub fn load_config(dir: &std::path::Path) -> AccountsConfig {
+    match std::fs::read_to_string(config_path(dir)) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => AccountsConfig::default(),
+    }
+}
+
+pub fn save_config(dir: &std::path::Path, cfg: &AccountsConfig) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("config dir: {e}"))?;
+    let s = serde_json::to_string_pretty(cfg).map_err(|e| format!("config json: {e}"))?;
+    std::fs::write(config_path(dir), s).map_err(|e| format!("config write: {e}"))
+}
+
+pub fn store_refresh_token(email: &str, token: &str) -> Result<(), String> {
+    keyring::Entry::new(KEYRING_SERVICE, email)
+        .and_then(|e| e.set_password(token))
+        .map_err(|e| format!("keychain store: {e}"))
+}
+
+pub fn load_refresh_token(email: &str) -> Result<String, String> {
+    keyring::Entry::new(KEYRING_SERVICE, email)
+        .and_then(|e| e.get_password())
+        .map_err(|e| format!("keychain load: {e}"))
+}
+
+pub fn delete_refresh_token(email: &str) -> Result<(), String> {
+    keyring::Entry::new(KEYRING_SERVICE, email)
+        .and_then(|e| e.delete_password())
+        .map_err(|e| format!("keychain delete: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +210,27 @@ mod tests {
         let body = r#"{"error":"invalid_grant","error_description":"Token has been expired or revoked."}"#;
         let err = parse_token_response(body).unwrap_err();
         assert!(err.contains("invalid_grant"), "surfaces the OAuth error: {err}");
+    }
+
+    #[test]
+    fn config_round_trips_via_disk() {
+        let dir = std::env::temp_dir().join(format!("order-gcal-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Missing file → empty default.
+        let empty = load_config(&dir);
+        assert!(empty.accounts.is_empty() && empty.default.is_none());
+        // Save then load.
+        let cfg = AccountsConfig {
+            accounts: vec!["a@x.com".into(), "b@y.com".into()],
+            default: Some("a@x.com".into()),
+            client_id: "CID".into(),
+            client_secret: "SEC".into(),
+        };
+        save_config(&dir, &cfg).unwrap();
+        let back = load_config(&dir);
+        assert_eq!(back.accounts, vec!["a@x.com".to_string(), "b@y.com".to_string()]);
+        assert_eq!(back.default.as_deref(), Some("a@x.com"));
+        assert_eq!(back.client_id, "CID");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
