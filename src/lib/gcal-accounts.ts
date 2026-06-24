@@ -14,3 +14,16 @@ export const setDefault = (email: string) => invoke<void>("gcal_set_default", { 
 export const disconnect = (email: string) => invoke<void>("gcal_disconnect", { email });
 export const setCredentials = (clientId: string, clientSecret: string) =>
   invoke<void>("gcal_set_credentials", { clientId, clientSecret });
+
+export interface PushEventInput {
+  host: string;
+  date: string;
+  time?: string;
+  endTime?: string;
+  allDay: boolean;
+  title: string;
+  description: string;
+  attendees: string[];
+}
+
+export const pushEvent = (input: PushEventInput) => invoke<string>("gcal_push_event", { input });

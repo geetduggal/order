@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, RefreshCw as RefreshCwIcon } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -2389,6 +2389,8 @@ export function CardGrid() {
     if (!mwNote?.body) return [];
     return parseMarkwhenFormat(mwNote.body).events;
   }, [notes]);
+  const mwEventsRef = useRef<SpacetimeEvent[]>([]);
+  mwEventsRef.current = mwEvents;
   const mwEventIndex = useMemo<Map<string, SpacetimeEvent>>(() => {
     const idx = new Map<string, SpacetimeEvent>();
     for (const ev of mwEvents) idx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
@@ -2532,6 +2534,48 @@ export function CardGrid() {
     await writeVault("spacetime.mw", next);
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
+  }, []);
+
+  const syncToGoogle = useCallback(async () => {
+    const accounts = await import("../lib/gcal-accounts").then((m) => m.listAccounts());
+    if (accounts.accounts.length === 0) {
+      await tauriMessage("Connect a Google account in Settings first.", { title: "Google Calendar" });
+      return;
+    }
+    const { buildPushIntents } = await import("../lib/gcal-push");
+    const intents = buildPushIntents(mwEventsRef.current, accounts.accounts, accounts.default);
+    if (intents.length === 0) {
+      await tauriMessage("No events carry a Google recipient email to sync.", { title: "Google Calendar" });
+      return;
+    }
+    const ok = await tauriConfirm(
+      `Push ${intents.length} event(s) to Google Calendar (invites will be sent)?`,
+      { title: "Sync to Google", kind: "info" },
+    );
+    if (!ok) return;
+    const { pushEvent } = await import("../lib/gcal-accounts");
+    let created = 0, updated = 0; const errors: string[] = [];
+    for (const it of intents) {
+      // Description = the event's backing note body, when one exists.
+      const note = notesRef.current?.find((n) =>
+        n.title.toLowerCase() === it.title.toLowerCase()
+        && toIsoDateValue(n.frontmatter.date) === it.date,
+      );
+      let description = "";
+      if (note) {
+        try { description = (await readVault(toVaultRel(note.path))).replace(/^---[\s\S]*?---\n?/, "").trim(); }
+        catch { /* leave empty */ }
+      }
+      try {
+        const r = await pushEvent({ ...it, description });
+        if (r === "created") created++; else updated++;
+      } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
+    }
+    await tauriMessage(
+      `Synced to Google: ${created} created, ${updated} updated`
+      + (errors.length ? `\n${errors.length} failed:\n${errors.join("\n")}` : ""),
+      { title: "Sync to Google", kind: errors.length ? "warning" : "info" },
+    );
   }, []);
 
   // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
@@ -4874,6 +4918,15 @@ export function CardGrid() {
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         >
           {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
+        </button>
+        <button
+          type="button"
+          className="dock-btn"
+          onClick={() => { void syncToGoogle(); }}
+          title="Sync curated events to Google Calendar"
+          aria-label="Sync to Google Calendar"
+        >
+          <RefreshCwIcon size={18} strokeWidth={2} />
         </button>
       </div>
 
