@@ -2508,22 +2508,28 @@ export function CardGrid() {
     setImportBusy(true);
     try {
       const accepted = review.rows.filter((r) => r.accept);
+      if (accepted.length === 0) { setImportReview(null); return; }
       const root = await vaultRoot();
       const dir = (review.folder && noteDirByRef(review.folder)) || root;
       // Create a backing note (description body) for each accepted event, then
       // add all events to spacetime.mw in one edit (tagged with the source
       // account email so they're recognized as that calendar's events).
+      const noteErrors: string[] = [];
       for (const r of accepted) {
-        const fm: Frontmatter = {
-          date: r.date,
-          allDay: r.allDay,
-          ...(r.time ? { startTime: r.time } : {}),
-          ...(r.endTime ? { endTime: r.endTime } : {}),
-          ...(review.folder ? { folder: `[[${review.folder}]]` } : {}),
-          title: r.title,
-        };
-        const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
-        await uniqueWrite(dir, basenameForEvent(r.date, r.title), joinFrontmatter(fm, body));
+        try {
+          const fm: Frontmatter = {
+            date: r.date,
+            allDay: r.allDay,
+            ...(r.time ? { startTime: r.time } : {}),
+            ...(r.endTime ? { endTime: r.endTime } : {}),
+            ...(review.folder ? { folder: `[[${review.folder}]]` } : {}),
+            title: r.title,
+          };
+          const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
+          await uniqueWrite(dir, basenameForEvent(r.date, r.title), joinFrontmatter(fm, body));
+        } catch (e) {
+          noteErrors.push(`${r.title}: ${String(e)}`);
+        }
       }
       await applyMwEdit((mw) => accepted.reduce((acc, r) => mwAddEvent(acc, {
         date: r.date,
@@ -2535,7 +2541,9 @@ export function CardGrid() {
         emails: [review.account],
       }), mw));
       setImportReview(null);
-      await tauriMessage(`Imported ${accepted.length} event(s) into ${review.folder || "home"}.`, { title: "Import" });
+      const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}.`;
+      const fullMsg = noteErrors.length > 0 ? `${baseMsg}\n${noteErrors.length} note(s) failed:\n${noteErrors.join("\n")}` : baseMsg;
+      await tauriMessage(fullMsg, { title: "Import", ...(noteErrors.length > 0 ? { kind: "warning" } : {}) });
     } catch (e) { await tauriMessage(`Import apply failed: ${String(e)}`, { title: "Import", kind: "error" }); }
     finally { setImportBusy(false); }
   }, [importReview]);
