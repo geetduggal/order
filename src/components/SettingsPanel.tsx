@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon } from "lucide-react";
+import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon, Info as InfoIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
@@ -39,6 +39,7 @@ export function SettingsPanel({
   const [gcalSecret, setGcalSecret] = useState("");
   const [gcalBusy, setGcalBusy] = useState(false);
   const [gcalError, setGcalError] = useState<string | null>(null);
+  const [gcalHelpOpen, setGcalHelpOpen] = useState(false);
   const refreshGcal = useCallback(async () => {
     try { setGcal(await import("../lib/gcal-accounts").then((m) => m.listAccounts())); }
     catch (e) { setGcalError(String(e)); }
@@ -179,7 +180,33 @@ export function SettingsPanel({
         </div>
 
         <div className="settings-row">
-          <span className="settings-label">Google Calendar</span>
+          <span className="settings-label">
+            Google Calendar
+            <button
+              type="button"
+              className="settings-help-btn"
+              onClick={() => setGcalHelpOpen((o) => !o)}
+              title="How to get these credentials"
+              aria-label="How to get these credentials"
+            >
+              <InfoIcon size={12} strokeWidth={2.2} />
+            </button>
+          </span>
+          {gcalHelpOpen && (
+            <div className="settings-help-text">
+              These credentials come from <strong>your own</strong> Google Cloud project — a
+              one-time, ~10-minute setup. Commercial apps hide this by shipping a Google-verified
+              client; bringing your own keeps access under your control and needs no Google review.
+              <ol>
+                <li>Open the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create a project.</li>
+                <li><strong>APIs &amp; Services → Library</strong> → enable <strong>Google Calendar API</strong>.</li>
+                <li><strong>OAuth consent screen</strong> → <em>External</em> → add your name/email; under <strong>Test users</strong>, add the Google account(s) you'll connect. (Testing mode needs no verification.)</li>
+                <li><strong>Credentials → Create Credentials → OAuth client ID</strong> → application type <strong>Desktop app</strong>.</li>
+                <li>Copy the <strong>Client ID</strong> and <strong>Client secret</strong> into the fields below and Save.</li>
+              </ol>
+              Order stores these on this device only and uses the <code>calendar.events</code> scope.
+            </div>
+          )}
           {gcalError && <span className="settings-hint" style={{ color: "#d9534f" }}>{gcalError}</span>}
           <span className="settings-value">
             <input type="text" className="settings-input" placeholder="OAuth Client ID"
