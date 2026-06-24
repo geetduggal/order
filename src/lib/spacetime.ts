@@ -58,6 +58,7 @@ export interface SpacetimeEvent {
   endTime?: string;        // HH:MM
   endDate?: string;        // YYYY-MM-DD
   allDay?: boolean;
+  emails?: string[];       // Google sync recipients written on the line (Task 3 classifies)
 }
 
 export interface SpacetimeSeason {
@@ -891,10 +892,21 @@ export function parseMarkwhenFormat(text: string): Spacetime {
       );
       if (!m) continue;
       const [, date, time, endTime, endDate, rest] = m;
-      // Separate trailing #tag from title
-      const tagM = rest.trimEnd().match(/\s+(#[\w-]+)$/);
+      // Peel trailing email recipients (Google sync) from the END first, then
+      // the folder tag, leaving the title. Emails are written after the tag,
+      // e.g. `Title #folder a@x.com b@y.com`. Each email must be preceded by
+      // whitespace, so a sole title token is never mistaken for a recipient.
+      let work = rest.trimEnd();
+      const emails: string[] = [];
+      const emailRe = /\s+([^@\s]+@[^@\s]+\.[^@\s]+)$/;
+      let em: RegExpMatchArray | null;
+      while ((em = work.match(emailRe))) {
+        emails.unshift(em[1]);
+        work = work.slice(0, work.length - em[0].length).trimEnd();
+      }
+      const tagM = work.match(/\s+(#[\w-]+)$/);
       const tagSlug = tagM ? tagM[1] : null;
-      const title = tagM ? rest.slice(0, rest.length - tagM[0].length).trim() : rest.trim();
+      const title = (tagM ? work.slice(0, work.length - tagM[0].length) : work).trim();
       // Resolve tag → real folder name via tag lookup (built after full parse)
       events.push({
         date, title,
@@ -902,6 +914,7 @@ export function parseMarkwhenFormat(text: string): Spacetime {
         ...(time    ? { time }   : {}),
         ...(endTime ? { endTime } : {}),
         ...(endDate ? { endDate } : {}),
+        ...(emails.length ? { emails } : {}),
         ...(!time && !endDate ? { allDay: true } : {}),
       });
       continue;
