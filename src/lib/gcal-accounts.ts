@@ -5,6 +5,7 @@ export interface AccountsView {
   accounts: string[];
   default: string | null;
   has_credentials: boolean;
+  client_id: string;
 }
 
 export const listAccounts = () => invoke<AccountsView>("gcal_list_accounts");

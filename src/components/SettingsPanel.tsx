@@ -34,7 +34,7 @@ export function SettingsPanel({
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
   const [busy, setBusy] = useState(false);
 
-  const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false });
+  const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false, client_id: "" });
   const [gcalId, setGcalId] = useState("");
   const [gcalSecret, setGcalSecret] = useState("");
   const [gcalBusy, setGcalBusy] = useState(false);
@@ -45,6 +45,12 @@ export function SettingsPanel({
     catch (e) { setGcalError(String(e)); }
   }, []);
   useEffect(() => { void refreshGcal(); }, [refreshGcal]);
+  // Reflect the saved (non-secret) client ID back into the field so the
+  // panel shows what's stored after reopening — the inputs are otherwise
+  // ephemeral component state and look empty even when creds are saved.
+  useEffect(() => {
+    if (gcal.client_id && !gcalId) setGcalId(gcal.client_id);
+  }, [gcal.client_id, gcalId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,10 +215,14 @@ export function SettingsPanel({
             </div>
           )}
           {gcalError && <span className="settings-hint" style={{ color: "#d9534f" }}>{gcalError}</span>}
+          {gcal.has_credentials && (
+            <span className="settings-hint" style={{ color: "var(--royal)" }}>✓ Credentials saved on this device.</span>
+          )}
           <span className="settings-value">
             <input type="text" className="settings-input" placeholder="OAuth Client ID"
               value={gcalId} onChange={(e) => setGcalId(e.target.value)} />
-            <input type="password" className="settings-input" placeholder="OAuth Client Secret"
+            <input type="password" className="settings-input"
+              placeholder={gcal.has_credentials ? "•••••• (secret saved — re-enter to change)" : "OAuth Client Secret"}
               value={gcalSecret} onChange={(e) => setGcalSecret(e.target.value)} />
             <button type="button" className="settings-btn" disabled={gcalBusy || !gcalId || !gcalSecret}
               onClick={async () => {
@@ -229,6 +239,9 @@ export function SettingsPanel({
                 catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); }
               }}>{gcalBusy ? "Connecting…" : "Connect Google account"}</button>
           </span>
+          {gcal.has_credentials && gcal.accounts.length === 0 && (
+            <span className="settings-hint">No Google account connected yet — click “Connect Google account”.</span>
+          )}
           <ul className="gcal-account-list">
             {gcal.accounts.map((a) => (
               <li key={a} className="gcal-account-row">

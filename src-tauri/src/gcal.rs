@@ -324,15 +324,19 @@ pub struct AccountsView {
     pub accounts: Vec<String>,
     pub default: Option<String>,
     pub has_credentials: bool,
+    /// The saved OAuth client ID (non-secret) so Settings can reflect it.
+    /// The client secret is never returned.
+    pub client_id: String,
 }
 
 #[tauri::command]
 pub async fn gcal_list_accounts(app: tauri::AppHandle) -> Result<AccountsView, String> {
     let cfg = load_config(&config_dir(&app)?);
     Ok(AccountsView {
+        has_credentials: !cfg.client_id.is_empty() && !cfg.client_secret.is_empty(),
+        client_id: cfg.client_id,
         accounts: cfg.accounts,
         default: cfg.default,
-        has_credentials: !cfg.client_id.is_empty() && !cfg.client_secret.is_empty(),
     })
 }
 
