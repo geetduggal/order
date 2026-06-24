@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, RefreshCw as RefreshCwIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -37,6 +37,14 @@ import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
+import { buildPushIntents, type PushIntent } from "../lib/gcal-push";
+
+/** Stable per-event signature for Google-push pending tracking: changes when
+ *  any pushed field (host, schedule, title, attendees) changes, so an edit
+ *  re-flags the event as needing sync. Pure + module-scoped. */
+function gcalSig(it: PushIntent): string {
+  return [it.host, it.date, it.time ?? "", it.endTime ?? "", it.allDay, it.title, [...it.attendees].sort().join(",")].join("|");
+}
 import {
   DEFAULT_TODO_TXT_PATH,
   eventKey,
@@ -2389,8 +2397,6 @@ export function CardGrid() {
     if (!mwNote?.body) return [];
     return parseMarkwhenFormat(mwNote.body).events;
   }, [notes]);
-  const mwEventsRef = useRef<SpacetimeEvent[]>([]);
-  mwEventsRef.current = mwEvents;
   const mwEventIndex = useMemo<Map<string, SpacetimeEvent>>(() => {
     const idx = new Map<string, SpacetimeEvent>();
     for (const ev of mwEvents) idx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);
@@ -2440,17 +2446,81 @@ export function CardGrid() {
   // (orphanedEvents above). A plain note without a YYYY-MM-DD prefix is just
   // content living in the folder; it's left alone on disk (surfaced via the
   // file browser, and pinnable to a folder's pile via File Piles).
+  // ---- Google Calendar push, surfaced through reconciliation -----------
+  // Connected accounts (host/invitee resolution). Loaded on mount and when
+  // Settings signals a change. Empty when no account / desktop-only.
+  const [gcalAccounts, setGcalAccounts] = useState<{ accounts: string[]; default: string | null }>({ accounts: [], default: null });
+  const refreshGcalAccounts = useCallback(async () => {
+    try {
+      const v = await import("../lib/gcal-accounts").then((m) => m.listAccounts());
+      setGcalAccounts({ accounts: v.accounts, default: v.default });
+    } catch { /* not connected */ }
+  }, []);
+  useEffect(() => { void refreshGcalAccounts(); }, [refreshGcalAccounts]);
+  useEffect(() => {
+    const h = () => { void refreshGcalAccounts(); };
+    window.addEventListener("order:gcal-accounts-changed", h);
+    return () => window.removeEventListener("order:gcal-accounts-changed", h);
+  }, [refreshGcalAccounts]);
+
+  // Signatures of events pushed THIS session. Pending = syncable events whose
+  // signature isn't here, so a new or edited event shows as pending and clears
+  // after a push. Empty on load → existing Google-tagged events show once.
+  const [gcalSyncedSig, setGcalSyncedSig] = useState<Set<string>>(new Set());
+  const [gcalSyncing, setGcalSyncing] = useState(false);
+  const gcalPending = useMemo<PushIntent[]>(() => {
+    if (gcalAccounts.accounts.length === 0) return [];
+    return buildPushIntents(mwEvents, gcalAccounts.accounts, gcalAccounts.default)
+      .filter((it) => !gcalSyncedSig.has(gcalSig(it)));
+  }, [mwEvents, gcalAccounts, gcalSyncedSig]);
+  const gcalPendingRef = useRef<PushIntent[]>([]);
+  gcalPendingRef.current = gcalPending;
+
+  // Push all pending events to Google; mark synced ones so they leave the
+  // pending list. Description = each event's backing note body.
+  const applyGcalSync = useCallback(async () => {
+    const intents = gcalPendingRef.current;
+    if (intents.length === 0) return;
+    setGcalSyncing(true);
+    try {
+    const { pushEvent } = await import("../lib/gcal-accounts");
+    let created = 0, updated = 0; const errors: string[] = []; const done = new Set<string>();
+    for (const it of intents) {
+      const note = notesRef.current?.find((n) =>
+        n.title.toLowerCase() === it.title.toLowerCase()
+        && toIsoDateValue(n.frontmatter.date) === it.date,
+      );
+      let description = "";
+      if (note) {
+        try { description = (await readVault(toVaultRel(note.path))).replace(/^---[\s\S]*?---\n?/, "").trim(); }
+        catch { /* leave empty */ }
+      }
+      try {
+        const r = await pushEvent({ ...it, description });
+        if (r === "created") created++; else updated++;
+        done.add(gcalSig(it));
+      } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
+    }
+    if (done.size > 0) setGcalSyncedSig((prev) => new Set([...prev, ...done]));
+    await tauriMessage(
+      `Synced to Google: ${created} created, ${updated} updated`
+      + (errors.length ? `\n${errors.length} failed:\n${errors.join("\n")}` : ""),
+      { title: "Sync to Google", kind: errors.length ? "warning" : "info" },
+    );
+    } finally { setGcalSyncing(false); }
+  }, []);
+
   // Auto-reset the review's OPEN flag once everything it could show is resolved.
   // The dialog only renders when `mwReviewOpen && (review || orphan folders ||
-  // orphan events)`, so when the content empties the dialog vanishes but the
-  // flag stays true — and the next orphan (e.g. an event you're mid-typing)
-  // would silently RE-open it. Resetting here keeps reopening an explicit pill
-  // click: new drift only lights the bottom-left indicator, never pops a modal.
+  // orphan events || gcal pending)`, so when the content empties the dialog
+  // vanishes but the flag stays true — and the next item would silently RE-open
+  // it. Resetting here keeps reopening an explicit pill click: new drift only
+  // lights the bottom-left indicator, never pops a modal.
   useEffect(() => {
-    if (mwReviewOpen && !mwReview && orphanedFolders.length === 0 && orphanedEvents.length === 0 && modifiedEvents.length === 0) {
+    if (mwReviewOpen && !mwReview && orphanedFolders.length === 0 && orphanedEvents.length === 0 && modifiedEvents.length === 0 && gcalPending.length === 0) {
       setMwReviewOpen(false);
     }
-  }, [mwReviewOpen, mwReview, orphanedFolders.length, orphanedEvents.length, modifiedEvents.length]);
+  }, [mwReviewOpen, mwReview, orphanedFolders.length, orphanedEvents.length, modifiedEvents.length, gcalPending.length]);
   // Maps each rendered calendar chip's `path` → the mw event it represents,
   // so move/edit/delete handlers can locate the authoritative mw line. Also
   // records the backing note path (if any) so the same edit can keep that
@@ -2534,48 +2604,6 @@ export function CardGrid() {
     await writeVault("spacetime.mw", next);
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
-  }, []);
-
-  const syncToGoogle = useCallback(async () => {
-    const accounts = await import("../lib/gcal-accounts").then((m) => m.listAccounts());
-    if (accounts.accounts.length === 0) {
-      await tauriMessage("Connect a Google account in Settings first.", { title: "Google Calendar" });
-      return;
-    }
-    const { buildPushIntents } = await import("../lib/gcal-push");
-    const intents = buildPushIntents(mwEventsRef.current, accounts.accounts, accounts.default);
-    if (intents.length === 0) {
-      await tauriMessage("No events carry a Google recipient email to sync.", { title: "Google Calendar" });
-      return;
-    }
-    const ok = await tauriConfirm(
-      `Push ${intents.length} event(s) to Google Calendar (invites will be sent)?`,
-      { title: "Sync to Google", kind: "info" },
-    );
-    if (!ok) return;
-    const { pushEvent } = await import("../lib/gcal-accounts");
-    let created = 0, updated = 0; const errors: string[] = [];
-    for (const it of intents) {
-      // Description = the event's backing note body, when one exists.
-      const note = notesRef.current?.find((n) =>
-        n.title.toLowerCase() === it.title.toLowerCase()
-        && toIsoDateValue(n.frontmatter.date) === it.date,
-      );
-      let description = "";
-      if (note) {
-        try { description = (await readVault(toVaultRel(note.path))).replace(/^---[\s\S]*?---\n?/, "").trim(); }
-        catch { /* leave empty */ }
-      }
-      try {
-        const r = await pushEvent({ ...it, description });
-        if (r === "created") created++; else updated++;
-      } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
-    }
-    await tauriMessage(
-      `Synced to Google: ${created} created, ${updated} updated`
-      + (errors.length ? `\n${errors.length} failed:\n${errors.join("\n")}` : ""),
-      { title: "Sync to Google", kind: errors.length ? "warning" : "info" },
-    );
   }, []);
 
   // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
@@ -4919,15 +4947,6 @@ export function CardGrid() {
         >
           {sidebarOpen ? <ChevronsRight size={20} strokeWidth={2.1} /> : <PanelRight size={20} strokeWidth={2.1} />}
         </button>
-        <button
-          type="button"
-          className="dock-btn"
-          onClick={() => { void syncToGoogle(); }}
-          title="Sync curated events to Google Calendar"
-          aria-label="Sync to Google Calendar"
-        >
-          <RefreshCwIcon size={18} strokeWidth={2} />
-        </button>
       </div>
 
       {toolsMenuOpen && (
@@ -5316,7 +5335,7 @@ export function CardGrid() {
       })()}
 
       {/* spacetime.mw review: gated structural sync + on-disk drift flags. */}
-      {mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0) && (() => {
+      {mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0 || gcalPending.length > 0) && (() => {
         // Removals aren't applied (apply is non-destructive) — a dropped folder
         // becomes an orphan, shown in the section below. So the apply list shows
         // only renames / adds / reorders / seasons.
@@ -5419,6 +5438,26 @@ export function CardGrid() {
                   </span>
                 </div>
               )}
+              {gcalPending.length > 0 && (
+                <div className="sync-deletes">
+                  <strong>Sync to Google Calendar:</strong>
+                  <p className="mw-orphan-hint">These events carry a Google recipient and changed (or are new) this session. "Sync" creates/updates them on the host account's calendar and sends any invites.</p>
+                  <ul>
+                    {gcalPending.map((it) => (
+                      <li key={gcalSig(it)} className="mw-orphan-row">
+                        <span className="mw-orphan-name">
+                          ↗ {it.date}{it.time ? ` ${it.time}` : ""} {it.title}
+                          <span className="mw-orphan-sep"> · {it.host}</span>
+                          {it.attendees.length > 0 ? <span className="mw-orphan-sep"> · invite {it.attendees.join(", ")}</span> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="mw-orphan-actions">
+                    <button type="button" className="mw-orphan-btn" disabled={gcalSyncing} onClick={() => { void applyGcalSync(); }}>{gcalSyncing ? "Syncing…" : `Sync ${gcalPending.length} to Google`}</button>
+                  </span>
+                </div>
+              )}
               </div>
 
               <div className="settings-actions">
@@ -5439,8 +5478,8 @@ export function CardGrid() {
       })()}
 
       {/* Subtle reminder when there are unsynced spacetime.mw changes or drift. */}
-      {!mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0) && (() => {
-        const n = (mwReview?.items.length ?? 0) + orphanedFolders.length + orphanedEvents.length + modifiedEvents.length;
+      {!mwReviewOpen && (mwReview || orphanedFolders.length > 0 || orphanedEvents.length > 0 || modifiedEvents.length > 0 || gcalPending.length > 0) && (() => {
+        const n = (mwReview?.items.length ?? 0) + orphanedFolders.length + orphanedEvents.length + modifiedEvents.length + gcalPending.length;
         return (
           <button
             type="button"

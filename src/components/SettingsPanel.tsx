@@ -43,6 +43,8 @@ export function SettingsPanel({
   const refreshGcal = useCallback(async () => {
     try { setGcal(await import("../lib/gcal-accounts").then((m) => m.listAccounts())); }
     catch (e) { setGcalError(String(e)); }
+    // Notify the calendar shell so its Google-sync pending list recomputes.
+    window.dispatchEvent(new Event("order:gcal-accounts-changed"));
   }, []);
   useEffect(() => { void refreshGcal(); }, [refreshGcal]);
   // Reflect the saved (non-secret) client ID back into the field so the
