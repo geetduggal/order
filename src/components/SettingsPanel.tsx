@@ -206,11 +206,11 @@ export function SettingsPanel({
               <li key={a} className="gcal-account-row">
                 <label className="settings-toggle">
                   <input type="radio" name="gcal-default" checked={gcal.default === a}
-                    onChange={async () => { const m = await import("../lib/gcal-accounts"); await m.setDefault(a); await refreshGcal(); }} />
+                    onChange={async () => { setGcalBusy(true); setGcalError(null); try { const m = await import("../lib/gcal-accounts"); await m.setDefault(a); await refreshGcal(); } catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); } }} />
                   <span>{a}{gcal.default === a ? " (default)" : ""}</span>
                 </label>
                 <button type="button" className="settings-btn is-danger"
-                  onClick={async () => { const m = await import("../lib/gcal-accounts"); await m.disconnect(a); await refreshGcal(); }}>Disconnect</button>
+                  onClick={async () => { setGcalBusy(true); setGcalError(null); try { const m = await import("../lib/gcal-accounts"); await m.disconnect(a); await refreshGcal(); } catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); } }}>Disconnect</button>
               </li>
             ))}
           </ul>
