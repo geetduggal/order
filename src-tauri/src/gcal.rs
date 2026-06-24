@@ -1,11 +1,12 @@
 // Google Calendar OAuth (desktop, PKCE loopback) + Keychain token storage.
 // Desktop (macOS) only in this plan; iOS is a separate plan.
 use base64::Engine;
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::time::{Duration, Instant};
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
@@ -169,29 +170,57 @@ fn bind_loopback() -> Result<(TcpListener, String), String> {
 /// Block until the browser redirects back, then return the `code` query param.
 /// Serves a tiny "you can close this tab" page. Validates `state`.
 fn await_code(listener: &TcpListener, expected_state: &str) -> Result<String, String> {
-    let (mut stream, _) = listener.accept().map_err(|e| format!("accept: {e}"))?;
-    let mut buf = [0u8; 4096];
+    // Finding 3: non-blocking accept with a 5-minute deadline.
+    listener.set_nonblocking(true).map_err(|e| format!("nonblocking: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let (mut stream, _) = loop {
+        match listener.accept() {
+            Ok(pair) => break pair,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err("timed out waiting for Google authorization (closed the browser?)".into());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("accept: {e}")),
+        }
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+
+    // Finding 4: enlarged buffer (4096 → 8192) to avoid truncation.
+    let mut buf = [0u8; 8192];
     let n = stream.read(&mut buf).map_err(|e| format!("read: {e}"))?;
     let req = String::from_utf8_lossy(&buf[..n]);
     // First line: `GET /cb?code=...&state=... HTTP/1.1`
     let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("");
     let query = path.split('?').nth(1).unwrap_or("");
+
+    // Finding 2: percent-decode each parsed value.
+    let decode = |v: &str| percent_decode_str(v).decode_utf8_lossy().into_owned();
+
     let mut code = None;
     let mut state = None;
     for kv in query.split('&') {
         let mut it = kv.splitn(2, '=');
         match (it.next(), it.next()) {
-            (Some("code"), Some(v)) => code = Some(v.to_string()),
-            (Some("state"), Some(v)) => state = Some(v.to_string()),
+            (Some("code"), Some(v)) => code = Some(decode(v)),
+            (Some("state"), Some(v)) => state = Some(decode(v)),
             _ => {}
         }
     }
+
+    // Finding 1: validate state BEFORE serving the HTTP response.
+    if state.as_deref() != Some(expected_state) {
+        let err_body = "<html><body style='font-family:sans-serif'>Authorization failed: state mismatch. Please try again.</body></html>";
+        let err_resp = format!("HTTP/1.1 400 Bad Request\r\nContent-Type:text/html\r\nContent-Length:{}\r\n\r\n{}", err_body.len(), err_body);
+        let _ = stream.write_all(err_resp.as_bytes());
+        return Err("oauth state mismatch (possible CSRF) — aborted".into());
+    }
+
     let body = "<html><body style='font-family:sans-serif'>Order is connected. You can close this tab.</body></html>";
     let resp = format!("HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:{}\r\n\r\n{}", body.len(), body);
     let _ = stream.write_all(resp.as_bytes());
-    if state.as_deref() != Some(expected_state) {
-        return Err("oauth state mismatch (possible CSRF) — aborted".into());
-    }
+
     code.ok_or_else(|| "no authorization code in redirect".into())
 }
 
