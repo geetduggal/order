@@ -374,6 +374,73 @@ pub async fn gcal_set_credentials(app: tauri::AppHandle, client_id: String, clie
     save_config(&dir, &cfg)
 }
 
+#[derive(Debug, Clone)]
+pub enum EventTime {
+    AllDay { date: String },
+    Timed { date_time: String },
+}
+
+fn event_time_json(t: &EventTime) -> serde_json::Value {
+    match t {
+        EventTime::AllDay { date } => serde_json::json!({ "date": date }),
+        EventTime::Timed { date_time } => serde_json::json!({ "dateTime": date_time }),
+    }
+}
+
+/// Build an events.insert/patch request body.
+pub fn event_json(
+    summary: &str,
+    description: &str,
+    start: &EventTime,
+    end: &EventTime,
+    attendees: &[String],
+) -> serde_json::Value {
+    let attendee_objs: Vec<serde_json::Value> =
+        attendees.iter().map(|e| serde_json::json!({ "email": e })).collect();
+    serde_json::json!({
+        "summary": summary,
+        "description": description,
+        "start": event_time_json(start),
+        "end": event_time_json(end),
+        "attendees": attendee_objs,
+    })
+}
+
+/// Find a Google event id in an events.list response by natural key. `summary`
+/// must equal the event title; the start `date` must match `start_date`; when
+/// `start_time` is given, the timed start's HH:MM must match too.
+pub fn find_event_id(
+    list_body: &str,
+    summary: &str,
+    start_date: &str,
+    start_time: Option<&str>,
+) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(list_body).ok()?;
+    let items = v.get("items")?.as_array()?;
+    for it in items {
+        if it.get("summary").and_then(|s| s.as_str()) != Some(summary) {
+            continue;
+        }
+        let start = it.get("start")?;
+        match start_time {
+            None => {
+                if start.get("date").and_then(|d| d.as_str()) == Some(start_date) {
+                    return it.get("id").and_then(|i| i.as_str()).map(|s| s.to_string());
+                }
+            }
+            Some(hhmm) => {
+                if let Some(dt) = start.get("dateTime").and_then(|d| d.as_str()) {
+                    // dt like "2026-06-25T14:00:00-07:00"
+                    if dt.starts_with(start_date) && dt.get(11..16) == Some(hhmm) {
+                        return it.get("id").and_then(|i| i.as_str()).map(|s| s.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +504,50 @@ mod tests {
         let body = r#"{"error":"invalid_grant","error_description":"Token has been expired or revoked."}"#;
         let err = parse_token_response(body).unwrap_err();
         assert!(err.contains("invalid_grant"), "surfaces the OAuth error: {err}");
+    }
+
+    #[test]
+    fn event_json_timed_with_attendees() {
+        let v = event_json(
+            "Planning", "notes here",
+            &EventTime::Timed { date_time: "2026-06-25T14:00:00-07:00".into() },
+            &EventTime::Timed { date_time: "2026-06-25T14:30:00-07:00".into() },
+            &["rohit@verkada.com".to_string(), "bob@acme.com".to_string()],
+        );
+        assert_eq!(v["summary"], "Planning");
+        assert_eq!(v["description"], "notes here");
+        assert_eq!(v["start"]["dateTime"], "2026-06-25T14:00:00-07:00");
+        assert_eq!(v["end"]["dateTime"], "2026-06-25T14:30:00-07:00");
+        assert_eq!(v["attendees"][0]["email"], "rohit@verkada.com");
+        assert_eq!(v["attendees"][1]["email"], "bob@acme.com");
+        assert!(v["start"].get("date").is_none(), "timed event has no all-day date");
+    }
+
+    #[test]
+    fn event_json_all_day_no_attendees() {
+        let v = event_json(
+            "Holiday", "",
+            &EventTime::AllDay { date: "2026-06-25".into() },
+            &EventTime::AllDay { date: "2026-06-26".into() },
+            &[],
+        );
+        assert_eq!(v["start"]["date"], "2026-06-25");
+        assert_eq!(v["end"]["date"], "2026-06-26");
+        assert!(v["start"].get("dateTime").is_none());
+        assert!(v["attendees"].as_array().map(|a| a.is_empty()).unwrap_or(true), "no attendees");
+    }
+
+    #[test]
+    fn find_event_id_matches_natural_key() {
+        let body = r#"{"items":[
+          {"id":"AAA","summary":"Standup","start":{"dateTime":"2026-06-25T09:00:00-07:00"}},
+          {"id":"BBB","summary":"Planning","start":{"dateTime":"2026-06-25T14:00:00-07:00"}},
+          {"id":"CCC","summary":"Holiday","start":{"date":"2026-06-25"}}
+        ]}"#;
+        assert_eq!(find_event_id(body, "Planning", "2026-06-25", Some("14:00")), Some("BBB".to_string()));
+        assert_eq!(find_event_id(body, "Holiday", "2026-06-25", None), Some("CCC".to_string()));
+        assert_eq!(find_event_id(body, "Standup", "2026-06-25", Some("10:00")), None, "time mismatch → no match");
+        assert_eq!(find_event_id(body, "Nope", "2026-06-25", Some("09:00")), None, "title mismatch → no match");
     }
 
     #[test]
