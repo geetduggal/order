@@ -137,6 +137,7 @@ pub fn run() {
             vault::open_url,
             watcher::start_watcher,
             publish::publish_site,
+            gcal::gcal_connect_account,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,

@@ -4,6 +4,8 @@ use base64::Engine;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
+use std::net::TcpListener;
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
@@ -145,6 +147,147 @@ pub fn delete_refresh_token(email: &str) -> Result<(), String> {
     keyring::Entry::new(KEYRING_SERVICE, email)
         .and_then(|e| e.delete_password())
         .map_err(|e| format!("keychain delete: {e}"))
+}
+
+const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
+const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
+
+fn agent() -> ureq::Agent {
+    let connector = native_tls::TlsConnector::new().expect("tls");
+    ureq::AgentBuilder::new()
+        .tls_connector(std::sync::Arc::new(connector))
+        .build()
+}
+
+/// Bind a throwaway loopback listener, return (listener, redirect_uri).
+fn bind_loopback() -> Result<(TcpListener, String), String> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("loopback bind: {e}"))?;
+    let port = listener.local_addr().map_err(|e| format!("addr: {e}"))?.port();
+    Ok((listener, format!("http://127.0.0.1:{port}/cb")))
+}
+
+/// Block until the browser redirects back, then return the `code` query param.
+/// Serves a tiny "you can close this tab" page. Validates `state`.
+fn await_code(listener: &TcpListener, expected_state: &str) -> Result<String, String> {
+    let (mut stream, _) = listener.accept().map_err(|e| format!("accept: {e}"))?;
+    let mut buf = [0u8; 4096];
+    let n = stream.read(&mut buf).map_err(|e| format!("read: {e}"))?;
+    let req = String::from_utf8_lossy(&buf[..n]);
+    // First line: `GET /cb?code=...&state=... HTTP/1.1`
+    let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("");
+    let query = path.split('?').nth(1).unwrap_or("");
+    let mut code = None;
+    let mut state = None;
+    for kv in query.split('&') {
+        let mut it = kv.splitn(2, '=');
+        match (it.next(), it.next()) {
+            (Some("code"), Some(v)) => code = Some(v.to_string()),
+            (Some("state"), Some(v)) => state = Some(v.to_string()),
+            _ => {}
+        }
+    }
+    let body = "<html><body style='font-family:sans-serif'>Order is connected. You can close this tab.</body></html>";
+    let resp = format!("HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:{}\r\n\r\n{}", body.len(), body);
+    let _ = stream.write_all(resp.as_bytes());
+    if state.as_deref() != Some(expected_state) {
+        return Err("oauth state mismatch (possible CSRF) — aborted".into());
+    }
+    code.ok_or_else(|| "no authorization code in redirect".into())
+}
+
+fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse, String> {
+    let resp = agent().post(TOKEN_ENDPOINT).send_form(form);
+    let body = match resp {
+        Ok(r) => r.into_string().map_err(|e| format!("token body: {e}"))?,
+        Err(ureq::Error::Status(_, r)) => r.into_string().unwrap_or_default(),
+        Err(e) => return Err(format!("token transport: {e}")),
+    };
+    parse_token_response(&body)
+}
+
+/// Exchange an auth code for tokens (PKCE).
+fn exchange_code(cfg: &AccountsConfig, code: &str, verifier: &str, redirect_uri: &str) -> Result<TokenResponse, String> {
+    token_request(&[
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("client_id", &cfg.client_id),
+        ("client_secret", &cfg.client_secret),
+        ("code_verifier", verifier),
+        ("redirect_uri", redirect_uri),
+    ])
+}
+
+/// Refresh an access token from the stored refresh token. Used by push/import.
+pub fn fetch_access_token(cfg: &AccountsConfig, email: &str) -> Result<String, String> {
+    let refresh = load_refresh_token(email)?;
+    let t = token_request(&[
+        ("grant_type", "refresh_token"),
+        ("refresh_token", &refresh),
+        ("client_id", &cfg.client_id),
+        ("client_secret", &cfg.client_secret),
+    ])?;
+    Ok(t.access_token)
+}
+
+/// Fetch the account's email via the userinfo endpoint (so we key tokens by
+/// the real account, not user input).
+fn fetch_email(access_token: &str) -> Result<String, String> {
+    let resp = agent().get(USERINFO_ENDPOINT)
+        .set("Authorization", &format!("Bearer {access_token}"))
+        .call();
+    let body = match resp {
+        Ok(r) => r.into_string().map_err(|e| format!("userinfo body: {e}"))?,
+        Err(ureq::Error::Status(_, r)) => r.into_string().unwrap_or_default(),
+        Err(e) => return Err(format!("userinfo transport: {e}")),
+    };
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("userinfo json: {e}"))?;
+    v.get("email").and_then(|e| e.as_str()).map(|s| s.to_lowercase())
+        .ok_or_else(|| "userinfo had no email".into())
+}
+
+fn config_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    app.path().app_config_dir().map_err(|e| format!("config dir: {e}"))
+}
+
+/// Run the full desktop OAuth flow: build PKCE, open the browser, capture the
+/// code on a loopback listener, exchange it, store the refresh token in the
+/// Keychain, and register the account in config. Returns the account email.
+#[tauri::command]
+pub async fn gcal_connect_account(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = config_dir(&app)?;
+    let cfg = load_config(&dir);
+    if cfg.client_id.is_empty() || cfg.client_secret.is_empty() {
+        return Err("Set your Google OAuth Client ID and Secret in Settings first.".into());
+    }
+    let (listener, redirect_uri) = bind_loopback()?;
+    let (verifier, challenge) = pkce_pair();
+    let state = {
+        let (s, _) = pkce_pair();
+        s
+    };
+    let url = auth_url(&cfg.client_id, &redirect_uri, &challenge, &state);
+    tauri::async_runtime::spawn_blocking({
+        let url = url.clone();
+        move || { let _ = open::that(url); }
+    });
+    // Block on the loopback accept in a blocking task.
+    let code = tauri::async_runtime::spawn_blocking(move || await_code(&listener, &state))
+        .await.map_err(|e| format!("join: {e}"))??;
+    let tokens = exchange_code(&cfg, &code, &verifier, &redirect_uri)?;
+    let refresh = tokens.refresh_token.clone()
+        .ok_or("Google returned no refresh token — revoke Order's access in your Google account and reconnect.")?;
+    let email = fetch_email(&tokens.access_token)?;
+    store_refresh_token(&email, &refresh)?;
+    let mut cfg = load_config(&dir);
+    if !cfg.accounts.iter().any(|a| a == &email) {
+        cfg.accounts.push(email.clone());
+    }
+    if cfg.default.is_none() {
+        cfg.default = Some(email.clone());
+    }
+    save_config(&dir, &cfg)?;
+    Ok(email)
 }
 
 #[cfg(test)]

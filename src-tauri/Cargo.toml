@@ -35,6 +35,7 @@ portable-pty = "0.9.0"
 sha2 = "0.10"
 getrandom = "0.2"
 keyring = "2"
+open = "5"
 
 [features]
 default = ["custom-protocol"]
