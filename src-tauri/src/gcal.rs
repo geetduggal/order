@@ -319,6 +319,55 @@ pub async fn gcal_connect_account(app: tauri::AppHandle) -> Result<String, Strin
     Ok(email)
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountsView {
+    pub accounts: Vec<String>,
+    pub default: Option<String>,
+    pub has_credentials: bool,
+}
+
+#[tauri::command]
+pub async fn gcal_list_accounts(app: tauri::AppHandle) -> Result<AccountsView, String> {
+    let cfg = load_config(&config_dir(&app)?);
+    Ok(AccountsView {
+        accounts: cfg.accounts,
+        default: cfg.default,
+        has_credentials: !cfg.client_id.is_empty() && !cfg.client_secret.is_empty(),
+    })
+}
+
+#[tauri::command]
+pub async fn gcal_set_default(app: tauri::AppHandle, email: String) -> Result<(), String> {
+    let dir = config_dir(&app)?;
+    let mut cfg = load_config(&dir);
+    if !cfg.accounts.iter().any(|a| a == &email) {
+        return Err(format!("{email} is not a connected account"));
+    }
+    cfg.default = Some(email);
+    save_config(&dir, &cfg)
+}
+
+#[tauri::command]
+pub async fn gcal_disconnect(app: tauri::AppHandle, email: String) -> Result<(), String> {
+    let dir = config_dir(&app)?;
+    let mut cfg = load_config(&dir);
+    cfg.accounts.retain(|a| a != &email);
+    if cfg.default.as_deref() == Some(email.as_str()) {
+        cfg.default = cfg.accounts.first().cloned();
+    }
+    let _ = delete_refresh_token(&email); // best-effort; token may already be gone
+    save_config(&dir, &cfg)
+}
+
+#[tauri::command]
+pub async fn gcal_set_credentials(app: tauri::AppHandle, client_id: String, client_secret: String) -> Result<(), String> {
+    let dir = config_dir(&app)?;
+    let mut cfg = load_config(&dir);
+    cfg.client_id = client_id.trim().to_string();
+    cfg.client_secret = client_secret.trim().to_string();
+    save_config(&dir, &cfg)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
