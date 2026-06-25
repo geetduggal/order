@@ -2,6 +2,8 @@
 // written on an event line, the user's connected (authenticated) accounts, and
 // their default account, decide which calendar HOSTS the event and who is
 // INVITED. Dependency-free so it can be unit-tested in isolation.
+import type { SpacetimeEvent } from "./spacetime";
+
 export interface ResolvedRecipients {
   /** The account whose calendar hosts the event, or null when it can't be
    *  determined (no emails, or no connected match and no default set). */
@@ -27,4 +29,14 @@ export function resolveRecipients(
     return { host: onLineConnected[0], invitees };
   }
   return { host: defaultAccount ? norm(defaultAccount) : null, invitees };
+}
+
+/** Every recipient email across the given events — lowercased, de-duplicated,
+ *  and sorted. Used to populate the event menu's email autocomplete. */
+export function distinctEmails(events: SpacetimeEvent[]): string[] {
+  const set = new Set<string>();
+  for (const e of events) {
+    for (const m of e.emails ?? []) set.add(m.toLowerCase());
+  }
+  return [...set].sort();
 }

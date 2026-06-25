@@ -1,5 +1,6 @@
 // Run: npx tsx src/lib/gcal-recipients.test.ts  → "ALL CHECKS PASS"
-import { resolveRecipients } from "./gcal-recipients";
+import { resolveRecipients, distinctEmails } from "./gcal-recipients";
+import type { SpacetimeEvent } from "./spacetime";
 
 function assertEq<T>(actual: T, expected: T, label: string) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -36,5 +37,16 @@ assertEq(resolveRecipients(["rohit@verkada.com"], connected, null),
 // 7. A second connected email is never invited (it's yours), and host is the first connected.
 assertEq(resolveRecipients(["geet@verkada.com", "geet.duggal@gmail.com", "bob@acme.com"], connected, def),
   { host: "geet@verkada.com", invitees: ["bob@acme.com"] }, "second own account not invited");
+
+// distinctEmails: lowercased, de-duplicated, sorted.
+{
+  const evs: SpacetimeEvent[] = [
+    { date: "2026-06-25", title: "A", emails: ["Rohit@verkada.com", "bob@acme.com"] },
+    { date: "2026-06-25", title: "B", emails: ["rohit@verkada.com"] }, // dup (case-insensitive)
+    { date: "2026-06-25", title: "C" }, // no emails
+  ];
+  assertEq(distinctEmails(evs), ["bob@acme.com", "rohit@verkada.com"], "distinctEmails: lowercased, deduped, sorted");
+  assertEq(distinctEmails([]), [], "distinctEmails: empty");
+}
 
 console.log("ALL CHECKS PASS");
