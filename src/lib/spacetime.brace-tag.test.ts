@@ -1,5 +1,5 @@
 // Run: npx tsx src/lib/spacetime.brace-tag.test.ts  → "ALL CHECKS PASS"
-import { toBraceTag, stripTagToName } from "./spacetime";
+import { toBraceTag, stripTagToName, serializeMarkwhen, spliceMwEvents } from "./spacetime";
 import { parseMarkwhenFormat } from "./spacetime";
 
 function assertEq<T>(actual: T, expected: T, label: string) {
@@ -34,6 +34,23 @@ assertEq(stripTagToName("#geet-duggal"), "geet-duggal", "stripTagToName kebab fa
   assertEq(brace.events[0].folder, "Geet Duggal", "brace resolves to real name");
   const kebab = parseMarkwhenFormat(`${space}# Time\n\n## Events\n\n2026-06-25 09:00 : A #geet-duggal\n`);
   assertEq(kebab.events[0].folder, "Geet Duggal", "legacy kebab still resolves (back-compat)");
+}
+
+// Serializer emits the brace form, preserving the name's case.
+{
+  const mw = serializeMarkwhen({ space: [], seasons: [], events: [
+    { date: "2026-06-25", title: "Standup", folder: "Geet Duggal", time: "09:00" },
+  ] });
+  if (!mw.includes(": Standup #[Geet Duggal]")) throw new Error("FAIL: serializeMarkwhen should emit brace tag\n" + mw);
+  console.log("ok: serializeMarkwhen emits brace tag");
+}
+// spliceMwEvents emits brace too; a kebab line round-trips to brace.
+{
+  const spliced = spliceMwEvents("# Time\n\n## Events\n", [
+    { date: "2026-06-25", title: "Plan", folder: "Geet Duggal", time: "14:00" },
+  ]);
+  if (!spliced.includes(": Plan #[Geet Duggal]")) throw new Error("FAIL: spliceMwEvents should emit brace tag\n" + spliced);
+  console.log("ok: spliceMwEvents emits brace tag");
 }
 
 console.log("ALL CHECKS PASS");

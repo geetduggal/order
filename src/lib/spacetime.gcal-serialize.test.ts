@@ -26,12 +26,12 @@ assertEq(back.map(norm),
   "serializeMarkwhen round-trip");
 
 // The serialized line literally contains the emails after the tag.
-if (!mw.includes(": Standup #verkada geet@verkada.com")) throw new Error("FAIL: emails not appended after tag in serializeMarkwhen\n" + mw);
+if (!mw.includes(": Standup #[Verkada] geet@verkada.com")) throw new Error("FAIL: emails not appended after tag in serializeMarkwhen\n" + mw);
 console.log("ok: emails appear after tag");
 
 // spliceMwEvents also emits emails.
 const spliced = spliceMwEvents("# Time\n\n## Events\n", events);
-if (!spliced.includes(": Planning #verkada a@x.com b@y.com")) throw new Error("FAIL: spliceMwEvents did not append emails\n" + spliced);
+if (!spliced.includes(": Planning #[Verkada] a@x.com b@y.com")) throw new Error("FAIL: spliceMwEvents did not append emails\n" + spliced);
 console.log("ok: spliceMwEvents appends emails");
 
 console.log("ALL CHECKS PASS");

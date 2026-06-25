@@ -668,7 +668,7 @@ export function serializeMarkwhen(st: Spacetime): string {
     const prefixW = Math.max(...prefixes.map((p) => p.length));
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
-      const tag = e.folder ? ` ${toMarkwhenTag(e.folder)}` : "";
+      const tag = e.folder ? ` ${toBraceTag(e.folder)}` : "";
       const recips = e.emails?.length ? ` ${e.emails.join(" ")}` : "";
       lines.push(`${prefixes[i].padEnd(prefixW)}: ${e.title}${tag}${recips}`);
     }
@@ -693,7 +693,7 @@ export function spliceMwEvents(mw: string, eventsIn: SpacetimeEvent[]): string {
     );
     const w = Math.max(...prefixes.map((p) => p.length));
     evBlock += "\n" + events.map((e, i) => {
-      const tag = e.folder ? ` ${toMarkwhenTag(e.folder)}` : "";
+      const tag = e.folder ? ` ${toBraceTag(e.folder)}` : "";
       const recips = e.emails?.length ? ` ${e.emails.join(" ")}` : "";
       return `${prefixes[i].padEnd(w)}: ${e.title}${tag}${recips}`;
     }).join("\n") + "\n";
