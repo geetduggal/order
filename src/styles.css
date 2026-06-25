@@ -3276,9 +3276,19 @@ iframe.order-youtube-embed {
   align-items: center;
   justify-content: center;
   padding: 20px;
+  /* Respect iOS safe areas so the centered panel never sits under the status
+     bar / Dynamic Island (top) or the home indicator (bottom). */
+  padding-top: max(20px, env(safe-area-inset-top));
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
 }
 .settings-panel {
   width: min(540px, 92vw);
+  /* Never exceed the (safe-area-inset) overlay height; scroll long content
+     internally so every control stays reachable on small/phone screens. */
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 8px;
