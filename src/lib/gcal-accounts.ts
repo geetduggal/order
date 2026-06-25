@@ -7,6 +7,7 @@ export interface AccountsView {
   default: string | null;
   has_credentials: boolean;
   client_id: string;
+  client_id_ios: string;
 }
 
 export const listAccounts = () => invoke<AccountsView>("gcal_list_accounts");
@@ -15,6 +16,7 @@ export const setDefault = (email: string) => invoke<void>("gcal_set_default", { 
 export const disconnect = (email: string) => invoke<void>("gcal_disconnect", { email });
 export const setCredentials = (clientId: string, clientSecret: string) =>
   invoke<void>("gcal_set_credentials", { clientId, clientSecret });
+export const setIosClientId = (clientId: string) => invoke<void>("gcal_set_ios_client_id", { clientIdIos: clientId });
 
 export interface PushEventInput {
   host: string;

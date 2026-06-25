@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon, Info as InfoIcon } from "lucide-react";
-import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos } from "../lib/vault";
+import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
   DEFAULT_TODO_TXT_PATH,
@@ -34,7 +34,7 @@ export function SettingsPanel({
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
   const [busy, setBusy] = useState(false);
 
-  const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false, client_id: "" });
+  const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false, client_id: "", client_id_ios: "" });
   const [gcalId, setGcalId] = useState("");
   const [gcalSecret, setGcalSecret] = useState("");
   const [gcalBusy, setGcalBusy] = useState(false);
@@ -53,6 +53,8 @@ export function SettingsPanel({
   useEffect(() => {
     if (gcal.client_id && !gcalId) setGcalId(gcal.client_id);
   }, [gcal.client_id, gcalId]);
+  const [iosId, setIosId] = useState("");
+  useEffect(() => { if (gcal.client_id_ios && !iosId) setIosId(gcal.client_id_ios); }, [gcal.client_id_ios, iosId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,6 +259,32 @@ export function SettingsPanel({
               </li>
             ))}
           </ul>
+          {isIosSync() && (
+            <div className="settings-subsection">
+              <label className="settings-label">Google iOS Client ID</label>
+              <p className="settings-hint">
+                iOS uses a separate Google credential. In Google Cloud → Credentials, create an
+                OAuth client of type <strong>iOS</strong> (bundle id <code>com.geetduggal.order</code>),
+                and paste its Client ID here. The reversed form must also be set as the app's URL scheme
+                at build time. {gcal.client_id_ios ? "✓ iOS Client ID saved on this device." : ""}
+              </p>
+              <input
+                className="settings-input"
+                placeholder="123-abc.apps.googleusercontent.com"
+                value={iosId}
+                onChange={(e) => setIosId(e.target.value)}
+              />
+              <button
+                type="button"
+                className="settings-btn"
+                disabled={!iosId.trim()}
+                onClick={async () => {
+                  try { const m = await import("../lib/gcal-accounts"); await m.setIosClientId(iosId.trim()); await refreshGcal(); }
+                  catch (e) { setGcalError(String(e)); }
+                }}
+              >Save iOS Client ID</button>
+            </div>
+          )}
           <span className="settings-hint">
             Connect a Google account to sync curated events. Credentials come from your own
             Google Cloud project (OAuth "Desktop app" client). The default account hosts
