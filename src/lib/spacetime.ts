@@ -597,6 +597,20 @@ export function toMarkwhenTag(name: string): string {
   return "#" + name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
+/** Brace folder tag: "Geet Duggal" → "#[Geet Duggal]". The canonical form on
+ *  event lines — exact name, no kebab mangling. */
+export function toBraceTag(name: string): string {
+  return `#[${name}]`;
+}
+
+/** Strip a folder-tag token to a plain name. A brace token `#[Name]` → `Name`
+ *  (trimmed); any other `#token` → the token minus its leading `#` (legacy
+ *  kebab fallback). Used when a tag doesn't resolve to a known Space folder. */
+export function stripTagToName(tag: string): string {
+  const b = tag.match(/^#\[(.+)\]$/);
+  return b ? b[1].trim() : tag.slice(1);
+}
+
 /** Serialize a Spacetime to the Markwhen `.mw` format:
  *  a `# Space` section (nested markdown lists) followed by a
  *  `# Time` section (seasons + date-aligned events). */
