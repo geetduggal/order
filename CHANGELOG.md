@@ -1,0 +1,90 @@
+# Changelog
+
+All notable changes to Order are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.1] - 2026-06-25
+
+The headline of this release is **Google Calendar curated sync** — push and import
+individual events between `spacetime.mw` and Google Calendar, keeping the
+plain-text, no-hidden-IDs conventions intact — plus a readable **`#[Exact Name]`
+folder-tag syntax** for spacetime event lines.
+
+### Added
+
+- **Google Calendar curated per-event sync.** Sync specific events between Order
+  and Google Calendar, with invites, from a plain-text source of truth. See
+  [`docs/GCAL-SYNC.md`](docs/GCAL-SYNC.md).
+  - **Email-recipient model.** A `spacetime.mw` event line can carry trailing
+    bare emails (e.g. `… : Standup #[Verkada] geet@verkada.com rohit@acme.com`).
+    An email matching a connected account is the host calendar; the rest are
+    invitees. An event syncs only if it carries at least one email. Identity is
+    the natural key `(date, time, title)` — no stored Google event IDs.
+  - **Account management** in Settings → Google Calendar: connect, list, set
+    default, and disconnect Google accounts using your own Google Cloud OAuth
+    client, with an in-app "how to get these credentials" helper. Refresh tokens
+    are stored only in the OS Keychain.
+  - **Push (Order → Google).** Google-syncable events that are new or edited this
+    session surface in the bottom-left "spacetime · N pending" reconciliation
+    indicator; its review dialog's "Sync to Google" section creates/updates them
+    on the host calendar (matched by natural key) and sends invitations.
+  - **Import (Google → Order).** A per-day download icon in the Day/Week calendar
+    headers opens a review modal of that day's Google events (new pre-checked,
+    already-present unchecked); accepted events become spacetime events in a
+    chosen folder, carrying the source account, any guests, and the event
+    description.
+  - **iOS support.** Connect a Google account on iPhone via a custom-scheme
+    deep-link OAuth flow (Settings has an iOS-only "Google iOS Client ID" field);
+    push and import then work from the phone.
+  - **Recipients from the calendar.** The event action menu gained a Recipients
+    section to add/remove an event's emails (with autocomplete from emails
+    already in `spacetime.mw`), writing them straight back to the source file.
+  - **Multi-day events** round-trip through the Google bridge in both directions
+    (spacetime's inclusive `endDate` ↔ Google's exclusive all-day end), for both
+    all-day spans and timed spans that end on a later day.
+- **`#[Exact Name]` brace folder-tag syntax** for `spacetime.mw` event lines
+  (e.g. `#[Geet Duggal]`). Exact, legible, multi-word-safe. The parser still
+  accepts legacy `#kebab` tags; existing files migrate automatically.
+
+### Changed
+
+- `spacetime.mw` event lines now serialize folder tags in the canonical
+  `#[Exact Name]` form (case and spacing preserved); legacy `#kebab` tags are
+  still parsed for back-compat.
+- Sync results are shown via an inline toast instead of native OS dialogs.
+- The macOS bundle is signed with a stable Apple Development identity, so the
+  Keychain keeps releasing saved Google tokens across rebuilds.
+- Settings' Google Calendar section adapts to platform: the desktop OAuth
+  client fields are hidden on iOS (which uses the iOS Client ID instead), and the
+  Settings panel scrolls and respects iOS safe areas.
+
+### Fixed
+
+- Reconnecting a Google account self-heals a stale Keychain entry after an app
+  rebuild/re-sign, and a failed token read now says "reconnect in Settings"
+  instead of a cryptic platform error.
+- The Settings panel no longer runs off-screen on iPhone.
+- Google import isolates per-note failures (one bad note no longer aborts the
+  whole import) and guards an empty selection.
+- Google OAuth/sync robustness: request the `openid email` scope so the account
+  email resolves; distinguish DST gap vs. overlap when formatting event times;
+  skip calendar list items lacking a start field; harden the desktop loopback
+  redirect; clear the in-flight auth slot on every exit path.
+- `cetl` iPhone detection matches the `available (paired)` device state (and no
+  longer mis-matches `unavailable`).
+
+## [0.1.0] - 2026-06-23
+
+- Initial release: local-first notebook over an Obsidian-compatible vault —
+  in-place markdown cards, the Area → Category → Notable Folder hierarchy,
+  Day/Week/Month/Year/Season calendar views over the same notes, todo.txt sync,
+  Seasons, File Piles, and `spacetime` (`spacetime.yml` + `spacetime.mw`) as the
+  canonical map of space and time. One Tauri codebase ships desktop and iOS.
+
+[Unreleased]: https://github.com/geetduggal/order/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/geetduggal/order/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/geetduggal/order/releases/tag/v0.1.0

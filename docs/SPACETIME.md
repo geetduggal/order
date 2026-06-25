@@ -101,10 +101,10 @@ time:
 
 ## Events
 
-2026-06-15              : Order v0.1.0 Release  #order-build
-2026-06-16 09:00-09:30  : Team standup          #frontend
-2026-07-01 / 2026-07-05 : Summer trip           #board-games
-2026-08-20 17:00        : Medium deadline       #order-build
+2026-06-15              : Order v0.1.0 Release  #[Order Build]
+2026-06-16 09:00-09:30  : Team standup          #[Frontend]
+2026-07-01 / 2026-07-05 : Summer trip           #[Board Games]
+2026-08-20 17:00        : Medium deadline       #[Order Build]
 ```
 
 ---
@@ -206,10 +206,10 @@ Under `## Events`. Each line is a date prefix, a colon, a title, and an optional
 
 ## Events
 
-2026-06-15              : All-day event         #order-build
-2026-06-16 09:00-09:30  : Timed event           #frontend
-2026-07-01 / 2026-07-05 : Multi-day event       #board-games
-2026-08-20 17:00        : Start-time only       #order-build
+2026-06-15              : All-day event         #[Order Build]
+2026-06-16 09:00-09:30  : Timed event           #[Frontend]
+2026-07-01 / 2026-07-05 : Multi-day event       #[Board Games]
+2026-08-20 17:00        : Start-time only       #[Order Build]
 2026-09-01              : No folder event
 ```
 
@@ -228,16 +228,39 @@ is new and updates it when the event changes.
 
 ### Folder tags
 
-Notable Folder names translate to hyphenated lowercase `#tags`:
+The canonical folder tag form is `#[Exact Folder Name]` — the folder name in
+brackets, case and spaces preserved:
 
 | Folder name | Tag |
 |---|---|
-| `Order Build` | `#order-build` |
-| `Board Games` | `#board-games` |
-| `2026 Living Room Refresh` | `#2026-living-room-refresh` |
+| `Order Build` | `#[Order Build]` |
+| `Board Games` | `#[Board Games]` |
+| `Geet Duggal` | `#[Geet Duggal]` |
+| `2026 Living Room Refresh` | `#[2026 Living Room Refresh]` |
 
-Order resolves tags back to folder names by matching against the space tree. A tag
-that doesn't match any folder in the merged space is flagged as a conflict.
+The legacy hyphenated form (e.g. `#order-build`) is still accepted by the parser
+for back-compatibility — files written by older versions of Order continue to
+work. Order always serializes the brace form going forward. Existing `spacetime.mw`
+files are migrated from kebab to brace automatically on first write.
+
+Order resolves both tag forms back to folder names by matching against the space
+tree. A tag that doesn't match any known folder is kept as-is (the bracketed name
+becomes the folder name).
+
+### Email recipients on event lines
+
+Trailing bare email addresses on an event line mark it as a
+**Google Calendar-synced event** and list who the event involves. Emails come
+after the folder tag, space-separated:
+
+```markdown
+2026-06-26 09:00-09:30  : Standup    #[Verkada] geet@verkada.com
+2026-06-26 14:00-15:00  : Planning   #[Verkada] geet@verkada.com rohit@acme.com
+```
+
+Events with no email addresses are ordinary Order events; the sync feature
+never touches them. See [GCAL-SYNC.md](GCAL-SYNC.md) for how email addresses
+determine the host calendar and invitees.
 
 ### Time — seasons
 
@@ -309,8 +332,8 @@ Another file can define Work without any conflict.
 # Time
 
 ## Events
-2025-12-01 : Winter planning  #order-build
-2025-11-15 : Q4 retrospective #frontend
+2025-12-01 : Winter planning  #[Order Build]
+2025-11-15 : Q4 retrospective #[Frontend]
 
 ## Seasons
 2025-10-01 / 2025-12-31: Fall Arc

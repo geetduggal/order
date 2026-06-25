@@ -16,6 +16,7 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 - **todo.txt, always in sync** — every calendar event mirrored as one readable line.
 - **Seasons** — name your own date ranges and see each one as a grid of what happened, by Area.
 - **Spacetime** — a single canonical map of your space (hierarchy) and time (events + seasons) at the vault root, in two companion formats: `spacetime.yml` and `spacetime.mw`. Edit either one and Order syncs the other immediately. See [SPACETIME.md](docs/SPACETIME.md).
+- **Google Calendar curated sync** — push hand-picked events (with invites) to Google Calendar and pull a day's events back in, via the spacetime reconciliation flow. No Google IDs stored; identity is the natural key. See [GCAL-SYNC.md](docs/GCAL-SYNC.md).
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
 ## Build & run
@@ -141,6 +142,7 @@ America, Christmas, LCARS.
 |---|---|
 | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | the core Order conventions — Notable Folder, Vault, Pile, Calendar |
 | [docs/SPACETIME.md](docs/SPACETIME.md) | the Spacetime format specification — YAML + Markwhen side by side, field reference, composability rules, brood invariant, examples |
+| [docs/GCAL-SYNC.md](docs/GCAL-SYNC.md) | Google Calendar curated sync — email-recipient model, connecting an account, push, import, natural-key philosophy |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | code map, data flows, invariants |
 | [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | why it's shaped this way |
 | [docs/RELEASING.md](docs/RELEASING.md) | building binaries, App Store |
