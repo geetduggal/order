@@ -20,7 +20,10 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_vault::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState { vault_path: Mutex::new(None) })
+        .manage(gcal::PendingAuth::default())
         .manage(vault_fs::VaultState::default())
         .manage(fts::FtsState::default())
         .manage(terminal::TerminalState::default())
@@ -156,6 +159,22 @@ pub fn run() {
             #[cfg(debug_assertions)]
             if let Some(win) = app.get_webview_window("main") {
                 win.open_devtools();
+            }
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let u = url.to_string();
+                        if !(u.contains("code=") || u.contains("state=")) { continue; }
+                        let pending = handle.state::<gcal::PendingAuth>();
+                        let mut slot = pending.0.lock().unwrap();
+                        if slot.is_some() {
+                            let _ = slot.as_ref().unwrap().tx.send(u);
+                            *slot = None;
+                        }
+                    }
+                });
             }
             // Replace the default macOS menu (which binds Cmd+W to
             // Close Window — and AppKit consumes Cmd+W before WebKit

@@ -104,6 +104,16 @@ pub fn parse_token_response(body: &str) -> Result<TokenResponse, String> {
 
 const KEYRING_SERVICE: &str = "com.geetduggal.order.gcal";
 
+/// One in-flight OAuth attempt: the expected CSRF `state` and a sender the
+/// deep-link handler uses to deliver the redirect URL back to the connect call.
+pub struct PendingSlot {
+    pub state: String,
+    pub tx: std::sync::mpsc::Sender<String>,
+}
+
+#[derive(Default)]
+pub struct PendingAuth(pub std::sync::Mutex<Option<PendingSlot>>);
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccountsConfig {
     #[serde(default)]

@@ -36,6 +36,8 @@ sha2 = "0.10"
 getrandom = "0.2"
 keyring = "2"
 open = "5"
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
 
 [features]
 default = ["custom-protocol"]

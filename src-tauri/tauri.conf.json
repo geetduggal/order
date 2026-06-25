@@ -23,6 +23,12 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "mobile": [{ "scheme": ["com.googleusercontent.apps.REVERSED_IOS_CLIENT_ID"], "appLink": false }],
+      "desktop": { "schemes": ["com.googleusercontent.apps.REVERSED_IOS_CLIENT_ID"] }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
