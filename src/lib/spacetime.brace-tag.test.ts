@@ -1,5 +1,6 @@
 // Run: npx tsx src/lib/spacetime.brace-tag.test.ts  → "ALL CHECKS PASS"
 import { toBraceTag, stripTagToName } from "./spacetime";
+import { parseMarkwhenFormat } from "./spacetime";
 
 function assertEq<T>(actual: T, expected: T, label: string) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -12,5 +13,27 @@ assertEq(toBraceTag("order"), "#[order]", "toBraceTag single-word preserves case
 assertEq(stripTagToName("#[Geet Duggal]"), "Geet Duggal", "stripTagToName brace");
 assertEq(stripTagToName("#[ Spaced ]"), "Spaced", "stripTagToName trims inner");
 assertEq(stripTagToName("#geet-duggal"), "geet-duggal", "stripTagToName kebab fallback");
+
+// Parser captures a brace tag as the raw token when there's no Space to resolve.
+{
+  const st = parseMarkwhenFormat(`# Time\n\n## Events\n\n2026-06-25 09:00 : Standup #[Geet Duggal]\n`);
+  assertEq(st.events[0].folder, "#[Geet Duggal]", "brace tag captured (unresolved, no space)");
+  assertEq(st.events[0].title, "Standup", "title excludes the brace tag");
+}
+// Brace tag + trailing emails both parse.
+{
+  const st = parseMarkwhenFormat(`# Time\n\n## Events\n\n2026-06-25 09:00 : Sync #[Geet Duggal] a@x.com b@y.com\n`);
+  assertEq(st.events[0].folder, "#[Geet Duggal]", "brace tag with emails: folder");
+  assertEq(st.events[0].emails ?? null, ["a@x.com", "b@y.com"], "brace tag with emails: emails");
+  assertEq(st.events[0].title, "Sync", "brace tag with emails: title");
+}
+// With a Space section, BOTH brace and kebab resolve to the real folder name.
+{
+  const space = `# Space\n\n## Personal\n\n- Projects\n  - Geet Duggal\n\n`;
+  const brace = parseMarkwhenFormat(`${space}# Time\n\n## Events\n\n2026-06-25 09:00 : A #[Geet Duggal]\n`);
+  assertEq(brace.events[0].folder, "Geet Duggal", "brace resolves to real name");
+  const kebab = parseMarkwhenFormat(`${space}# Time\n\n## Events\n\n2026-06-25 09:00 : A #geet-duggal\n`);
+  assertEq(kebab.events[0].folder, "Geet Duggal", "legacy kebab still resolves (back-compat)");
+}
 
 console.log("ALL CHECKS PASS");

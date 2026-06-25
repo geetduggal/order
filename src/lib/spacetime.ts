@@ -837,7 +837,11 @@ export function mergeMwEventsWithVault(
 function buildTagLookup(space: SpaceNode[]): Map<string, string> {
   const map = new Map<string, string>();
   function walk(nodes: SpaceNode[]) {
-    for (const n of nodes) { map.set(toMarkwhenTag(n.name), n.name); walk(n.children); }
+    for (const n of nodes) {
+      map.set(toMarkwhenTag(n.name), n.name);
+      map.set(toBraceTag(n.name), n.name);
+      walk(n.children);
+    }
   }
   walk(space);
   return map;
@@ -920,13 +924,18 @@ export function parseMarkwhenFormat(text: string): Spacetime {
         emails.unshift(em[1]);
         work = work.slice(0, work.length - em[0].length).trimEnd();
       }
-      const tagM = work.match(/\s+(#[\w-]+)$/);
-      const tagSlug = tagM ? tagM[1] : null;
-      const title = (tagM ? work.slice(0, work.length - tagM[0].length) : work).trim();
+      // Folder tag: try the brace form #[Exact Name] first (spaces/case ok),
+      // then the legacy #kebab form. Store the raw token; it's resolved to the
+      // real folder name after the Space section is parsed (when present).
+      const braceM = work.match(/\s+#\[([^\]]+)\]$/);
+      const kebabM = braceM ? null : work.match(/\s+(#[\w-]+)$/);
+      const tagToken = braceM ? `#[${braceM[1].trim()}]` : (kebabM ? kebabM[1] : null);
+      const tagLen = braceM ? braceM[0].length : (kebabM ? kebabM[0].length : 0);
+      const title = (tagToken ? work.slice(0, work.length - tagLen) : work).trim();
       // Resolve tag → real folder name via tag lookup (built after full parse)
       events.push({
         date, title,
-        ...(tagSlug ? { folder: tagSlug } : {}), // resolved to real name below
+        ...(tagToken ? { folder: tagToken } : {}), // resolved to real name below
         ...(time    ? { time }   : {}),
         ...(endTime ? { endTime } : {}),
         ...(endDate ? { endDate } : {}),
@@ -942,7 +951,7 @@ export function parseMarkwhenFormat(text: string): Spacetime {
     const tagLookup = buildTagLookup(space);
     for (const ev of events) {
       if (ev.folder && ev.folder.startsWith("#")) {
-        ev.folder = tagLookup.get(ev.folder) ?? ev.folder.slice(1);
+        ev.folder = tagLookup.get(ev.folder) ?? stripTagToName(ev.folder);
       }
     }
   }
