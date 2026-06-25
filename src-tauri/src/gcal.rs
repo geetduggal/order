@@ -156,7 +156,10 @@ pub fn store_refresh_token(email: &str, token: &str) -> Result<(), String> {
 pub fn load_refresh_token(email: &str) -> Result<String, String> {
     keyring::Entry::new(KEYRING_SERVICE, email)
         .and_then(|e| e.get_password())
-        .map_err(|e| format!("keychain load: {e}"))
+        // A rebuild/re-sign of the app makes macOS Keychain reject the token it
+        // stored under the old signature; turn the cryptic platform error into
+        // an actionable one.
+        .map_err(|e| format!("can't read the saved Google login for {email} ({e}) — reconnect the account in Settings"))
 }
 
 pub fn delete_refresh_token(email: &str) -> Result<(), String> {
@@ -354,6 +357,11 @@ pub async fn connect_via_deeplink(app: tauri::AppHandle) -> Result<String, Strin
     let refresh = tokens.refresh_token.clone()
         .ok_or("Google returned no refresh token — revoke Order's access in your Google account and reconnect.")?;
     let email = fetch_email(&tokens.access_token)?;
+    // Re-signing the app (any rebuild with ad-hoc signing) makes macOS Keychain
+    // reject the previous item under the new code signature. Delete any stale
+    // entry first so a single reconnect always writes a fresh, readable token
+    // instead of failing to update an inaccessible one.
+    let _ = delete_refresh_token(&email);
     store_refresh_token(&email, &refresh)?;
     let mut cfg2 = load_config(&dir);
     if !cfg2.accounts.iter().any(|a| a == &email) { cfg2.accounts.push(email.clone()); }
@@ -397,6 +405,11 @@ pub async fn gcal_connect_account(app: tauri::AppHandle) -> Result<String, Strin
     let refresh = tokens.refresh_token.clone()
         .ok_or("Google returned no refresh token — revoke Order's access in your Google account and reconnect.")?;
     let email = fetch_email(&tokens.access_token)?;
+    // Re-signing the app (any rebuild with ad-hoc signing) makes macOS Keychain
+    // reject the previous item under the new code signature. Delete any stale
+    // entry first so a single reconnect always writes a fresh, readable token
+    // instead of failing to update an inaccessible one.
+    let _ = delete_refresh_token(&email);
     store_refresh_token(&email, &refresh)?;
     let mut cfg = load_config(&dir);
     if !cfg.accounts.iter().any(|a| a == &email) {
