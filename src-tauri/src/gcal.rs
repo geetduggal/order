@@ -114,6 +114,8 @@ pub struct AccountsConfig {
     pub client_id: String,
     #[serde(default)]
     pub client_secret: String,
+    #[serde(default)]
+    pub client_id_ios: String,
 }
 
 fn config_path(dir: &std::path::Path) -> std::path::PathBuf {
@@ -237,27 +239,51 @@ fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse, String> {
     parse_token_response(&body)
 }
 
-/// Exchange an auth code for tokens (PKCE).
-fn exchange_code(cfg: &AccountsConfig, code: &str, verifier: &str, redirect_uri: &str) -> Result<TokenResponse, String> {
-    token_request(&[
+/// Build the authorization-code token form; `client_secret` is included only
+/// for confidential (desktop) clients. iOS public clients pass `None`.
+pub fn auth_code_form<'a>(code: &'a str, client_id: &'a str, secret: Option<&'a str>, verifier: &'a str, redirect_uri: &'a str) -> Vec<(&'a str, &'a str)> {
+    let mut f = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
-        ("client_id", &cfg.client_id),
-        ("client_secret", &cfg.client_secret),
+        ("client_id", client_id),
         ("code_verifier", verifier),
         ("redirect_uri", redirect_uri),
-    ])
+    ];
+    if let Some(s) = secret { f.push(("client_secret", s)); }
+    f
+}
+
+/// Build the refresh-token form; same secret-omission rule.
+pub fn refresh_form<'a>(refresh: &'a str, client_id: &'a str, secret: Option<&'a str>) -> Vec<(&'a str, &'a str)> {
+    let mut f = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh),
+        ("client_id", client_id),
+    ];
+    if let Some(s) = secret { f.push(("client_secret", s)); }
+    f
+}
+
+/// (client_id, optional secret) for the current platform. iOS clients are
+/// public (no secret); desktop clients are confidential.
+fn oauth_client(cfg: &AccountsConfig) -> (String, Option<String>) {
+    #[cfg(target_os = "ios")]
+    { (cfg.client_id_ios.clone(), None) }
+    #[cfg(not(target_os = "ios"))]
+    { (cfg.client_id.clone(), Some(cfg.client_secret.clone())) }
+}
+
+/// Exchange an auth code for tokens (PKCE; secret only on desktop).
+fn exchange_code(cfg: &AccountsConfig, code: &str, verifier: &str, redirect_uri: &str) -> Result<TokenResponse, String> {
+    let (id, secret) = oauth_client(cfg);
+    token_request(&auth_code_form(code, &id, secret.as_deref(), verifier, redirect_uri))
 }
 
 /// Refresh an access token from the stored refresh token. Used by push/import.
 pub fn fetch_access_token(cfg: &AccountsConfig, email: &str) -> Result<String, String> {
     let refresh = load_refresh_token(email)?;
-    let t = token_request(&[
-        ("grant_type", "refresh_token"),
-        ("refresh_token", &refresh),
-        ("client_id", &cfg.client_id),
-        ("client_secret", &cfg.client_secret),
-    ])?;
+    let (id, secret) = oauth_client(cfg);
+    let t = token_request(&refresh_form(&refresh, &id, secret.as_deref()))?;
     Ok(t.access_token)
 }
 
@@ -763,6 +789,7 @@ mod tests {
             default: Some("a@x.com".into()),
             client_id: "CID".into(),
             client_secret: "SEC".into(),
+            client_id_ios: String::new(),
         };
         save_config(&dir, &cfg).unwrap();
         let back = load_config(&dir);
@@ -770,5 +797,25 @@ mod tests {
         assert_eq!(back.default.as_deref(), Some("a@x.com"));
         assert_eq!(back.client_id, "CID");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn auth_code_form_omits_secret_when_none() {
+        let f = auth_code_form("CODE", "cid", None, "ver", "redir");
+        assert!(f.iter().any(|(k, v)| *k == "client_id" && *v == "cid"));
+        assert!(f.iter().any(|(k, v)| *k == "code_verifier" && *v == "ver"));
+        assert!(!f.iter().any(|(k, _)| *k == "client_secret"), "iOS form must omit client_secret");
+    }
+
+    #[test]
+    fn auth_code_form_includes_secret_when_some() {
+        let f = auth_code_form("CODE", "cid", Some("sec"), "ver", "redir");
+        assert!(f.iter().any(|(k, v)| *k == "client_secret" && *v == "sec"));
+    }
+
+    #[test]
+    fn refresh_form_secret_optional() {
+        assert!(!refresh_form("r", "cid", None).iter().any(|(k, _)| *k == "client_secret"));
+        assert!(refresh_form("r", "cid", Some("sec")).iter().any(|(k, v)| *k == "client_secret" && *v == "sec"));
     }
 }
