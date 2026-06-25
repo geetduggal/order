@@ -6689,3 +6689,12 @@ iframe.order-youtube-embed {
 .fc-day-import-btn { display: inline-flex; align-items: center; justify-content: center; padding: 1px; border: none; background: transparent; color: var(--ink-faint); cursor: pointer; border-radius: 3px; opacity: 0; }
 .fc-col-header-cell:hover .fc-day-import-btn { opacity: 1; }
 .fc-day-import-btn:hover { color: var(--royal); background: var(--royal-soft); }
+
+/* ---------- EventActionMenu recipients section ---------- */
+.event-action-recipients { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px solid var(--rule); margin-top: 2px; }
+.event-action-recip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.event-action-recip-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 7px; border: 1px solid var(--rule); border-radius: 10px; font-size: 11px; background: var(--bg-soft, transparent); max-width: 100%; }
+.event-action-recip-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.event-action-recip-x { border: none; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+.event-action-recip-x:hover { color: var(--royal); }
+.event-action-recip-input { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--rule); border-radius: 4px; background: transparent; color: var(--ink); }

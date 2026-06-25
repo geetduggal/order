@@ -5767,6 +5767,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
 function EventActionMenu({
   title, x, y, eventDate, currentFolder, availableFolders,
   onOpen, onDelete, onMoveToDay, onAssignFolder, onRename, onCancel,
+  emails, knownEmails, onSetEmails,
 }: {
   title: string;
   x: number;
@@ -5788,6 +5789,13 @@ function EventActionMenu({
    *  text has actually changed. */
   onRename: (newTitle: string) => Promise<void> | void;
   onCancel: () => void;
+  /** Current recipient emails on the event (Google sync). */
+  emails?: string[];
+  /** Autocomplete suggestions — distinct emails already in spacetime.mw. */
+  knownEmails?: string[];
+  /** Commit a new full recipient list; writes to spacetime.mw. When omitted,
+   *  the Recipients section is not shown. */
+  onSetEmails?: (emails: string[]) => void;
 }) {
   const [draftTitle, setDraftTitle] = useState(title);
   // Reset the draft when the popup opens for a different event.
@@ -5798,6 +5806,7 @@ function EventActionMenu({
   };
   const [folderQuery, setFolderQuery] = useState("");
   const [folderOpen, setFolderOpen] = useState(false);
+  const [recipDraft, setRecipDraft] = useState("");
   const folderInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (folderOpen) folderInputRef.current?.focus(); }, [folderOpen]);
   const folderMatches = (folderQuery.trim()
@@ -5825,8 +5834,9 @@ function EventActionMenu({
     });
   })();
   // Menu is taller when chips / folder picker are present.
-  const menuH = (weekDays.length > 0 ? 170 : 120) + (availableFolders.length > 0 ? (folderOpen ? 220 : 56) : 0);
-  const menuW = (weekDays.length > 0 || availableFolders.length > 0) ? 280 : 200;
+  const recipH = onSetEmails ? 40 + (emails?.length ?? 0) * 26 : 0;
+  const menuH = (weekDays.length > 0 ? 170 : 120) + (availableFolders.length > 0 ? (folderOpen ? 220 : 56) : 0) + recipH;
+  const menuW = (weekDays.length > 0 || availableFolders.length > 0 || onSetEmails) ? 280 : 200;
   const left = Math.min(Math.max(x, 8), window.innerWidth - menuW);
   const top = Math.min(Math.max(y, 8), window.innerHeight - menuH);
   useEffect(() => {
@@ -5936,6 +5946,46 @@ function EventActionMenu({
                 <span className="event-action-folder-name">{currentFolder ?? "Assign folder…"}</span>
               </button>
             )}
+          </div>
+        )}
+        {onSetEmails && (
+          <div className="event-action-recipients">
+            {(emails ?? []).length > 0 && (
+              <ul className="event-action-recip-list">
+                {(emails ?? []).map((m) => (
+                  <li key={m} className="event-action-recip-chip">
+                    <span className="event-action-recip-addr">{m}</span>
+                    <button
+                      type="button"
+                      className="event-action-recip-x"
+                      aria-label={`Remove ${m}`}
+                      onClick={() => onSetEmails((emails ?? []).filter((x) => x !== m))}
+                    >×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <input
+              className="event-action-recip-input"
+              list="event-action-recip-options"
+              placeholder="Add recipient email…"
+              value={recipDraft}
+              onChange={(e) => setRecipDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const v = recipDraft.trim().toLowerCase();
+                  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) && !(emails ?? []).includes(v)) {
+                    onSetEmails([...(emails ?? []), v]);
+                    setRecipDraft("");
+                  }
+                }
+                if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+              }}
+            />
+            <datalist id="event-action-recip-options">
+              {(knownEmails ?? []).map((m) => <option key={m} value={m} />)}
+            </datalist>
           </div>
         )}
         <button type="button" className="event-action-btn" onClick={onOpen}>Open</button>
