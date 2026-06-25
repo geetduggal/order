@@ -38,6 +38,7 @@ import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { buildPushIntents, type PushIntent } from "../lib/gcal-push";
+import { distinctEmails } from "../lib/gcal-recipients";
 
 /** Stable per-event signature for Google-push pending tracking: changes when
  *  any pushed field (host, schedule, title, attendees) changes, so an edit
@@ -3063,12 +3064,13 @@ export function CardGrid() {
   // move-to-day chips / change-folder picker) instead of jumping straight
   // to the note.
   const [eventMenu, setEventMenu] = useState<
-    { path: string; title: string; x: number; y: number; date: string | null; folder: string | null } | null
+    { path: string; title: string; x: number; y: number; date: string | null; folder: string | null; emails: string[] } | null
   >(null);
   const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
     let title = "Untitled";
     let d: string | null = null;
     let f: string | null = null;
+    let em: string[] = [];
     if (isTodoTxtPath(path)) {
       // The "note" here is the underlying todo.txt file; the line
       // index in the synthetic path picks out the actual item so the
@@ -3102,6 +3104,7 @@ export function CardGrid() {
         title = chip.ev.title;
         d = chip.ev.date;
         f = chip.ev.folder ?? null;
+        em = chip.ev.emails ?? [];
       } else if (path.startsWith("mw-event:")) {
         // Fallback for a synthetic path not in the current chip map.
         const mwEv = mwEventIndexRef.current.get(path.slice("mw-event:".length));
@@ -3123,6 +3126,7 @@ export function CardGrid() {
       y: coords?.y ?? window.innerHeight / 2,
       date: d,
       folder: f,
+      emails: em,
     });
   }, []);
   /** Opening a todo.txt-only chip prompts to "promote" it to a real
@@ -3943,6 +3947,18 @@ export function CardGrid() {
 
     await writeVault(toVaultRel(notePath), content);
     setNotes((prev) => prev?.map((n) => (n.path === notePath ? { ...n, frontmatter: next } : n)) ?? null);
+  }, [applyMwEdit]);
+
+  const knownEmails = useMemo(() => distinctEmails(mwEvents), [mwEvents]);
+
+  /** Commit a new recipient list onto the event's spacetime.mw line. Updates
+   *  the open menu optimistically so chips repaint without closing it. */
+  const handleSetEmails = useCallback(async (path: string, emails: string[]) => {
+    const chip = eventChipRef.current.get(path);
+    if (!chip) return;
+    const { date, title } = chip.ev;
+    setEventMenu((m) => (m && m.path === path ? { ...m, emails } : m));
+    await applyMwEdit((mw) => mwUpdateEvent(mw, date, title, { emails }));
   }, [applyMwEdit]);
 
   /** Generic frontmatter patcher driving the FrontmatterInspector.
@@ -5702,6 +5718,9 @@ export function CardGrid() {
           onRename={async (newTitle) => {
             await renameEventTitle(eventMenu.path, newTitle);
           }}
+          emails={eventMenu.emails}
+          knownEmails={knownEmails}
+          onSetEmails={(emails) => { void handleSetEmails(eventMenu.path, emails); }}
           onCancel={() => setEventMenu(null)}
         />
       )}
