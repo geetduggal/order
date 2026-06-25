@@ -2469,7 +2469,11 @@ export function CardGrid() {
   }, [refreshGcalAccounts]);
 
   const [gcalSynced, setGcalSynced] = useState<SyncRecord>(loadSyncRecord);
-  useEffect(() => { saveSyncRecord(gcalSynced); }, [gcalSynced]);
+  const gcalSavedOnce = useRef(false);
+  useEffect(() => {
+    if (!gcalSavedOnce.current) { gcalSavedOnce.current = true; return; } // skip the load-echo
+    saveSyncRecord(gcalSynced);
+  }, [gcalSynced]);
   const [gcalSyncing, setGcalSyncing] = useState(false);
   const gcalPlan = useMemo(() => {
     if (gcalAccounts.accounts.length === 0) return { pushes: [], deletes: [] };
@@ -2579,6 +2583,9 @@ export function CardGrid() {
           recAdds[naturalKey(it.date, it.time, it.title)] = { host: it.host, date: it.date, time: it.time, title: it.title, sig: gcalSig(it) };
         } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
       }
+      // A failed delete leaves its key in the record, so it re-appears as a
+      // pending delete next sync (a reschedule's new-key push may already have
+      // succeeded — that's fine, the stale delete just needs another sync).
       for (const d of deletes) {
         try {
           await deleteEvent(d.host, d.date, d.time, d.title);
