@@ -148,9 +148,23 @@ pub fn save_config(dir: &std::path::Path, cfg: &AccountsConfig) -> Result<(), St
 }
 
 pub fn store_refresh_token(email: &str, token: &str) -> Result<(), String> {
-    keyring::Entry::new(KEYRING_SERVICE, email)
-        .and_then(|e| e.set_password(token))
-        .map_err(|e| format!("keychain store: {e}"))
+    let set = || keyring::Entry::new(KEYRING_SERVICE, email).and_then(|e| e.set_password(token));
+    // First attempt. macOS can hold MULTIPLE items for the same service+account
+    // across rebuilds; SecItemAdd then fails with errSecDuplicateItem ("already
+    // exists") even after one delete left another behind. So on failure, clear
+    // every item this build can reach (loop — one delete removes one), then
+    // retry once.
+    if set().is_ok() {
+        return Ok(());
+    }
+    for _ in 0..8 {
+        if keyring::Entry::new(KEYRING_SERVICE, email).and_then(|e| e.delete_password()).is_err() {
+            break;
+        }
+    }
+    set().map_err(|e| format!(
+        "couldn't save the Google login to the Keychain ({e}). A stale entry from a previous build may be stuck — clear it (Settings → Disconnect, or reset the keychain item) and reconnect."
+    ))
 }
 
 pub fn load_refresh_token(email: &str) -> Result<String, String> {
