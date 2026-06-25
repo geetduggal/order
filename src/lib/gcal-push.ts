@@ -10,6 +10,8 @@ export interface PushIntent {
   date: string;
   time?: string;
   endTime?: string;
+  /** Inclusive last day of a multi-day span (absent for single-day events). */
+  endDate?: string;
   allDay: boolean;
   title: string;
   attendees: string[];
@@ -30,6 +32,7 @@ export function buildPushIntents(
       date: ev.date,
       ...(ev.time ? { time: ev.time } : {}),
       ...(ev.endTime ? { endTime: ev.endTime } : {}),
+      ...(ev.endDate ? { endDate: ev.endDate } : {}),
       allDay: ev.allDay === true || !ev.time,
       title: ev.title,
       attendees: invitees,

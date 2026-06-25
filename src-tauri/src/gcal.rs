@@ -574,6 +574,13 @@ fn next_day(date: &str) -> Result<String, String> {
     Ok((d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
 }
 
+/// Subtract one day from an ISO date (Google's exclusive all-day end.date →
+/// spacetime's inclusive endDate). Returns None on a malformed date.
+fn prev_day(date: &str) -> Option<String> {
+    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    Some((d - chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushEventInput {
@@ -581,10 +588,29 @@ pub struct PushEventInput {
     pub date: String,
     pub time: Option<String>,
     pub end_time: Option<String>,
+    /// Inclusive last day of a multi-day span (absent for single-day events).
+    pub end_date: Option<String>,
     pub all_day: bool,
     pub title: String,
     pub description: String,
     pub attendees: Vec<String>,
+}
+
+/// Map a push input to Google start/end times. A multi-day span carries
+/// end_date (inclusive). Google's all-day end.date is exclusive, so the end is
+/// next_day(end_date); a timed span ends at end_time on end_date. end_date
+/// defaults to the start date, so single-day events are unchanged.
+fn push_event_times(input: &PushEventInput) -> Result<(EventTime, EventTime), String> {
+    let end_day = input.end_date.as_deref().unwrap_or(&input.date);
+    if input.all_day {
+        Ok((EventTime::AllDay { date: input.date.clone() },
+            EventTime::AllDay { date: next_day(end_day)? }))
+    } else {
+        let t = input.time.as_deref().ok_or("timed event missing time")?;
+        let et = input.end_time.as_deref().unwrap_or(t);
+        Ok((EventTime::Timed { date_time: local_rfc3339(&input.date, t)? },
+            EventTime::Timed { date_time: local_rfc3339(end_day, et)? }))
+    }
 }
 
 fn cal_get(token: &str, url: &str) -> Result<(u16, String), String> {
@@ -614,15 +640,7 @@ pub async fn gcal_push_event(app: tauri::AppHandle, input: PushEventInput) -> Re
     let cfg = load_config(&config_dir(&app)?);
     let token = fetch_access_token(&cfg, &input.host)?;
 
-    let (start, end) = if input.all_day {
-        (EventTime::AllDay { date: input.date.clone() },
-         EventTime::AllDay { date: next_day(&input.date)? })
-    } else {
-        let t = input.time.as_deref().ok_or("timed event missing time")?;
-        let et = input.end_time.as_deref().unwrap_or(t);
-        (EventTime::Timed { date_time: local_rfc3339(&input.date, t)? },
-         EventTime::Timed { date_time: local_rfc3339(&input.date, et)? })
-    };
+    let (start, end) = push_event_times(&input)?;
     let body = event_json(&input.title, &input.description, &start, &end, &input.attendees);
 
     // List the day to find an existing natural-key match.
@@ -655,6 +673,8 @@ pub struct ImportedEvent {
     pub date: String,
     pub time: Option<String>,
     pub end_time: Option<String>,
+    /// Inclusive last day of a multi-day span (absent for single-day events).
+    pub end_date: Option<String>,
     pub all_day: bool,
     pub description: String,
     /// Guest emails on the Google event (excludes resource rooms). Imported so
@@ -691,13 +711,25 @@ pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
             obj.get(key).and_then(|d| d.as_str()).and_then(|dt| dt.get(11..16).map(|s| s.to_string()))
         };
         if let Some(date) = start.get("date").and_then(|d| d.as_str()) {
-            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, all_day: true, description, attendees });
+            // Google's all-day end.date is exclusive; convert to an inclusive
+            // endDate and keep it only when the span is longer than one day.
+            let end_date = it.get("end")
+                .and_then(|e| e.get("date")).and_then(|d| d.as_str())
+                .and_then(prev_day)
+                .filter(|incl| incl.as_str() > date);
+            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, end_date, all_day: true, description, attendees });
         } else if let Some(dt) = start.get("dateTime").and_then(|d| d.as_str()) {
             let date = dt.get(0..10).unwrap_or("").to_string();
             if date.is_empty() { continue; }
             let time = dt.get(11..16).map(|s| s.to_string());
-            let end_time = it.get("end").and_then(|e| hhmm(e, "dateTime"));
-            out.push(ImportedEvent { title, date, time, end_time, all_day: false, description, attendees });
+            let end = it.get("end");
+            let end_time = end.and_then(|e| hhmm(e, "dateTime"));
+            // A timed span that ends on a later calendar day carries that day.
+            let end_date = end
+                .and_then(|e| e.get("dateTime")).and_then(|d| d.as_str())
+                .and_then(|edt| edt.get(0..10)).map(|s| s.to_string())
+                .filter(|d| *d > date);
+            out.push(ImportedEvent { title, date, time, end_time, end_date, all_day: false, description, attendees });
         }
     }
     out
@@ -794,6 +826,77 @@ mod tests {
         let v = parse_day_events(body);
         assert_eq!(v[0].attendees, vec!["me@gmail.com".to_string(), "guest@acme.com".to_string()], "guests parsed; resource room skipped");
         assert!(v[1].attendees.is_empty(), "no attendees field → empty vec");
+    }
+
+    #[test]
+    fn parse_day_events_multiday_all_day_is_inclusive() {
+        // Google all-day end.date is exclusive: Jun 25–27 inclusive → end 28.
+        let body = r#"{"items":[
+          {"summary":"Trip","start":{"date":"2026-06-25"},"end":{"date":"2026-06-28"}}
+        ]}"#;
+        let v = parse_day_events(body);
+        assert_eq!(v.len(), 1);
+        assert!(v[0].all_day);
+        assert_eq!(v[0].date, "2026-06-25");
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-06-27"), "exclusive end converted to inclusive");
+    }
+
+    #[test]
+    fn parse_day_events_single_day_all_day_has_no_end_date() {
+        let body = r#"{"items":[
+          {"summary":"Holiday","start":{"date":"2026-06-25"},"end":{"date":"2026-06-26"}}
+        ]}"#;
+        let v = parse_day_events(body);
+        assert_eq!(v[0].end_date, None, "a one-day span carries no endDate");
+    }
+
+    #[test]
+    fn parse_day_events_multiday_timed_carries_end_date() {
+        let body = r#"{"items":[
+          {"summary":"Conf","start":{"dateTime":"2026-06-25T09:00:00-07:00"},"end":{"dateTime":"2026-06-27T17:00:00-07:00"}}
+        ]}"#;
+        let v = parse_day_events(body);
+        assert!(!v[0].all_day);
+        assert_eq!(v[0].time.as_deref(), Some("09:00"));
+        assert_eq!(v[0].end_time.as_deref(), Some("17:00"));
+        assert_eq!(v[0].end_date.as_deref(), Some("2026-06-27"));
+    }
+
+    fn push_input(all_day: bool, date: &str, time: Option<&str>, end_time: Option<&str>, end_date: Option<&str>) -> PushEventInput {
+        PushEventInput {
+            host: "me@gmail.com".into(), date: date.into(),
+            time: time.map(Into::into), end_time: end_time.map(Into::into),
+            end_date: end_date.map(Into::into), all_day,
+            title: "X".into(), description: String::new(), attendees: vec![],
+        }
+    }
+
+    #[test]
+    fn push_event_times_all_day_span_is_exclusive() {
+        // Multi-day: inclusive endDate 27 → exclusive Google end 28.
+        let (s, e) = push_event_times(&push_input(true, "2026-06-25", None, None, Some("2026-06-27"))).unwrap();
+        match (s, e) {
+            (EventTime::AllDay { date: sd }, EventTime::AllDay { date: ed }) => {
+                assert_eq!(sd, "2026-06-25");
+                assert_eq!(ed, "2026-06-28");
+            }
+            _ => panic!("expected all-day start/end"),
+        }
+        // Single day: no endDate → end is next_day(date).
+        let (_, e1) = push_event_times(&push_input(true, "2026-06-25", None, None, None)).unwrap();
+        match e1 { EventTime::AllDay { date } => assert_eq!(date, "2026-06-26"), _ => panic!("all-day") }
+    }
+
+    #[test]
+    fn push_event_times_timed_span_ends_on_end_date() {
+        let (s, e) = push_event_times(&push_input(false, "2026-06-25", Some("09:00"), Some("17:00"), Some("2026-06-27"))).unwrap();
+        match (s, e) {
+            (EventTime::Timed { date_time: sd }, EventTime::Timed { date_time: ed }) => {
+                assert!(sd.starts_with("2026-06-25T09:00"), "start on start date: {sd}");
+                assert!(ed.starts_with("2026-06-27T17:00"), "end on end date: {ed}");
+            }
+            _ => panic!("expected timed start/end"),
+        }
     }
 
     #[test]

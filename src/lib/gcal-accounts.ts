@@ -23,6 +23,8 @@ export interface PushEventInput {
   date: string;
   time?: string;
   endTime?: string;
+  /** Inclusive last day of a multi-day span (absent for single-day events). */
+  endDate?: string;
   allDay: boolean;
   title: string;
   description: string;

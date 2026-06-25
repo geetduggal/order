@@ -2523,6 +2523,7 @@ export function CardGrid() {
             allDay: r.allDay,
             ...(r.time ? { startTime: r.time } : {}),
             ...(r.endTime ? { endTime: r.endTime } : {}),
+            ...(r.endDate ? { endDate: r.endDate } : {}),
             ...(review.folder ? { folder: `[[${review.folder}]]` } : {}),
             title: r.title,
           };
@@ -2537,6 +2538,7 @@ export function CardGrid() {
         title: r.title,
         ...(r.time ? { time: r.time } : {}),
         ...(r.endTime ? { endTime: r.endTime } : {}),
+        ...(r.endDate ? { endDate: r.endDate } : {}),
         ...(r.allDay ? { allDay: true } : {}),
         ...(review.folder ? { folder: review.folder } : {}),
         // Host account + the event's guests (deduped, lowercased) so invitees

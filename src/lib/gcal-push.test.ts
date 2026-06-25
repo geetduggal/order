@@ -27,4 +27,13 @@ assertEq(buildPushIntents(events, connected, def), [
 // No default + a contact-only event → no host → skipped.
 assertEq(buildPushIntents([{ date: "2026-06-25", title: "X", time: "10:00", emails: ["x@y.com"] }], connected, null), [], "no host → skipped");
 
+// Multi-day events carry endDate to the intent (both all-day and timed spans).
+assertEq(buildPushIntents([
+  { date: "2026-06-25", title: "Trip", endDate: "2026-06-27", allDay: true, emails: ["bob@acme.com"] },
+  { date: "2026-06-25", title: "Conf", time: "09:00", endTime: "17:00", endDate: "2026-06-27", emails: ["bob@acme.com"] },
+], connected, def), [
+  { host: "geet.duggal@gmail.com", date: "2026-06-25", endDate: "2026-06-27", allDay: true, title: "Trip", attendees: ["bob@acme.com"] },
+  { host: "geet.duggal@gmail.com", date: "2026-06-25", time: "09:00", endTime: "17:00", endDate: "2026-06-27", allDay: false, title: "Conf", attendees: ["bob@acme.com"] },
+], "intents: multi-day all-day + timed carry endDate");
+
 console.log("ALL CHECKS PASS");

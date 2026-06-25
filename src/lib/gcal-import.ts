@@ -8,6 +8,8 @@ export interface ImportedEvent {
   date: string;
   time?: string;
   endTime?: string;
+  /** Inclusive last day of a multi-day span (absent for single-day events). */
+  endDate?: string;
   allDay: boolean;
   description: string;
   /** Guest emails from the Google event (resource rooms excluded). */
