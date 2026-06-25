@@ -657,6 +657,9 @@ pub struct ImportedEvent {
     pub end_time: Option<String>,
     pub all_day: bool,
     pub description: String,
+    /// Guest emails on the Google event (excludes resource rooms). Imported so
+    /// invitees land on the spacetime line and round-trip back on push.
+    pub attendees: Vec<String>,
 }
 
 /// Map a Calendar events.list response into normalized ImportedEvents. Takes
@@ -676,17 +679,25 @@ pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
         let title = it.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string();
         let description = it.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
         let start = match it.get("start") { Some(s) => s, None => continue };
+        // Guest emails, skipping resource rooms (resource: true) so meeting
+        // rooms aren't re-invited on a later push.
+        let attendees: Vec<String> = it.get("attendees").and_then(|a| a.as_array()).map(|arr| {
+            arr.iter()
+                .filter(|a| a.get("resource").and_then(|r| r.as_bool()) != Some(true))
+                .filter_map(|a| a.get("email").and_then(|e| e.as_str()).map(|s| s.to_string()))
+                .collect()
+        }).unwrap_or_default();
         let hhmm = |obj: &serde_json::Value, key: &str| -> Option<String> {
             obj.get(key).and_then(|d| d.as_str()).and_then(|dt| dt.get(11..16).map(|s| s.to_string()))
         };
         if let Some(date) = start.get("date").and_then(|d| d.as_str()) {
-            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, all_day: true, description });
+            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, all_day: true, description, attendees });
         } else if let Some(dt) = start.get("dateTime").and_then(|d| d.as_str()) {
             let date = dt.get(0..10).unwrap_or("").to_string();
             if date.is_empty() { continue; }
             let time = dt.get(11..16).map(|s| s.to_string());
             let end_time = it.get("end").and_then(|e| hhmm(e, "dateTime"));
-            out.push(ImportedEvent { title, date, time, end_time, all_day: false, description });
+            out.push(ImportedEvent { title, date, time, end_time, all_day: false, description, attendees });
         }
     }
     out
@@ -768,6 +779,21 @@ mod tests {
     fn parse_day_events_skips_no_start() {
         let body = r#"{"items":[{"summary":"Cancelled"}]}"#;
         assert!(parse_day_events(body).is_empty());
+    }
+
+    #[test]
+    fn parse_day_events_imports_attendees_excluding_rooms() {
+        let body = r#"{"items":[
+          {"summary":"Mtg","start":{"dateTime":"2026-06-25T09:00:00-07:00"},"attendees":[
+            {"email":"me@gmail.com","self":true,"organizer":true},
+            {"email":"guest@acme.com"},
+            {"email":"room@resource.calendar.google.com","resource":true}
+          ]},
+          {"summary":"Solo","start":{"date":"2026-06-25"}}
+        ]}"#;
+        let v = parse_day_events(body);
+        assert_eq!(v[0].attendees, vec!["me@gmail.com".to_string(), "guest@acme.com".to_string()], "guests parsed; resource room skipped");
+        assert!(v[1].attendees.is_empty(), "no attendees field → empty vec");
     }
 
     #[test]

@@ -2539,7 +2539,9 @@ export function CardGrid() {
         ...(r.endTime ? { endTime: r.endTime } : {}),
         ...(r.allDay ? { allDay: true } : {}),
         ...(review.folder ? { folder: review.folder } : {}),
-        emails: [review.account],
+        // Host account + the event's guests (deduped, lowercased) so invitees
+        // land on the spacetime line and round-trip on a later push.
+        emails: [...new Set([review.account.toLowerCase(), ...r.attendees.map((a) => a.toLowerCase())])],
       }), mw));
       setImportReview(null);
       const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}.`;

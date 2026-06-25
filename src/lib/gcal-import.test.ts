@@ -13,9 +13,9 @@ const existing: SpacetimeEvent[] = [
   { date: "2026-06-25", title: "Holiday", allDay: true },
 ];
 const imported: ImportedEvent[] = [
-  { title: "Standup", date: "2026-06-25", time: "09:00", allDay: false, description: "x" },  // already have
-  { title: "New mtg", date: "2026-06-25", time: "11:00", allDay: false, description: "" },     // new
-  { title: "Holiday", date: "2026-06-25", allDay: true, description: "" },                      // already have (all-day)
+  { title: "Standup", date: "2026-06-25", time: "09:00", allDay: false, description: "x", attendees: [] },  // already have
+  { title: "New mtg", date: "2026-06-25", time: "11:00", allDay: false, description: "", attendees: [] },     // new
+  { title: "Holiday", date: "2026-06-25", allDay: true, description: "", attendees: [] },                      // already have (all-day)
 ];
 
 assertEq(classifyImports(imported, existing).map((r) => [r.title, r.isNew]), [

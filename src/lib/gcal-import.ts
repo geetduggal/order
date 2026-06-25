@@ -10,6 +10,8 @@ export interface ImportedEvent {
   endTime?: string;
   allDay: boolean;
   description: string;
+  /** Guest emails from the Google event (resource rooms excluded). */
+  attendees: string[];
 }
 
 export interface ImportRow extends ImportedEvent {
