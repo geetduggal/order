@@ -705,6 +705,13 @@ export function spliceMwEvents(mw: string, eventsIn: SpacetimeEvent[]): string {
   return mw.trimEnd() + "\n\n# Time\n\n" + evBlock;
 }
 
+/** One-time migration: rewrite the `## Events` block's folder tags to the brace
+ *  form by re-parsing and re-splicing. Space/Seasons stay byte-identical
+ *  (spliceMwEvents only replaces from `## Events` onward). Idempotent. */
+export function migrateMwTagsToBrace(mw: string): string {
+  return spliceMwEvents(mw, parseMarkwhenFormat(mw).events);
+}
+
 // ---------- spacetime.mw event mutations (mw is the source of truth) ----------
 // These read the mw, modify the `## Events` block, and re-serialize via
 // spliceMwEvents — Space and Seasons are preserved byte-for-byte. Matching is

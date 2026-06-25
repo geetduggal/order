@@ -53,4 +53,17 @@ assertEq(stripTagToName("#geet-duggal"), "geet-duggal", "stripTagToName kebab fa
   console.log("ok: spliceMwEvents emits brace tag");
 }
 
+import { migrateMwTagsToBrace } from "./spacetime";
+
+// Migration rewrites event tags kebab→brace, leaves the Space section intact.
+{
+  const before = `# Space\n\n## Personal\n\n- Projects\n  - Geet Duggal\n\n# Time\n\n## Events\n\n2026-06-25 09:00: Standup #geet-duggal\n`;
+  const after = migrateMwTagsToBrace(before);
+  if (!after.includes(": Standup #[Geet Duggal]")) throw new Error("FAIL: migration should produce brace tag\n" + after);
+  if (!after.includes("## Personal") || !after.includes("  - Geet Duggal")) throw new Error("FAIL: migration must preserve Space section\n" + after);
+  // Idempotent: running again is a no-op on the tag.
+  if (!migrateMwTagsToBrace(after).includes(": Standup #[Geet Duggal]")) throw new Error("FAIL: migration not idempotent");
+  console.log("ok: migrateMwTagsToBrace converts tags + preserves space + idempotent");
+}
+
 console.log("ALL CHECKS PASS");
