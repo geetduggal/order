@@ -637,6 +637,33 @@ pub async fn gcal_list_day_events(app: tauri::AppHandle, account: String, date: 
     Ok(parse_day_events(&b))
 }
 
+/// Reversed-client-id custom-scheme redirect for a Google iOS client.
+pub fn ios_redirect_uri(client_id_ios: &str) -> String {
+    let prefix = client_id_ios.strip_suffix(".apps.googleusercontent.com").unwrap_or(client_id_ios);
+    format!("com.googleusercontent.apps.{prefix}:/oauth2redirect")
+}
+
+/// Extract the auth code from a custom-scheme redirect URL after validating
+/// `state` (CSRF guard). Query values are percent-decoded.
+pub fn parse_redirect_code(url: &str, expected_state: &str) -> Result<String, String> {
+    let query = url.split('?').nth(1).ok_or("redirect missing query")?;
+    let mut code: Option<String> = None;
+    let mut state: Option<String> = None;
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        let dec = percent_decode_str(v).decode_utf8_lossy().to_string();
+        match k {
+            "code" => code = Some(dec),
+            "state" => state = Some(dec),
+            _ => {}
+        }
+    }
+    if state.as_deref() != Some(expected_state) {
+        return Err("authorization state mismatch (possible CSRF) — try again".into());
+    }
+    code.ok_or_else(|| "authorization redirect carried no code".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -817,5 +844,20 @@ mod tests {
     fn refresh_form_secret_optional() {
         assert!(!refresh_form("r", "cid", None).iter().any(|(k, _)| *k == "client_secret"));
         assert!(refresh_form("r", "cid", Some("sec")).iter().any(|(k, v)| *k == "client_secret" && *v == "sec"));
+    }
+
+    #[test]
+    fn ios_redirect_uri_reverses_client_id() {
+        assert_eq!(ios_redirect_uri("123-abc.apps.googleusercontent.com"), "com.googleusercontent.apps.123-abc:/oauth2redirect");
+        // already-bare prefix tolerated
+        assert_eq!(ios_redirect_uri("123-abc"), "com.googleusercontent.apps.123-abc:/oauth2redirect");
+    }
+
+    #[test]
+    fn parse_redirect_code_validates_state() {
+        let url = "com.googleusercontent.apps.123-abc:/oauth2redirect?state=ST8&code=AUTH%2FCODE";
+        assert_eq!(parse_redirect_code(url, "ST8").unwrap(), "AUTH/CODE", "code is percent-decoded");
+        assert!(parse_redirect_code(url, "WRONG").is_err(), "state mismatch rejected");
+        assert!(parse_redirect_code("com.googleusercontent.apps.123-abc:/oauth2redirect?state=ST8", "ST8").is_err(), "missing code rejected");
     }
 }
