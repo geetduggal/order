@@ -269,10 +269,10 @@ In `src/lib/spacetime.ts`, both event-line emitters currently read:
 
 - [ ] **Step 4: Update the existing serialize test to the new canonical form**
 
-In `src/lib/spacetime.gcal-serialize.test.ts`, the events use `folder: "Verkada"`, so the serialized tag is now `#[Verkada]`. Update the two literal checks:
+In `src/lib/spacetime.gcal-serialize.test.ts`, the events use `folder: "Acme"`, so the serialized tag is now `#[Acme]`. Update the two literal checks:
 
-- Line ~29: change `": Standup #verkada geet@verkada.com"` to `": Standup #[Verkada] geet@verkada.com"`.
-- Line ~34: change `": Planning #verkada a@x.com b@y.com"` to `": Planning #[Verkada] a@x.com b@y.com"`.
+- Line ~29: change `": Standup #acme you@example.com"` to `": Standup #[Acme] you@example.com"`.
+- Line ~34: change `": Planning #acme a@x.com b@y.com"` to `": Planning #[Acme] a@x.com b@y.com"`.
 
 - [ ] **Step 5: Run to verify it passes**
 

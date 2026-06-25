@@ -13,9 +13,9 @@ Email addresses written at the end of a `spacetime.mw` event line are the
 trigger and the instruction for sync. The format:
 
 ```
-2026-06-26 09:00-09:30 : Standup              #[Verkada] geet@verkada.com
-2026-06-26 14:00-15:00 : Planning             #[Verkada] geet@verkada.com rohit@acme.com bob@acme.com
-2026-06-27             : Product offsite       #[Verkada] geet@verkada.com
+2026-06-26 09:00-09:30 : Standup              #[Acme] you@example.com
+2026-06-26 14:00-15:00 : Planning             #[Acme] you@example.com dana@example.com sam@example.com
+2026-06-27             : Product offsite       #[Acme] you@example.com
 ```
 
 Emails come after the folder tag, space-separated. An event with **no emails
@@ -33,13 +33,13 @@ you have connected in Settings:
 - If **no** email matches any connected account → the **default account** hosts
   the event, and every email on the line is an invitee.
 
-Example. Connected accounts: `geet@verkada.com` (default), `geet@gmail.com`.
+Example. Connected accounts: `you@example.com` (default), `you-personal@example.com`.
 
 | Event line | Host | Invitees |
 |---|---|---|
-| `… geet@verkada.com rohit@acme.com` | `geet@verkada.com` | `rohit@acme.com` |
-| `… rohit@acme.com bob@acme.com` | `geet@verkada.com` (default) | `rohit@acme.com`, `bob@acme.com` |
-| `… geet@gmail.com rohit@acme.com` | `geet@gmail.com` | `rohit@acme.com` |
+| `… you@example.com dana@example.com` | `you@example.com` | `dana@example.com` |
+| `… dana@example.com sam@example.com` | `you@example.com` (default) | `dana@example.com`, `sam@example.com` |
+| `… you-personal@example.com dana@example.com` | `you-personal@example.com` | `dana@example.com` |
 
 ### Natural-key identity — no stored IDs
 

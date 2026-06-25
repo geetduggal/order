@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting a Google account no longer fails with "the specified item already
+  exists in the keychain" when a stale duplicate token lingers from a previous
+  build: the store now loop-deletes reachable items and retries.
+
 ## [0.1.1] - 2026-06-25
 
 The headline of this release is **Google Calendar curated sync** — push and import
@@ -20,7 +26,7 @@ folder-tag syntax** for spacetime event lines.
   and Google Calendar, with invites, from a plain-text source of truth. See
   [`docs/GCAL-SYNC.md`](docs/GCAL-SYNC.md).
   - **Email-recipient model.** A `spacetime.mw` event line can carry trailing
-    bare emails (e.g. `… : Standup #[Verkada] geet@verkada.com rohit@acme.com`).
+    bare emails (e.g. `… : Standup #[Acme] you@example.com dana@example.com`).
     An email matching a connected account is the host calendar; the rest are
     invitees. An event syncs only if it carries at least one email. Identity is
     the natural key `(date, time, title)` — no stored Google event IDs.

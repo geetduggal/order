@@ -980,14 +980,14 @@ mod tests {
             "Planning", "notes here",
             &EventTime::Timed { date_time: "2026-06-25T14:00:00-07:00".into() },
             &EventTime::Timed { date_time: "2026-06-25T14:30:00-07:00".into() },
-            &["rohit@verkada.com".to_string(), "bob@acme.com".to_string()],
+            &["dana@example.com".to_string(), "sam@example.com".to_string()],
         );
         assert_eq!(v["summary"], "Planning");
         assert_eq!(v["description"], "notes here");
         assert_eq!(v["start"]["dateTime"], "2026-06-25T14:00:00-07:00");
         assert_eq!(v["end"]["dateTime"], "2026-06-25T14:30:00-07:00");
-        assert_eq!(v["attendees"][0]["email"], "rohit@verkada.com");
-        assert_eq!(v["attendees"][1]["email"], "bob@acme.com");
+        assert_eq!(v["attendees"][0]["email"], "dana@example.com");
+        assert_eq!(v["attendees"][1]["email"], "sam@example.com");
         assert!(v["start"].get("date").is_none(), "timed event has no all-day date");
     }
 

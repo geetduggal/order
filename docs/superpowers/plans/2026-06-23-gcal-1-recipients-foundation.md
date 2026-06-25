@@ -49,16 +49,16 @@ function ev(line: string) {
 }
 
 // 1. No emails → emails undefined, title intact.
-assertEq(ev("2026-06-25 09:00 : Standup #verkada"), { date: "2026-06-25", title: "Standup", folder: "#verkada", time: "09:00" }, "no emails");
+assertEq(ev("2026-06-25 09:00 : Standup #acme"), { date: "2026-06-25", title: "Standup", folder: "#acme", time: "09:00" }, "no emails");
 
 // 2. One trailing email after the tag.
-assertEq(ev("2026-06-25 09:00 : Standup #verkada geet@verkada.com"),
-  { date: "2026-06-25", title: "Standup", folder: "#verkada", time: "09:00", emails: ["geet@verkada.com"] },
+assertEq(ev("2026-06-25 09:00 : Standup #acme you@example.com"),
+  { date: "2026-06-25", title: "Standup", folder: "#acme", time: "09:00", emails: ["you@example.com"] },
   "one email after tag");
 
 // 3. Multiple trailing emails.
-assertEq(ev("2026-06-25 14:00 : Planning #verkada a@x.com b@y.com c@z.org"),
-  { date: "2026-06-25", title: "Planning", folder: "#verkada", time: "14:00", emails: ["a@x.com", "b@y.com", "c@z.org"] },
+assertEq(ev("2026-06-25 14:00 : Planning #acme a@x.com b@y.com c@z.org"),
+  { date: "2026-06-25", title: "Planning", folder: "#acme", time: "14:00", emails: ["a@x.com", "b@y.com", "c@z.org"] },
   "multiple emails");
 
 // 4. Emails with no folder tag.
@@ -67,8 +67,8 @@ assertEq(ev("2026-06-25 14:00 : Planning a@x.com b@y.com"),
   "emails, no tag");
 
 // 5. A title word that is not a full email is left alone.
-assertEq(ev("2026-06-25 09:00 : Email Bob later #verkada"),
-  { date: "2026-06-25", title: "Email Bob later", folder: "#verkada", time: "09:00" },
+assertEq(ev("2026-06-25 09:00 : Email Bob later #acme"),
+  { date: "2026-06-25", title: "Email Bob later", folder: "#acme", time: "09:00" },
   "non-email title preserved");
 
 console.log("ALL CHECKS PASS");
@@ -182,9 +182,9 @@ function assertEq<T>(actual: T, expected: T, label: string) {
 }
 
 const events: SpacetimeEvent[] = [
-  { date: "2026-06-25", title: "Standup", folder: "Verkada", time: "09:00", emails: ["geet@verkada.com"] },
-  { date: "2026-06-25", title: "Planning", folder: "Verkada", time: "14:00", emails: ["a@x.com", "b@y.com"] },
-  { date: "2026-06-25", title: "Solo", folder: "Verkada", time: "16:00" },
+  { date: "2026-06-25", title: "Standup", folder: "Acme", time: "09:00", emails: ["you@example.com"] },
+  { date: "2026-06-25", title: "Planning", folder: "Acme", time: "14:00", emails: ["a@x.com", "b@y.com"] },
+  { date: "2026-06-25", title: "Solo", folder: "Acme", time: "16:00" },
 ];
 
 // serializeMarkwhen round-trips emails.
@@ -193,19 +193,19 @@ const back = parseMarkwhenFormat(mw).events;
 const norm = (e: SpacetimeEvent) => ({ date: e.date, title: e.title, time: e.time, emails: e.emails ?? null });
 assertEq(back.map(norm),
   [
-    { date: "2026-06-25", title: "Standup", time: "09:00", emails: ["geet@verkada.com"] },
+    { date: "2026-06-25", title: "Standup", time: "09:00", emails: ["you@example.com"] },
     { date: "2026-06-25", title: "Planning", time: "14:00", emails: ["a@x.com", "b@y.com"] },
     { date: "2026-06-25", title: "Solo", time: "16:00", emails: null },
   ],
   "serializeMarkwhen round-trip");
 
 // The serialized line literally contains the emails after the tag.
-if (!mw.includes(": Standup #verkada geet@verkada.com")) throw new Error("FAIL: emails not appended after tag in serializeMarkwhen\n" + mw);
+if (!mw.includes(": Standup #acme you@example.com")) throw new Error("FAIL: emails not appended after tag in serializeMarkwhen\n" + mw);
 console.log("ok: emails appear after tag");
 
 // spliceMwEvents also emits emails.
 const spliced = spliceMwEvents("# Time\n\n## Events\n", events);
-if (!spliced.includes(": Planning #verkada a@x.com b@y.com")) throw new Error("FAIL: spliceMwEvents did not append emails\n" + spliced);
+if (!spliced.includes(": Planning #acme a@x.com b@y.com")) throw new Error("FAIL: spliceMwEvents did not append emails\n" + spliced);
 console.log("ok: spliceMwEvents appends emails");
 
 console.log("ALL CHECKS PASS");
@@ -302,35 +302,35 @@ function assertEq<T>(actual: T, expected: T, label: string) {
   console.log(`ok: ${label}`);
 }
 
-const connected = ["geet.duggal@gmail.com", "geet@verkada.com"];
-const def = "geet.duggal@gmail.com";
+const connected = ["you-personal@example.com", "you@example.com"];
+const def = "you-personal@example.com";
 
 // 1. No emails → not a synced event.
 assertEq(resolveRecipients([], connected, def), { host: null, invitees: [] }, "no emails");
 
 // 2. Connected email is the host, no invite.
-assertEq(resolveRecipients(["geet@verkada.com"], connected, def),
-  { host: "geet@verkada.com", invitees: [] }, "connected = host, no invite");
+assertEq(resolveRecipients(["you@example.com"], connected, def),
+  { host: "you@example.com", invitees: [] }, "connected = host, no invite");
 
 // 3. One contact → host = default, invite the contact.
-assertEq(resolveRecipients(["rohit@verkada.com"], connected, def),
-  { host: "geet.duggal@gmail.com", invitees: ["rohit@verkada.com"] }, "contact → default host + invite");
+assertEq(resolveRecipients(["dana@example.com"], connected, def),
+  { host: "you-personal@example.com", invitees: ["dana@example.com"] }, "contact → default host + invite");
 
 // 4. Connected host + multiple contacts.
-assertEq(resolveRecipients(["geet@verkada.com", "rohit@verkada.com", "bob@acme.com"], connected, def),
-  { host: "geet@verkada.com", invitees: ["rohit@verkada.com", "bob@acme.com"] }, "host + invitees");
+assertEq(resolveRecipients(["you@example.com", "dana@example.com", "sam@example.com"], connected, def),
+  { host: "you@example.com", invitees: ["dana@example.com", "sam@example.com"] }, "host + invitees");
 
 // 5. Case-insensitive, normalized to lowercase.
-assertEq(resolveRecipients(["GEET@Verkada.com", "Rohit@Verkada.com"], connected, def),
-  { host: "geet@verkada.com", invitees: ["rohit@verkada.com"] }, "case-insensitive");
+assertEq(resolveRecipients(["YOU@Example.com", "Dana@Example.com"], connected, def),
+  { host: "you@example.com", invitees: ["dana@example.com"] }, "case-insensitive");
 
 // 6. No connected match, no default → host null (caller blocks).
-assertEq(resolveRecipients(["rohit@verkada.com"], connected, null),
-  { host: null, invitees: ["rohit@verkada.com"] }, "no default → host null");
+assertEq(resolveRecipients(["dana@example.com"], connected, null),
+  { host: null, invitees: ["dana@example.com"] }, "no default → host null");
 
 // 7. A second connected email is never invited (it's yours), and host is the first connected.
-assertEq(resolveRecipients(["geet@verkada.com", "geet.duggal@gmail.com", "bob@acme.com"], connected, def),
-  { host: "geet@verkada.com", invitees: ["bob@acme.com"] }, "second own account not invited");
+assertEq(resolveRecipients(["you@example.com", "you-personal@example.com", "sam@example.com"], connected, def),
+  { host: "you@example.com", invitees: ["sam@example.com"] }, "second own account not invited");
 
 console.log("ALL CHECKS PASS");
 ```

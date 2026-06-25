@@ -254,8 +254,8 @@ Trailing bare email addresses on an event line mark it as a
 after the folder tag, space-separated:
 
 ```markdown
-2026-06-26 09:00-09:30  : Standup    #[Verkada] geet@verkada.com
-2026-06-26 14:00-15:00  : Planning   #[Verkada] geet@verkada.com rohit@acme.com
+2026-06-26 09:00-09:30  : Standup    #[Acme] you@example.com
+2026-06-26 14:00-15:00  : Planning   #[Acme] you@example.com dana@example.com
 ```
 
 Events with no email addresses are ordinary Order events; the sync feature

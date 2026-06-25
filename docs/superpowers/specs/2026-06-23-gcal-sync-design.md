@@ -50,9 +50,9 @@
 An event line gains optional trailing email tokens, after the folder tag:
 
 ```
-2026-06-25 09:00-09:15 : Standup #[Verkada] geet@verkada.com
-2026-06-25 11:00-11:30 : Rohit 1:1 #[Verkada] rohit@verkada.com
-2026-06-25 14:00-14:30 : Planning #[Verkada] geet@verkada.com rohit@verkada.com bob@acme.com
+2026-06-25 09:00-09:15 : Standup #[Acme] you@example.com
+2026-06-25 11:00-11:30 : Dana 1:1 #[Acme] dana@example.com
+2026-06-25 14:00-14:30 : Planning #[Acme] you@example.com dana@example.com sam@example.com
 ```
 
 Parser rule (`parseMarkwhenFormat`, events section): after extracting the existing trailing folder tag, **peel any trailing whitespace-separated email-shaped tokens** (`/^[^@\s]+@[^@\s]+\.[^@\s]+$/`) as the event's `emails: string[]`. What remains is the title. Emails come **after** the folder tag so the tag delimits title from recipients and the parser never confuses a title word with a recipient.
@@ -73,7 +73,7 @@ Driven entirely through reconciliation (the existing review-before-apply surface
   - **found** → since date/time/title already match, compare **attendees** (the line's emails) and **description** (the note body); if either differs → propose **Update** (`events.patch`).
   - the user removed the emails / the event → propose nothing (it simply stops being synced; we do not chase orphans on Google in v1).
 
-Each proposal is a checkbox row grouped Create / Update, with a one-line summary ("Create on geet@verkada.com · invite rohit@…, bob@…"). Nothing is sent without confirm. On apply, Order calls the Calendar API (`events.insert` / `events.patch`) on the host calendar.
+Each proposal is a checkbox row grouped Create / Update, with a one-line summary ("Create on you@example.com · invite dana@…, bob@…"). Nothing is sent without confirm. On apply, Order calls the Calendar API (`events.insert` / `events.patch`) on the host calendar.
 
 **Edit = swap (accepted limitation):** because identity is the natural key, editing an event's time or title in spacetime breaks the link — Order can no longer match it to the previously-created Google event. The review surfaces this as a **Create** of the new version; the stale Google event is the user's to delete (the dialog can hint "a previous version may remain on Google"). Re-pushing an **unchanged** event is always a no-op (the key matches). This keeps the model plain-text with no stored handle, at the cost that edits aren't magic in-place updates.
 
@@ -110,7 +110,7 @@ A per-day, GUI-first, curated pull.
 
 **Google Cloud setup (developer, once):** project + Calendar API enabled + OAuth consent screen (testing mode with your own accounts as test users — no Google verification needed for personal use) + OAuth client IDs (Desktop type for loopback; iOS type for the scheme).
 
-**Portability note:** the `.mw` is portable but auth is per-device. Opening a file on a device where `geet@verkada.com` isn't connected makes that email read as an invitee (you'd invite yourself). Accepted for v1.
+**Portability note:** the `.mw` is portable but auth is per-device. Opening a file on a device where `you@example.com` isn't connected makes that email read as an invitee (you'd invite yourself). Accepted for v1.
 
 ---
 

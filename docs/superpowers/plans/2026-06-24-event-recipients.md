@@ -40,11 +40,11 @@ import type { SpacetimeEvent } from "./spacetime";
 // distinctEmails: lowercased, de-duplicated, sorted.
 {
   const evs: SpacetimeEvent[] = [
-    { date: "2026-06-25", title: "A", emails: ["Rohit@verkada.com", "bob@acme.com"] },
-    { date: "2026-06-25", title: "B", emails: ["rohit@verkada.com"] }, // dup (case-insensitive)
+    { date: "2026-06-25", title: "A", emails: ["Dana@example.com", "sam@example.com"] },
+    { date: "2026-06-25", title: "B", emails: ["dana@example.com"] }, // dup (case-insensitive)
     { date: "2026-06-25", title: "C" }, // no emails
   ];
-  assertEq(distinctEmails(evs), ["bob@acme.com", "rohit@verkada.com"], "distinctEmails: lowercased, deduped, sorted");
+  assertEq(distinctEmails(evs), ["sam@example.com", "dana@example.com"], "distinctEmails: lowercased, deduped, sorted");
   assertEq(distinctEmails([]), [], "distinctEmails: empty");
 }
 ```

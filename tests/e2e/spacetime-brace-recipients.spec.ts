@@ -249,5 +249,5 @@ test("stripTagToName — kebab form returns slug minus leading #", () => {
 
 test("toBraceTag — wraps name in #[...]", () => {
   expect(toBraceTag("Geet Duggal")).toBe("#[Geet Duggal]");
-  expect(toBraceTag("Verkada")).toBe("#[Verkada]");
+  expect(toBraceTag("Acme")).toBe("#[Acme]");
 });
