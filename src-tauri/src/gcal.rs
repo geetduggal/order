@@ -341,11 +341,13 @@ pub async fn connect_via_deeplink(app: tauri::AppHandle) -> Result<String, Strin
         return Err(format!("couldn't open the browser: {e}"));
     }
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
         rx.recv_timeout(std::time::Duration::from_secs(300))
-    }).await.map_err(|e| format!("join: {e}"))?;
+    }).await;
     *app.state::<PendingAuth>().0.lock().unwrap() = None;
-    let redirect = result.map_err(|_| "timed out waiting for Google authorization (closed the browser?)".to_string())?;
+    let redirect = join_result
+        .map_err(|e| format!("join: {e}"))?
+        .map_err(|_| "timed out waiting for Google authorization (closed the browser?)".to_string())?;
 
     let code = parse_redirect_code(&redirect, &state)?;
     let tokens = exchange_code(&cfg, &code, &verifier, &redirect_uri)?;
