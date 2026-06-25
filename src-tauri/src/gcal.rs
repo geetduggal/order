@@ -318,15 +318,52 @@ fn config_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_config_dir().map_err(|e| format!("config dir: {e}"))
 }
 
-/// iOS stub: the desktop loopback flow (TcpListener + system-browser redirect)
-/// can't run in the iOS sandbox. Real iOS OAuth (ASWebAuthenticationSession +
-/// custom-scheme redirect) is a separate plan; until then, fail cleanly so the
-/// phone shows guidance instead of timing out. Events still reach iOS because
-/// the synced spacetime.mw carries them once you connect on desktop.
+/// Custom-scheme OAuth: open the system browser, await the deep-link redirect
+/// (matched by state via PendingAuth), exchange (no secret), store, register.
+pub async fn connect_via_deeplink(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;  // for app.state(); matches the function-local use in config_dir
+    let dir = config_dir(&app)?;
+    let cfg = load_config(&dir);
+    if cfg.client_id_ios.trim().is_empty() {
+        return Err("Set your Google iOS Client ID in Settings first.".into());
+    }
+    let redirect_uri = ios_redirect_uri(cfg.client_id_ios.trim());
+    let (verifier, challenge) = pkce_pair();
+    let (state, _) = pkce_pair();
+    let url = auth_url(cfg.client_id_ios.trim(), &redirect_uri, &challenge, &state);
+
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    *app.state::<PendingAuth>().0.lock().unwrap() = Some(PendingSlot { state: state.clone(), tx });
+
+    use tauri_plugin_opener::OpenerExt;
+    if let Err(e) = app.opener().open_url(url, None::<&str>) {
+        *app.state::<PendingAuth>().0.lock().unwrap() = None;
+        return Err(format!("couldn't open the browser: {e}"));
+    }
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(300))
+    }).await.map_err(|e| format!("join: {e}"))?;
+    *app.state::<PendingAuth>().0.lock().unwrap() = None;
+    let redirect = result.map_err(|_| "timed out waiting for Google authorization (closed the browser?)".to_string())?;
+
+    let code = parse_redirect_code(&redirect, &state)?;
+    let tokens = exchange_code(&cfg, &code, &verifier, &redirect_uri)?;
+    let refresh = tokens.refresh_token.clone()
+        .ok_or("Google returned no refresh token — revoke Order's access in your Google account and reconnect.")?;
+    let email = fetch_email(&tokens.access_token)?;
+    store_refresh_token(&email, &refresh)?;
+    let mut cfg2 = load_config(&dir);
+    if !cfg2.accounts.iter().any(|a| a == &email) { cfg2.accounts.push(email.clone()); }
+    if cfg2.default.is_none() { cfg2.default = Some(email.clone()); }
+    save_config(&dir, &cfg2)?;
+    Ok(email)
+}
+
 #[cfg(target_os = "ios")]
 #[tauri::command]
-pub async fn gcal_connect_account(_app: tauri::AppHandle) -> Result<String, String> {
-    Err("Connecting a Google account isn't supported on iOS yet — connect in the desktop app. Your synced spacetime.mw carries the events to your phone.".into())
+pub async fn gcal_connect_account(app: tauri::AppHandle) -> Result<String, String> {
+    connect_via_deeplink(app).await
 }
 
 /// Run the full desktop OAuth flow: build PKCE, open the browser, capture the
@@ -378,6 +415,7 @@ pub struct AccountsView {
     /// The saved OAuth client ID (non-secret) so Settings can reflect it.
     /// The client secret is never returned.
     pub client_id: String,
+    pub client_id_ios: String,
 }
 
 #[tauri::command]
@@ -386,9 +424,18 @@ pub async fn gcal_list_accounts(app: tauri::AppHandle) -> Result<AccountsView, S
     Ok(AccountsView {
         has_credentials: !cfg.client_id.is_empty() && !cfg.client_secret.is_empty(),
         client_id: cfg.client_id,
+        client_id_ios: cfg.client_id_ios,
         accounts: cfg.accounts,
         default: cfg.default,
     })
+}
+
+#[tauri::command]
+pub async fn gcal_set_ios_client_id(app: tauri::AppHandle, client_id_ios: String) -> Result<(), String> {
+    let dir = config_dir(&app)?;
+    let mut cfg = load_config(&dir);
+    cfg.client_id_ios = client_id_ios.trim().to_string();
+    save_config(&dir, &cfg)
 }
 
 #[tauri::command]
