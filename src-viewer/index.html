@@ -6,11 +6,16 @@
     <link rel="icon" type="image/svg+xml" href="./order-glass.svg" />
     <title>Order</title>
     <script>
-      // Published viewer always lands in light theme. The in-session
-      // theme toggle still works, but every fresh page load resets to
-      // light so the published page has a predictable, friendly default
-      // regardless of OS preference or what was saved last visit.
-      document.documentElement.dataset.theme = "light";
+      // The published viewer follows the visitor's OS light/dark by default
+      // ("auto"); a saved override (from the in-session toggle) wins. Resolved
+      // before first paint to avoid a flash; theme.ts keeps it live afterwards.
+      try {
+        var pref = localStorage.getItem("order.theme") || "auto";
+        var resolved = (pref === "auto")
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : pref;
+        document.documentElement.dataset.theme = resolved;
+      } catch (e) {}
     </script>
   </head>
   <body>

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Auto theme.** A new default "Auto" theme follows the operating system's
+  light/dark setting and reacts live when the OS flips — in both the desktop/iOS
+  app and the published page (the published site now follows each visitor's OS
+  instead of always landing in light). Any explicit theme is still an override,
+  and Auto sits first in the rail toggle / ⌘T cycle.
+
 ### Fixed
 
 - Connecting a Google account no longer fails with "the specified item already

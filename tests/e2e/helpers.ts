@@ -53,6 +53,10 @@ export interface BootOptions {
    *  spacetime.mw so the taxonomy is spacetime-driven). A `null`
    *  value marks a binary/opaque file. */
   extraFiles?: Record<string, string | null>;
+  /** Seed `order.theme` in localStorage before load. Defaults to "light"
+   *  (a stable theme for visual tests). Pass `false` to seed nothing so the
+   *  app falls back to its default "auto" (follow-OS) behavior. */
+  seedTheme?: string | false;
 }
 
 /** Install the Tauri IPC mock + seed localStorage, then load the app
@@ -61,7 +65,7 @@ export async function bootVault(page: Page, opts: BootOptions = {}): Promise<voi
   const files = { ...(await fixtureFiles()), ...(opts.extraFiles ?? {}) };
   const seeds: Record<string, string> = {
     "order.vaultPath": "/Vault",
-    "order.theme": "light",
+    ...(opts.seedTheme === false ? {} : { "order.theme": opts.seedTheme ?? "light" }),
     // Sidebar open so the filter-pill stack (the tests' main filter
     // oracle) is in the DOM.
     "order.sidebar.open": "1",

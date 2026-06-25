@@ -10,13 +10,15 @@
     <link rel="icon" type="image/svg+xml" href="/order-glass.svg" />
     <title>Order</title>
     <script>
-      // Set the theme before first paint to avoid a light flash.
+      // Set the theme before first paint to avoid a flash. The saved value is
+      // a PREFERENCE; "auto" (the default) resolves to the OS light/dark here,
+      // and theme.ts keeps it in sync live afterwards.
       try {
-        // Apply whatever theme was saved (the app only writes valid
-        // values); fall back to the OS preference when none is set.
-        var t = localStorage.getItem("order.theme");
-        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.dataset.theme = t;
+        var pref = localStorage.getItem("order.theme") || "auto";
+        var resolved = (pref === "auto")
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : pref;
+        document.documentElement.dataset.theme = resolved;
       } catch (e) {}
     </script>
   </head>
