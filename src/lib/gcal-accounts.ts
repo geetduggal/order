@@ -33,5 +33,8 @@ export interface PushEventInput {
 
 export const pushEvent = (input: PushEventInput) => invoke<string>("gcal_push_event", { input });
 
+export const deleteEvent = (account: string, date: string, time: string | undefined, title: string) =>
+  invoke<string>("gcal_delete_event", { account, date, time: time ?? null, title });
+
 export const listDayEvents = (account: string, date: string) =>
   invoke<ImportedEvent[]>("gcal_list_day_events", { account, date });

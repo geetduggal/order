@@ -146,6 +146,7 @@ pub fn run() {
             gcal::gcal_disconnect,
             gcal::gcal_set_credentials,
             gcal::gcal_push_event,
+            gcal::gcal_delete_event,
             gcal::gcal_list_day_events,
             gcal::gcal_set_ios_client_id,
             fts::fts_build_index,

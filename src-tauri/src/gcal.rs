@@ -646,6 +646,35 @@ fn cal_send(token: &str, method: &str, url: &str, body: &serde_json::Value) -> R
     }
 }
 
+/// Delete an event from the host account's primary calendar, matched by natural
+/// key (date, time, title). Returns "deleted", or "absent" when no match exists
+/// (already gone) — a graceful no-op. sendUpdates=all so guests are notified.
+#[tauri::command]
+pub async fn gcal_delete_event(app: tauri::AppHandle, account: String, date: String, time: Option<String>, title: String) -> Result<String, String> {
+    let cfg = load_config(&config_dir(&app)?);
+    let token = fetch_access_token(&cfg, &account)?;
+    let tmin = local_rfc3339(&date, "00:00")?;
+    let tmax = local_rfc3339(&next_day(&date)?, "00:00")?;
+    let list_url = format!("{CAL_BASE}?singleEvents=true&timeMin={}&timeMax={}", enc(&tmin), enc(&tmax));
+    let (ls, lb) = cal_get(&token, &list_url)?;
+    if ls >= 400 {
+        return Err(format!("calendar list failed ({ls}): {lb}"));
+    }
+    let id = match find_event_id(&lb, &title, &date, time.as_deref()) {
+        Some(id) => id,
+        None => return Ok("absent".to_string()),
+    };
+    let url = format!("{CAL_BASE}/{}?sendUpdates=all", enc(&id));
+    let resp = agent().request("DELETE", &url).set("Authorization", &format!("Bearer {token}")).call();
+    match resp {
+        Ok(_) => Ok("deleted".to_string()),
+        // Google returns 410 Gone if it was already removed — treat as success.
+        Err(ureq::Error::Status(410, _)) => Ok("absent".to_string()),
+        Err(ureq::Error::Status(s, r)) => Err(format!("calendar delete failed ({s}): {}", r.into_string().unwrap_or_default())),
+        Err(e) => Err(format!("transport: {e}")),
+    }
+}
+
 /// Push one curated event to the host account's primary calendar: find an
 /// existing match by natural key, then insert (create) or patch (update), with
 /// sendUpdates=all so invitees are notified. Returns "created" or "updated".
