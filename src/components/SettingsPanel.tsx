@@ -222,6 +222,7 @@ export function SettingsPanel({
           {gcal.has_credentials && (
             <span className="settings-hint" style={{ color: "var(--royal)" }}>✓ Credentials saved on this device.</span>
           )}
+          {!isIosSync() && (
           <span className="settings-value">
             <input type="text" className="settings-input" placeholder="OAuth Client ID"
               value={gcalId} onChange={(e) => setGcalId(e.target.value)} />
@@ -235,15 +236,16 @@ export function SettingsPanel({
                 catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); }
               }}>Save credentials</button>
           </span>
+          )}
           <span className="settings-value">
-            <button type="button" className="settings-btn" disabled={gcalBusy || !gcal.has_credentials}
+            <button type="button" className="settings-btn" disabled={gcalBusy || (isIosSync() ? !gcal.client_id_ios : !gcal.has_credentials)}
               onClick={async () => {
                 setGcalBusy(true); setGcalError(null);
                 try { const m = await import("../lib/gcal-accounts"); await m.connectAccount(); await refreshGcal(); }
                 catch (e) { setGcalError(String(e)); } finally { setGcalBusy(false); }
               }}>{gcalBusy ? "Connecting…" : "Connect Google account"}</button>
           </span>
-          {gcal.has_credentials && gcal.accounts.length === 0 && (
+          {(isIosSync() ? !!gcal.client_id_ios : gcal.has_credentials) && gcal.accounts.length === 0 && (
             <span className="settings-hint">No Google account connected yet — click “Connect Google account”.</span>
           )}
           <ul className="gcal-account-list">
