@@ -35,7 +35,7 @@ connected_device() {
   xcrun devicectl list devices 2>/dev/null | python3 -c "
 import sys, re
 for ln in sys.stdin:
-    if 'connected' in ln and 'Watch' not in ln:
+    if ('connected' in ln or 'available' in ln) and 'Watch' not in ln:
         uid = re.search(r'([0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12})', ln, re.I)
         lbl = re.match(r'(\S.*?)\s{2,}', ln)
         if uid: print(uid.group(1)); print(lbl.group(1).strip() if lbl else 'device'); break
