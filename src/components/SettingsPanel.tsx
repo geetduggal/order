@@ -287,8 +287,8 @@ export function SettingsPanel({
           )}
           <span className="settings-hint">
             Connect a Google account to sync curated events. Credentials come from your own
-            Google Cloud project (OAuth "Desktop app" client). The default account hosts
-            events that don't name one. Desktop only for now.
+            Google Cloud project — a "Desktop app" client on desktop, an "iOS" client on the
+            phone. The default account hosts events that don't name one.
           </span>
         </div>
 
