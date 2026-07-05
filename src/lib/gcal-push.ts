@@ -15,6 +15,11 @@ export interface PushIntent {
   allDay: boolean;
   title: string;
   attendees: string[];
+  /** mtime of the event's backing note, if one exists. Folded into the push
+   *  signature so editing the note's body (which becomes the event description)
+   *  re-flags the event for sync. Enriched by the caller (CardGrid), not here —
+   *  buildPushIntents has no access to the loaded notes. */
+  noteMtime?: number;
 }
 
 export function buildPushIntents(

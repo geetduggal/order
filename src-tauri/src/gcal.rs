@@ -608,6 +608,10 @@ pub struct PushEventInput {
     pub title: String,
     pub description: String,
     pub attendees: Vec<String>,
+    /// When Some(false), push with sendUpdates=none (silent) — used for
+    /// description-only updates so guests aren't emailed. None / Some(true)
+    /// keeps the default (sendUpdates=all, guests notified).
+    pub notify: Option<bool>,
 }
 
 /// Map a push input to Google start/end times. A multi-day span carries
@@ -698,9 +702,12 @@ pub async fn gcal_push_event(app: tauri::AppHandle, input: PushEventInput) -> Re
     }
     let existing = find_event_id(&lb, &input.title, &input.date, input.time.as_deref());
 
+    // sendUpdates=none for description-only edits (input.notify == Some(false))
+    // so guests aren't emailed; otherwise the default "all" notifies invitees.
+    let send = if input.notify == Some(false) { "none" } else { "all" };
     let (method, url, action) = match &existing {
-        Some(id) => ("PATCH".to_string(), format!("{CAL_BASE}/{id}?sendUpdates=all", id = enc(id)), "updated"),
-        None => ("POST".to_string(), format!("{CAL_BASE}?sendUpdates=all"), "created"),
+        Some(id) => ("PATCH".to_string(), format!("{CAL_BASE}/{id}?sendUpdates={send}", id = enc(id)), "updated"),
+        None => ("POST".to_string(), format!("{CAL_BASE}?sendUpdates={send}"), "created"),
     };
     let (ws, wb) = cal_send(&token, &method, &url, &body)?;
     if ws >= 400 {

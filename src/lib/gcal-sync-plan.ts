@@ -12,6 +12,11 @@ export interface SyncedEntry {
   /** The push signature the event had when last synced — a push is needed when
    *  the current signature differs (or there's no record entry). */
   sig: string;
+  /** The schedule/attendee portion of the signature only (i.e. the full sig
+   *  minus the backing-note content). Lets the pusher tell a description-only
+   *  edit (schedSig unchanged) from a real reschedule/attendee change, so the
+   *  former can push silently (sendUpdates=none). Absent on pre-feature records. */
+  schedSig?: string;
 }
 
 /** Synced record, keyed by natural key. */

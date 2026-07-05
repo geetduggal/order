@@ -29,6 +29,9 @@ export interface PushEventInput {
   title: string;
   description: string;
   attendees: string[];
+  /** When false, push with sendUpdates=none so guests aren't emailed — used for
+   *  description-only updates. Omitted/true keeps the default (guests notified). */
+  notify?: boolean;
 }
 
 export const pushEvent = (input: PushEventInput) => invoke<string>("gcal_push_event", { input });

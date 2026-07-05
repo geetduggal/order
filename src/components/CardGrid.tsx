@@ -41,11 +41,18 @@ import { buildPushIntents, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
 import { distinctEmails } from "../lib/gcal-recipients";
 
-/** Stable per-event signature for Google-push pending tracking: changes when
- *  any pushed field (host, schedule, title, attendees) changes, so an edit
- *  re-flags the event as needing sync. Pure + module-scoped. */
-function gcalSig(it: PushIntent): string {
+/** Schedule/attendee portion of the push signature — the fields whose change
+ *  warrants notifying guests (host, times, all-day, title, attendees). Pure +
+ *  module-scoped. */
+function gcalSchedSig(it: PushIntent): string {
   return [it.host, it.date, it.time ?? "", it.endTime ?? "", it.allDay, it.title, [...it.attendees].sort().join(",")].join("|");
+}
+/** Full per-event signature for Google-push pending tracking: the schedule sig
+ *  PLUS the backing note's mtime, so editing the note's body (which becomes the
+ *  event description) also re-flags the event for sync. A push happens whenever
+ *  this differs from the last-synced value. */
+function gcalSig(it: PushIntent): string {
+  return gcalSchedSig(it) + "|" + (it.noteMtime ?? "");
 }
 import {
   DEFAULT_TODO_TXT_PATH,
@@ -2469,6 +2476,8 @@ export function CardGrid() {
   }, [refreshGcalAccounts]);
 
   const [gcalSynced, setGcalSynced] = useState<SyncRecord>(loadSyncRecord);
+  const gcalSyncedRef = useRef(gcalSynced);
+  gcalSyncedRef.current = gcalSynced;
   const gcalSavedOnce = useRef(false);
   useEffect(() => {
     if (!gcalSavedOnce.current) { gcalSavedOnce.current = true; return; } // skip the load-echo
@@ -2477,9 +2486,17 @@ export function CardGrid() {
   const [gcalSyncing, setGcalSyncing] = useState(false);
   const gcalPlan = useMemo(() => {
     if (gcalAccounts.accounts.length === 0) return { pushes: [], deletes: [] };
-    const intents = buildPushIntents(mwEvents, gcalAccounts.accounts, gcalAccounts.default);
+    const intents = buildPushIntents(mwEvents, gcalAccounts.accounts, gcalAccounts.default).map((it) => {
+      // Fold in the backing note's mtime so editing its body (the event
+      // description) changes the signature and re-flags the event for sync.
+      // Matched the same way the push resolves the description (title + date).
+      const note = notes?.find((n) =>
+        n.title.toLowerCase() === it.title.toLowerCase()
+        && toIsoDateValue(n.frontmatter.date) === it.date);
+      return note ? { ...it, noteMtime: note.mtime } : it;
+    });
     return gcalSyncPlan(gcalSynced, intents, gcalSig);
-  }, [mwEvents, gcalAccounts, gcalSynced]);
+  }, [mwEvents, notes, gcalAccounts, gcalSynced]);
   const gcalPendingCount = gcalPlan.pushes.length + gcalPlan.deletes.length;
   const gcalPlanRef = useRef(gcalPlan);
   gcalPlanRef.current = gcalPlan;
@@ -2577,10 +2594,15 @@ export function CardGrid() {
           try { description = (await readVault(toVaultRel(note.path))).replace(/^---[\s\S]*?---\n?/, "").trim(); }
           catch { /* leave empty */ }
         }
+        // A description-only edit (the event already synced, schedule +
+        // attendees unchanged) pushes SILENTLY so guests aren't emailed; any
+        // schedule/attendee change — or a brand-new event — still notifies.
+        const prev = gcalSyncedRef.current[naturalKey(it.date, it.time, it.title)];
+        const descOnly = !!prev && prev.schedSig === gcalSchedSig(it);
         try {
-          const r = await pushEvent({ ...it, description });
+          const r = await pushEvent({ ...it, description, notify: !descOnly });
           if (r === "created") created++; else updated++;
-          recAdds[naturalKey(it.date, it.time, it.title)] = { host: it.host, date: it.date, time: it.time, title: it.title, sig: gcalSig(it) };
+          recAdds[naturalKey(it.date, it.time, it.title)] = { host: it.host, date: it.date, time: it.time, title: it.title, sig: gcalSig(it), schedSig: gcalSchedSig(it) };
         } catch (e) { errors.push(`${it.title}: ${String(e)}`); }
       }
       // A failed delete leaves its key in the record, so it re-appears as a
