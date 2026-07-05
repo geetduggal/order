@@ -2316,19 +2316,10 @@ iframe.order-youtube-embed {
   z-index: 5;
   background: var(--bg);
 }
-/* Day / Week all-day strip: FC ships it scrolling away with the timed grid,
-   and FC v6's nested table / overflow context defeats a pure-CSS pin. So
-   CalendarView tags the all-day row (`.order-cal-allday`) from JS and publishes
-   the live day-header height (`--fc-header-h`); we pin the row's CELLS just
-   below the sticky header (Safari/WebKit won't stick a <tr>, so we target its
-   children — the same trick the header rule above uses). */
-.fc-shell tr.order-cal-allday,
-.fc-shell tr.order-cal-allday > * {
-  position: sticky;
-  top: calc(var(--fc-safe-top) + var(--fc-controls-h) + var(--fc-title-h) + var(--fc-header-h, 34px));
-  z-index: 4;
-  background: var(--bg);
-}
+/* (Tried sticky-pinning the all-day strip alongside the rest of the
+   header chrome; FC v6 in WebKit doesn't make it cooperate without
+   restructuring the DOM, so for now the all-day row scrolls with the
+   timed grid like FC ships it.) */
 /* Day-grid (month) cells share the same .fc-col-header element under the
    .fc-daygrid view, so the same rule pins the M T W T F S row. */
 .fc-shell .fc-toolbar-title {

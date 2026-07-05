@@ -1,30 +1,40 @@
-// The all-day strip in Day / Week must stay pinned beneath the sticky
-// day-header while the timed grid scrolls under it. FC ships the all-day row
-// scrolling away; CalendarView tags it (`.order-cal-allday`) + publishes the
-// header height so CSS can stick it. Regression guard for that behaviour.
+// Day/Week give FC a bounded height so it scrolls the time grid INTERNALLY,
+// keeping the day-header + all-day strip fixed (FC-native, WebKit-safe, and
+// drag-friendly). Regression guard: scroll the internal grid and assert the
+// header + all-day don't move, and the calendar stays within the viewport.
 import { test, expect } from "@playwright/test";
 import { bootVault } from "./helpers";
 
-test("all-day strip stays pinned while the week grid scrolls", async ({ page }) => {
+test("Week: header + all-day stay fixed while the time grid scrolls internally", async ({ page }) => {
   await bootVault(page); // every launch boots into Week view
   await page.waitForSelector(".fc-timegrid", { timeout: 10_000 });
-  await page.waitForTimeout(300); // let pinAllDay's rAF tag + measure
+  await page.waitForTimeout(500); // let the height measure settle
 
-  // The all-day row got tagged, and its cells are sticky (Safari won't stick a
-  // <tr>, so the pin lives on the cells).
-  const cell = page.locator("tr.order-cal-allday > *").first();
-  await expect(cell).toHaveCSS("position", "sticky");
+  const r = await page.evaluate(() => {
+    const allDay = document.querySelector(".fc-timegrid .fc-daygrid-body") as HTMLElement | null;
+    const header = document.querySelector(".fc-col-header") as HTMLElement | null;
+    const fcEl = document.querySelector(".fc") as HTMLElement | null;
+    const scroller = (Array.from(document.querySelectorAll(".fc-timegrid .fc-scroller")) as HTMLElement[])
+      .find((s) => s.scrollHeight > s.clientHeight + 10) ?? null;
 
-  // Scroll the page well past the all-day strip's natural position.
-  await page.evaluate(() => {
-    (document.scrollingElement as HTMLElement).scrollTop = 700;
-    window.scrollTo(0, 700);
+    const adBefore = allDay?.getBoundingClientRect().top ?? null;
+    const hdBefore = header?.getBoundingClientRect().top ?? null;
+    if (scroller) scroller.scrollTop = 500;
+    const adAfter = allDay?.getBoundingClientRect().top ?? null;
+    const hdAfter = header?.getBoundingClientRect().top ?? null;
+
+    return {
+      fcHeight: fcEl?.getBoundingClientRect().height ?? null,
+      viewportH: window.innerHeight,
+      hasScroller: !!scroller,
+      scrolled: scroller?.scrollTop ?? 0,
+      adBefore, adAfter, hdBefore, hdAfter,
+    };
   });
-  await page.waitForTimeout(150);
 
-  // Still visible near the top (pinned at its sticky offset) — NOT scrolled off
-  // to a large negative top the way it did before the fix (~ natural − 700).
-  const afterTop = await cell.evaluate((el) => el.getBoundingClientRect().top);
-  expect(afterTop).toBeGreaterThan(50);
-  expect(afterTop).toBeLessThan(220);
+  expect(r.hasScroller, "FC should have a bounded internal time-grid scroller").toBe(true);
+  expect(r.scrolled).toBeGreaterThan(100);
+  expect(Math.abs((r.adAfter ?? 0) - (r.adBefore ?? -999)), "all-day fixed").toBeLessThan(3);
+  expect(Math.abs((r.hdAfter ?? 0) - (r.hdBefore ?? -999)), "header fixed").toBeLessThan(3);
+  expect(r.fcHeight!, "calendar bounded within viewport").toBeLessThan(r.viewportH);
 });

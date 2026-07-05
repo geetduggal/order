@@ -8,7 +8,7 @@
 // them. Year view is deferred — Full Calendar Plus uses a custom
 // LinearView plugin we haven't ported yet.
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Download as DownloadIcon } from "lucide-react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -294,28 +294,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     today: () => apiRef.current?.getApi()?.today(),
   }), []);
 
-  // Day / Week: keep the all-day strip pinned beneath the sticky day-header
-  // while the timed grid scrolls under it. FC ships the all-day row scrolling
-  // away, and FC v6's nested table / overflow context defeats a pure-CSS pin,
-  // so we tag the all-day row here and publish the live header height as a CSS
-  // var; the CSS rule sticks the row just below the day names. No-op in Month /
-  // Year (there's no timegrid all-day row to find).
-  const pinAllDay = useCallback(() => {
-    const root = shellRef.current;
-    if (!root) return;
-    const row = root.querySelector(".fc-timegrid .fc-daygrid-body")?.closest("tr");
-    root.querySelectorAll("tr.order-cal-allday").forEach((el) => {
-      if (el !== row) el.classList.remove("order-cal-allday");
-    });
-    row?.classList.add("order-cal-allday");
-    const header = root.querySelector(".fc-scrollgrid-section-header");
-    if (header instanceof HTMLElement) root.style.setProperty("--fc-header-h", `${header.offsetHeight}px`);
-  }, []);
-
   // FullCalendar recomputes on window resize, but a sidebar toggle (or any
   // layout change that only resizes our pane) doesn't fire one. Observe
   // the shell and nudge the calendar so events / time-grid columns refit
-  // to whatever width is now available; re-pin the all-day strip after.
+  // to whatever width is now available.
   useEffect(() => {
     const el = shellRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -326,11 +308,34 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         last = w;
         apiRef.current?.getApi()?.updateSize();
       }
-      requestAnimationFrame(pinAllDay);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [pinAllDay]);
+  }, []);
+
+  // Day / Week: give FC a bounded height so it scrolls the time grid INTERNALLY
+  // and keeps the day-header + all-day strip fixed the way it ships them —
+  // WebKit-safe and drag-friendly (FC owns the layout), unlike a CSS sticky pin
+  // that WebKit mishandles. Month / Year keep "auto" and page-scroll with the
+  // rest of the app. Measured from FC's top edge to the viewport bottom, less
+  // the hovering bottom dock; any imprecision only leaves a small gap — the pin
+  // itself holds as long as the height is bounded (not "auto").
+  const isTimeGrid = initialView === "timeGridDay" || initialView === "timeGridWeek";
+  const [calHeight, setCalHeight] = useState<number | "auto">(isTimeGrid ? 640 : "auto");
+  useEffect(() => {
+    if (!isTimeGrid) { setCalHeight("auto"); return; }
+    const measure = () => {
+      const fcEl = shellRef.current?.querySelector(".fc") as HTMLElement | null;
+      if (!fcEl) return;
+      const top = fcEl.getBoundingClientRect().top;
+      const DOCK = 84; // hovering bottom dock (54) + inset (14) + safe area
+      setCalHeight(Math.max(360, Math.round(window.innerHeight - top - DOCK)));
+    };
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", measure); };
+  }, [isTimeGrid]);
+
   // Month view defaults to all-day-only (matching the year strip) so
   // a busy timed-event load doesn't crowd the cell grid. Day / Week
   // default off — those scales have room for timed bars. Toggle is
@@ -527,7 +532,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         nowIndicator
         firstDay={isWeek ? weekFirstDay : 0}
         hiddenDays={isWeek ? weekHidden : undefined}
-        height="auto"
+        height={calHeight}
         // Touch-friendly: drop FC's 1000ms long-press to 250ms so dragging
         // an event or selecting a range with a finger feels responsive.
         // Mouse drags are unaffected (long-press only applies to touch).
@@ -595,10 +600,6 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventResize={handleEventResize}
         eventClick={handleEventClick}
         select={handleSelect}
-        // After FC (re)renders a view — initial mount, view switch, prev/next —
-        // re-tag + re-measure so the all-day strip stays pinned. rAF lets FC
-        // finish painting the new DOM first.
-        datesSet={() => requestAnimationFrame(pinAllDay)}
       />
     </div>
   );
