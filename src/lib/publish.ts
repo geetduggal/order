@@ -11,6 +11,7 @@ import { extractBaseBlock, parseBase } from "./list-base";
 import { smartMerge } from "./list-merge";
 import type { ListNoteRef } from "./list-folder";
 import { rewritePublishedImages, type AssetCopy } from "./publish-images";
+import { folderKey } from "./folders";
 
 export interface CollectInput {
   /** Every note in the vault, with bodies. `dir` is the note's vault-
@@ -30,6 +31,13 @@ export interface CollectInput {
   home: { name: string; title: string; target: string };
   /** Publish subpath (e.g. "order-home") for root-absolute image URLs. */
   sub: string;
+  /** The spacetime-derived hierarchy (Areas → Categories → Folder refs), the
+   *  SAME structure the desktop sidebar uses. When present, the published
+   *  sidebar is built from this (filtered to the public folders) rather than
+   *  from legacy Areas.md chain files — spacetime is the source of truth. */
+  taxonomy?: {
+    areas: { ref: string; categories: { ref: string; folders: string[] }[] }[];
+  };
 }
 
 /** Output of collectPublishedSite: the viewer payload plus the list of
@@ -170,29 +178,51 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
     };
   });
 
-  // Walk the chain rooted at Areas.md (or any role:areas note).
-  const areasNote =
-    vaultNotes.find((n) => n.frontmatter.role === "areas")
-    ?? vaultNotes.find((n) => n.filename === "Areas.md");
   const areas: { ref: string; categories: { ref: string; folders: string[] }[] }[] = [];
   const hidden = new Set<string>();
-  if (areasNote) {
-    hidden.add(refOf(areasNote.filename));
-    for (const areaRef of bulletsOf(areasNote.body)) {
-      hidden.add(areaRef);
-      const areaNote = byRef.get(areaRef);
+
+  const spaceAreas = input.taxonomy?.areas ?? [];
+  if (spaceAreas.length > 0) {
+    // Spacetime is the source of truth. Keep only folders that actually have
+    // PUBLIC content (a public main doc, or any public note inside), then drop
+    // now-empty categories/areas — the published sidebar shows exactly the
+    // publicly-visible subset of the spacetime hierarchy.
+    // Match on folderKey (lowercase + dash/space normalized) so a folder whose
+    // on-disk name drifts in case from its spacetime entry (e.g. "Life without
+    // Order" vs "Life Without Order") still resolves to public.
+    const publicFolders = new Set<string>();
+    for (const n of notes) {
+      publicFolders.add(folderKey(n.ref));
+      if (n.folder) publicFolders.add(folderKey(n.folder));
+    }
+    for (const a of spaceAreas) {
       const cats: { ref: string; folders: string[] }[] = [];
-      if (areaNote) {
-        for (const catRef of bulletsOf(areaNote.body)) {
-          hidden.add(catRef);
-          const catNote = byRef.get(catRef);
-          cats.push({
-            ref: catRef,
-            folders: catNote ? bulletsOf(catNote.body) : [],
-          });
-        }
+      for (const c of a.categories) {
+        const folders = c.folders.filter((f) => publicFolders.has(folderKey(f)));
+        if (folders.length > 0) cats.push({ ref: c.ref, folders });
       }
-      areas.push({ ref: areaRef, categories: cats });
+      if (cats.length > 0) areas.push({ ref: a.ref, categories: cats });
+    }
+  } else {
+    // Legacy fallback: walk the Areas.md chain (vault not yet on spacetime).
+    const areasNote =
+      vaultNotes.find((n) => n.frontmatter.role === "areas")
+      ?? vaultNotes.find((n) => n.filename === "Areas.md");
+    if (areasNote) {
+      hidden.add(refOf(areasNote.filename));
+      for (const areaRef of bulletsOf(areasNote.body)) {
+        hidden.add(areaRef);
+        const areaNote = byRef.get(areaRef);
+        const cats: { ref: string; folders: string[] }[] = [];
+        if (areaNote) {
+          for (const catRef of bulletsOf(areaNote.body)) {
+            hidden.add(catRef);
+            const catNote = byRef.get(catRef);
+            cats.push({ ref: catRef, folders: catNote ? bulletsOf(catNote.body) : [] });
+          }
+        }
+        areas.push({ ref: areaRef, categories: cats });
+      }
     }
   }
 

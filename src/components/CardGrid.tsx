@@ -25,7 +25,7 @@ import { parseSeasons, serializeSeasons, isSeasonsFile, type Season } from "../l
 import {
   buildSpacetime, serializeSpacetime, parseSpacetime, serializeMarkwhen,
   parseMarkwhenFormat, mergeSpacetimes, applySpaceMutation, type SpaceMutation,
-  mwUpdateEvent, mwDeleteEvent, mwAddEvent,
+  mwUpdateEvent, mwDeleteEvent, mwAddEvent, isSpacetimeFile,
   type SpacetimeEvent, type Spacetime, type SpacetimeSource, type SpaceNode,
 } from "../lib/spacetime";
 import { planSpacetimeSync, summarizePlan, summarizeMwChanges, type SyncPlan, type MwChangeItem } from "../lib/spacetime-sync";
@@ -358,15 +358,18 @@ function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
   // Plain-text files (.txt — currently used for todo.txt) carry no
   // frontmatter, but the todo.txt parser needs the whole body to
   // build calendar events. Pre-load so the first calendar render
-  // sees them.
-  if (/\.(txt|ya?ml|mw)$/i.test(filename)) return true;
+  // sees them. Spacetime source files (spacetime.md / *.spacetime.md /
+  // legacy .mw) are the source of truth for events, so they too must
+  // be resident before the first calendar render.
+  if (/\.(txt|ya?ml)$/i.test(filename) || isSpacetimeFile(filename)) return true;
   return false;
 }
 
-/** Plain-text companion files (todo.txt, spacetime.yml, spacetime.mw)
- *  edited raw, not as markdown. */
+/** Plain-text companion files (todo.txt, spacetime.yml) and spacetime source
+ *  files (spacetime.md / *.spacetime.md / legacy .mw) — edited raw, not as
+ *  rich markdown. */
 function isRawTextFile(filename: string): boolean {
-  return /\.(txt|ya?ml|mw)$/i.test(filename);
+  return /\.(txt|ya?ml)$/i.test(filename) || isSpacetimeFile(filename);
 }
 
 async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
@@ -813,19 +816,36 @@ export function CardGrid() {
     return parseSpacetime(st.body);
   }, [notes]);
 
-  // Collect ALL .mw files in the vault as composable spacetime sources.
-  // spacetime.mw at the root is included (it's the primary single-file
-  // source); other .mw files anywhere in the vault contribute sub-broods.
-  // The root spacetime.yml is handled via parsedSpacetime separately.
+  // Collect ALL spacetime source files in the vault as composable sources.
+  // The root spacetime.md (or legacy spacetime.mw) is included (it's the
+  // primary single-file source); other spacetime files anywhere in the vault
+  // (*.spacetime.md / *.mw) contribute sub-broods. spacetime.yml is separate.
   const mwSources = useMemo<SpacetimeSource[]>(() => {
     if (!notes) return [];
     return notes
-      .filter((n) => n.filename.endsWith(".mw") && n.body)
+      .filter((n) => isSpacetimeFile(n.filename) && n.body)
       .map((n) => ({
         parsed: parseMarkwhenFormat(n.body),
         path: n.filename,
       }));
   }, [notes]);
+
+  // The canonical ROOT spacetime file, resolved adaptively so both new
+  // (spacetime.md) and legacy (spacetime.mw) vaults work: prefer an existing
+  // root spacetime.md, else a legacy root spacetime.mw, else default to
+  // spacetime.md for the first write. Every canonical read/write below keys
+  // off this (via the ref, to stay current inside async callbacks).
+  const spacetimeRootPath = useMemo<string>(() => {
+    const rels = new Set((notes ?? []).map((n) => toVaultRel(n.path)));
+    if (rels.has("spacetime.md")) return "spacetime.md";
+    if (rels.has("spacetime.mw")) return "spacetime.mw";
+    return "spacetime.md";
+  }, [notes]);
+  // Kept current synchronously (not via effect) so render-time memos that read
+  // it (mwEventIndex etc.) see the resolved path on the SAME render notes load,
+  // never a one-render-stale default. This assignment runs before those memos.
+  const spacetimeRootPathRef = useRef(spacetimeRootPath);
+  spacetimeRootPathRef.current = spacetimeRootPath;
 
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. When .mw sources or spacetime.yml carry a space tree,
@@ -1338,6 +1358,9 @@ export function CardGrid() {
       })),
       home,
       sub,
+      // Publish the spacetime-derived hierarchy so the viewer's sidebar is
+      // built from the (public subset of) spacetime, not legacy Areas.md files.
+      taxonomy: { areas: vaultTaxonomy.areas },
     });
     const dataJson = JSON.stringify(site);
     const pages = prerenderPages(site, sub);
@@ -1406,7 +1429,7 @@ export function CardGrid() {
     const mwContent = serializeMarkwhen(next);
     lastMarkwhenRef.current = mwContent;
     lastMwSpaceRef.current = mwContent.split("# Time")[0];
-    await writeVault("spacetime.mw", mwContent);
+    await writeVault(spacetimeRootPathRef.current, mwContent);
     const yml = serializeSpacetime(next);
     lastSpacetimeRef.current = yml;
     await writeVault("spacetime.yml", yml);
@@ -1415,17 +1438,17 @@ export function CardGrid() {
     // baseline to match — they must never register as a "pending" mw change.
     persistMwBaseline(mwContent);
     setNotes((prev) => prev?.map((n) =>
-      toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: mwContent } : n) ?? null);
+      toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: mwContent } : n) ?? null);
   }, [persistMwBaseline]);
 
   const patchSpacetimeSpace = useCallback(async (mutation: SpaceMutation): Promise<void> => {
-    const mw = await readVault("spacetime.mw").catch(() => "");
+    const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
     const st = parseMarkwhenFormat(mw);
     await writeSpacetimeModel({ ...st, space: applySpaceMutation(st.space, mutation) });
   }, [writeSpacetimeModel]);
 
   const patchSpacetimeSeasons = useCallback(async (seasons: import("../lib/seasons").Season[]): Promise<void> => {
-    const mw = await readVault("spacetime.mw").catch(() => "");
+    const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
     const st = parseMarkwhenFormat(mw);
     await writeSpacetimeModel({
       ...st,
@@ -1441,7 +1464,7 @@ export function CardGrid() {
   const handleAddArea = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const cur = parseMarkwhenFormat(await readVault("spacetime.mw").catch(() => ""));
+    const cur = parseMarkwhenFormat(await readVault(spacetimeRootPathRef.current).catch(() => ""));
     if (cur.space.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return; }
     await patchSpacetimeSpace({ kind: "addArea", name: trimmed });
     await reloadNotes();
@@ -1457,7 +1480,7 @@ export function CardGrid() {
     const trimmedArea = areaName.trim();
     if (!trimmed || !trimmedArea) return;
     // Read from the mw (source of truth) so events are preserved on rewrite.
-    const cur = parseMarkwhenFormat(await readVault("spacetime.mw").catch(() => ""));
+    const cur = parseMarkwhenFormat(await readVault(spacetimeRootPathRef.current).catch(() => ""));
     const area = cur.space.find((a) => a.name === trimmedArea);
     if (area && area.children.length >= 10) {
       flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return;
@@ -1886,7 +1909,15 @@ export function CardGrid() {
         const hasAreas = loaded.some(
           (n) => n.filename === AREAS_FILENAME || n.frontmatter.role === "areas",
         );
-        if (!hasAreas && !migratedRef.current) {
+        // Spacetime is the source of truth. A vault with ANY spacetime file
+        // (spacetime.md / *.spacetime.md / legacy .mw / .yml) is already on the
+        // modern model — the legacy chain-file migration must NOT run there, or
+        // it pollutes the vault root with Areas.md / <Area>.md / <Category>.md
+        // index files that spacetime.md replaced.
+        const hasSpacetime = loaded.some(
+          (n) => isSpacetimeFile(n.filename) || n.filename === "spacetime.yml",
+        );
+        if (!hasAreas && !hasSpacetime && !migratedRef.current) {
           migratedRef.current = true;
           // Re-read bodies for migration planning — loaded notes only
           // carry frontmatter.
@@ -2325,8 +2356,8 @@ export function CardGrid() {
           { kind: "addCategory", area, name: category }),
         { kind: "addFolder", area, category, name });
 
-    const mwAbs = notesRef.current?.find((n) => toVaultRel(n.path) === "spacetime.mw")?.path;
-    const mw = await readVault("spacetime.mw").catch(() => "");
+    const mwAbs = notesRef.current?.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current)?.path;
+    const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
     const cur = parseMarkwhenFormat(mw);
     const next = hasFolder(cur.space) ? mw : serializeMarkwhen({ ...cur, space: addAll(cur.space) });
     // Mirror the same add into the baseline (the directory exists, so the disk
@@ -2347,7 +2378,7 @@ export function CardGrid() {
       } catch (e) { console.error("orphan move failed", e); }
     }
 
-    if (next !== mw) await writeVault("spacetime.mw", next);
+    if (next !== mw) await writeVault(spacetimeRootPathRef.current, next);
     if (moved) {
       await reloadNotes();
     } else {
@@ -2355,7 +2386,7 @@ export function CardGrid() {
       // (and doesn't clobber it on its next autosave). Don't stamp
       // lastMarkwhenRef — let the detector recompute the (now smaller) review.
       setNotes((prev) => prev?.map((n) =>
-        toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
+        toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: next } : n) ?? null);
       if (mwAbs) { delete focusedKeyVersionRef.current[mwAbs]; bumpExternal([mwAbs]); }
     }
   }, [reloadNotes, flashCap, persistMwBaseline, bumpExternal]);
@@ -2405,7 +2436,7 @@ export function CardGrid() {
     // Match the ROOT spacetime.mw specifically — sub-folder .mw files (e.g.
     // Craft/spacetime.mw) share the same filename but hold only a subset of
     // events. Selecting by vault-relative path avoids grabbing the wrong one.
-    const mwNote = notes?.find((n) => toVaultRel(n.path) === "spacetime.mw");
+    const mwNote = notes?.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current);
     if (!mwNote?.body) return [];
     return parseMarkwhenFormat(mwNote.body).events;
   }, [notes]);
@@ -2716,13 +2747,13 @@ export function CardGrid() {
    *  reflects the change on the next render; Effect 2 then mirrors to yml and
    *  reconciles any space changes. spacetime.mw is the single source of truth. */
   const applyMwEdit = useCallback(async (transform: (mw: string) => string) => {
-    const mw = await readVault("spacetime.mw").catch(() => "");
+    const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
     if (!mw) return;
     const next = transform(mw);
     if (next === mw) return;
-    await writeVault("spacetime.mw", next);
+    await writeVault(spacetimeRootPathRef.current, next);
     setNotes((prev) => prev?.map((n) =>
-      toVaultRel(n.path) === "spacetime.mw" ? { ...n, body: next } : n) ?? null);
+      toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: next } : n) ?? null);
   }, []);
 
   // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
@@ -2734,7 +2765,7 @@ export function CardGrid() {
   // advance the baseline, so they never reach this path.
   useEffect(() => {
     if (!notes) return;
-    const mwNote = notes.find((n) => toVaultRel(n.path) === "spacetime.mw");
+    const mwNote = notes.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current);
     if (!mwNote?.body) return;
     if (mwNote.body === lastMarkwhenRef.current) return;
     const spaceSection = mwNote.body.split("# Time")[0];
@@ -2780,7 +2811,7 @@ export function CardGrid() {
   // pending review — indicator only, no auto-popped dialog on launch.
   useEffect(() => {
     if (mwInitRef.current || !notes) return;
-    const mwNote = notes.find((n) => toVaultRel(n.path) === "spacetime.mw");
+    const mwNote = notes.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current);
     if (!mwNote?.body) return;
     mwInitRef.current = true;
     const mwBody = mwNote.body;
@@ -3782,7 +3813,11 @@ export function CardGrid() {
       ]);
     }
     setView("pile");
-    setFilters([{ kind: "include", ref: relPath }]);
+    // Filter by the note's REF (filename minus a .md extension — exactly what
+    // refOf() produces), NOT the raw path. `spacetime.md`'s ref is `spacetime`,
+    // so filtering on `spacetime.md` would match nothing and the card wouldn't
+    // open. (.mw/.yml keep their extension in the ref, so this is a no-op there.)
+    setFilters([{ kind: "include", ref: relPath.replace(/\.md$/i, "") }]);
     setFocusedFolder(null);
     setFocusPath(fullPath);
     setFocusedPath(fullPath);
@@ -3796,7 +3831,7 @@ export function CardGrid() {
   }, [openSpacetimeFile, vaultTaxonomy, parsedSpacetime, mwSources]);
 
   const openSpacetimeMw = useCallback(async () => {
-    await openSpacetimeFile("spacetime.mw", () => {
+    await openSpacetimeFile(spacetimeRootPathRef.current, () => {
       const st = buildSpacetime(notesRef.current ?? [], vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined);
       return serializeMarkwhen(st);
     });
@@ -4112,7 +4147,7 @@ export function CardGrid() {
     //    writeSpacetimeModel stamps lastMarkwhenRef, so Effect 2 won't try to
     //    re-reconcile (and re-rename) the directory we already moved on disk.
     try {
-      const mw = await readVault("spacetime.mw").catch(() => "");
+      const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
       if (mw) {
         const st = parseMarkwhenFormat(mw);
         const walk = (nodes: SpaceNode[]) => {
@@ -5078,7 +5113,7 @@ export function CardGrid() {
         </button>
         <button
           type="button"
-          className="dock-btn dock-btn-sidebar"
+          className={"dock-btn dock-btn-sidebar" + (filters.some((f) => f.kind === "include") && !sidebarOpen ? " is-exploring" : "")}
           onClick={toggleSidebar}
           title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}

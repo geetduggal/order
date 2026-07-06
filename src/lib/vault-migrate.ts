@@ -4,6 +4,7 @@
 // actual reads/writes so the migration runs through the same vault-fs bridge.
 
 import { toIsoDateValue, joinFrontmatter, splitFrontmatter, type Frontmatter } from "./frontmatter";
+import { isSpacetimeFile } from "./spacetime";
 
 /** Keys stripped from a note during event-frontmatter migration. `title` is
  *  included because event notes get their name from the filename / h1 body
@@ -19,7 +20,7 @@ export function isEventNote(fm: Frontmatter, filename: string): boolean {
   if (fm.role) return false;              // Areas.md / Seasons.md guard
   if (fm.list === "cards" || fm.list === "lines") return false; // list notes
   if (typeof fm.category === "string" && fm.category) return false; // NF main doc
-  if (filename === "spacetime.yml" || filename === "spacetime.mw") return false;
+  if (filename === "spacetime.yml" || isSpacetimeFile(filename)) return false;
   return true;
 }
 

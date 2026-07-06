@@ -1610,6 +1610,16 @@ iframe.order-youtube-embed {
   min-height: 100vh;
 }
 .shell.sidebar-open { grid-template-columns: 1fr 360px; }
+/* When the sidebar opens it should BECOME the rightmost column, not squeeze
+   the pile. Freezing the FLAT temporal pile's columns to a fixed width (drop
+   the `1fr` stretch) makes it drop its rightmost column and reflow cards left
+   instead of shrinking all of them. Excludes `.nf-grid` — newspaper sections
+   have their own sidebar-open rule (see the desktop nf-grid block) so the
+   Main-Document centerpiece keeps its width. */
+.shell.sidebar-open .card-grid:not(.nf-grid) {
+  grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 440px));
+  justify-content: start;
+}
 
 .pane-main {
   min-width: 0;
@@ -2872,6 +2882,10 @@ iframe.order-youtube-embed {
   line-height: 1;
 }
 .dock-btn-new:hover { color: var(--coral); border-color: var(--coral); background: var(--coral-soft); }
+/* Sidebar toggle turns coral while a Notable Folder is filtered — a hint that
+   there's more to explore in the (closed) sidebar. */
+.dock-btn-sidebar.is-exploring { color: var(--coral); border-color: var(--coral); }
+.dock-btn-sidebar.is-exploring:hover { background: var(--coral-soft); }
 
 /* Public/private toggle — coral when "public only" is active. */
 .dock-btn-public.is-on {
@@ -5347,6 +5361,12 @@ iframe.order-youtube-embed {
   }
   .nf-grid .is-centerpiece {
     grid-column: 2;
+  }
+  /* Sidebar open → the sidebar BECOMES the third column: drop the RIGHT notes
+     column and keep the wide centre so the Main Document you're reading keeps
+     its size. Its orbiting notes reflow into the left column (row-dense). */
+  .shell.sidebar-open .nf-grid {
+    grid-template-columns: 1fr 1.9fr;
   }
 }
 

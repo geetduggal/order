@@ -155,6 +155,15 @@ export function ViewerApp(
   const [singleNoteRef, setSingleNoteRef] = useState<string | null>(
     deeplink && deeplink.scroll && fromSearch.length === 0 ? deeplink.scroll : null,
   );
+  // True when this load arrived at a SPECIFIC article/folder permalink (not the
+  // home). While focused, the "sticky home" effect below is suppressed so the
+  // permalink shows just that content — not the whole home folder alongside it.
+  // Cleared the moment the visitor navigates elsewhere (normal browsing resumes
+  // the sticky-home behavior).
+  const initialInclude = useRef<string | null>(deeplink?.include ?? null);
+  const [permalinkFocus, setPermalinkFocus] = useState(
+    () => fromSearch.length === 0 && !!deeplink && deeplink.include !== (data.home?.name ?? null),
+  );
   // The folder whose Main Document is pinned to the top of the Pile.
   // Set by clicking a pill or picking one in the palette. Cleared only
   // when it's no longer an active include, so adding it doesn't wipe
@@ -219,9 +228,11 @@ export function ViewerApp(
   }, [view, filters, focusedFolder, pileMode]);
 
   // Home is sticky in the Pile: pile view ALWAYS includes the home folder
-  // (pinned, non-removable). Only a calendar view may be unfiltered.
+  // (pinned, non-removable) — EXCEPT on a focused article/folder permalink,
+  // where injecting home would show the whole home page beside the article.
   useEffect(() => {
     if (view !== "pile") return;
+    if (permalinkFocus) return; // focused permalink → show only its content
     const home = data.home?.name ?? null;
     if (!home) return;
     if (filters.some((f) => f.kind === "include" && f.ref === home)) return;
@@ -230,7 +241,15 @@ export function ViewerApp(
         ? prev
         : [...prev, { kind: "include", ref: home }],
     );
-  }, [view, filters, data.home?.name]);
+  }, [view, filters, data.home?.name, permalinkFocus]);
+  // Drop permalink-focus once the visitor navigates away from the arrival
+  // target, so sticky-home resumes for ordinary browsing.
+  useEffect(() => {
+    if (!permalinkFocus) return;
+    const justInitial = filters.length === 1 && filters[0].kind === "include"
+      && filters[0].ref === initialInclude.current;
+    if (!justInitial) setPermalinkFocus(false);
+  }, [filters, permalinkFocus]);
 
   // Apply a new pill set AND mirror it into the URL (pushState), so the
   // address bar always matches the pills and is shareable / back-able.
@@ -332,9 +351,14 @@ export function ViewerApp(
       ];
       if (note.category) {
         setSingleNoteRef(null);
+        // Folder click → jump to its cover, which pins to the TOP of the pile
+        // (same "go to the top" the desktop app does). Reuses the reliable
+        // scrollIntoView(block:"start") path below.
+        setScrollTarget(targetRef);
       } else {
         // Regular note: solo-note view inside the parent folder filter.
         setSingleNoteRef(ref);
+        setScrollTarget(ref);
       }
       setFilters(next);
       markFolderRecent(targetRef);
@@ -697,7 +721,7 @@ export function ViewerApp(
         </button>
         <button
           type="button"
-          className="dock-btn dock-btn-sidebar"
+          className={"dock-btn dock-btn-sidebar" + (includeRefs.some((r) => r !== (data.home?.name ?? "")) && !sidebarOpen ? " is-exploring" : "")}
           onClick={() => setSidebarOpen((o) => !o)}
           title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}

@@ -36,6 +36,7 @@ import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } fro
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
 import { folderColor, isMainDocPath, noteFolder, parseRef } from "../lib/folders";
+import { isSpacetimeFile } from "../lib/spacetime";
 import { resolveWikilink } from "../lib/wikilink";
 import {
   attachmentAssetPrefix,
@@ -333,6 +334,18 @@ export function Card(props: Props) {
    *  top-left `{date}` toggle. When open, the FrontmatterInspector
    *  drops in above the editor body so the YAML is editable inline. */
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Auto-reveal the frontmatter panel the first time a note loads carrying a
+  // clickable URL in its YAML — so the link is visible and one-tap without
+  // opening the inspector by hand. Once per mount; a manual close then sticks.
+  const autoFmRef = useRef(false);
+  useEffect(() => {
+    if (autoFmRef.current || state.kind !== "ready") return;
+    autoFmRef.current = true;
+    const hasUrl = Object.values(state.frontmatter).some(
+      (v) => typeof v === "string" && /^https?:\/\/\S+$/.test(v.trim()),
+    );
+    if (hasUrl) setInspectorOpen(true);
+  }, [state]);
   const [overflowing, setOverflowing] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -687,9 +700,14 @@ export function Card(props: Props) {
       const title = deriveNoteTitleFromBody(body);
       const isMain = isMainDocPath(path);
       if (!isMain && title && title !== lastTitleRef.current) {
-        const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
-        const desired = basenameForEvent(date, title);
         const currentFilename = path.split("/").pop() ?? path;
+        // Spacetime is the authority for an event's date, and the filename
+        // already mirrors it — so on a title edit, KEEP the filename's existing
+        // date and only swap the title part. Frontmatter date is vestigial and
+        // deliberately ignored (it must never override the spacetime date).
+        // Only a note with no date in its name at all falls back to today.
+        const fnDate = (currentFilename.match(/^(\d{4}-\d{2}-\d{2})/) || [])[1];
+        const desired = basenameForEvent(fnDate, title);
         if (desired !== currentFilename) {
           try {
             const dir = await dirname(path);
@@ -1270,8 +1288,9 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
-        ) : /\.mw$/i.test(filename) ? (
-          // Spacetime Markwhen file — CodeMirror with Markdown highlighting
+        ) : isSpacetimeFile(filename) ? (
+          // Spacetime source (spacetime.md / *.spacetime.md / legacy .mw) —
+          // CodeMirror with Markdown highlighting, edited as raw markwhen
           <CodeMirrorSurface
             value={state.body}
             onChange={handleChange}

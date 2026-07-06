@@ -16,6 +16,20 @@ import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
 
+/** True for a spacetime SOURCE file — the canonical timeline description Order
+ *  reads events + hierarchy from. Historically a single `spacetime.mw`; the
+ *  canonical name is now `spacetime.md`, and any `*.spacetime.md` (or legacy
+ *  `*.mw`) file anywhere in the vault contributes a composable sub-source.
+ *  Detected by NAME only — these files are structural, never notes, so they're
+ *  excluded from note/orphan processing and edited as raw markwhen text. */
+export function isSpacetimeFile(filename: string): boolean {
+  return (
+    filename === "spacetime.md" ||
+    filename.endsWith(".spacetime.md") ||
+    filename.endsWith(".mw")
+  );
+}
+
 // ---------- Composability types ----------
 
 /** A conflict detected while merging Spacetime sources. */
@@ -31,7 +45,7 @@ export interface SpacetimeConflict {
 /** A parsed Spacetime paired with the vault-relative path it came from. */
 export interface SpacetimeSource {
   parsed: Spacetime;
-  /** Vault-relative path (e.g. "spacetime.mw", "Work/work-archive.mw"). */
+  /** Vault-relative path (e.g. "spacetime.md", "Work/work.spacetime.md"). */
   path: string;
 }
 
