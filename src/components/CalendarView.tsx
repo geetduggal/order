@@ -93,17 +93,16 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
 
     const title = note.title || note.filename;
     const completed = note.frontmatter.completed === true;
-    // Tint the background with the folder color and keep its border, but
-    // let the title inherit --fc-event-text-color (var(--ink)) so it stays
-    // readable in every theme. A hardcoded dark textColor here used to
-    // vanish on the dark/black backgrounds.
-    const colorProps = note.color
-      ? { backgroundColor: note.color + "29", borderColor: note.color }
-      : {};
-    // Pass the completion flag through to renderEventContent via
-    // extendedProps so the chip can apply a strike-through. FC's
-    // event store passes the prop straight through to event.extendedProps.
-    const extendedProps = { completed };
+    // Events wear the same chrome as cards (card surface + hairline via
+    // the --fc-event-* tokens in styles.css) — no per-event inline
+    // background/border. The folder color survives as a small dot in
+    // renderEventContent, mirroring the sidebar swatches, so the
+    // calendar scans by color without every event wearing a different
+    // colored box.
+    // Pass the completion flag + folder color through to
+    // renderEventContent via extendedProps. FC's event store passes the
+    // props straight through to event.extendedProps.
+    const extendedProps = { completed, folderColor: note.color ?? null };
 
     if (allDay) {
       events.push({
@@ -113,7 +112,6 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
         // Exclusive end for all-day multi-day spans.
         end: endDate ? addOneDayIso(endDate) : undefined,
         allDay: true,
-        ...colorProps,
         extendedProps,
       });
       continue;
@@ -142,7 +140,6 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       start: `${date}T${startTime}`,
       end: `${endDayIso}T${endIsoTime}`,
       allDay: false,
-      ...colorProps,
       extendedProps,
     });
   }
@@ -193,8 +190,12 @@ function renderEventContent(arg: EventContentArg) {
   // the note's frontmatter.completed flag — true for `x ` prefixed
   // todo.txt lines).
   const completed = arg.event.extendedProps?.completed === true;
+  // The folder color rides as a small dot (same language as the sidebar
+  // swatches) — the event box itself wears the neutral card chrome.
+  const folderColor = arg.event.extendedProps?.folderColor as string | null | undefined;
   return (
     <div className={"order-event-row" + (completed ? " is-completed" : "")}>
+      {folderColor && <span className="order-event-dot" style={{ background: folderColor }} />}
       <span className="order-event-title">{title}</span>
       {start && <span className="order-event-time">{start}</span>}
     </div>

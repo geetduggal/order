@@ -2355,8 +2355,12 @@ iframe.order-youtube-embed {
   --fc-list-event-hover-bg-color: var(--bg-elev);
   --fc-today-bg-color: var(--coral-soft);
   --fc-now-indicator-color: var(--coral);
-  --fc-event-bg-color: var(--royal-soft);
-  --fc-event-border-color: var(--royal);
+  /* Events wear the card chrome: same lifted surface + hairline border
+     as every .order-card, so the calendar reads as a grid of miniature
+     cards. Folder identity is a small dot inside (see .order-event-dot),
+     not a colored box. */
+  --fc-event-bg-color: var(--card-bg, var(--royal-soft));
+  --fc-event-border-color: var(--card-border, var(--royal));
   --fc-event-text-color: var(--ink);
   --fc-button-bg-color: var(--bg-elev);
   --fc-button-border-color: var(--rule);
@@ -2480,6 +2484,11 @@ iframe.order-youtube-embed {
   border-radius: 10px;
   font-size: 0.958em;
   line-height: 1.3;
+  /* A trimmed version of the card shadow — enough lift to read as a
+     miniature card laying on the grid, light enough not to muddy a
+     dense week. */
+  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.06),
+              0 3px 10px rgba(20, 20, 40, 0.05);
   /* Padding lives on .order-event-row inside, so we don't double-pad
      against FC's default time/title elements (used by the all-day strip
      etc., where renderEventContent doesn't apply). */
@@ -2526,6 +2535,15 @@ iframe.order-youtube-embed {
   width: 100%;
   padding: 3px 6px 4px;
   box-sizing: border-box;
+}
+/* Folder color as a small swatch dot — the same identity language as
+   the sidebar and folder pickers, instead of tinting the whole box. */
+.fc-shell .order-event-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
 }
 .fc-shell .order-event-row.is-completed .order-event-title,
 .fc-shell .order-event-row.is-completed .order-event-time {
@@ -2882,9 +2900,14 @@ iframe.order-youtube-embed {
 .year-event {
   position: absolute;
   pointer-events: auto;
-  background: var(--royal-soft);
+  /* Card chrome at chip scale: same lifted surface + hairline as the
+     pile's cards. The chip is too small for an inner dot, so the
+     all-day vs timed distinction stays on a slim colored left tick. */
+  background: var(--card-bg, var(--royal-soft));
+  border: 1px solid var(--card-border, var(--rule));
   border-left: 2px solid var(--royal);
-  border-radius: 3px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.05);
   padding: 1px 5px;
   font-family: var(--sans);
   font-size: 0.77em;
@@ -2897,7 +2920,6 @@ iframe.order-youtube-embed {
   transition: background-color 0.12s var(--ease-out);
 }
 .year-event.timed {
-  background: var(--coral-soft);
   border-left-color: var(--coral);
 }
 .year-event:hover {
