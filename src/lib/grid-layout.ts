@@ -18,9 +18,15 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
       const child = cell.firstElementChild as HTMLElement | null;
       if (!child) return;
+      // The visual gap between cards lives on the card's margin-bottom
+      // (--card-gap), not on the grid's row-gap: with row-gap 0 the
+      // quantization step stays GRID_ROW_PX, so every vertical gap lands
+      // within 8px of the intended gap instead of wobbling by gap+8.
+      // offsetHeight excludes margin, so fold it into the span here.
+      const marginBottom = parseFloat(getComputedStyle(child).marginBottom || "0");
       const rows = Math.max(
         1,
-        Math.ceil((child.offsetHeight + rowGap) / (GRID_ROW_PX + rowGap)),
+        Math.ceil((child.offsetHeight + marginBottom + rowGap) / (GRID_ROW_PX + rowGap)),
       );
       cell.style.gridRowEnd = `span ${rows}`;
     }

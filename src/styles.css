@@ -11,7 +11,10 @@
    borders read clearly, chrome surfaces lift off the card bg, and
    chips/hover states show the royal+coral accents the icon evokes. */
 :root {
-  --bg:        #faf8f4;  /* cream paper, exact match to the icon's outer rect */
+  /* Cream paper, one step deeper than the icon's outer rect so the
+     cool-white cards visibly LAY on the warm page (warm field, cool
+     card — the icon's contrast, expressed in the surfaces). */
+  --bg:        #f6f3ea;
   --bg-elev:   #ece4d2;  /* parchment — sidebar / dock / popover */
   --ink:       #131618;
   --ink-soft:  #232628;
@@ -46,6 +49,33 @@
   /* Snappy fast-out curve used for every transition + animation in
      the app. Tweak here to retune the whole feel. */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---------- Surface tokens (Craft-inspired crispness) ----------
+     One consistent card chrome everywhere (the "typewriter main doc"
+     standard): a single clean hairline, a soft NEUTRAL shadow, and one
+     surface color shared by every card. The theme's two-color contrast
+     lives in the SURFACES instead — cool royal-cast white cards laying
+     on the warm cream page, which is the icon's own composition (blue
+     card on cream paper). Each theme block overrides these; the retro
+     themes map them back to their bordered look so their character is
+     untouched. */
+  --card-bg: color-mix(in srgb, var(--royal) 3%, #ffffff);
+  --card-border: color-mix(in srgb, var(--rule) 55%, transparent);
+  --card-border-w: 1px;
+  --radius-card: 16px;
+  --shadow-card: 0 1px 2px rgba(24, 26, 32, 0.04),
+                 0 3px 8px rgba(24, 26, 32, 0.035),
+                 0 12px 32px rgba(24, 26, 32, 0.06);
+  --shadow-pop:  0 2px 4px rgba(24, 26, 32, 0.05),
+                 0 18px 44px rgba(24, 26, 32, 0.11);
+
+  /* How much royal the content links carry (mixed against ink).
+     Light leans bluer — the cream page wants the icon's royal visible;
+     the dark themes stay closer to ink so navy-on-navy doesn't glow.
+     `--link-mix-index` is the quieter tier for list indexes, where
+     every row is a link and the date column carries the structure. */
+  --link-mix: 70%;
+  --link-mix-index: 55%;
 }
 
 /* ---------- Dark theme ----------
@@ -75,6 +105,21 @@
   --royal-soft: #1f2e5c;
   --coral:      #ff8a78;  /* slightly lighter coral so it reads on navy */
   --coral-soft: #4a221d;
+
+  /* Cards lift slightly toward the elev royal; the border is a clearly
+     visible line in the theme's rule color (dark fields need a firmer
+     edge than light ones — shadows alone vanish on navy/black), and
+     the shadows deepen to carry the float. color-mix re-resolves
+     against the black theme's overrides too. */
+  --card-bg: color-mix(in srgb, var(--bg-elev) 42%, var(--bg));
+  --card-border: color-mix(in srgb, var(--rule) 80%, transparent);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.40),
+                 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-pop:  0 2px 4px rgba(0, 0, 0, 0.45),
+                 0 18px 44px rgba(0, 0, 0, 0.35);
+  /* Links stay closer to ink on navy — bright royal at 70% would glow. */
+  --link-mix: 55%;
+  --link-mix-index: 40%;
 }
 
 /* Black (OLED): same palette as dark, but pitch-black backgrounds and
@@ -85,6 +130,11 @@
   --ink-ghost: #3a4060;
   --rule:      #14182a;
   --rule-soft: #0a0c18;
+  /* The dimmed OLED rule is invisible as a card edge, and shadows die
+     on true black — so the border carries ALL the separation here. An
+     explicit grey line (the terminal-theme look) keeps cards readable
+     as cards. */
+  --card-border: rgba(255, 255, 255, 0.15);
 }
 
 :root[data-theme="dark"] .milkdown,
@@ -265,6 +315,28 @@
   --coral-soft: #2a1a3a;
 }
 
+/* One card system across every theme: same 1px border weight, same
+   16px radius, same shadow structure, same "lifted surface on the
+   page field" contrast — only the palette changes per theme.
+   Typewriter and America are light-scheme, so they inherit the :root
+   recipe untouched (soft 55% rule hairline on a near-white card).
+   The dark-scheme retro themes below need the dark treatment: a
+   royal-washed card lift and a firmer border line (their shadows
+   disappear on dark fields), exactly like the dark/black themes. */
+:root[data-theme="wordperfect"],
+:root[data-theme="terminal"],
+:root[data-theme="christmas"],
+:root[data-theme="lcars"] {
+  --card-bg: color-mix(in srgb, var(--royal) 6%, var(--bg));
+  --card-border: color-mix(in srgb, var(--rule) 85%, transparent);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.40),
+                 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-pop:  0 2px 4px rgba(0, 0, 0, 0.45),
+                 0 18px 44px rgba(0, 0, 0, 0.35);
+  --link-mix: 55%;
+  --link-mix-index: 40%;
+}
+
 /* Map Crepe editor colors onto the active theme's tokens. */
 :root[data-theme="wordperfect"] .milkdown,
 :root[data-theme="terminal"] .milkdown,
@@ -327,12 +399,6 @@
 }
 :root[data-theme="america"] .box.no-image.coral {
   background: linear-gradient(135deg, #e0e6ff 0%, #ffffff 50%, #ffe0e0 100%);
-}
-
-/* America: thin, fully red card borders — !important to beat the
-   per-card inline folder-color border. (Links stay blue via --royal.) */
-:root[data-theme="america"] .order-card:not(.is-fullscreen) {
-  border: 1px solid #ff0000 !important;
 }
 
 /* Menlo runs large — pull the WordPerfect / Terminal editor body in a
@@ -447,11 +513,20 @@ input, textarea, select { outline: none; box-shadow: none; }
   /* Small row unit lets row-span give per-card height granularity. */
   grid-auto-rows: 8px;
   grid-auto-flow: row dense;
-  column-gap: 12px;
-  row-gap: 12px;
+  /* One knob for the space between cards. The VERTICAL gap deliberately
+     lives on the card's margin-bottom (measured into the row-span by
+     grid-layout.ts), NOT on row-gap: a row-gap inflates the masonry's
+     quantization step to (8px + gap), which made vertical gaps wobble
+     between gap and 2×gap+8 — visibly ragged next to the uniform
+     column gap. With row-gap 0 the step stays 8px, so every vertical
+     gap lands within 8px of --card-gap. */
+  --card-gap: 20px;
+  column-gap: var(--card-gap);
+  row-gap: 0;
   width: 100%;
   padding: clamp(16px, 4vh, 40px) clamp(16px, 4vw, 40px) 80px;
 }
+.card-grid .order-card { margin-bottom: var(--card-gap); }
 
 .card-grid-cell {
   /* Pin to top of its grid row so offsetHeight reflects intrinsic content
@@ -503,10 +578,16 @@ input, textarea, select { outline: none; box-shadow: none; }
   from { opacity: 1; transform: none; }
   to   { opacity: 0; transform: scale(0.85) translateY(-8px); }
 }
-/* Brief coral pulse when a card is targeted by a Week/Month event click. */
+/* Brief lift when a card is targeted (Week/Month event click, home /
+   folder navigation). No ring — a ring stacked a second border on top
+   of the card's own edge. The card floats up for a beat instead: a
+   deeper soft shadow that fades out through the cell's existing
+   box-shadow transition. */
 .card-grid-cell.is-target {
-  box-shadow: 0 0 0 2px var(--coral), 0 6px 20px rgba(255, 127, 80, 0.16);
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop,
+              0 2px 4px rgba(20, 20, 40, 0.06),
+              0 16px 40px rgba(20, 20, 40, 0.10));
+  border-radius: var(--radius-card, 10px);
 }
 /* iOS first-run: choose a vault folder (no $HOME on iOS). */
 .vault-pick {
@@ -579,40 +660,25 @@ input, textarea, select { outline: none; box-shadow: none; }
 /* ---------- Card ---------- */
 .order-card {
   position: relative;
-  /* Subtle royal wash so regular notes read as cool satellites around
-     the NF Main Doc's coral centerpiece (see .is-main below). Coral
-     and royal are Order's two accent colors; using them as paired
-     tints turns the newspaper section into a centerpiece-and-orbit
-     reading at a glance. */
-  background: color-mix(in srgb, var(--royal) 6%, var(--bg));
-  /* 1.5 px border on the warm-tan rule so the card edge reads
-     like the icon's high-contrast inner-card outline. */
-  border: 1.5px solid var(--rule);
-  /* Softer corner, matched proportionally to the icon's interior
-     rounded square (rx=20 on a 104px side ≈ 10/100). */
-  border-radius: 10px;
-  /* Slightly deeper drop on light themes — the icon's framing
-     uses 0 8px 24px rgba(0,0,0,0.08); we use a two-stop version
-     so cards lift off the cream field with conviction. */
-  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.05),
-              0 6px 18px rgba(20, 20, 40, 0.07);
-  /* Tighter top padding — heading at start of file should hug the
-     card top, not float in a sea of whitespace. */
-  padding: 10px clamp(18px, 3.5vw, 40px) 12px;
-}
-:root[data-theme="dark"] .order-card,
-:root[data-theme="black"] .order-card {
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45),
-              0 4px 12px rgba(0, 0, 0, 0.25);
+  /* Surface separation comes from elevation, not outline: a lifted
+     card background + layered soft shadow + whisper-thin border
+     (Craft-style). All four values are per-theme tokens — the retro
+     themes map them back to their bordered look. */
+  background: var(--card-bg, color-mix(in srgb, var(--royal) 6%, var(--bg)));
+  border: var(--card-border-w, 1px) solid var(--card-border, var(--rule));
+  border-radius: var(--radius-card, 10px);
+  box-shadow: var(--shadow-card,
+              0 1px 2px rgba(20, 20, 40, 0.05),
+              0 6px 18px rgba(20, 20, 40, 0.07));
+  /* A touch of head room so the title doesn't hug the card edge. */
+  padding: 13px clamp(18px, 3.5vw, 40px) 12px;
 }
 
-/* Notable Folder Main Document — keeps the same border weight as a
-   regular card; the distinction is a very slight coral tint on the
-   background, just enough to read as "this is the section header"
-   without the louder bordered chrome the design used previously. */
-.order-card.is-main {
-  background: color-mix(in srgb, var(--coral) 12%, var(--bg));
-}
+/* Notable Folder Main Document — no special chrome at all: same calm
+   surface, border, and shadow as every other card. Its identity comes
+   from the layout alone (the wide centre column of the newspaper grid
+   and its larger headings), which is the Craft way — hierarchy through
+   scale and position, never through boxes or accent stripes. */
 .order-card.is-loading {
   min-height: 100px;
   display: flex; align-items: center; justify-content: center;
@@ -628,6 +694,9 @@ input, textarea, select { outline: none; box-shadow: none; }
   border: none;
   border-radius: 0;
   box-shadow: none;
+  /* The pile's --card-gap margin would shave its height (inset:0 +
+     margin-bottom consume space on a fixed box). */
+  margin-bottom: 0;
   background: var(--bg);
   padding: calc(env(safe-area-inset-top) + clamp(40px, 6vh, 80px)) clamp(40px, 10vw, 120px) calc(env(safe-area-inset-bottom) + clamp(40px, 6vh, 80px));
   overflow: auto;
@@ -684,7 +753,7 @@ input, textarea, select { outline: none; box-shadow: none; }
   row-gap: 4px;
   margin-top: 10px;
   padding-top: 6px;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--card-border, var(--rule));
   /* Single consistent size across every footer chip — saved/saving,
      breadcrumb, filename. 11px is the midpoint between the prior
      smallest (9, path) and largest (12.5, breadcrumb) so the row
@@ -697,6 +766,20 @@ input, textarea, select { outline: none; box-shadow: none; }
   transition: opacity 0.15s var(--ease-out);
 }
 .order-card-status:hover { opacity: 1; }
+/* Chrome on demand: on hover-capable devices the footer stays invisible
+   until the pointer is over the card (or focus is inside it) — the pile
+   reads as titles and content, not repeated SAVED/filename bands. The
+   row keeps its height (opacity, not display) so nothing reflows. Touch
+   devices have no hover, so they get a quieter always-on footer instead. */
+@media (hover: hover) and (pointer: fine) {
+  .order-card-status { opacity: 0; }
+  .order-card:hover .order-card-status,
+  .order-card:focus-within .order-card-status { opacity: 0.85; }
+  .order-card .order-card-status:hover { opacity: 1; }
+}
+@media (hover: none) {
+  .order-card-status { opacity: 0.55; }
+}
 .order-card-status > :last-child { margin-left: auto; }
 
 .order-card-breadcrumb {
@@ -794,10 +877,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   left: 0;
   min-width: 180px;
   max-width: 240px;
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  background: var(--card-bg, var(--bg));
+  border: 1px solid var(--card-border, var(--rule));
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(0, 0, 0, 0.18));
   list-style: none;
   margin: 0;
   padding: 4px;
@@ -973,10 +1056,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--royal-soft);
 }
 
-/* Top-left {date} toggle that drops in the FrontmatterInspector.
-   Mirrors the .order-card-controls cluster on the right: same opacity
-   reveal-on-hover, same compact pill. Monospace so `{2026-06-13}` reads
-   like the YAML it represents. */
+/* Top-left date toggle that drops in the FrontmatterInspector.
+   One quiet metadata voice: small sans with tabular figures in the
+   theme's ROYAL — every card carries a small print of the icon's blue.
+   Coral is reserved for interaction (hover / open) and the pinned star. */
 .order-card-fm-toggle {
   position: absolute;
   top: 6px;
@@ -990,22 +1073,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-radius: 6px;
   gap: 4px;
   padding: 2px 8px;
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--sans);
   font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  /* The theme's coral accent (the alternate to royal) — a contrasting,
-     always-legible date that still reads as metadata. Brightens to full on
-     card hover / focus / when open. */
-  color: var(--coral);
+  color: var(--royal);
   cursor: pointer;
-  opacity: 0.72;
+  opacity: 0.8;
   transition:
     opacity 0.15s var(--ease-out),
     color 0.12s var(--ease-out),
     background-color 0.12s var(--ease-out),
     border-color 0.12s var(--ease-out);
 }
-.order-card:hover .order-card-fm-toggle { opacity: 0.85; }
+.order-card:hover .order-card-fm-toggle { opacity: 1; }
 .order-card-fm-toggle:hover,
 .order-card-fm-toggle:focus-visible,
 .order-card-fm-toggle.is-on {
@@ -1014,10 +1096,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   border-color: color-mix(in srgb, var(--coral) 35%, transparent);
   background: var(--coral-soft);
 }
-/* All-day events: the calendar glyph becomes a filled star in royal — the
-   theme's other accent — so a "marked day" stands out next to the coral date.
-   Its own colour overrides the chip's coral in every state. */
-.order-card-fm-star { color: var(--royal); }
+/* All-day events: the calendar glyph becomes a filled coral star — the
+   pile's one accent marks "pinned / marked day" now that the date text
+   itself sits quiet in faint ink. */
+.order-card-fm-star { color: var(--coral); }
 
 /* Permalink + copy buttons inherit .order-card-btn — see unified strip. */
 
@@ -1440,24 +1522,30 @@ iframe.order-youtube-embed {
 
 /* Links: underline-on-hover, royal accent that matches the list
    renders. */
+/* Content links sit close to the ink — a calm royal cast rather than
+   full link-blue, so a link-dense note (the Articles index, a home page
+   of bookmarks) reads as an index, not a wall of hyperlinks. Hover
+   restores the full royal + underline for an unmistakable affordance. */
 .milkdown-host .ProseMirror a {
-  color: var(--royal, #4169e1);
+  color: color-mix(in srgb, var(--royal, #4169e1) var(--link-mix, 55%), var(--ink));
   text-decoration: none;
   text-underline-offset: 2px;
 }
 .milkdown-host .ProseMirror a:hover {
+  color: var(--royal, #4169e1);
   text-decoration: underline;
 }
 
-/* Wikilinks: `[[Name]]` decorated inline (royal accent, subtle). The
-   brackets stay visible as part of the source — we only tint + make it
-   clickable. Broken links read muted so they're visible without jarring. */
+/* Wikilinks: `[[Name]]` decorated inline (same demoted royal as links).
+   The brackets stay visible as part of the source — we only tint + make
+   it clickable. Broken links read muted so they're visible without jarring. */
 .milkdown-host .ProseMirror .wikilink {
-  color: var(--royal, #4169e1);
+  color: color-mix(in srgb, var(--royal, #4169e1) var(--link-mix, 55%), var(--ink));
   cursor: pointer;
   border-radius: 2px;
 }
 .milkdown-host .ProseMirror .wikilink:hover {
+  color: var(--royal, #4169e1);
   background: var(--royal-soft, rgba(65, 105, 225, 0.1));
 }
 .milkdown-host .ProseMirror .wikilink-broken {
@@ -1647,7 +1735,7 @@ iframe.order-youtube-embed {
   height: 100vh;
   overflow: hidden auto;
   background: var(--bg);
-  border-left: 1px solid var(--rule);
+  border-left: 1px solid var(--card-border, var(--rule));
   padding: 48px 18px 40px;
   font-family: var(--sans);
 }
@@ -2835,27 +2923,32 @@ iframe.order-youtube-embed {
   transform: translateX(-50%);
   z-index: 220;
   display: flex;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  box-shadow: 0 6px 22px rgba(20, 20, 20, 0.18);
-  /* Soft frosted backdrop on browsers that support it; falls back to
-     the solid bg above. */
-  backdrop-filter: saturate(160%) blur(10px);
-  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  gap: 4px;
+  padding: 7px 10px;
+  /* One frosted card-surface pill; the buttons inside are flat glyphs.
+     color-mix keeps a hint of translucency for the blur to work with. */
+  background: color-mix(in srgb, var(--card-bg, var(--bg)) 86%, transparent);
+  border: 1px solid var(--card-border, var(--rule));
+  border-radius: 16px;
+  box-shadow: var(--shadow-pop, 0 6px 22px rgba(20, 20, 20, 0.18));
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
 }
+/* Flat instrument buttons: no per-button circles — quiet glyphs that
+   gain a soft tinted pill on hover/active state. The transparent border
+   is kept (not removed) so stateful rules can tint without reflow. */
 .dock-btn {
   width: 38px;
   height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-soft);
+  /* Resting glyphs carry a royal cast — the dock reads as part of the
+     icon's blue instrument panel rather than neutral grey chrome. */
+  color: color-mix(in srgb, var(--royal) 45%, var(--ink-soft));
   background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 50%;
+  border: 1px solid transparent;
+  border-radius: 11px;
   cursor: pointer;
   transition: transform 0.12s var(--ease-out),
               color 0.12s var(--ease-out),
@@ -2864,14 +2957,13 @@ iframe.order-youtube-embed {
 }
 .dock-btn:hover {
   color: var(--royal);
-  border-color: var(--royal);
   background: var(--royal-soft);
 }
 .dock-btn:active { transform: scale(0.92); }
 .dock-btn:disabled { opacity: 0.35; cursor: default; }
 .dock-btn:disabled:hover {
-  color: var(--ink-soft);
-  border-color: var(--rule);
+  color: color-mix(in srgb, var(--royal) 45%, var(--ink-soft));
+  border-color: transparent;
   background: transparent;
 }
 
@@ -2881,30 +2973,27 @@ iframe.order-youtube-embed {
   font-weight: 300;
   line-height: 1;
 }
-.dock-btn-new:hover { color: var(--coral); border-color: var(--coral); background: var(--coral-soft); }
+.dock-btn-new:hover { color: var(--coral); background: var(--coral-soft); }
 /* Sidebar toggle turns coral while a Notable Folder is filtered — a hint that
    there's more to explore in the (closed) sidebar. */
-.dock-btn-sidebar.is-exploring { color: var(--coral); border-color: var(--coral); }
+.dock-btn-sidebar.is-exploring { color: var(--coral); }
 .dock-btn-sidebar.is-exploring:hover { background: var(--coral-soft); }
 
-/* Public/private toggle — coral when "public only" is active. */
+/* Public/private toggle — soft coral pill when "public only" is active. */
 .dock-btn-public.is-on {
-  color: #fff;
-  background: var(--coral);
-  border-color: var(--coral);
+  color: var(--coral);
+  background: var(--coral-soft);
 }
 .dock-btn-public:hover {
   color: var(--coral);
-  border-color: var(--coral);
   background: var(--coral-soft);
 }
-.dock-btn-public.is-on:hover { color: #fff; background: var(--coral); }
 
 /* Settings — coral hover; .is-open marks the popup as visible. */
-.dock-btn-settings:hover { color: var(--coral); border-color: var(--coral); background: var(--coral-soft); }
-.dock-btn-settings.is-open { color: #fff; background: var(--coral); border-color: var(--coral); }
+.dock-btn-settings:hover { color: var(--coral); background: var(--coral-soft); }
+.dock-btn-settings.is-open { color: var(--coral); background: var(--coral-soft); }
 /* Sidebar toggle — royal hover. */
-.dock-btn-sidebar:hover { color: var(--royal); border-color: var(--royal); background: var(--royal-soft); }
+.dock-btn-sidebar:hover { color: var(--royal); background: var(--royal-soft); }
 
 /* Tools popup — anchored above the settings button on the dock.
    Holds publish + theme + zoom + vault-settings so the dock itself
@@ -2923,10 +3012,10 @@ iframe.order-youtube-embed {
   z-index: 230;
   min-width: 220px;
   padding: 4px;
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(20, 20, 20, 0.2);
+  background: var(--card-bg, var(--bg));
+  border: 1px solid var(--card-border, var(--rule));
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(20, 20, 20, 0.2));
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -2961,7 +3050,6 @@ iframe.order-youtube-embed {
 .dock-btn-view.is-open,
 .dock-btn-home.is-open {
   color: var(--royal);
-  border-color: var(--royal);
   background: var(--royal-soft);
 }
 /* Home button reflects the current filter state at a glance —
@@ -2969,7 +3057,6 @@ iframe.order-youtube-embed {
    the "nothing filtered" state reads as the resting baseline. */
 .dock-btn-home.is-at-home {
   color: var(--coral);
-  border-color: var(--coral);
   background: var(--coral-soft);
 }
 .dock-btn-home.is-no-filters {
@@ -3007,13 +3094,11 @@ iframe.order-youtube-embed {
    or the home pile), so the dock confirms a clean baseline state. */
 .dock-btn-cal.is-active {
   color: var(--royal);
-  border-color: var(--royal);
   background: var(--royal-soft);
 }
 /* Pile button lights up when you're sitting on the remembered pile. */
 .dock-btn-pile.is-active {
   color: var(--royal);
-  border-color: var(--royal);
   background: var(--royal-soft);
 }
 
@@ -4629,7 +4714,11 @@ iframe.order-youtube-embed {
   overflow-wrap: break-word;
 }
 .lr-sublist-title {
-  color: var(--royal, #4169e1);
+  /* Demoted link color: near-ink with a royal cast so a long index
+     reads as a contents page, not a wall of blue. A notch inkier than
+     inline prose links — in an index EVERY row is a link, so the date
+     column carries the structure. Hover restores full royal. */
+  color: color-mix(in srgb, var(--royal, #4169e1) var(--link-mix-index, 40%), var(--ink));
   background: transparent;
   border: none;
   padding: 0;
@@ -4641,7 +4730,7 @@ iframe.order-youtube-embed {
   text-wrap: pretty;
 }
 .lr-sublist-title.is-link { cursor: pointer; }
-.lr-sublist-title.is-link:hover { text-decoration: underline; }
+.lr-sublist-title.is-link:hover { color: var(--royal, #4169e1); text-decoration: underline; }
 .lr-sublist-meta {
   color: var(--ink-soft);
 }
@@ -4676,13 +4765,17 @@ iframe.order-youtube-embed {
   font-variant-numeric: tabular-nums;
 }
 
+/* List-row links match the demoted prose links: near-ink with a royal
+   cast so a long index (Articles) reads as a contents page, not a wall
+   of hyperlinks. The right-pinned date column carries the structure;
+   hover brings back full royal + underline for the affordance. */
 .lr-title.is-link,
 .basecard-title.is-link {
   cursor: pointer;
-  color: var(--royal, #4169e1);
+  color: color-mix(in srgb, var(--royal, #4169e1) var(--link-mix-index, 40%), var(--ink));
 }
 .lr-title.is-link:hover,
-.basecard-title.is-link:hover { text-decoration: underline; }
+.basecard-title.is-link:hover { color: var(--royal, #4169e1); text-decoration: underline; }
 .lr-expansion-cards {
   padding: 6px 4px 10px 32px;
 }
@@ -5495,14 +5588,12 @@ iframe.order-youtube-embed {
      the fixed rail simply floats over the left edge. */
   .card-grid {
     padding: 12px 10px 64px 10px;
-    column-gap: 8px;
-    row-gap: 8px;
+    --card-gap: 12px;
   }
   .order-card { padding: 10px 16px 12px; }
 
   /* Newspaper sections collapse to a single column, flush to the edges. */
   .nf-sections { padding: 12px 10px 64px 10px; }
-  .nf-grid { column-gap: 8px; row-gap: 8px; }
   .nf-divider { margin: 32px 4px; }
 
   /* Full-bleed prose at a comfortable mobile size. */

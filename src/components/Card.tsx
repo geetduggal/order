@@ -1006,14 +1006,11 @@ export function Card(props: Props) {
     (exiting ? " is-exiting" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
-  // Subtle full-border tint in the card's folder color (≈33% alpha).
-  // Skipped when no color is available so the default rule color
-  // stays. `${color}55` works because folderColor returns a 6-digit
-  // hex string. Main Docs (NF covers) drop the folder tint so the
-  // permanent coral highlight defined in styles.css can take over.
-  const cardStyle: React.CSSProperties | undefined = (color && !isMainDoc)
-    ? { borderColor: `${color}88` }
-    : undefined;
+  // Every card shares the SAME chrome — one theme border, one shadow,
+  // one surface. The per-folder border tint that used to live here made
+  // each card's edge a slightly different color, which read as
+  // inconsistency rather than information; folder identity still shows
+  // through the sidebar, pills, breadcrumbs, and cover tiles.
 
   // Frontmatter inspector source-of-truth: prefer the live frontmatter
   // CardGrid pushes down (so edits re-render synchronously) and fall
@@ -1032,7 +1029,6 @@ export function Card(props: Props) {
   return (
     <article
       className={cardClass}
-      style={cardStyle}
       ref={articleRef}
       onMouseDown={onCardFocus}
     >
