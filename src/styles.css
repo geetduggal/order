@@ -76,6 +76,13 @@
      every row is a link and the date column carries the structure. */
   --link-mix: 70%;
   --link-mix-index: 55%;
+
+  /* Calendar grid hairlines (hour slots, day columns, year strip).
+     Full-strength --rule shouts in the accent-heavy themes (America's
+     rule is pure blue) — the grid should whisper under the events, so
+     it uses each theme's softer rule. Black and LCARS override this
+     (their rule-soft is near-invisible on pure black). */
+  --cal-line: var(--rule-soft);
 }
 
 /* ---------- Dark theme ----------
@@ -133,8 +140,9 @@
   /* The dimmed OLED rule is invisible as a card edge, and shadows die
      on true black — so the border carries ALL the separation here. An
      explicit grey line (the terminal-theme look) keeps cards readable
-     as cards. */
+     as cards. Same story for the calendar grid hairlines. */
   --card-border: rgba(255, 255, 255, 0.15);
+  --cal-line: rgba(255, 255, 255, 0.10);
 }
 
 :root[data-theme="dark"] .milkdown,
@@ -313,6 +321,10 @@
   --royal-soft: #3a2300;
   --coral:      #cc88ff; /* lilac secondary */
   --coral-soft: #2a1a3a;
+
+  /* rule-soft is near-black here — keep the calendar grid a faint
+     amber so LCARS panels still read on the pitch-black field. */
+  --cal-line: color-mix(in srgb, #ff9900 30%, transparent);
 }
 
 /* One card system across every theme: same 1px border weight, same
@@ -2349,7 +2361,7 @@ iframe.order-youtube-embed {
   font-family: var(--sans);
   position: relative;
   /* FullCalendar v6 theming via CSS variables. */
-  --fc-border-color: var(--rule);
+  --fc-border-color: var(--cal-line, var(--rule));
   --fc-page-bg-color: var(--bg);
   --fc-neutral-bg-color: var(--bg-elev);
   --fc-list-event-hover-bg-color: var(--bg-elev);
@@ -2798,18 +2810,18 @@ iframe.order-youtube-embed {
   display: grid;
   grid-template-columns: 56px repeat(37, minmax(0, 1fr));
   background: var(--bg);
-  border-left: 1px solid var(--rule);
-  border-right: 1px solid var(--rule);
+  border-left: 1px solid var(--cal-line, var(--rule));
+  border-right: 1px solid var(--cal-line, var(--rule));
 }
-.year-strip-header { border-top: 1px solid var(--rule); }
+.year-strip-header { border-top: 1px solid var(--cal-line, var(--rule)); }
 .year-month {
   position: relative;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--cal-line, var(--rule));
 }
-.year-month:last-child { border-bottom: 1px solid var(--rule); }
+.year-month:last-child { border-bottom: 1px solid var(--cal-line, var(--rule)); }
 
 .year-corner {
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--cal-line, var(--rule));
   background: var(--bg);
 }
 .year-dow {
@@ -2829,7 +2841,7 @@ iframe.order-youtube-embed {
   font-weight: 500;
   color: var(--ink);
   padding: 4px 10px;
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--cal-line, var(--rule));
   display: flex; align-items: flex-start;
 }
 .year-month-label.is-today { color: var(--coral); }
