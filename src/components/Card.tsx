@@ -51,7 +51,8 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
+import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
@@ -334,18 +335,6 @@ export function Card(props: Props) {
    *  top-left `{date}` toggle. When open, the FrontmatterInspector
    *  drops in above the editor body so the YAML is editable inline. */
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  // Auto-reveal the frontmatter panel the first time a note loads carrying a
-  // clickable URL in its YAML — so the link is visible and one-tap without
-  // opening the inspector by hand. Once per mount; a manual close then sticks.
-  const autoFmRef = useRef(false);
-  useEffect(() => {
-    if (autoFmRef.current || state.kind !== "ready") return;
-    autoFmRef.current = true;
-    const hasUrl = Object.values(state.frontmatter).some(
-      (v) => typeof v === "string" && /^https?:\/\/\S+$/.test(v.trim()),
-    );
-    if (hasUrl) setInspectorOpen(true);
-  }, [state]);
   const [overflowing, setOverflowing] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1004,6 +993,7 @@ export function Card(props: Props) {
     (isMainDoc && props.visited ? " is-visited" : "") +
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "") +
+    (showSpine ? " is-spine" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
   // Every card shares the SAME chrome — one theme border, one shadow,
@@ -1020,11 +1010,30 @@ export function Card(props: Props) {
   // The date + all-day-ness come from the note's spacetime event when it has
   // one (the source of truth); the note's own YAML is only a fallback for
   // non-event notes that carry a bare `date:`.
+  // The filename's date prefix is the third authority tier: spacetime,
+  // then frontmatter, then the filename. All-day events created by
+  // naming (`2026-07-16 Q3 Exec Planning.md`) often carry NO date in
+  // YAML — without this fallback their chip showed a bare icon.
+  const fnDatePrefix = ((pathRef.current.split("/").pop() ?? "")
+    .match(/^(\d{4}-\d{2}-\d{2})/) || [])[1] ?? "";
   const fmDateRaw = spacetimeEvent?.date
-    || (typeof fmLive.date === "string" ? fmLive.date : toIsoDateValue(fmLive.date) ?? "");
+    || (typeof fmLive.date === "string" ? fmLive.date : toIsoDateValue(fmLive.date) ?? "")
+    || fnDatePrefix;
   // An all-day event gets a filled star (in the theme's other colour) in place
   // of the calendar glyph, so a marked day reads at a glance.
   const isAllDayEvent = !!fmDateRaw && (spacetimeEvent ? spacetimeEvent.allDay : fmLive.allDay === true);
+  // First http(s) URL in the YAML → a small link-out pill beside the
+  // date chip (replaces the old auto-open-frontmatter heuristic). Always
+  // visible so it works on touch; opens via openExternalUrl so every
+  // surface (desktop, iOS, published site) lands in the DEFAULT browser,
+  // never a WebView inside the app.
+  const fmUrl = Object.values(fmLive).find(
+    (v): v is string => typeof v === "string" && /^https?:\/\/\S+$/.test(v.trim()),
+  )?.trim();
+  const fmUrlHost = (() => {
+    if (!fmUrl) return "";
+    try { return new URL(fmUrl).hostname.replace(/^www\./, ""); } catch { return "link"; }
+  })();
 
   return (
     <article
@@ -1038,19 +1047,33 @@ export function Card(props: Props) {
           body. Shows on the read-only viewer too. When the note has no date,
           just the icon shows. */}
       {!flipped && !termOpen && !showSpine && (
-        <button
-          type="button"
-          className={"order-card-fm-toggle" + (inspectorOpen ? " is-on" : "")}
-          onClick={() => setInspectorOpen((v) => !v)}
-          title={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
-          aria-label={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
-          aria-expanded={inspectorOpen}
-        >
-          {isAllDayEvent
-            ? <StarIcon size={11} strokeWidth={2} fill="currentColor" className="order-card-fm-star" />
-            : <CalendarIcon size={11} strokeWidth={2} />}
-          {fmDateRaw && <span className="order-card-fm-date">{fmDateRaw}</span>}
-        </button>
+        <div className="order-card-topleft">
+          <button
+            type="button"
+            className={"order-card-fm-toggle" + (inspectorOpen ? " is-on" : "")}
+            onClick={() => setInspectorOpen((v) => !v)}
+            title={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
+            aria-label={inspectorOpen ? "Hide frontmatter" : "Show frontmatter"}
+            aria-expanded={inspectorOpen}
+          >
+            {isAllDayEvent
+              ? <StarIcon size={11} strokeWidth={2} fill="currentColor" className="order-card-fm-star" />
+              : <CalendarIcon size={11} strokeWidth={2} />}
+            {fmDateRaw && <span className="order-card-fm-date">{fmDateRaw}</span>}
+          </button>
+          {fmUrl && (
+            <button
+              type="button"
+              className="order-card-linkout"
+              onClick={(e) => { e.stopPropagation(); openExternalUrl(fmUrl); }}
+              title={fmUrl}
+              aria-label={`Open ${fmUrlHost} in browser`}
+            >
+              <ArrowUpRight size={11} strokeWidth={2.2} />
+              <span className="order-card-linkout-host">{fmUrlHost}</span>
+            </button>
+          )}
+        </div>
       )}
       {/* Unified card chrome — single sticky row of icons in the top
           right. Order (left → right):
@@ -1180,6 +1203,18 @@ export function Card(props: Props) {
             <ArrowUpToLineIcon size={14} strokeWidth={2} />
           </button>
         )}
+        {!readOnly && !fullscreen && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-fold" + (isFolded ? " is-on" : "")}
+            onClick={() => { void toggleFolded(!isFolded); }}
+            title={isFolded ? "Unfold" : "Fold to a single line"}
+            aria-label={isFolded ? "Unfold note" : "Fold note"}
+            aria-pressed={isFolded}
+          >
+            {isFolded ? <ChevronsUpDown size={14} strokeWidth={2} /> : <ChevronsDownUp size={14} strokeWidth={2} />}
+          </button>
+        )}
         <button
           type="button"
           className="order-card-btn order-card-fullscreen"
@@ -1271,14 +1306,17 @@ export function Card(props: Props) {
           />
         )}
         {showSpine ? (
-          // Folded spine: title only, click anywhere to reveal the body
-          // for the rest of the session. The editor isn't mounted until
-          // revealed, so a folded card stays cheap in a long pile.
+          // Folded spine: title only. Click anywhere to unfold — in the
+          // editor that clears the persistent YAML flag (symmetric with
+          // the fold button in the top-right strip); the read-only
+          // viewer can't write, so it reveals for the session instead.
+          // The editor isn't mounted until revealed, so a folded card
+          // stays cheap in a long pile.
           <button
             type="button"
             className="order-card-spine"
-            onClick={() => setUnfolded(true)}
-            title="Click to reveal"
+            onClick={() => { if (readOnly) setUnfolded(true); else void toggleFolded(false); }}
+            title="Click to unfold"
           >
             <EyeOffIcon size={13} strokeWidth={2} className="order-card-spine-icon" />
             <span className="order-card-spine-title">{spineTitle}</span>

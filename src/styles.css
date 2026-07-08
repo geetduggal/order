@@ -979,6 +979,7 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card-controls.is-flipped .order-card-list,
 .order-card-controls.is-flipped .order-card-update,
 .order-card-controls.is-flipped .order-card-permalink,
+.order-card-controls.is-flipped .order-card-fold,
 .order-card-controls.is-flipped .order-card-copy {
   display: none;
 }
@@ -1073,15 +1074,22 @@ input, textarea, select { outline: none; box-shadow: none; }
   background: var(--royal-soft);
 }
 
-/* Top-left date toggle that drops in the FrontmatterInspector.
-   One quiet metadata voice: small sans with tabular figures in the
-   theme's ROYAL — every card carries a small print of the icon's blue.
-   Coral is reserved for interaction (hover / open) and the pinned star. */
-.order-card-fm-toggle {
+/* Top-left metadata cluster: the date/frontmatter toggle plus (when the
+   YAML carries a URL) a link-out pill. One quiet row of small sans. */
+.order-card-topleft {
   position: absolute;
   top: 6px;
   left: 6px;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* Date toggle that drops in the FrontmatterInspector.
+   One quiet metadata voice: small sans with tabular figures in the
+   theme's ROYAL — every card carries a small print of the icon's blue.
+   Coral is reserved for interaction (hover / open) and the pinned star. */
+.order-card-fm-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1105,6 +1113,41 @@ input, textarea, select { outline: none; box-shadow: none; }
     border-color 0.12s var(--ease-out);
 }
 .order-card:hover .order-card-fm-toggle { opacity: 1; }
+/* Link-out pill: the note's canonical URL (from frontmatter), always
+   visible so it works on touch. Routes through openExternalUrl → the
+   OS default browser on every surface, never an in-app WebView. */
+.order-card-linkout {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0.85;
+  max-width: 180px;
+  transition:
+    opacity 0.15s var(--ease-out),
+    color 0.12s var(--ease-out),
+    background-color 0.12s var(--ease-out);
+}
+.order-card-linkout-host {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.order-card-linkout:hover {
+  opacity: 1;
+  color: var(--royal);
+  background: var(--royal-soft);
+}
 .order-card-fm-toggle:hover,
 .order-card-fm-toggle:focus-visible,
 .order-card-fm-toggle.is-on {
@@ -1117,6 +1160,66 @@ input, textarea, select { outline: none; box-shadow: none; }
    pile's one accent marks "pinned / marked day" now that the date text
    itself sits quiet in faint ink. */
 .order-card-fm-star { color: var(--coral); }
+
+/* ---------- Folded note: the spine ----------
+   A folded card collapses to ONE title line (about the height of a
+   single H1) — click anywhere on it to reveal for the session, or use
+   the fold toggle in the top-right strip to unfold persistently. */
+.order-card.is-spine {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+/* No footer, no editor — the spine IS the card. The content pane's
+   30px top padding reserves air for the date chip, which the spine
+   hides, so reclaim it too. */
+.order-card.is-spine .order-card-status { display: none; }
+.order-card.is-spine .order-card-content { padding-top: 0; }
+/* On a one-line card the full top-right strip would sit ON the title —
+   keep only the unfold toggle; everything else returns when unfolded.
+   The spine reserves room on the right so the title and hint clear it. */
+.order-card.is-spine .order-card-controls > :not(.order-card-fold) { display: none; }
+.order-card.is-spine .order-card-spine { padding-right: 34px; }
+.order-card-spine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.order-card-spine-icon {
+  flex: 0 0 auto;
+  color: var(--ink-ghost);
+}
+.order-card-spine-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: calc(19px * var(--text-scale, 1));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.order-card-spine-hint {
+  flex: 0 0 auto;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-ghost);
+}
+.order-card-spine:hover .order-card-spine-icon,
+.order-card-spine:hover .order-card-spine-hint { color: var(--ink-faint); }
 
 /* Permalink + copy buttons inherit .order-card-btn — see unified strip. */
 
@@ -1668,13 +1771,22 @@ iframe.order-youtube-embed {
   height: 12px !important;
 }
 
-/* h1 stays serif (title voice), bold — no divider, just clean
-   typography. */
+/* h1: bold title voice — no divider, just clean typography. Serif by
+   default (the retro/fun themes keep their reading face), but the
+   DEFAULT light/dark/black themes switch it to a heavy sans below,
+   matching the crisp headline voice of the sidebar and list sections. */
 .milkdown-host .ProseMirror h1 {
   font-size: 2.25em;
   font-weight: 700;
   line-height: 1.2;
   margin: 0 0 0.5em;
+}
+:root[data-theme="light"] .milkdown-host .ProseMirror h1,
+:root[data-theme="dark"] .milkdown-host .ProseMirror h1,
+:root[data-theme="black"] .milkdown-host .ProseMirror h1 {
+  font-family: var(--sans);
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 /* When the very next block is a paragraph, treat it as a subtitle:
    tuck it close under the title and dial the size back slightly
