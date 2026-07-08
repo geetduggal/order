@@ -51,8 +51,12 @@ step_desktop() {
   sleep 0.3; pkill -f "tauri dev" 2>/dev/null || true; pkill -x "Order" 2>/dev/null || true
   # Full frontend build first: catches TS errors and bundles assets.
   cmd pnpm build
-  # Hot-reload dev shell — stays running while you test.
-  cmd pnpm tauri dev
+  # Hot-reload dev shell — stays running while you test. --release keeps
+  # the frontend's HMR but compiles the Rust side OPTIMIZED: the debug
+  # binary walks the vault / saves / searches 10-30x slower, which made
+  # daily driving feel sluggish as the vault grew. First compile is
+  # slower; incremental rebuilds are cached after that.
+  cmd pnpm tauri dev --release
 }
 
 step_ios() {
