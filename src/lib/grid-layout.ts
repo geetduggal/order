@@ -4,6 +4,15 @@
 //
 // Shared between Order's main grid and the read-only viewer — both
 // produce identical card chrome and need identical row sizing.
+//
+// PERF SHAPE: every relayout runs as a READ phase (all offsetHeights)
+// followed by a WRITE phase (all row spans). Interleaving the two —
+// read a cell, write its span, read the next — forces the browser
+// into a full layout PER CELL, which turned "close a folder" (an
+// 80-cell reflow) into hundreds of milliseconds of main-thread
+// blocking. Observer callbacks additionally coalesce into one batch
+// per animation frame, so a mutation storm (section swap, exit
+// animations, ProseMirror rewrites) pays for one layout, not N.
 
 import { useEffect } from "react";
 
@@ -13,37 +22,59 @@ export function useGridLayout(grid: HTMLDivElement | null) {
   useEffect(() => {
     if (!grid) return;
 
-    function relayoutCell(cell: HTMLElement) {
-      const styles = getComputedStyle(grid as HTMLElement);
+    function relayoutMany(cells: HTMLElement[]) {
+      if (!grid || cells.length === 0) return;
+      const styles = getComputedStyle(grid);
       const rowGap = parseFloat(styles.rowGap || styles.gap || "0");
-      const child = cell.firstElementChild as HTMLElement | null;
-      if (!child) return;
       // The visual gap between cards lives on the card's margin-bottom
       // (--card-gap), not on the grid's row-gap: with row-gap 0 the
-      // quantization step stays GRID_ROW_PX, so every vertical gap lands
-      // within 8px of the intended gap instead of wobbling by gap+8.
-      // offsetHeight excludes margin, so fold the gap into the span.
-      // PERF: read --card-gap off the GRID's computed style (a lookup we
-      // already pay for) — this function runs on every keystroke and
-      // ResizeObserver tick, and a second getComputedStyle(child) per
-      // cell here was a measurable hot-path cost.
+      // quantization step stays GRID_ROW_PX, so every vertical gap
+      // lands within 8px of the intended gap. offsetHeight excludes
+      // margin, so fold the gap into the span. Read the gap off the
+      // GRID's computed style — one lookup for the whole batch.
       const cardGap = parseFloat(styles.getPropertyValue("--card-gap")) || 0;
-      const rows = Math.max(
-        1,
-        Math.ceil((child.offsetHeight + cardGap + rowGap) / (GRID_ROW_PX + rowGap)),
-      );
-      cell.style.gridRowEnd = `span ${rows}`;
+      // READ phase: one forced layout covers every measurement.
+      const heights = cells.map((cell) => {
+        const child = cell.firstElementChild as HTMLElement | null;
+        return child ? child.offsetHeight : -1;
+      });
+      // WRITE phase: spans applied together; layout runs once after.
+      cells.forEach((cell, i) => {
+        const h = heights[i];
+        if (h < 0) return;
+        const rows = Math.max(
+          1,
+          Math.ceil((h + cardGap + rowGap) / (GRID_ROW_PX + rowGap)),
+        );
+        cell.style.gridRowEnd = `span ${rows}`;
+      });
     }
     function relayoutAll() {
-      const cells = grid?.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
-      cells?.forEach((c) => relayoutCell(c));
+      if (!grid) return;
+      relayoutMany([...grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell")]);
+    }
+
+    // Observer-driven relayouts coalesce here: cells accumulate for the
+    // current frame and flush as ONE read/write batch.
+    const pending = new Set<HTMLElement>();
+    let flushScheduled = false;
+    function scheduleRelayout(cell: HTMLElement) {
+      pending.add(cell);
+      if (flushScheduled) return;
+      flushScheduled = true;
+      requestAnimationFrame(() => {
+        flushScheduled = false;
+        const batch = [...pending];
+        pending.clear();
+        relayoutMany(batch);
+      });
     }
 
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const target = e.target as HTMLElement;
         const cell = target.closest(".card-grid-cell");
-        if (cell instanceof HTMLElement) relayoutCell(cell);
+        if (cell instanceof HTMLElement) scheduleRelayout(cell);
       }
     });
 
@@ -54,7 +85,7 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       if (!(card instanceof HTMLElement)) return;
       ro.observe(card);
       if (cardMOs.has(card)) return;
-      const cmo = new MutationObserver(() => relayoutCell(cell));
+      const cmo = new MutationObserver(() => scheduleRelayout(cell));
       cmo.observe(card, {
         childList: true, subtree: true, characterData: true, attributes: true,
       });
@@ -66,6 +97,8 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       ro.disconnect();
       const cells = grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell");
       cells.forEach(attachCardObservers);
+      // Synchronous on purpose: new cells must get a span before their
+      // first paint or the pile visibly jumps into place.
       relayoutAll();
     }
     reattachAndRelayout();
@@ -80,9 +113,7 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       const t = e.target;
       if (!(t instanceof Element)) return;
       const cell = t.closest(".card-grid-cell");
-      if (cell instanceof HTMLElement) {
-        requestAnimationFrame(() => relayoutCell(cell));
-      }
+      if (cell instanceof HTMLElement) scheduleRelayout(cell);
     }
     grid.addEventListener("input", onInput, true);
     grid.addEventListener("keyup", onInput, true);
@@ -91,6 +122,7 @@ export function useGridLayout(grid: HTMLDivElement | null) {
     return () => {
       ro.disconnect();
       mo.disconnect();
+      pending.clear();
       grid.removeEventListener("input", onInput, true);
       grid.removeEventListener("keyup", onInput, true);
       window.removeEventListener("resize", relayoutAll);
