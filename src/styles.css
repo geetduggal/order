@@ -593,13 +593,16 @@ input, textarea, select { outline: none; box-shadow: none; }
 /* Brief lift when a card is targeted (Week/Month event click, home /
    folder navigation). No ring — a ring stacked a second border on top
    of the card's own edge. The card floats up for a beat instead: a
-   deeper soft shadow that fades out through the cell's existing
-   box-shadow transition. */
-.card-grid-cell.is-target {
+   deeper soft shadow that fades out through the card's box-shadow
+   transition. The lift MUST sit on the .order-card child, not the
+   cell — the cell is taller than the card (it carries the --card-gap
+   margin plus the masonry's row-quantization slack), so a shadow on
+   the cell outlines empty space below the card and reads as a phantom
+   second card. */
+.card-grid-cell.is-target > .order-card {
   box-shadow: var(--shadow-pop,
               0 2px 4px rgba(20, 20, 40, 0.06),
               0 16px 40px rgba(20, 20, 40, 0.10));
-  border-radius: var(--radius-card, 10px);
 }
 /* iOS first-run: choose a vault folder (no $HOME on iOS). */
 .vault-pick {
@@ -682,6 +685,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   box-shadow: var(--shadow-card,
               0 1px 2px rgba(20, 20, 40, 0.05),
               0 6px 18px rgba(20, 20, 40, 0.07));
+  /* Smooths the is-target landing lift in and out. */
+  transition: box-shadow 500ms var(--ease-out);
   /* A touch of head room so the title doesn't hug the card edge. */
   padding: 13px clamp(18px, 3.5vw, 40px) 12px;
 }
