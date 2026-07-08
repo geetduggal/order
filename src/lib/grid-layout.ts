@@ -22,11 +22,15 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       // (--card-gap), not on the grid's row-gap: with row-gap 0 the
       // quantization step stays GRID_ROW_PX, so every vertical gap lands
       // within 8px of the intended gap instead of wobbling by gap+8.
-      // offsetHeight excludes margin, so fold it into the span here.
-      const marginBottom = parseFloat(getComputedStyle(child).marginBottom || "0");
+      // offsetHeight excludes margin, so fold the gap into the span.
+      // PERF: read --card-gap off the GRID's computed style (a lookup we
+      // already pay for) — this function runs on every keystroke and
+      // ResizeObserver tick, and a second getComputedStyle(child) per
+      // cell here was a measurable hot-path cost.
+      const cardGap = parseFloat(styles.getPropertyValue("--card-gap")) || 0;
       const rows = Math.max(
         1,
-        Math.ceil((child.offsetHeight + marginBottom + rowGap) / (GRID_ROW_PX + rowGap)),
+        Math.ceil((child.offsetHeight + cardGap + rowGap) / (GRID_ROW_PX + rowGap)),
       );
       cell.style.gridRowEnd = `span ${rows}`;
     }

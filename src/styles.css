@@ -63,9 +63,10 @@
   --card-border: color-mix(in srgb, var(--rule) 55%, transparent);
   --card-border-w: 1px;
   --radius-card: 16px;
-  --shadow-card: 0 1px 2px rgba(24, 26, 32, 0.04),
-                 0 3px 8px rgba(24, 26, 32, 0.035),
-                 0 12px 32px rgba(24, 26, 32, 0.06);
+  /* Two shadow layers, not three — every card pays this on repaint, and
+     the middle layer added paint cost without a visible difference. */
+  --shadow-card: 0 1px 2px rgba(24, 26, 32, 0.045),
+                 0 10px 28px rgba(24, 26, 32, 0.07);
   --shadow-pop:  0 2px 4px rgba(24, 26, 32, 0.05),
                  0 18px 44px rgba(24, 26, 32, 0.11);
 
@@ -3082,8 +3083,11 @@ iframe.order-youtube-embed {
   border: 1px solid var(--card-border, var(--rule));
   border-radius: 16px;
   box-shadow: var(--shadow-pop, 0 6px 22px rgba(20, 20, 20, 0.18));
-  backdrop-filter: saturate(160%) blur(14px);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  /* Keep the blur radius modest — the backdrop filter recomposites the
+     strip behind the dock on every scrolled frame (WKWebView pays this
+     dearly on iOS). */
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
 }
 /* Flat instrument buttons: no per-button circles — quiet glyphs that
    gain a soft tinted pill on hover/active state. The transparent border
