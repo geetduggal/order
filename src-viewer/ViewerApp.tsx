@@ -921,10 +921,10 @@ function PileView({
 
   const cardNode = (n: PublishedNote, capHeight?: number) => {
     const isMain = !!n.category;
-    const areaRaw = n.frontmatter.area;
-    const areaName = typeof areaRaw === "string"
-      ? areaRaw.replace(/^\[\[|\]\]$/g, "").trim()
-      : "";
+    // Area comes from the note's directory path (Area/Category/NF),
+    // mirroring the app — there is no `area:` frontmatter.
+    const dirSegs = (n.dir ?? "").split("/").filter(Boolean);
+    const areaName = dirSegs.length >= 3 ? dirSegs[dirSegs.length - 3] : "";
     const colorSource = isMain ? n.ref : n.folder;
     const cardColor = colorSource ? folderColor(colorSource) : undefined;
     // Full public permalink (origin is the published domain at runtime).

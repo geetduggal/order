@@ -5,7 +5,6 @@ allDay: false
 date: "{{TODAY}}"
 startTime: "09:00"
 endTime: "09:30"
-folder: "[[Home Base]]"
 ---
 # Standup
 

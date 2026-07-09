@@ -27,10 +27,13 @@ test("markwhen — all-day, multi-day span, and timed events", () => {
 });
 
 test("markwhen — buildSpacetime folds in a markwhen note's events with its folder", () => {
+  // Folder identity is structural: the events inherit the markwhen
+  // note's parent DIRECTORY (there is no `folder:` frontmatter).
   const notes: SpacetimeNote[] = [
     {
       filename: "Roadmap.md",
-      frontmatter: { markwhen: true, folder: "[[Order]]" },
+      frontmatter: { markwhen: true },
+      path: "Craft/Craft Projects/Order/Roadmap.md",
       body: "2026-06-15: Order v0.1.0 release\n2026-08-20 17:00: Medium deadline\n",
       title: "Roadmap",
     },

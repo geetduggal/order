@@ -35,7 +35,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, folderDirName, folderMatchKey, isMainDocPath, noteFolder, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { buildPushIntents, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
@@ -347,10 +347,11 @@ function parseYaml(yamlText: string): Frontmatter {
  *  notes need their body pre-loaded at startup so the sidebar taxonomy can
  *  parse bullets immediately. Everything else (leaves) loads its body on
  *  Card mount via vault_read_text. */
-function needsBodyUpfront(fm: Frontmatter, filename: string): boolean {
+function needsBodyUpfront(fm: Frontmatter, filename: string, relPath: string): boolean {
   if (fm.role === "areas") return true;
   if (fm.role === "seasons") return true;
-  if (typeof fm.category === "string" && fm.category) return true;
+  // NF Main Docs — identified structurally (<NF>/<NF>.md), not by YAML.
+  if (isMainDocPath(relPath)) return true;
   if (typeof fm.list === "string" && fm.list) return true;
   // markwhen notes: the timeline lives in the body, and both the
   // spacetime mirror and the backing-note materializer need it up front.
@@ -386,7 +387,7 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
       let frontmatter = parseYaml(m.frontmatterYaml);
       let body = "";
       const filename = m.filename;
-      if (needsBodyUpfront(frontmatter, filename)) {
+      if (needsBodyUpfront(frontmatter, filename, m.path)) {
         // Chain / list files: full read + splitFrontmatter so any
         // calendar-frontmatter migration runs (suggestCalendarPatch)
         // — same behaviour the old loadOne provided. Plain-text
@@ -1392,7 +1393,11 @@ export function CardGrid() {
         filename: n.filename.replace(/\.md$/i, ""),
         title: (typeof n.frontmatter.title === "string" && n.frontmatter.title)
           || n.filename.replace(/\.md$/i, ""),
-        folderRef: noteFolder(n.frontmatter) ?? null,
+        folderRef: (() => {
+          // Structural: the note's Notable Folder is its parent directory.
+          const parts = toVaultRel(n.path).split("/");
+          return parts.length >= 2 ? parts[parts.length - 2] : null;
+        })(),
         path: n.path,
         mtime: n.mtime,
       }));
@@ -2010,7 +2015,9 @@ export function CardGrid() {
       // reference notes from Readwise, etc.). Skip.
       if (!allDay && !startTime) continue;
       const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
-      const folder = noteFolder(fm) ?? undefined;
+      // Folder = parent directory (structural placement, no `folder:` YAML).
+      const fParts = toVaultRel(n.path).split("/");
+      const folder = fParts.length >= 2 ? fParts[fParts.length - 2] : undefined;
       const title = n.title || n.filename.replace(/\.md$/i, "");
       const src: MirrorSource = {
         title,
@@ -2059,9 +2066,10 @@ export function CardGrid() {
    *    • old path must exist on disk   → won't invent a rename from nothing
    *    • new path must NOT exist       → won't clobber an existing dir
    *
-   *  For notable folders: renames dir + index file, syncs `title:`, rewrites
-   *  `[[OldName]]` wikilinks and `folder: [[OldName]]` frontmatter across vault.
-   *  For area / category: renames dir + updates `area:` / `category:` frontmatter. */
+   *  For notable folders: renames dir + index file, syncs `title:`, and
+   *  rewrites `[[OldName]]` wikilinks across the vault.
+   *  For area / category: renames the directory (placement is structural —
+   *  there is no `area:` / `category:` frontmatter to rewrite). */
   const reconcileSpaceChanges = useCallback(async (
     oldSpace: SpaceNode[],
     newSpace: SpaceNode[],
@@ -2099,9 +2107,10 @@ export function CardGrid() {
     }
 
     const list = notesRef.current ?? [];
-    const folderRefRe = /^\[\[([^\]]+)\]\]$/;
 
     // ---- Area renames ----
+    // Placement is structural (directory + spacetime) — a rename only
+    // moves the directory; there is no `area:` frontmatter to rewrite.
     const { pairs: areaRenames } = computeRenames(
       oldSpace.map((a) => ({ name: a.name, safe: san(a.name), key: folderMatchKey(a.name) })),
       newSpace.map((a) => ({ name: a.name, safe: san(a.name), key: folderMatchKey(a.name) })),
@@ -2109,15 +2118,6 @@ export function CardGrid() {
     for (const { old: oldA, new: newA } of areaRenames) {
       if (!(await vaultFs.exists(oldA.safe)) || (await vaultFs.exists(newA.safe))) continue;
       await vaultFs.rename(oldA.safe, newA.safe);
-      for (const n of list) {
-        const raw = await readVault(toVaultRel(n.path)).catch(() => "");
-        if (!raw) continue;
-        const { frontmatter, body } = splitFrontmatter(raw);
-        if (frontmatter.area === oldA.name) {
-          await writeVault(toVaultRel(n.path),
-            joinFrontmatter({ ...frontmatter, area: newA.name }, body));
-        }
-      }
     }
 
     // ---- Category and folder renames ----
@@ -2137,16 +2137,8 @@ export function CardGrid() {
         const oldCatPath = `${newAreaSafe}/${oldC.safe}`;
         const newCatPath = `${newAreaSafe}/${newC.safe}`;
         if (!(await vaultFs.exists(oldCatPath)) || (await vaultFs.exists(newCatPath))) continue;
+        // Directory rename is the whole job — no `category:` frontmatter.
         await vaultFs.rename(oldCatPath, newCatPath);
-        for (const n of list) {
-          const raw = await readVault(toVaultRel(n.path)).catch(() => "");
-          if (!raw) continue;
-          const { frontmatter, body } = splitFrontmatter(raw);
-          if (frontmatter.area === newArea.name && frontmatter.category === oldC.name) {
-            await writeVault(toVaultRel(n.path),
-              joinFrontmatter({ ...frontmatter, category: newC.name }, body));
-          }
-        }
       }
 
       for (const newCat of newArea.children) {
@@ -2190,7 +2182,7 @@ export function CardGrid() {
             }
           } catch { /* no index */ }
 
-          // 4. Rewrite inbound [[OldName]] wikilinks and folder: [[OldName]] across vault.
+          // 4. Rewrite inbound [[OldName]] wikilinks across the vault.
           const target = oldF.name.toLowerCase();
           for (const n of list) {
             try {
@@ -2198,22 +2190,9 @@ export function CardGrid() {
               const raw = await readVault(nPath).catch(() => "");
               if (!raw) continue;
               const { frontmatter, body } = splitFrontmatter(raw);
-              let nextBody = body;
-              let nextFm: Frontmatter = frontmatter;
-              let dirty = false;
-              if (body.toLowerCase().includes(target)) {
-                const rb = rewriteWikilinksForRename(body, oldF.name, newF.safe);
-                if (rb !== body) { nextBody = rb; dirty = true; }
-              }
-              const fv = frontmatter.folder;
-              if (typeof fv === "string") {
-                const m = fv.trim().match(folderRefRe);
-                if (m && m[1].trim().toLowerCase() === target) {
-                  nextFm = { ...frontmatter, folder: `[[${newF.safe}]]` };
-                  dirty = true;
-                }
-              }
-              if (dirty) await writeVault(nPath, joinFrontmatter(nextFm, nextBody));
+              if (!body.toLowerCase().includes(target)) continue;
+              const rb = rewriteWikilinksForRename(body, oldF.name, newF.safe);
+              if (rb !== body) await writeVault(nPath, joinFrontmatter(frontmatter, rb));
             } catch { /* skip */ }
           }
         }
@@ -2244,6 +2223,10 @@ export function CardGrid() {
   // Track only the Space section of mw so we can skip materialisation when
   // only events changed (e.g. Effect 1 spliced in updated events).
   const lastMwSpaceRef = useRef<string | null>(null);
+  // Forward ref: moveNoteToFolder is declared later in the component, but
+  // the mw-edit detector above it needs to move backing notes when an
+  // event's #[folder] tag changes (same pattern as createNoteRef).
+  const moveNoteToFolderRef = useRef<((notePath: string, folderName: string) => Promise<string | null>) | null>(null);
 
   // ---- spacetime.mw hand-edit review (gated structural sync) ----------
   // (mwBaselineRef / persistMwBaseline are declared earlier, before
@@ -2314,7 +2297,8 @@ export function CardGrid() {
             const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
             const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
             try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
-            await writeVault(relPath, joinFrontmatter({ category: cat.name, area: area.name }, `# ${nf.name}\n`));
+            // Main-doc identity is structural (<NF>/<NF>.md) — no YAML needed.
+            await writeVault(relPath, `# ${nf.name}\n`);
           }
       persistMwBaseline(mwBody);
       await reloadNotes();
@@ -2576,7 +2560,6 @@ export function CardGrid() {
             ...(r.time ? { startTime: r.time } : {}),
             ...(r.endTime ? { endTime: r.endTime } : {}),
             ...(r.endDate ? { endDate: r.endDate } : {}),
-            ...(review.folder ? { folder: `[[${review.folder}]]` } : {}),
             title: r.title,
           };
           const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
@@ -2792,7 +2775,28 @@ export function CardGrid() {
       // to restructure on disk — mirror the yml and advance the baseline so the
       // edit isn't treated as pending, and clear any stale review/mute.
       void (async () => {
-        const yml = serializeSpacetime(parseMarkwhenFormat(mwBody));
+        const newSt = parseMarkwhenFormat(mwBody);
+        // An event whose #[folder] tag changed moves its backing note into
+        // the new folder's directory: spacetime.md is the source of truth
+        // for placement, and the file's location must mirror it. Identity
+        // is (date | title), same as the calendar's chip matching; the
+        // move is idempotent, so a re-fire (or a move already performed by
+        // handleAssignFolder) is a no-op.
+        const oldByIdent = new Map(
+          parseMarkwhenFormat(baseline).events.map((e) => [`${e.date}|${e.title.toLowerCase()}`, e]),
+        );
+        for (const ev of newSt.events) {
+          if (!ev.folder) continue;
+          const prev = oldByIdent.get(`${ev.date}|${ev.title.toLowerCase()}`);
+          if (!prev || (prev.folder ?? "") === ev.folder) continue;
+          const backing = (notesRef.current ?? []).find((n) => {
+            if (toIsoDateValue(n.frontmatter.date) !== ev.date) return false;
+            const t = (n.title || n.filename.replace(/\.md$/i, "")).toLowerCase();
+            return t === ev.title.toLowerCase();
+          });
+          if (backing) await moveNoteToFolderRef.current?.(backing.path, ev.folder);
+        }
+        const yml = serializeSpacetime(newSt);
         lastSpacetimeRef.current = yml;
         await writeVault("spacetime.yml", yml);
         persistMwBaseline(mwBody);
@@ -2857,10 +2861,9 @@ export function CardGrid() {
       time?: string; endTime?: string; endDate?: string; allDay: boolean }[] = [];
     for (const src of mwNotes) {
       const dir = vaultDir(toVaultRel(src.path));
-      // The event's Notable Folder: the source note's `folder:`, else its
-      // own containing directory (its NF). Without this, a markwhen note
-      // with no `folder:` produced backing notes that no folder claimed.
-      const folder = noteFolder(src.frontmatter) ?? (dir.split("/").pop() || null);
+      // The event's Notable Folder is the source note's own containing
+      // directory (its NF) — placement is structural.
+      const folder = dir.split("/").pop() || null;
       for (const ev of parseMarkwhenEvents(src.body)) {
         const k = `${ev.date}|${ev.time ?? ""}|${ev.title.toLowerCase()}`;
         if (existing.has(k)) continue;
@@ -2884,7 +2887,6 @@ export function CardGrid() {
           ...(c.time ? { startTime: c.time } : {}),
           ...(c.endTime ? { endTime: c.endTime } : {}),
           ...(c.endDate ? { endDate: c.endDate } : {}),
-          ...(c.folder ? { folder: `[[${c.folder}]]` } : {}),
           title: c.title,
         };
         const seedBody = `# ${c.title}\n`;
@@ -3003,7 +3005,6 @@ export function CardGrid() {
         ...(e.time ? { startTime: e.time } : {}),
         ...(e.endTime ? { endTime: e.endTime } : {}),
         ...(e.endDate ? { endDate: e.endDate } : {}),
-        ...(e.folder ? { folder: `[[${e.folder}]]` } : {}),
         title: e.title,
       });
       const root = await vaultRoot();
@@ -3081,8 +3082,7 @@ export function CardGrid() {
             const root = await vaultRoot();
             const safe = p[2].replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
             const relPath = `${p[0]}/${p[1]}/${safe}/${safe}.md`;
-            const fm: Frontmatter = { category: p[1], area: p[0] };
-            await writeVault(relPath, joinFrontmatter(fm, `# ${p[2]}\n`));
+            await writeVault(relPath, `# ${p[2]}\n`);
             await patchSpacetimeSpace({ kind: "addFolder", area: p[0], category: p[1], name: safe });
             void root; // referenced for fallback clarity
           }
@@ -3286,7 +3286,6 @@ export function CardGrid() {
           ...(mwEv.time    ? { startTime: mwEv.time }    : {}),
           ...(mwEv.endTime ? { endTime: mwEv.endTime }    : {}),
           ...(mwEv.endDate ? { endDate: mwEv.endDate }    : {}),
-          ...(mwEv.folder  ? { folder: `[[${mwEv.folder}]]` } : {}),
           title: mwEv.title,
         };
         const notePath = await uniqueWrite(
@@ -3342,10 +3341,10 @@ export function CardGrid() {
       ...(prompt.startTime ? { startTime: prompt.startTime } : {}),
       ...(prompt.endTime ? { endTime: prompt.endTime } : {}),
       ...(prompt.endDate ? { endDate: prompt.endDate } : {}),
-      ...(prompt.folder ? { folder: `[[${prompt.folder}]]` } : {}),
     };
-    const folderRef = parseRef(frontmatter.folder);
-    const writeDir = (folderRef && noteDirByRef(folderRef)) || root;
+    // Placement is the directory's job — the folder choice picks the
+    // write dir, it is never written into YAML.
+    const writeDir = (prompt.folder && noteDirByRef(prompt.folder)) || root;
     const seedBody = `# ${prompt.title}\n`;
     const content = joinFrontmatter(frontmatter, seedBody);
     const basename = basenameForEvent(prompt.date, prompt.title);
@@ -3628,7 +3627,8 @@ export function CardGrid() {
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
-    // Folder resolution priority:
+    // The folder choice decides WHERE the file is written — it is never
+    // stored in YAML (placement is structural). Resolution priority:
     //   1. caller supplied `folder` (calendar quick-create from a
     //      pinned section, dock new-note picker, etc.)
     //   2. at least one Notable Folder is active in the include
@@ -3638,19 +3638,16 @@ export function CardGrid() {
     //      pinned: the user's pile order IS the picker.
     //   3. home Notable Folder
     // Empty vault skips all three and the file just goes at root.
-    if (!frontmatter.folder) {
+    let folderRef = parseRef(frontmatter.folder);
+    delete frontmatter.folder;
+    if (!folderRef) {
       const activeIncludes = notableIncludesRef.current;
-      if (activeIncludes.length >= 1) {
-        frontmatter.folder = `[[${activeIncludes[0]}]]`;
-      } else if (homeFolderRef.current) {
-        frontmatter.folder = `[[${homeFolderRef.current}]]`;
-      }
+      if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
+      else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     }
-    // New note's directory = the linked folder's directory in the
-    // chain (e.g., Creative/Creative Spaces/Geet Duggal/). We find
-    // it via the loaded notes; if the folder ref doesn't resolve,
-    // fall back to vault root.
-    const folderRef = parseRef(frontmatter.folder);
+    // New note's directory = the folder's directory in the space tree
+    // (e.g., Creative/Creative Spaces/Geet Duggal/). We find it via the
+    // loaded notes; if the folder ref doesn't resolve, fall back to root.
     const writeDir = folderRef && noteDirByRef(folderRef) || root;
     const title = typeof patch.title === "string" ? patch.title.trim() : "";
     // Seed the body with an H1 when a title was supplied (calendar create
@@ -3707,8 +3704,8 @@ export function CardGrid() {
 
   // Reconcile orphan event notes INTO spacetime.mw (the inverse of removing
   // them). The event is rebuilt from the note's own frontmatter — date, time,
-  // all-day — and its location is inferred from `folder:` (or, failing that,
-  // the note's own directory) and appended to the # Time/Events section. Once
+  // all-day — and its location is the note's own directory (placement is
+  // structural) and appended to the # Time/Events section. Once
   // it's in the mw it stops being an orphan and renders normally. Bulk-capable;
   // one mw write for the whole batch.
   const addOrphanEventsToSpacetime = useCallback(async (paths: string[]) => {
@@ -3718,8 +3715,7 @@ export function CardGrid() {
       if (!n) continue;
       const date = toIsoDateValue(n.frontmatter.date);
       if (!date) continue;
-      const folderRef = parseRef(n.frontmatter.folder)
-        ?? (vaultDir(toVaultRel(n.path)).split("/").pop() || undefined);
+      const folderRef = vaultDir(toVaultRel(n.path)).split("/").pop() || undefined;
       const st = typeof n.frontmatter.startTime === "string" && /^\d{2}:\d{2}$/.test(n.frontmatter.startTime)
         ? n.frontmatter.startTime : undefined;
       events.push({
@@ -3921,16 +3917,55 @@ export function CardGrid() {
   const handleCardPersisted = useCallback((path: string, frontmatter: Frontmatter, body: string) => {
     const rel = toVaultRel(path);
     const filename = rel.split("/").pop() ?? rel;
-    if (!needsBodyUpfront(frontmatter, filename)) return;
+    if (!needsBodyUpfront(frontmatter, filename, rel)) return;
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === rel ? { ...n, frontmatter, body } : n) ?? null);
   }, []);
 
-  /** Assign (or clear) a regular note's Notable Folder. Writes the
-   *  `folder: [[Name]]` field into the file's YAML AND moves the file
-   *  into that folder's directory on disk so the layout matches the
-   *  YAML (mirrors where createNote places new notes). Clearing a
-   *  folder just rewrites YAML and leaves the file where it is. */
+  /** Move a note file (and its same-folder images) into a Notable
+   *  Folder's directory. Placement is purely structural — the file's
+   *  location IS its folder; no YAML is written (any legacy `folder:`
+   *  key is scrubbed in passing). Returns the new path, or null when
+   *  the target doesn't resolve or the note is already there. */
+  const moveNoteToFolder = useCallback(async (notePath: string, folderName: string): Promise<string | null> => {
+    const targetDir = noteDirByRef(folderName);
+    const curDir = notePath.slice(0, notePath.lastIndexOf("/"));
+    if (!targetDir || targetDir === curDir) return null;
+    const raw = await readVault(toVaultRel(notePath)).catch(() => "");
+    if (!raw) return null;
+    const { frontmatter, body } = splitFrontmatter(raw);
+    delete frontmatter.folder;
+    const content = joinFrontmatter(frontmatter, body);
+    // write-new + delete-old (via uniqueWrite) handles name collisions
+    // in the target directory.
+    const filename = notePath.split("/").pop() ?? "note.md";
+    const newPath = await uniqueWrite(targetDir, filename, content);
+    await vaultFs.remove(toVaultRel(notePath));
+    // Move the note's same-folder images along with it so the ![[…]]
+    // embeds keep resolving from the new folder.
+    for (const file of embeddedImageFiles(body)) {
+      try {
+        await vaultFs.rename(toVaultRel(`${curDir}/${file}`), toVaultRel(`${targetDir}/${file}`));
+      } catch { /* missing or already present — skip */ }
+    }
+    setNotes((prev) => prev?.map((n) =>
+      n.path === notePath
+        ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter }
+        : n) ?? null);
+    // Forward path-tracking state so the focused card's React key
+    // stays stable across the move (otherwise edit mode is lost).
+    setFocusedPath((p) => (p === notePath ? newPath : p));
+    setFocusPath((p) => (p === notePath ? newPath : p));
+    setScrollTargetPath((p) => (p === notePath ? newPath : p));
+    return newPath;
+  }, []);
+  useEffect(() => { moveNoteToFolderRef.current = moveNoteToFolder; }, [moveNoteToFolder]);
+
+  /** Assign (or clear) a note's Notable Folder. Folder membership is
+   *  structural, so assigning MOVES the file into the target folder's
+   *  directory; when the note backs a spacetime event, the event's
+   *  #[tag] in spacetime.md is updated first (source of truth).
+   *  Clearing only untags the event — the file stays where it is. */
   const handleAssignFolder = useCallback(async (path: string, folderName: string | null) => {
     // Todo.txt-backed chip: rewrite the line's `+project` token rather
     // than reading/writing a non-existent .md. The line stays in the
@@ -3965,7 +4000,7 @@ export function CardGrid() {
     }
     // mw event chip: the calendar reads an event's folder from its #tag in
     // spacetime.mw, so re-folder updates the mw event first (source of truth).
-    // Then, if a backing note exists, move/retag the file to match below.
+    // Then, if a backing note exists, move the file to match below.
     const chip = eventChipRef.current.get(path);
     let notePath = path;
     if (chip) {
@@ -3974,55 +4009,33 @@ export function CardGrid() {
       markFolderRecent(folderName ?? "");
       if (!chip.notePath) return; // synthetic event — no file to move
       notePath = chip.notePath;
+    } else if (folderName) {
+      // A pile card (not a calendar chip): when the note backs a
+      // spacetime event, retag that event too so the mw stays the
+      // source of truth for the event's folder.
+      const note = notesRef.current?.find((n) => n.path === notePath);
+      const link = note ? noteEventLinkRef.current.get(note.id) : undefined;
+      if (link) {
+        await applyMwEdit((mw) =>
+          mwUpdateEvent(mw, link.date, link.title, { folder: folderName }));
+      }
     }
 
-    const raw = await readVault(toVaultRel(notePath)).catch(() => "");
-    if (!raw) return;
-    const { frontmatter, body } = splitFrontmatter(raw);
-    const next: Frontmatter = { ...frontmatter };
-    if (folderName) next.folder = `[[${folderName}]]`;
-    else delete next.folder;
-    const content = joinFrontmatter(next, body);
-
-    // Move into the target folder's directory when it resolves and
-    // differs from where the file currently lives. write-new + delete-
-    // old (via uniqueWrite) handles name collisions in the target.
-    const targetDir = folderName ? noteDirByRef(folderName) : null;
-    const curDir = notePath.slice(0, notePath.lastIndexOf("/"));
-    if (targetDir && targetDir !== curDir) {
-      const filename = notePath.split("/").pop() ?? "note.md";
-      const newPath = await uniqueWrite(targetDir, filename, content);
-      await vaultFs.remove(toVaultRel(notePath));
-      // Move the note's same-folder images along with it so the ![[…]]
-      // embeds keep resolving from the new folder.
-      for (const file of embeddedImageFiles(body)) {
-        try {
-          await vaultFs.rename(toVaultRel(`${curDir}/${file}`), toVaultRel(`${targetDir}/${file}`));
-        } catch { /* missing or already present — skip */ }
-      }
-      setNotes((prev) => prev?.map((n) =>
-        n.path === notePath
-          ? { ...n, path: newPath, filename: newPath.split("/").pop() ?? n.filename, frontmatter: next }
-          : n) ?? null);
-      // Forward path-tracking state so the focused card's React key
-      // stays stable across the move (otherwise edit mode is lost).
-      setFocusedPath((p) => (p === notePath ? newPath : p));
-      setFocusPath((p) => (p === notePath ? newPath : p));
-      setScrollTargetPath((p) => (p === notePath ? newPath : p));
-      // Land the user inside the new NF. In calendar views, stay in the
-      // calendar — just update recents. Only switch to Pile when already
-      // in Pile (so a folder reassignment from the Pile stays in Pile).
-      markFolderRecent(folderName ?? "");
-      if (folderName && viewRef.current === "pile") {
-        setFilters([{ kind: "include", ref: folderName }]);
-        setFocusedFolder(folderName);
-      }
-      return;
+    // Membership is the directory: assigning = moving the file.
+    // Clearing has no structural meaning — the untag above was the
+    // whole job — so the file stays put.
+    if (!folderName) return;
+    const newPath = await moveNoteToFolder(notePath, folderName);
+    if (!newPath) return;
+    // Land the user inside the new NF. In calendar views, stay in the
+    // calendar — just update recents. Only switch to Pile when already
+    // in Pile (so a folder reassignment from the Pile stays in Pile).
+    markFolderRecent(folderName);
+    if (viewRef.current === "pile") {
+      setFilters([{ kind: "include", ref: folderName }]);
+      setFocusedFolder(folderName);
     }
-
-    await writeVault(toVaultRel(notePath), content);
-    setNotes((prev) => prev?.map((n) => (n.path === notePath ? { ...n, frontmatter: next } : n)) ?? null);
-  }, [applyMwEdit]);
+  }, [applyMwEdit, moveNoteToFolder]);
 
   const knownEmails = useMemo(() => distinctEmails(mwEvents), [mwEvents]);
 
@@ -4185,12 +4198,10 @@ export function CardGrid() {
     // by filename); the full original goes to `title:` so the card
     // label and list rows can render the pretty form.
     const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
-    // A Notable Folder is a plain main document (a `category` makes it an
-    // NF) — NOT a list folder, so no `list:` key here. The directory is
+    // A Notable Folder's identity is structural (<NF>/<NF>.md inside its
+    // Area/Category path) — no `category:`/`area:` YAML. The directory is
     // created by writing the main doc inside it below.
     const frontmatter: Frontmatter = {
-      category: categoryName,
-      area: areaName,
       ...(safe !== trimmed ? { title: trimmed } : {}),
     };
     const body = `# ${trimmed}\n`;
@@ -4333,30 +4344,18 @@ export function CardGrid() {
     return <div className="card-grid-empty">Preparing cards…</div>;
   }
 
-  // Category → Area map derived from the on-disk chain (Areas.md
-  // walk). Lets us fill in a Notable Folder's missing `area:` from
-  // the structure rather than requiring every NF YAML to repeat it.
-  const areaByCategory = new Map<string, string>();
-  for (const a of vaultTaxonomy.areas) {
-    for (const c of a.categories) areaByCategory.set(c.ref, a.ref);
-  }
-
-  // Area + Category come from the PATH, not frontmatter: a note inside
-  // `<Area>/<Category>/<Folder>/…` belongs to that Area and Category. Frontmatter
-  // is only a fallback for loose notes that don't live inside a folder directory.
+  // Area + Category come from the PATH: a note inside
+  // `<Area>/<Category>/<Folder>/…` belongs to that Area and Category.
+  // Loose notes outside a folder directory have neither.
   function inferredArea(n: LoadedNote): string {
     const parts = toVaultRel(n.path).split("/");
     if (parts.length >= 4) return parts[parts.length - 4];
-    const yaml = parseRef(n.frontmatter.area);
-    if (yaml) return yaml;
-    const cat = parseRef(n.frontmatter.category);
-    if (cat) return areaByCategory.get(cat) ?? "";
     return "";
   }
   function inferredCategory(n: LoadedNote): string {
     const parts = toVaultRel(n.path).split("/");
     if (parts.length >= 4) return parts[parts.length - 3];
-    return parseRef(n.frontmatter.category) ?? "";
+    return "";
   }
 
   // Seasons: prefer spacetime.yml when it carries season records; fall back
@@ -4451,15 +4450,14 @@ export function CardGrid() {
   });
 
   // Does this note belong to `ref`? `ref` may be:
-  //   - a Notable Folder name (the note IS its main doc, or its
-  //     `folder:` YAML points to that NF)
-  //   - a Category name (the note's `category:` resolves to that name)
+  //   - a Notable Folder name (the note IS its main doc, or it lives
+  //     in that NF's directory)
+  //   - a Category name (a main doc whose path category matches)
   //   - an Area name (the note's inferred area equals `ref`)
   const belongsTo = (n: LoadedNote, ref: string): boolean => {
     if (n.filename.replace(/\.md$/, "") === ref) return true;
     if (effectiveFolder(n) === ref) return true;
-    const cat = parseRef(n.frontmatter.category);
-    if (cat === ref) return true;
+    if (isMainDoc(n) && inferredCategory(n) === ref) return true;
     if (inferredArea(n) === ref) return true;
     return false;
   };
@@ -4606,6 +4604,7 @@ export function CardGrid() {
         area={isMain ? inferredArea(n) || undefined : undefined}
         category={isMain ? inferredCategory(n) || undefined : undefined}
         currentFolder={isMain ? undefined : effectiveFolder(n)}
+        onAssignFolder={isMain ? undefined : (name) => handleAssignFolder(n.path, name)}
         availableFolders={availableFolderRefs}
         onSetFrontmatter={(patch) => handleSetFrontmatter(n.path, patch)}
         liveFrontmatter={n.frontmatter}

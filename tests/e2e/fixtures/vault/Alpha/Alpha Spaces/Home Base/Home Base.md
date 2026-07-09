@@ -1,5 +1,4 @@
 ---
-category: Alpha Spaces
 home: "demo/demo/site"
 ---
 # Home Base

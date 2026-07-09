@@ -877,6 +877,25 @@ input, textarea, select { outline: none; box-shadow: none; }
   align-items: center;
   text-transform: none;
 }
+/* Popover shell for the controls' move-to-folder icon: floats just
+   below the control strip on the card's right edge. The input inside
+   is the shared FolderPicker; its options list portals to <body>. */
+.order-card-folderpick {
+  position: absolute;
+  top: 36px;
+  right: 10px;
+  z-index: 40;
+  background: var(--card-bg, var(--bg));
+  border: 1px solid var(--card-border, var(--rule));
+  border-radius: 10px;
+  padding: 6px 8px;
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(0, 0, 0, 0.18));
+}
+.order-card-folderpick .order-card-folder-input {
+  width: 190px;
+  font-size: 12px;
+  padding: 5px 9px;
+}
 .order-card-folder-input {
   font-family: var(--sans);
   font-size: 10.5px;

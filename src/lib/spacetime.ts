@@ -12,7 +12,6 @@
 import yaml from "js-yaml";
 import type { VaultTaxonomy, AreaNode, CategoryNode } from "./taxonomy";
 import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
-import { noteFolder } from "./folders";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
 
@@ -95,17 +94,14 @@ export interface SpacetimeNote {
   /** Display title (frontmatter title or first line); falls back to the
    *  filename when absent. */
   title?: string;
-  /** Vault path. Used to recover a note's Notable Folder when its
-   *  frontmatter has no `folder:` (e.g. a markwhen source note): the
-   *  folder is the note's parent directory. */
+  /** Vault path. A note's Notable Folder IS its parent directory —
+   *  placement is structural (no `folder:` YAML). */
   path?: string;
 }
 
-/** The Notable Folder a note belongs to: its `folder:` frontmatter, else
- *  its parent directory name (files live only inside their NF). */
+/** The Notable Folder a note belongs to: its parent directory name
+ *  (files live only inside their NF). */
 function folderOf(n: SpacetimeNote): string | undefined {
-  const explicit = noteFolder(n.frontmatter);
-  if (explicit) return explicit;
   if (!n.path) return undefined;
   const parts = n.path.split("/");
   return parts.length >= 2 ? parts[parts.length - 2] : undefined;

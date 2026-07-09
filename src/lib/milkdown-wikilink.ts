@@ -17,7 +17,7 @@ import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { resolveWikilink, type WikiRef } from "./wikilink";
-import { isNotableFolder } from "./folders";
+import { isMainDocRef } from "./folders";
 
 const KEY = new PluginKey("order-wikilink");
 // The editor shows the rendered (unescaped) text, so we match plain
@@ -88,7 +88,7 @@ function filterVault(vault: WikiRef[], query: string): Suggestion[] {
     if (seen.has(key)) continue;
     if (q && !key.includes(q)) continue;
     seen.add(key);
-    out.push({ name, kind: isNotableFolder(n.frontmatter) ? "folder" : "note" });
+    out.push({ name, kind: isMainDocRef(n) ? "folder" : "note" });
   }
   // Prefix matches first, then folders, then alphabetical.
   out.sort((a, b) => {

@@ -2,7 +2,7 @@
 // Used for spacetime.yml (YAML) and spacetime.mw (Markdown).
 
 import { useEffect, useRef } from "react";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -34,7 +34,6 @@ export function CodeMirrorSurface({ value, onChange, lang, readOnly }: Props) {
         extensions: [
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          lineNumbers(),
           langExt,
           oneDark,
           // No lineWrapping — horizontal scroll for long lines

@@ -14,7 +14,6 @@
 // per-Area NF activity for a given season. The view layer renders.
 
 import type { Frontmatter } from "./frontmatter";
-import { parseRef } from "./folders";
 
 export const SEASONS_FILENAME = "Seasons.md";
 
@@ -141,7 +140,11 @@ export function buildSeasonActivity(
     const date = isoDateValue(n.frontmatter.date);
     if (!date) continue;
     if (date < season.start || date > end) continue;
-    const nf = parseRef(n.frontmatter.folder);
+    // The note's Notable Folder is its parent DIRECTORY (placement is
+    // structural — no `folder:` YAML). isKnown filters out notes whose
+    // parent dir isn't an NF (nested library content, loose files).
+    const parts = n.path.split("/");
+    const nf = parts.length >= 2 ? parts[parts.length - 2] : null;
     if (!nf || !resolver.isKnown(nf)) continue;
     const list = byNf.get(nf) ?? [];
     list.push({ path: n.path, title: n.title, date });

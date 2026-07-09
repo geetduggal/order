@@ -1,5 +1,4 @@
 ---
-folder: "[[Home Base]]"
 folded: true
 ---
 # Secret Plan

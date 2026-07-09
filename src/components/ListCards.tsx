@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
-import { folderIcon, listItemIcon, isNotableFolder } from "../lib/folders";
+import { folderIcon, listItemIcon, isMainDocRef } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -170,7 +170,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   // Autocomplete candidates: Notable Folder names from the vault
   // index, filtered to those that aren't already in this list.
   const notableFolderCandidates = vaultNotes
-    .filter((n) => isNotableFolder(n.frontmatter))
+    .filter((n) => isMainDocRef(n))
     .map((n) => n.filename.replace(/\.md$/i, ""))
     .sort((a, b) => a.localeCompare(b));
   const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
@@ -254,7 +254,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         // Folder — otherwise a neutral dot, so the icon doesn't promise
         // navigation the row can't deliver. (Plain text bullets +
         // wikilinks to non-NF notes both fall through here.)
-        const isNFRow = !!(note && isNotableFolder(note.frontmatter));
+        const isNFRow = !!(note && isMainDocRef(note));
         // NF rows use the folder glyph (honoring an explicit `icon:`);
         // every other row gets a large, name-relevant icon — "Cal
         // Newport Books" → an open book — falling back to a neutral tag.

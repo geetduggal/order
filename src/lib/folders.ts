@@ -1,12 +1,14 @@
-// Notable Folder utilities — parsing taxonomy from YAML metadata,
-// deterministic per-folder color, and name-based icon auto-selection.
+// Notable Folder utilities — structural folder identity, deterministic
+// per-folder color, and name-based icon auto-selection.
 //
 // Hierarchy (per design doc):
 //   Areas → Categories → Notable Folders → notes
 //
-// A note becomes a Notable Folder's Main Document when its frontmatter
-// has a `category` field. Other notes can belong to that folder via
-// `folder: [[FolderName]]`.
+// Identity is STRUCTURAL: a Notable Folder's Main Document is the note
+// named after its own parent directory (`<NF>/<NF>.md`), and a note
+// belongs to the folder whose directory it lives in. There is no
+// `folder:` / `category:` / `area:` YAML — spacetime.md plus the
+// directory tree are the only sources of truth for placement.
 
 import type { LucideIcon } from "lucide-react";
 import {
@@ -16,8 +18,6 @@ import {
   Wallet, Wrench,
 } from "lucide-react";
 
-import type { Frontmatter } from "./frontmatter";
-
 /** A `[[Wiki Link]]` value or plain string both resolve to the bare name. */
 export function parseRef(val: unknown): string | null {
   if (typeof val !== "string") return null;
@@ -25,10 +25,6 @@ export function parseRef(val: unknown): string | null {
   if (!trimmed) return null;
   const m = trimmed.match(/^\[\[(.+)\]\]$/);
   return (m ? m[1] : trimmed).trim() || null;
-}
-
-export function isNotableFolder(fm: Frontmatter): boolean {
-  return parseRef(fm.category) !== null;
 }
 
 /** A Notable Folder main document, identified STRUCTURALLY from its path: a
@@ -77,9 +73,13 @@ export function folderMatchKey(name: string): string {
   return folderKey(folderDirName(name));
 }
 
-/** A note's parent Notable Folder, if any. */
-export function noteFolder(fm: Frontmatter): string | null {
-  return parseRef(fm.folder);
+/** Structural main-doc test for index shapes that carry the parent
+ *  directory name instead of a full path (ListNoteRef / WikiRef): the
+ *  note IS a Notable Folder's Main Document when its filename matches
+ *  its parent directory. Same identity rule as isMainDocPath. */
+export function isMainDocRef(n: { filename: string; folder?: string }): boolean {
+  if (!n.folder) return false;
+  return folderMatchKey(n.filename.replace(/\.md$/i, "")) === folderMatchKey(n.folder);
 }
 
 /** Normalise a slug-style token (CamelCase / PascalCase / kebab-case /

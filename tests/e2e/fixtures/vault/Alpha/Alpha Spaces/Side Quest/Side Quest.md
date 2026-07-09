@@ -1,5 +1,4 @@
 ---
-category: Alpha Spaces
 list: cards
 ---
 # Side Quest

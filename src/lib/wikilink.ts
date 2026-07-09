@@ -2,9 +2,9 @@
 // name; resolution decides folder vs note purely by lookup, with no
 // visual tell in the source:
 //
-//   - If the name matches a Notable Folder (a note whose YAML carries a
-//     `category`, i.e. its Main Document <Name>/<Name>.md), the link
-//     resolves to that folder.
+//   - If the name matches a Notable Folder (structurally: its Main
+//     Document <Name>/<Name>.md, a note named after its own parent
+//     directory), the link resolves to that folder.
 //   - Else if it matches an ordinary note, it resolves to that note.
 //   - On a name collision, the Notable Folder wins. `[[Folder/Note]]`
 //     disambiguates to the note inside that folder (Obsidian convention).
@@ -14,12 +14,11 @@
 // live in frontmatter only, never in the link syntax — that keeps the
 // source plain-text clean and Obsidian-compatible.
 
-import { parseRef, isNotableFolder } from "./folders";
+import { isMainDocRef } from "./folders";
 import type { ListNoteRef } from "./list-folder";
 
 /** Minimal note shape the resolver needs. `folder` is the on-disk parent
- *  directory name when known; the YAML `folder:` ref is read from
- *  frontmatter. ListNoteRef already satisfies this. */
+ *  directory name when known. ListNoteRef already satisfies this. */
 export type WikiRef = ListNoteRef;
 
 export interface ParsedWikilink {
@@ -67,24 +66,23 @@ export function resolveWikilink(raw: string, vault: WikiRef[]): WikiResolution {
   const nameMatches = (n: WikiRef) => baseName(n).toLowerCase() === needle;
 
   // Qualified `[[Folder/Note]]`: an ordinary note named `Note` whose
-  // parent folder (YAML `folder:` or on-disk dir) is `Folder`.
+  // on-disk parent directory is `Folder`.
   if (folderQualifier) {
     const fq = folderQualifier.toLowerCase();
     const note = vault.find(
       (n) =>
         nameMatches(n) &&
-        !isNotableFolder(n.frontmatter) &&
-        ((parseRef(n.frontmatter.folder)?.toLowerCase() ?? null) === fq ||
-          (n.folder ?? "").toLowerCase() === fq),
+        !isMainDocRef(n) &&
+        (n.folder ?? "").toLowerCase() === fq,
     );
     if (note) return { kind: "note", name, ref: note };
     // Fall through to the unqualified rules if the qualifier misses.
   }
 
   // Collisions prefer the Notable Folder.
-  const folder = vault.find((n) => nameMatches(n) && isNotableFolder(n.frontmatter));
+  const folder = vault.find((n) => nameMatches(n) && isMainDocRef(n));
   if (folder) return { kind: "folder", name, ref: folder };
-  const note = vault.find((n) => nameMatches(n) && !isNotableFolder(n.frontmatter));
+  const note = vault.find((n) => nameMatches(n) && !isMainDocRef(n));
   if (note) return { kind: "note", name, ref: note };
   return { kind: "broken", name };
 }

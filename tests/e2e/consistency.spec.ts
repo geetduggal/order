@@ -5,9 +5,9 @@
 //   ORDER_VAULT=~/Dropbox/OrderDemoVault pnpm test:e2e consistency
 //
 // 1d — structure: the Areas.md → Area → Category → Notable Folder chain
-//      described in markdown matches the directory tree, every
-//      `folder: [[NF]]` note lives inside its NF's directory, and every
-//      `![[image]]` embed resolves to a file in the same NF directory.
+//      described in markdown matches the directory tree, no note carries
+//      placement frontmatter (folder / category / area — placement is
+//      structural), and every `![[image]]` embed resolves.
 // 1e — todo.txt: when a todo.txt exists, every .md calendar event has
 //      an identity-matching line, and every line parses cleanly.
 
@@ -43,12 +43,6 @@ function parseFmLite(yaml: string): Record<string, string> {
 
 function bulletsOf(body: string): string[] {
   return [...body.matchAll(BULLET_RE)].map((m) => m[1].trim());
-}
-
-function stripRef(v: string | undefined): string | null {
-  if (!v) return null;
-  const m = v.match(/\[\[(.+)\]\]/);
-  return (m ? m[1] : v).trim() || null;
 }
 
 async function loadVault(): Promise<Note[]> {
@@ -89,35 +83,27 @@ test.describe("1d — disk structure matches the markdown chain", () => {
         const catMd = `${area}/${cat}/${cat}.md`;
         expect(byRel.has(catMd), `category file ${catMd} exists`).toBe(true);
         for (const nf of bulletsOf(byRel.get(catMd)!.body)) {
+          // Identity is structural: the main doc existing at
+          // <Area>/<Category>/<NF>/<NF>.md IS the consistency check —
+          // there is no `category:` frontmatter to cross-validate.
           const nfMd = `${area}/${cat}/${nf}/${nf}.md`;
           expect(byRel.has(nfMd), `NF main doc ${nfMd} exists`).toBe(true);
-          const nfFm = byRel.get(nfMd)!.fm;
-          expect(stripRef(nfFm.category), `${nf} category matches parent dir`).toBe(cat);
         }
       }
     }
   });
 
-  test("every folder: note lives inside its Notable Folder directory", async () => {
+  test("no note carries placement frontmatter (folder / category / area)", async () => {
+    // Placement is structural (directory tree + spacetime.md). These keys
+    // are dead data — a note carrying one means an old build wrote it.
     const notes = await loadVault();
-    // NF name -> directory rel
-    const nfDirs = new Map<string, string>();
+    const offenders: string[] = [];
     for (const n of notes) {
-      if (n.fm.category) {
-        nfDirs.set(path.basename(n.rel, ".md"), path.dirname(n.rel));
+      for (const key of ["folder", "category", "area"] as const) {
+        if (n.fm[key] !== undefined) offenders.push(`${n.rel} (${key}:)`);
       }
     }
-    for (const n of notes) {
-      if (n.fm.category) continue; // NF main docs are their own home
-      const folder = stripRef(n.fm.folder);
-      if (!folder) continue;
-      const nfDir = nfDirs.get(folder);
-      if (!nfDir) continue; // dangling folder ref — separate lint, not structure
-      expect(
-        path.dirname(n.rel),
-        `${n.rel} lives inside its NF directory (${nfDir})`,
-      ).toBe(nfDir);
-    }
+    expect(offenders, "notes with placement frontmatter").toEqual([]);
   });
 
   test("every ![[file]] embed resolves (note dir, Attachments/, or vault-wide)", async () => {

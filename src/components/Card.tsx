@@ -35,7 +35,7 @@ import {
 import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
-import { folderColor, isMainDocPath, noteFolder, parseRef } from "../lib/folders";
+import { folderColor, isMainDocPath, parseRef } from "../lib/folders";
 import { isSpacetimeFile } from "../lib/spacetime";
 import { resolveWikilink } from "../lib/wikilink";
 import {
@@ -51,7 +51,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -131,10 +131,15 @@ interface Props {
    *  the "Area › Category" breadcrumb in the footer. */
   area?: string;
   category?: string;
-  /** When this card is a regular note, this is its currently assigned
-   *  Notable Folder (or null). Reserved for legacy display surfaces;
-   *  edits happen via `onSetFrontmatter` through the inspector. */
+  /** When this card is a regular note, this is its current Notable
+   *  Folder (or null) — derived from the note's directory. Shown as
+   *  the active row in the folder picker. */
   currentFolder?: string | null;
+  /** Move this note into another Notable Folder. Wired to the controls'
+   *  folder icon; CardGrid moves the file (and retags the note's
+   *  spacetime event when it backs one). Absent on Main Documents and
+   *  read-only surfaces — the icon doesn't render. */
+  onAssignFolder?: (name: string) => Promise<void> | void;
   /** All Notable Folders in the vault — used to populate the folder
    *  autocomplete in the FrontmatterInspector. */
   availableFolders?: { name: string; color: string }[];
@@ -255,6 +260,7 @@ export function Card(props: Props) {
     area,
     category,
     currentFolder,
+    onAssignFolder,
     availableFolders,
     recentFolders,
     onSetFrontmatter,
@@ -296,6 +302,10 @@ export function Card(props: Props) {
    *  Lives at the TOP of the hook list so the early-return loading /
    *  error branches don't change hook count between renders. */
   const [flipped, setFlipped] = useState(false);
+  // Folder picker popover (regular notes): opened by the controls'
+  // folder icon; picking a Notable Folder MOVES the note there.
+  const [folderPickOpen, setFolderPickOpen] = useState(false);
+  const [folderPickQuery, setFolderPickQuery] = useState("");
   // In-card terminal mode (NF Main Docs, desktop). Opened by the card's
   // terminal icon or the Cmd+4 window event; renders OrderTerminal in
   // place of the card body, rooted at the folder's directory.
@@ -1203,6 +1213,22 @@ export function Card(props: Props) {
             <ArrowUpToLineIcon size={14} strokeWidth={2} />
           </button>
         )}
+        {!isMainDoc && !readOnly && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (
+          <button
+            type="button"
+            className={"order-card-btn order-card-refolder" + (folderPickOpen ? " is-on" : "")}
+            // preventDefault on mousedown keeps the click from moving focus
+            // (the editor would grab it and immediately blur-close the
+            // picker); stopPropagation skips the article's focus handler.
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => { setFolderPickQuery(""); setFolderPickOpen((v) => !v); }}
+            title={currentFolder ? `Move to another folder — currently in ${currentFolder}` : "Move to a folder"}
+            aria-label="Move to folder"
+            aria-pressed={folderPickOpen}
+          >
+            <FolderInputIcon size={14} strokeWidth={2} />
+          </button>
+        )}
         {!readOnly && !fullscreen && (
           <button
             type="button"
@@ -1247,6 +1273,24 @@ export function Card(props: Props) {
           </button>
         )}
       </div>
+      {folderPickOpen && onAssignFolder && (
+        <div className="order-card-folderpick">
+          <FolderPicker
+            current={currentFolder ?? null}
+            available={availableFolders ?? []}
+            open
+            query={folderPickQuery}
+            onOpen={() => {}}
+            onClose={() => setFolderPickOpen(false)}
+            onQueryChange={setFolderPickQuery}
+            onAssign={async (name) => {
+              setFolderPickOpen(false);
+              if (name) await onAssignFolder(name);
+            }}
+            recents={recentFolders}
+          />
+        </div>
+      )}
       {isMainDoc && !readOnly && !flipped && onCreateUpdate && updateOpen && (
         <NotableUpdateBar
           onSubmit={async (description) => {
@@ -1430,10 +1474,10 @@ export function Card(props: Props) {
             {category && <span>{category}</span>}
           </span>
         )}
-        {/* Folder assignment lives in the FrontmatterInspector now —
-            click the {date} toggle, then edit the `folder` row. The
-            old footer chip became redundant once the inspector had
-            its own folder autocomplete. */}
+        {/* Folder assignment lives behind the controls' folder icon
+            (order-card-refolder): picking a Notable Folder MOVES the
+            file into that folder's directory — placement is structural,
+            there is no folder frontmatter. */}
         <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (
@@ -1562,6 +1606,9 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
           if (e.key === "Escape") { e.preventDefault(); onClose(); }
           if (e.key === "Enter" && matches[0]) { e.preventDefault(); void onAssign(matches[0].name); }
         }}
+        // Option rows commit on mouseDown (with preventDefault), so a
+        // click on one never blurs first — blur only means "clicked away".
+        onBlur={onClose}
         placeholder="Assign folder…"
       />
       {matches.length > 0 && menuPos && createPortal(

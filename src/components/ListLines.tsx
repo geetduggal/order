@@ -9,7 +9,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
-import { folderColor, folderIcon, listItemIcon, isNotableFolder } from "../lib/folders";
+import { folderColor, folderIcon, listItemIcon, isMainDocRef } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -164,7 +164,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   // Autocomplete candidates: Notable Folder names from the vault
   // index, filtered to those that aren't already in this list.
   const notableFolderCandidates = vaultNotes
-    .filter((n) => isNotableFolder(n.frontmatter))
+    .filter((n) => isMainDocRef(n))
     .map((n) => n.filename.replace(/\.md$/i, ""))
     .sort((a, b) => a.localeCompare(b));
   const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
@@ -217,12 +217,12 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
         // rows (plain text, or a wikilink to a non-NF note) get a large,
         // name-relevant glyph — "Cal Newport Books" → an open book —
         // falling back to a neutral tag rather than a bare dot.
-        const isNFRow = !!(note && isNotableFolder(note.frontmatter));
+        const isNFRow = !!(note && isMainDocRef(note));
         const Icon = isNFRow
           ? folderIcon(item.ref, note?.frontmatter.icon)
           : listItemIcon(item.text ?? item.ref, note?.frontmatter.icon);
         const dragging = item.ref === draggingRef;
-        const isNF = !!(note && isNotableFolder(note.frontmatter));
+        const isNF = !!(note && isMainDocRef(note));
         const titleHandler = note
           ? (isNFRow && onAddFilter ? () => onAddFilter(item.ref)
               : onNavigate ? () => onNavigate(item.ref)
@@ -268,7 +268,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
                       (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
                     );
                     const meta = metaText(sub);
-                    const subIsNF = !!(subNote && isNotableFolder(subNote.frontmatter));
+                    const subIsNF = !!(subNote && isMainDocRef(subNote));
                     const subClick = subNote
                       ? (subIsNF && onAddFilter ? () => onAddFilter(sub.ref)
                           : onNavigate ? () => onNavigate(sub.ref)
