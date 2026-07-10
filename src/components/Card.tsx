@@ -456,19 +456,43 @@ export function Card(props: Props) {
   // replace the Milkdown document in-place (no remount, no flicker).
   // Skip if there's a pending save inflight — our own write is what
   // triggered the watcher; the file already reflects what the editor shows.
+  //
+  // The editor holds PROSE ONLY for a list folder (bullets live in the
+  // items array, the base fence in baseBlockRawRef). This path must apply
+  // the same split as the initial load: pushing the raw file body in would
+  // put the serialized bullets INTO the editor, and the next save — which
+  // writes `editorBody + serializeListItems(items)` — would append a second
+  // copy of every bullet. Each copy re-triggers the watcher, so the file
+  // grows without bound (Geet Duggal.md reached 1102 copies of its 3
+  // bullets this way).
   useEffect(() => {
     if (!externalBodyVersion) return;
     if (inflight.current > 0) return;
     void (async () => {
       try {
         const raw = await vaultFs.readText(toVaultRel(pathRef.current));
-        const { body } = splitFrontmatter(raw);
+        const { frontmatter, body } = splitFrontmatter(raw);
         const noteDir = vaultDir(toVaultRel(pathRef.current));
         const displayBody = inflateImageEmbeds(
           inflateAttachmentUrls(body, attachmentAssetPrefix(await vaultRoot())),
           noteDir,
         );
-        milkdownRef.current?.replaceContent(displayBody);
+        let editorNext = displayBody;
+        if (isListFolder(frontmatter)) {
+          const rawBlock = extractRawBaseBlock(displayBody);
+          if (rawBlock) {
+            baseBlockRawRef.current = rawBlock;
+            setBaseBlockRaw(rawBlock);
+            editorNext = displayBody.replace(rawBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+          } else {
+            const split = splitBodyAndBullets(displayBody);
+            editorNext = split.prose;
+            listItemsRef.current = split.items;
+            setListItems(split.items);
+          }
+        }
+        editorBodyRef.current = editorNext;
+        milkdownRef.current?.replaceContent(editorNext);
       } catch { /* best-effort; if it fails, the next remount cycle will catch up */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps

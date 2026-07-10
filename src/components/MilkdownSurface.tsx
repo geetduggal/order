@@ -94,23 +94,37 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
   const host = useRef<HTMLDivElement>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const wikiNotesRef = useRef<WikiRef[]>(wikiNotes ?? []);
+  // True while a programmatic replaceContent transaction is in flight.
+  // markdownUpdated can't see the transaction's `externalUpdate` meta, so
+  // without this the caller's onChange fires for a document the caller
+  // just handed us — the card marks itself dirty and saves, the save wakes
+  // the watcher, the watcher calls replaceContent again: a write loop.
+  const applyingExternalRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     replaceContent(markdown: string): boolean {
       const crepe = crepeRef.current;
       if (!crepe) return false;
-      crepe.editor.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        const doc = ctx.get(parserCtx)(markdown);
-        if (!doc) return;
-        // Replace the whole document without touching the selection or
-        // scroll position if possible — the user may be mid-edit elsewhere
-        // on the same card and we don't want to jump their cursor.
-        const { tr } = view.state;
-        tr.replaceWith(0, view.state.doc.content.size, doc.content);
-        tr.setMeta("externalUpdate", true);
-        view.dispatch(tr);
-      });
+      applyingExternalRef.current = true;
+      try {
+        crepe.editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const doc = ctx.get(parserCtx)(markdown);
+          if (!doc) return;
+          // Replace the whole document without touching the selection or
+          // scroll position if possible — the user may be mid-edit elsewhere
+          // on the same card and we don't want to jump their cursor.
+          const { tr } = view.state;
+          tr.replaceWith(0, view.state.doc.content.size, doc.content);
+          tr.setMeta("externalUpdate", true);
+          view.dispatch(tr);
+        });
+      } finally {
+        // markdownUpdated fires synchronously inside dispatch, but reset on
+        // a microtask too so a listener that defers can't leave the flag set.
+        applyingExternalRef.current = false;
+        queueMicrotask(() => { applyingExternalRef.current = false; });
+      }
       return true;
     },
   }), []);
@@ -172,6 +186,9 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
         }
         crepe.on((listener) => {
           listener.markdownUpdated((_ctx, markdown) => {
+            // Programmatic replacement (external file change) — not a user
+            // edit. Reporting it would mark the card dirty and save it back.
+            if (applyingExternalRef.current) return;
             onChangeRef.current(normalizeWikilinkBrackets(unescapeLinkUrls(widenListIndent(markdown))));
           });
         });
