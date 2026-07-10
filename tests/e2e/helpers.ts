@@ -111,6 +111,11 @@ function installMock(arg: { files: Record<string, string | null>; seeds: Record<
   w.__INVOKED = [];    // every command, for debugging + assertions
 
   const norm = (rel: string) => rel.replace(/^\.?\//, "");
+  // Stable per-file mtimes (bumped on write) so the app's mtime poller
+  // sees real change signals instead of "everything changed" each tick.
+  const mtimes = new Map<string, number>();
+  const bootMtime = Date.now();
+  const mtimeOf = (p: string) => mtimes.get(p) ?? bootMtime;
   const isMd = (p: string) => p.endsWith(".md");
   // The real Rust vault_walk loads .md, .txt, .yml AND .mw so todo.txt,
   // spacetime.yml, and spacetime.mw flow through the same pipeline (see
@@ -153,15 +158,19 @@ function installMock(arg: { files: Record<string, string | null>; seeds: Record<
         .map((p) => {
           const raw = files.get(p) ?? "";
           const [fm, bodyLen] = typeof raw === "string" ? splitFm(raw) : ["", 0];
-          return { path: `${ROOT}/${p}`, name: base(p), frontmatter: fm, body_len: bodyLen, mtime_ms: Date.now() };
+          return { path: `${ROOT}/${p}`, name: base(p), frontmatter: fm, body_len: bodyLen, mtime_ms: mtimeOf(p) };
         }),
+    vault_walk_mtimes: () =>
+      [...files.keys()]
+        .filter(isNote)
+        .map((p) => ({ path: `${ROOT}/${p}`, mtime_ms: mtimeOf(p) })),
     vault_read_text: (a) => {
       const v = files.get(norm(a.rel));
       if (typeof v !== "string") throw new Error(`not found: ${a.rel}`);
       return v;
     },
-    vault_write_text: (a) => { files.set(norm(a.rel), a.content); return null; },
-    vault_write_binary: (a) => { files.set(norm(a.rel), null); return null; },
+    vault_write_text: (a) => { files.set(norm(a.rel), a.content); mtimes.set(norm(a.rel), Date.now()); return null; },
+    vault_write_binary: (a) => { files.set(norm(a.rel), null); mtimes.set(norm(a.rel), Date.now()); return null; },
     vault_read_dir: (a) =>
       [...childrenOf(a.rel)].map(([name, isDir]) => ({ name, is_dir: isDir })),
     vault_list_dir: (a) =>

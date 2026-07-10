@@ -112,6 +112,40 @@ pub fn vault_walk_metadata(state: tauri::State<VaultState>) -> Result<Vec<MetaEn
     Ok(out)
 }
 
+/// Stat-only entry for the freshness poller: path + mtime, nothing else.
+#[derive(serde::Serialize)]
+pub struct MtimeEntry {
+    pub path: String,
+    pub mtime_ms: i64,
+}
+
+/// Stat-only walker. Same traversal as `vault_walk_metadata` but performs
+/// ZERO file reads — the poller that runs every few seconds only needs
+/// mtimes to detect change, and `read_to_string`-ing the entire vault on
+/// every tick made the idle cost scale linearly with vault size (the
+/// "app gets sluggish as the vault grows" tax). Frontmatter is read
+/// lazily by the reload path only for files that actually changed.
+#[tauri::command]
+pub fn vault_walk_mtimes(state: tauri::State<VaultState>) -> Result<Vec<MtimeEntry>, String> {
+    let root = {
+        let guard = state.root.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("vault root not set")?.clone()
+    };
+    let mut entries = Vec::new();
+    walk_dir(&root, &mut entries);
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let mtime_ms = fs::metadata(std::path::Path::new(&entry.path))
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        out.push(MtimeEntry { path: entry.path, mtime_ms });
+    }
+    Ok(out)
+}
+
 /// Lightweight `---` frontmatter splitter — returns (yaml_text, body_byte_len)
 /// without allocating the body itself. Mirrors js-yaml-based splitFrontmatter
 /// in src/lib/frontmatter.ts. A file without an opening `---\n` is treated

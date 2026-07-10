@@ -103,6 +103,14 @@ export const vaultFs = {
         mtimeMs: e.mtime_ms,
       })),
     ),
+  /** Stat-only walk: path + mtime per note, ZERO file reads — the
+   *  freshness poller's fast path. The metadata walk above reads every
+   *  note's full content; polling with it made idle cost scale with
+   *  vault size. */
+  walkMtimes: (): Promise<{ path: string; mtimeMs: number }[]> =>
+    invoke<{ path: string; mtime_ms: number }[]>("vault_walk_mtimes").then((es) =>
+      es.map((e) => ({ path: e.path, mtimeMs: e.mtime_ms })),
+    ),
   /** iOS: present the folder picker, mint + persist a bookmark, return
    *  the resolved path + name (path null if cancelled). */
   pickFolder: () => invoke<VaultFolder>("plugin:vault|pick_folder"),

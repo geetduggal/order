@@ -112,6 +112,7 @@ pub fn run() {
             vault_fs::vault_is_ios,
             vault_fs::vault_walk,
             vault_fs::vault_walk_metadata,
+            vault_fs::vault_walk_mtimes,
             vault_fs::vault_read_text,
             vault_fs::vault_write_text,
             vault_fs::vault_write_binary,

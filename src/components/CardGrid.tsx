@@ -1035,8 +1035,9 @@ export function CardGrid() {
   //
   // iOS: notify's reliability under the sandbox + security-scoped
   // bookmark is mixed, so we ALSO run a mtime poller as a safety net
-  // (also runs on desktop, harmlessly). The poller uses the lightweight
-  // metadata walker so it doesn't pull bodies over the bridge.
+  // (slow-cadence on desktop once notify is up). The poller uses the
+  // STAT-ONLY walker — path + mtime, zero file reads — so a tick costs
+  // O(stat) rather than O(vault bytes).
   useEffect(() => {
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
@@ -1082,11 +1083,15 @@ export function CardGrid() {
       if (reloadTimer) return;
       reloadTimer = setTimeout(() => { reloadTimer = null; void reloadNotes(); }, 250);
     }
+    // True once the OS-level notify watcher is delivering events; the
+    // poller then relaxes to a slow safety-net cadence on desktop.
+    let notifyActive = false;
     async function startWatcher() {
       const root = await syncVaultRoot();
       if (!root || cancelled) return;
       try {
         await invoke("start_watcher", { path: root });
+        notifyActive = true;
         // eslint-disable-next-line no-console
         console.log("[watcher] notify started on", root);
         unlisten = await listen<string[]>("vault-changed", (e) => {
@@ -1108,8 +1113,20 @@ export function CardGrid() {
       }
     }
     async function pollOnce() {
+      // Hidden window: skip the walk entirely (battery + idle cost).
+      // lastMtime isn't advanced, so every change made while hidden is
+      // caught by the first visible tick — nothing is missed, only
+      // deferred. The visibilitychange listener below fires that tick
+      // immediately on refocus.
+      if (typeof document !== "undefined" && document.hidden) {
+        if (!cancelled) pollTimer = setTimeout(pollOnce, pollDelay());
+        return;
+      }
       try {
-        const meta = await vaultFs.walkMetadata();
+        // Stat-only walk: path + mtime, no file reads. The full
+        // metadata walk read EVERY note's content each tick, which
+        // scaled the idle heartbeat linearly with vault size.
+        const meta = await vaultFs.walkMtimes();
         const changed: string[] = [];
         const seen = new Set<string>();
         let added = false;
@@ -1144,12 +1161,27 @@ export function CardGrid() {
         if (changed.length > 0) void reportExternal(changed);
         firstPoll = false;
       } catch { /* sleep + retry */ }
-      // iOS lacks a working recursive notify watcher under the
-      // security-scoped sandbox, so the poller is the ONLY freshness
-      // signal there. 15 s left external edits feeling laggy; drop to
-      // 5 s. The content-aware filter still drops pure-touch noise.
-      if (!cancelled) pollTimer = setTimeout(pollOnce, isIosSync() ? 5000 : 3000);
+      if (!cancelled) pollTimer = setTimeout(pollOnce, pollDelay());
     }
+    /** Poll cadence:
+     *  - iOS: 5 s — no working recursive notify watcher under the
+     *    security-scoped sandbox, so the poller is the ONLY freshness
+     *    signal there (15 s left external edits feeling laggy).
+     *  - Desktop with notify active: 30 s — the OS watcher is the
+     *    primary signal; the poller is just a safety net.
+     *  - Desktop without notify (start failed): 3 s, as before. */
+    function pollDelay(): number {
+      if (isIosSync()) return 5000;
+      return notifyActive ? 30000 : 3000;
+    }
+    // Refocus: run a catch-up tick immediately so edits made while the
+    // window was hidden (poller skips hidden ticks) surface right away.
+    function onVisibility() {
+      if (cancelled || typeof document === "undefined" || document.hidden) return;
+      if (pollTimer) clearTimeout(pollTimer);
+      void pollOnce();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
     let firstPoll = true;
     async function start() {
       const root = await syncVaultRoot();
@@ -1163,6 +1195,7 @@ export function CardGrid() {
       if (reloadTimer) clearTimeout(reloadTimer);
       if (pollTimer) clearTimeout(pollTimer);
       if (unlisten) unlisten();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [reloadNotes, bumpExternal]);
 
