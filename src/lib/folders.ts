@@ -27,17 +27,35 @@ export function parseRef(val: unknown): string | null {
   return (m ? m[1] : trimmed).trim() || null;
 }
 
+// Memo caches for the identity functions below. They are pure string →
+// string/bool maps, and the same few thousand names (every path segment,
+// filename, and mw entry in the vault) flow through them from render-hot
+// loops — sort comparators, pile filters, wikilink resolution — where the
+// regex-normalization cost pegged the main thread for minutes at vault
+// scale. The cap only guards against unbounded growth from synthetic
+// strings; a clear just means re-deriving.
+const CACHE_CAP = 20_000;
+const mainDocPathCache = new Map<string, boolean>();
+const folderKeyCache = new Map<string, string>();
+
 /** A Notable Folder main document, identified STRUCTURALLY from its path: a
  *  note named after its own parent directory — `<NF>/<NF>.md`. Prefer this over
  *  isNotableFolder(frontmatter) so main-doc identity comes from structure
  *  (which mirrors spacetime), not the note's `category:` YAML. Returns false
  *  for synthetic paths (e.g. `mw-event:…`) with no parent directory. */
 export function isMainDocPath(path: string): boolean {
+  const hit = mainDocPathCache.get(path);
+  if (hit !== undefined) return hit;
   const parts = path.split("/");
-  if (parts.length < 2) return false;
-  const file = parts[parts.length - 1].replace(/\.md$/i, "");
-  const dir = parts[parts.length - 2];
-  return folderMatchKey(file) === folderMatchKey(dir);
+  let res = false;
+  if (parts.length >= 2) {
+    const file = parts[parts.length - 1].replace(/\.md$/i, "");
+    const dir = parts[parts.length - 2];
+    res = folderMatchKey(file) === folderMatchKey(dir);
+  }
+  if (mainDocPathCache.size >= CACHE_CAP) mainDocPathCache.clear();
+  mainDocPathCache.set(path, res);
+  return res;
 }
 
 /** Normalized comparison key so look-alike folder names collapse to one
@@ -47,7 +65,9 @@ export function isMainDocPath(path: string): boolean {
  *  "Tech Habits — X", "Tech Habits- X" and "Tech Habits - X" all map to the
  *  same key. For MATCHING only — keep the original spelling for display. */
 export function folderKey(name: string): string {
-  return name
+  const hit = folderKeyCache.get(name);
+  if (hit !== undefined) return hit;
+  const key = name
     .normalize("NFC")
     .replace(/[   ]/g, " ")        // no-break / figure / narrow-no-break space
     .replace(/[‒–—―]/g, "-")  // figure / en / em / horizontal dash
@@ -55,6 +75,9 @@ export function folderKey(name: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+  if (folderKeyCache.size >= CACHE_CAP) folderKeyCache.clear();
+  folderKeyCache.set(name, key);
+  return key;
 }
 
 /** The on-disk directory name for a folder: unsafe chars → "-", capped at 78

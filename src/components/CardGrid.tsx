@@ -2534,14 +2534,22 @@ export function CardGrid() {
   const [gcalSyncing, setGcalSyncing] = useState(false);
   const gcalPlan = useMemo(() => {
     if (gcalAccounts.accounts.length === 0) return { pushes: [], deletes: [] };
+    // Index once (date|title) → mtime instead of notes.find per intent —
+    // the linear scan with per-candidate toLowerCase was O(events × notes)
+    // on every notes change. First matching note wins, same as find did.
+    const mtimeByKey = new Map<string, number>();
+    for (const n of notes ?? []) {
+      const d = toIsoDateValue(n.frontmatter.date);
+      if (!d) continue;
+      const k = `${d}|${n.title.toLowerCase()}`;
+      if (!mtimeByKey.has(k)) mtimeByKey.set(k, n.mtime);
+    }
     const intents = buildPushIntents(mwEvents, gcalAccounts.accounts, gcalAccounts.default).map((it) => {
       // Fold in the backing note's mtime so editing its body (the event
       // description) changes the signature and re-flags the event for sync.
       // Matched the same way the push resolves the description (title + date).
-      const note = notes?.find((n) =>
-        n.title.toLowerCase() === it.title.toLowerCase()
-        && toIsoDateValue(n.frontmatter.date) === it.date);
-      return note ? { ...it, noteMtime: note.mtime } : it;
+      const noteMtime = mtimeByKey.get(`${it.date}|${it.title.toLowerCase()}`);
+      return noteMtime !== undefined ? { ...it, noteMtime } : it;
     });
     return gcalSyncPlan(gcalSynced, intents, gcalSig);
   }, [mwEvents, notes, gcalAccounts, gcalSynced]);
@@ -4573,6 +4581,19 @@ export function CardGrid() {
     pinnedRef !== null
     && isMainDoc(n)
     && n.filename.replace(/\.md$/, "") === pinnedRef;
+  // sortKey is pure per note but the comparators below call it twice per
+  // COMPARISON — O(N log N) recomputes per render, which at vault scale
+  // kept the main thread busy through every keystroke / lazy body load.
+  // Memoize per render (keyed by note id; refs feeding sortKey don't
+  // change mid-render).
+  const sortKeyMemo = new Map<string, string>();
+  const sortKeyOf = (n: LoadedNote): string => {
+    const hit = sortKeyMemo.get(n.id);
+    if (hit !== undefined) return hit;
+    const k = sortKey(n);
+    sortKeyMemo.set(n.id, k);
+    return k;
+  };
   // Notable Folder Main Documents float to the top of the Pile by
   // default — they're the "covers" of each folder and read like a
   // table of contents for the recency feed below. Alphabetical
@@ -4589,7 +4610,7 @@ export function CardGrid() {
     if (aNF && bNF) {
       return a.filename.localeCompare(b.filename);
     }
-    return sortKey(b).localeCompare(sortKey(a));
+    return sortKeyOf(b).localeCompare(sortKeyOf(a));
   });
   // Pagination for the Pile's flat grid: with no folder filter active
   // we'd otherwise mount one Card per note in the vault — at 10^4 notes
@@ -4798,7 +4819,7 @@ export function CardGrid() {
           ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
         const sectionNotes = filteredNotes
           .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
-          .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+          .sort((a, b) => sortKeyOf(b).localeCompare(sortKeyOf(a)));
         // Key is just the stable note id — external body edits are now
         // delivered in-place via the externalBodyVersion prop, so we
         // never need to remount a card just because the file changed.
