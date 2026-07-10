@@ -45,23 +45,18 @@ for ln in sys.stdin:
 # ── steps ────────────────────────────────────────────────────────────────────
 
 step_desktop() {
-  title "desktop · dev"
+  title "desktop · build + dev"
   # Kill any running dev or production instance first
   osascript -e 'tell application "Order" to quit' 2>/dev/null || true
   sleep 0.3; pkill -f "tauri dev" 2>/dev/null || true; pkill -x "Order" 2>/dev/null || true
-  # Type gate only — seconds, not the minutes a full production bundle
-  # took. Bundling is pointless here: the dev shell loads straight from
-  # the Vite server (devUrl below), never from dist/.
-  cmd pnpm exec tsc -b
-  # Hot-reload dev shell — stays running while you test. tauri.conf.json
-  # deliberately has NO devUrl (iOS builds must be standalone), which
-  # silently made `tauri dev` serve the static dist/ bundle — no HMR, and
-  # a full `pnpm build` per iteration. Re-point ONLY the desktop dev
-  # shell at Vite so frontend edits hot-reload again. --release compiles
-  # the Rust side OPTIMIZED: the debug binary walks the vault / saves /
-  # searches 10-30x slower, which made daily driving feel sluggish as the
-  # vault grew. First compile is slower; incremental rebuilds are cached.
-  cmd pnpm tauri dev --release --config '{"build":{"devUrl":"http://localhost:1420"}}'
+  # Full frontend build first: catches TS errors and bundles assets.
+  cmd pnpm build
+  # Hot-reload dev shell — stays running while you test. --release keeps
+  # the frontend's HMR but compiles the Rust side OPTIMIZED: the debug
+  # binary walks the vault / saves / searches 10-30x slower, which made
+  # daily driving feel sluggish as the vault grew. First compile is
+  # slower; incremental rebuilds are cached after that.
+  cmd pnpm tauri dev --release
 }
 
 step_ios() {
