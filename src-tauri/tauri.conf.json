@@ -41,6 +41,9 @@
     ],
     "macOS": {
       "signingIdentity": "Apple Development: geetduggal@gmail.com (59TJ84BVPY)"
+    },
+    "iOS": {
+      "developmentTeam": "93AB46Q3G7"
     }
   }
 }
