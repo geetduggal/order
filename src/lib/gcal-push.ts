@@ -15,11 +15,34 @@ export interface PushIntent {
   allDay: boolean;
   title: string;
   attendees: string[];
-  /** mtime of the event's backing note, if one exists. Folded into the push
-   *  signature so editing the note's body (which becomes the event description)
-   *  re-flags the event for sync. Enriched by the caller (CardGrid), not here —
-   *  buildPushIntents has no access to the loaded notes. */
-  noteMtime?: number;
+  /** Content hash of the event's backing-note description (see
+   *  descriptionHash), if a backing note exists. Folded into the push
+   *  signature so a real description edit re-flags the event — but an
+   *  mtime-only touch (Dropbox re-download, a content-neutral self-write)
+   *  does NOT, which is what made events resync when nothing changed.
+   *  Enriched by the caller (CardGrid); buildPushIntents has no note access. */
+  descHash?: string;
+}
+
+/** The exact text Order pushes as an event's Google Calendar description:
+ *  the backing note's file content with the YAML frontmatter stripped, then
+ *  trimmed. Centralized so the pending-sync signature and the real push
+ *  (applyGcalSync) derive the description identically. */
+export function eventDescriptionFromRaw(raw: string): string {
+  return raw.replace(/^---[\s\S]*?---\n?/, "").trim();
+}
+
+/** Compact, stable hash of a description string (FNV-1a, base36). Used only
+ *  to detect description changes for the push signature — not cryptographic.
+ *  Stable across runs/devices for identical content, so it never churns the
+ *  way a filesystem mtime does. */
+export function descriptionHash(desc: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < desc.length; i++) {
+    h ^= desc.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
 }
 
 export function buildPushIntents(

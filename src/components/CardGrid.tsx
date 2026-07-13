@@ -37,7 +37,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
-import { buildPushIntents, type PushIntent } from "../lib/gcal-push";
+import { buildPushIntents, descriptionHash, eventDescriptionFromRaw, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
 import { distinctEmails } from "../lib/gcal-recipients";
 
@@ -48,11 +48,12 @@ function gcalSchedSig(it: PushIntent): string {
   return [it.host, it.date, it.time ?? "", it.endTime ?? "", it.allDay, it.title, [...it.attendees].sort().join(",")].join("|");
 }
 /** Full per-event signature for Google-push pending tracking: the schedule sig
- *  PLUS the backing note's mtime, so editing the note's body (which becomes the
- *  event description) also re-flags the event for sync. A push happens whenever
- *  this differs from the last-synced value. */
+ *  PLUS a content hash of the backing note's description, so a real description
+ *  edit re-flags the event for sync while a content-neutral file touch (Dropbox
+ *  re-download, self-write) does NOT. A push happens whenever this differs from
+ *  the last-synced value. */
 function gcalSig(it: PushIntent): string {
-  return gcalSchedSig(it) + "|" + (it.noteMtime ?? "");
+  return gcalSchedSig(it) + "|" + (it.descHash ?? "");
 }
 import {
   DEFAULT_TODO_TXT_PATH,
@@ -2556,27 +2557,67 @@ export function CardGrid() {
     saveSyncRecord(gcalSynced);
   }, [gcalSynced]);
   const [gcalSyncing, setGcalSyncing] = useState(false);
-  const gcalPlan = useMemo(() => {
-    if (gcalAccounts.accounts.length === 0) return { pushes: [], deletes: [] };
-    // Index once (date|title) → mtime instead of notes.find per intent —
-    // the linear scan with per-candidate toLowerCase was O(events × notes)
-    // on every notes change. First matching note wins, same as find did.
-    const mtimeByKey = new Map<string, number>();
+
+  // Content-hash cache for Google-push descriptions, keyed by backing-note
+  // (date|title). Each entry remembers the note's mtime at hash time. The
+  // effect recomputes an entry only when the note's mtime changes: on an
+  // mtime-only touch (Dropbox re-download, a content-neutral self-write) it
+  // re-reads the file, finds identical content, and stores the SAME hash —
+  // so gcalSig doesn't move and the event stays "synced". A genuine
+  // description edit changes both mtime and content, yielding a new hash.
+  const [gcalDescHashes, setGcalDescHashes] =
+    useState<Record<string, { mtime: number; hash: string }>>({});
+  const gcalDescHashesRef = useRef(gcalDescHashes);
+  gcalDescHashesRef.current = gcalDescHashes;
+  useEffect(() => {
+    if (gcalAccounts.accounts.length === 0) return;
+    // Only events with recipients are ever pushed, so only their backing
+    // notes need a description hash — a small set, cheap to read.
+    const syncable = new Set(
+      mwEvents
+        .filter((e) => e.emails && e.emails.length > 0)
+        .map((e) => `${e.date}|${e.title.toLowerCase()}`),
+    );
+    const backing = new Map<string, LoadedNote>();
     for (const n of notes ?? []) {
       const d = toIsoDateValue(n.frontmatter.date);
       if (!d) continue;
       const k = `${d}|${n.title.toLowerCase()}`;
-      if (!mtimeByKey.has(k)) mtimeByKey.set(k, n.mtime);
+      if (syncable.has(k) && !backing.has(k)) backing.set(k, n);
     }
+    let cancelled = false;
+    void (async () => {
+      const updates: Record<string, { mtime: number; hash: string }> = {};
+      for (const [k, n] of backing) {
+        const cached = gcalDescHashesRef.current[k];
+        if (cached && cached.mtime === n.mtime) continue; // still fresh
+        try {
+          const raw = await readVault(toVaultRel(n.path));
+          updates[k] = { mtime: n.mtime, hash: descriptionHash(eventDescriptionFromRaw(raw)) };
+        } catch { /* unreadable — leave uncached, sig falls back to "" */ }
+      }
+      // setState only when something actually changed, so this effect never
+      // re-triggers itself (its deps don't include gcalDescHashes).
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setGcalDescHashes((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mwEvents, notes, gcalAccounts]);
+
+  const gcalPlan = useMemo(() => {
+    if (gcalAccounts.accounts.length === 0) return { pushes: [], deletes: [] };
     const intents = buildPushIntents(mwEvents, gcalAccounts.accounts, gcalAccounts.default).map((it) => {
-      // Fold in the backing note's mtime so editing its body (the event
-      // description) changes the signature and re-flags the event for sync.
-      // Matched the same way the push resolves the description (title + date).
-      const noteMtime = mtimeByKey.get(`${it.date}|${it.title.toLowerCase()}`);
-      return noteMtime !== undefined ? { ...it, noteMtime } : it;
+      // Fold in the backing note's description content hash so a real
+      // description edit re-flags the event, while a content-neutral file
+      // touch (Dropbox re-download, self-write) does not. The hash is
+      // computed off-render by the effect below and keyed the same way the
+      // push resolves the description (date + title).
+      const descHash = gcalDescHashesRef.current[`${it.date}|${it.title.toLowerCase()}`]?.hash;
+      return descHash !== undefined ? { ...it, descHash } : it;
     });
     return gcalSyncPlan(gcalSynced, intents, gcalSig);
-  }, [mwEvents, notes, gcalAccounts, gcalSynced]);
+  }, [mwEvents, gcalAccounts, gcalSynced, gcalDescHashes]);
   const gcalPendingCount = gcalPlan.pushes.length + gcalPlan.deletes.length;
   const gcalPlanRef = useRef(gcalPlan);
   gcalPlanRef.current = gcalPlan;
@@ -2670,7 +2711,7 @@ export function CardGrid() {
         );
         let description = "";
         if (note) {
-          try { description = (await readVault(toVaultRel(note.path))).replace(/^---[\s\S]*?---\n?/, "").trim(); }
+          try { description = eventDescriptionFromRaw(await readVault(toVaultRel(note.path))); }
           catch { /* leave empty */ }
         }
         // A description-only edit (the event already synced, schedule +
