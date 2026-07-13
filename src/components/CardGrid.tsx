@@ -934,6 +934,30 @@ export function CardGrid() {
     return i >= 0 ? p.slice(0, i) : null;
   }
 
+  /** Absolute directory for an Area/Category, resolved STRUCTURALLY.
+   *  The "placement is structural" migration dropped the per-Category
+   *  chain `.md` files, so a Category is no longer a note on disk —
+   *  `noteDirByRef(category)` returns null for every category now, which
+   *  is what broke sidebar folder creation. Resolve it from the tree
+   *  instead: reuse the on-disk parent of any existing note under this
+   *  Area/Category (robust to dash/casing drift between spacetime.md and
+   *  the real directory names), and fall back to constructing
+   *  `<vault>/<Area>/<Category>` for a category that has no notes yet.
+   *  Never returns null — a category shown in the sidebar always has a
+   *  place on disk, even if empty. */
+  async function categoryDirFor(areaName: string, categoryName: string): Promise<string> {
+    const list = notesRef.current ?? [];
+    const aKey = folderMatchKey(areaName);
+    const cKey = folderMatchKey(categoryName);
+    for (const n of list) {
+      const parts = toVaultRel(n.path).split("/");
+      if (parts.length >= 3 && folderMatchKey(parts[0]) === aKey && folderMatchKey(parts[1]) === cKey) {
+        return join(await vaultRoot(), parts[0], parts[1]);
+      }
+    }
+    return join(await vaultRoot(), folderDirName(areaName), folderDirName(categoryName));
+  }
+
   /** Absolute path of the loaded Areas note. Prefer the path the note was
    *  loaded from (always under the active vault root, including the iOS
    *  security-scoped bookmark) over reconstructing it from vaultRoot(),
@@ -4226,13 +4250,10 @@ export function CardGrid() {
   const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    // Locate the Category file via the loaded notes; the NF dir
-    // sits next to it inside the Category's directory.
-    const catDir = noteDirByRef(categoryName);
-    if (!catDir) {
-      flashCap(`Couldn't find ${categoryName} on disk — add the Category first.`);
-      return;
-    }
+    // Resolve the Category's directory structurally — categories no longer
+    // exist as notes on disk (placement is structural), so this must not
+    // depend on a Category `.md` being present.
+    const catDir = await categoryDirFor(areaName, categoryName);
     // Cap on-disk folder names at 78 chars so we don't bump into
     // path-length limits and so the filesystem stays browsable. The
     // bullet ref + filename track each other (the resolver matches
@@ -4260,7 +4281,7 @@ export function CardGrid() {
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
     ]);
-  }, [flashCap, patchSpacetimeSpace]);
+  }, [patchSpacetimeSpace]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     // Todo.txt items are a parallel calendar source — route to the line writer.
