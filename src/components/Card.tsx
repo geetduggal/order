@@ -1502,7 +1502,7 @@ export function Card(props: Props) {
         ) : view === "drawing" ? (
           <Suspense fallback={<div className="order-surface-loading">Loading drawing…</div>}>
             {drawingContent !== null && (
-              <DrawingSurface initial={drawingContent} onChange={saveDrawing} readOnly={readOnly} />
+              <DrawingSurface initial={drawingContent} onChange={saveDrawing} readOnly={readOnly} fitSignal={fullscreen} />
             )}
           </Suspense>
         ) : isSpacetimeFile(filename) ? (

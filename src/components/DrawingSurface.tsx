@@ -15,6 +15,10 @@ interface DrawingSurfaceProps {
   /** Persist serialized scene JSON. */
   onChange: (json: string) => void;
   readOnly?: boolean;
+  /** Toggling this (e.g. entering/leaving fullscreen) re-fits the canvas to
+   *  the drawing's content so it isn't left scrolled off-screen after the
+   *  container resizes. */
+  fitSignal?: unknown;
 }
 
 // Order has many themes; Excalidraw only knows light/dark. Map the dark-ish
@@ -25,9 +29,27 @@ function currentExcalidrawTheme(): "light" | "dark" {
   return DARK_THEMES.has(t) ? "dark" : "light";
 }
 
-export function DrawingSurface({ initial, onChange, readOnly }: DrawingSurfaceProps) {
+export function DrawingSurface({ initial, onChange, readOnly, fitSignal }: DrawingSurfaceProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(currentExcalidrawTheme);
+
+  // Re-fit to content whenever the container resizes (fullscreen toggle) —
+  // Excalidraw keeps its scroll offset across resizes, which would otherwise
+  // leave the drawing off-screen. Skip the very first run (initial mount
+  // already centers). refresh() first so the canvas picks up the new size.
+  const firstFit = useRef(true);
+  useEffect(() => {
+    if (firstFit.current) { firstFit.current = false; return; }
+    const api = apiRef.current;
+    if (!api) return;
+    const id = setTimeout(() => {
+      try {
+        api.refresh();
+        api.scrollToContent(api.getSceneElements(), { fitToContent: true, animate: false });
+      } catch { /* API may not be ready — ignore */ }
+    }, 60);
+    return () => clearTimeout(id);
+  }, [fitSignal]);
 
   // Follow Order's theme toggle.
   useEffect(() => {
