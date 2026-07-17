@@ -4,7 +4,7 @@
 // Full Calendar convention) and the parent is notified so calendar
 // views stay in sync.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { dirname, join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,6 +13,14 @@ import { vaultFs, markKnownBody } from "../lib/vault-fs";
 import { MilkdownSurface, type MilkdownHandle } from "./MilkdownSurface";
 import { RawTextSurface } from "./RawTextSurface";
 import { CodeMirrorSurface } from "./CodeMirrorSurface";
+import {
+  parseView, sheetSidecarPath, drawingSidecarPath, serializeSheet, emptySheet,
+  type NoteView,
+} from "../lib/note-view";
+// Heavy editors (react-spreadsheet, Excalidraw) — code-split so the normal
+// note path never loads them.
+const SheetSurface = lazy(() => import("./SheetSurface").then((m) => ({ default: m.SheetSurface })));
+const DrawingSurface = lazy(() => import("./DrawingSurface").then((m) => ({ default: m.DrawingSurface })));
 import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
   basenameForEvent,
@@ -51,7 +59,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -310,6 +318,14 @@ export function Card(props: Props) {
   // terminal icon or the Cmd+4 window event; renders OrderTerminal in
   // place of the card body, rooted at the folder's directory.
   const [termOpen, setTermOpen] = useState(false);
+  // Sheet / drawing "flip" view. The persisted default lives in the note's
+  // `view:` frontmatter; viewOverride is the optimistic local switch on an
+  // icon click (persisted in parallel). Only markdown notes can flip —
+  // spacetime / yaml / txt surfaces always stay in their raw editor.
+  const [viewOverride, setViewOverride] = useState<NoteView | null>(null);
+  // Loaded sidecar contents for the active view (null = not loaded yet).
+  const [sheetContent, setSheetContent] = useState<string | null>(null);
+  const [drawingContent, setDrawingContent] = useState<string | null>(null);
   const [vaultRootForFlip, setVaultRootForFlip] = useState<string | null>(null);
   // Resolve the vault root once either the file browser OR the terminal
   // needs the folder's absolute path.
@@ -336,6 +352,61 @@ export function Card(props: Props) {
     window.addEventListener("order:open-terminal", onOpen);
     return () => window.removeEventListener("order:open-terminal", onOpen);
   }, [readOnly]);
+
+  // ---- Sheet / Drawing "flip" views ----------------------------------
+  // Only a plain markdown note (not a spacetime/yaml/txt raw surface) can
+  // flip. The active view = optimistic local override, else the persisted
+  // `view:` frontmatter, else "note".
+  const filenameForView = initialPath.split("/").pop() ?? "";
+  const canFlip = /\.md$/i.test(filenameForView) && !isSpacetimeFile(filenameForView);
+  const viewFm = state.kind === "ready" ? (liveFrontmatter ?? state.frontmatter) : null;
+  const view: NoteView = canFlip ? (viewOverride ?? (viewFm ? parseView(viewFm) : "note")) : "note";
+  const viewRef = useRef<NoteView>(view);
+  viewRef.current = view;
+
+  // Load the active view's sidecar (created on first flip by flipView).
+  useEffect(() => {
+    if (view === "note") return;
+    let cancelled = false;
+    const rel = toVaultRel(view === "sheet" ? sheetSidecarPath(pathRef.current) : drawingSidecarPath(pathRef.current));
+    void (async () => {
+      const raw = await vaultFs.readText(rel).catch(() => "");
+      if (cancelled) return;
+      if (view === "sheet") setSheetContent(raw); else setDrawingContent(raw);
+    })();
+    return () => { cancelled = true; };
+  }, [view, initialPath]);
+
+  // Flip to a target view (or back to the note if already there); persist the
+  // choice in the note's `view:` frontmatter and create the sidecar on first
+  // entry.
+  const flipView = useCallback(async (target: NoteView) => {
+    const next: NoteView = viewRef.current === target ? "note" : target;
+    setFlipped(false);
+    setTermOpen(false);
+    setViewOverride(next);
+    if (next === "sheet") setSheetContent(null);
+    else if (next === "drawing") setDrawingContent(null);
+    if (next !== "note") {
+      const rel = toVaultRel(next === "sheet" ? sheetSidecarPath(pathRef.current) : drawingSidecarPath(pathRef.current));
+      const exists = await vaultFs.exists(rel).catch(() => false);
+      if (!exists) {
+        const seed = next === "sheet" ? serializeSheet(emptySheet(12, 8)) : "";
+        try { await vaultFs.writeText(rel, seed); } catch (e) { console.error("create sidecar failed", e); }
+      }
+    }
+    if (onSetFrontmatter) {
+      try { await onSetFrontmatter({ view: next === "note" ? null : next }); }
+      catch (e) { console.error("persist view failed", e); }
+    }
+  }, [onSetFrontmatter]);
+
+  const saveSheet = useCallback((html: string) => {
+    void vaultFs.writeText(toVaultRel(sheetSidecarPath(pathRef.current)), html);
+  }, []);
+  const saveDrawing = useCallback((json: string) => {
+    void vaultFs.writeText(toVaultRel(drawingSidecarPath(pathRef.current)), json);
+  }, []);
   /** Newspaper height-cap state: `expanded` lifts the cap (Read more
    *  or, when editable, focusing the card); `overflowing` is whether
    *  the body actually exceeds the cap (only then do we show the
@@ -1028,6 +1099,8 @@ export function Card(props: Props) {
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "") +
     (showSpine ? " is-spine" : "") +
+    (view === "sheet" ? " is-sheet" : "") +
+    (view === "drawing" ? " is-drawing" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
   // Every card shares the SAME chrome — one theme border, one shadow,
@@ -1195,6 +1268,30 @@ export function Card(props: Props) {
           >
             <TerminalIcon size={14} strokeWidth={2} />
           </button>
+        )}
+        {canFlip && !readOnly && (
+          <>
+            <button
+              type="button"
+              className={"order-card-btn order-card-sheet" + (view === "sheet" ? " is-on" : "")}
+              onClick={() => { void flipView("sheet"); }}
+              title={view === "sheet" ? "Back to note" : "Edit as a spreadsheet"}
+              aria-label={view === "sheet" ? "Back to note" : "Spreadsheet view"}
+              aria-pressed={view === "sheet"}
+            >
+              <TableIcon size={14} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              className={"order-card-btn order-card-draw" + (view === "drawing" ? " is-on" : "")}
+              onClick={() => { void flipView("drawing"); }}
+              title={view === "drawing" ? "Back to note" : "Edit as a drawing"}
+              aria-label={view === "drawing" ? "Back to note" : "Drawing view"}
+              aria-pressed={view === "drawing"}
+            >
+              <PenToolIcon size={14} strokeWidth={2} />
+            </button>
+          </>
         )}
         {!readOnly && (confirmingDelete ? (
           <span className="order-card-delete-confirm">
@@ -1390,6 +1487,24 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
+        ) : view === "sheet" ? (
+          <Suspense fallback={<div className="order-surface-loading">Loading sheet…</div>}>
+            {sheetContent !== null && (
+              <SheetSurface
+                initial={sheetContent}
+                onChange={saveSheet}
+                readOnly={readOnly}
+                minRows={fullscreen ? 40 : 12}
+                minCols={fullscreen ? 20 : 8}
+              />
+            )}
+          </Suspense>
+        ) : view === "drawing" ? (
+          <Suspense fallback={<div className="order-surface-loading">Loading drawing…</div>}>
+            {drawingContent !== null && (
+              <DrawingSurface initial={drawingContent} onChange={saveDrawing} readOnly={readOnly} />
+            )}
+          </Suspense>
         ) : isSpacetimeFile(filename) ? (
           // Spacetime source (spacetime.md / *.spacetime.md / legacy .mw) —
           // CodeMirror with Markdown highlighting, edited as raw markwhen

@@ -23,6 +23,16 @@
   --rule:      #c2b896;  /* deeper warm-tan rule — borders read as ink, not haze */
   --rule-soft: #d8cfb4;
 
+  /* Sheet cell background palette — muted tints that read on cream. Dark
+     themes override these below. Custom colors bypass the palette. */
+  --sheet-rose:   #f3d4d0;
+  --sheet-amber:  #f3e3c2;
+  --sheet-green:  #d6e7cf;
+  --sheet-teal:   #cfe6e2;
+  --sheet-blue:   #d2ddf0;
+  --sheet-violet: #e0d6ea;
+  --sheet-slate:  #dcdce2;
+
   --royal:      #1f3fa8;  /* Original royal — the inner ink-card of the icon */
   --royal-soft: #c8d4ee;  /* more saturated wash for chips / today / hover */
   --coral:      #ff5a48;  /* a touch more saturated for chrome accents */
@@ -94,6 +104,15 @@
 :root[data-theme="dark"],
 :root[data-theme="black"] {
   color-scheme: dark;
+  /* Deeper, desaturated sheet tints so colored cells sit on a dark grid
+     without glowing. */
+  --sheet-rose:   #5a3a3f;
+  --sheet-amber:  #5a4a2e;
+  --sheet-green:  #37502f;
+  --sheet-teal:   #2f4f4c;
+  --sheet-blue:   #33425f;
+  --sheet-violet: #453a55;
+  --sheet-slate:  #3b3b45;
   /* Dark theme is the inverse of the icon — the deep navy that lives
      at the bottom-right of the Glass gradient (#06104a) becomes the
      field; the cream paper becomes the ink; coral stays the accent.
@@ -6983,3 +7002,128 @@ iframe.order-youtube-embed {
 .event-action-recip-x { border: none; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
 .event-action-recip-x:hover { color: var(--royal); }
 .event-action-recip-input { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--rule); border-radius: 4px; background: transparent; color: var(--ink); }
+
+/* ============================================================
+   Sheet & Drawing surfaces (note "flip" views)
+   ============================================================ */
+
+.order-surface-loading {
+  padding: 24px;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+/* ---- Spreadsheet ---- */
+.order-sheet-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+}
+.order-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 4px 8px;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 8px;
+}
+.order-sheet-tool-label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-faint);
+  margin-right: 2px;
+}
+.order-sheet-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+}
+.order-sheet-swatch:hover { outline: 2px solid var(--royal-soft); }
+.order-sheet-swatch-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f0a, #0af, #0fa, #fa0);
+  overflow: hidden;
+}
+.order-sheet-swatch-custom input[type="color"] {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.order-sheet-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  background: var(--bg-elev);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.order-sheet-tool:hover { background: var(--royal-soft); }
+
+.order-sheet-scroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+/* The overflow model: cells let text continue past to the right; each
+   column paints above the one to its left (z-index set inline per column
+   by SheetSurface), so a later opaque cell background covers earlier
+   overflow. Empty (uncolored) cells stay transparent, letting text through. */
+.order-sheet-surface .Spreadsheet__cell {
+  overflow: visible;
+  white-space: nowrap;
+}
+.order-sheet-surface .Spreadsheet__data-viewer {
+  overflow: visible;
+  white-space: nowrap;
+  text-align: left;
+  padding: 0 4px;
+}
+/* Collapse: clip this cell's own overflow instead of continuing past. */
+.order-sheet-surface .sheet-collapse {
+  overflow: hidden;
+}
+.order-sheet-surface .sheet-collapse .Spreadsheet__data-viewer {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Fullscreen: the grid fills the card. */
+.order-card.is-sheet.is-fullscreen .order-card-content,
+.order-card.is-drawing.is-fullscreen .order-card-content {
+  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.order-card.is-fullscreen .order-sheet-surface { flex: 1; min-height: 0; }
+
+/* ---- Drawing (Excalidraw) ---- */
+.order-drawing-surface {
+  width: 100%;
+  height: 60vh;
+  position: relative;
+}
+.order-card.is-fullscreen .order-drawing-surface {
+  height: calc(100vh - 110px);
+  flex: 1;
+}
+/* Excalidraw sets its own stacking; keep its menus above card chrome. */
+.order-drawing-surface .excalidraw {
+  --zIndex-layerUI: 5;
+}
