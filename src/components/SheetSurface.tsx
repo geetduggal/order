@@ -68,6 +68,22 @@ function fromRS(m: Matrix<RSCell>): SheetCell[][] {
   );
 }
 
+/** A readable text color for a CUSTOM background (palette tints already pair
+ *  with the theme's ink, so they return undefined → inherit). Picks near-black
+ *  or near-white by the background's perceived luminance so custom colors
+ *  stay legible in the spirit of the theme. */
+function customTextColor(bg: string | undefined): string | undefined {
+  if (!bg || bg.startsWith("t:") || !bg.startsWith("#")) return undefined;
+  const hex = bg.slice(1);
+  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  if (full.length < 6) return undefined;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? "#14171a" : "#f4f2ea";
+}
+
 export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCols = 8 }: SheetSurfaceProps) {
   const [sheet, setSheet] = useState<SheetCell[][]>(() => {
     const parsed = initial.trim() ? parseSheet(initial) : [];
@@ -84,6 +100,30 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   const rsData = useMemo(() => toRS(sheet), [sheet]);
   const rsDataRef = useRef(rsData);
   rsDataRef.current = rsData;
+  // Logical data for the viewer (reads bg for contrast); a ref so the memoized
+  // DataViewer stays stable (no per-render remount of every cell).
+  const dataRef = useRef(sheet);
+  dataRef.current = sheet;
+
+  // Custom cell viewer: renders the (evaluated) value in an ABSOLUTELY
+  // positioned span so it escapes the cell box and continues past to the
+  // right like a real spreadsheet — column z-index (set per column below)
+  // makes later opaque cells paint over the overflow. Text color is forced
+  // readable on custom backgrounds.
+  const CellViewer = useMemo(() => {
+    const V = ({ row, column, cell, evaluatedCell }: { row: number; column: number; cell?: RSCell; evaluatedCell?: RSCell }) => {
+      const bg = dataRef.current[row]?.[column]?.bg;
+      const color = customTextColor(bg);
+      // Prefer the evaluated value so `=A1+B1` shows its result, not the formula.
+      const v = (evaluatedCell ?? cell)?.value;
+      return (
+        <span className="order-sheet-val" style={color ? { color } : undefined}>
+          {v == null ? "" : String(v)}
+        </span>
+      );
+    };
+    return V;
+  }, []);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback((next: SheetCell[][]) => {
@@ -232,6 +272,7 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
           onActivate={handleActivate as never}
           onSelect={handleSelect as never}
           onModeChange={(m) => setEditing(m === "edit")}
+          DataViewer={CellViewer as never}
           className="order-sheet-grid"
         />
       </div>

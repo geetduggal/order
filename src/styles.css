@@ -7010,16 +7010,22 @@ iframe.order-youtube-embed {
 
 .order-surface-loading { padding: 24px; color: var(--ink-faint); font-size: 13px; }
 
-/* Sheet/drawing take over the whole card — minimal chrome so it reads as
-   "the card became a sheet/drawing", not a widget inside a note. */
+/* The card BECOMES the sheet/drawing: strip the card's own padding (the
+   markdown page margins) so the surface reaches the edges, in both card and
+   fullscreen. Higher specificity than .order-card.is-fullscreen so it wins. */
+.order-card.is-sheet,
+.order-card.is-drawing { padding: 3px; }
+.order-card.is-fullscreen.is-sheet,
+.order-card.is-fullscreen.is-drawing {
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
+}
 .order-card.is-sheet .order-card-content,
 .order-card.is-drawing .order-card-content {
-  padding: 4px;
+  padding: 0;
 }
 .order-card.is-sheet.is-fullscreen .order-card-content,
 .order-card.is-drawing.is-fullscreen .order-card-content {
-  padding: 0;
-  height: calc(100vh - 84px);
+  height: calc(100vh - 24px);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -7035,9 +7041,9 @@ iframe.order-youtube-embed {
 }
 .order-card.is-fullscreen .order-sheet-surface { flex: 1; min-height: 0; }
 
-/* Theme the react-spreadsheet grid to Order's palette (it defaults to a
-   hard white/black). Cells stay transparent so the surface reads in dark
-   mode; colored cells paint their own opaque background. */
+/* Theme the react-spreadsheet grid to Order's palette (it hard-codes
+   white/black). Cells stay transparent so the grid reads in every theme;
+   colored cells paint their own opaque background. */
 .order-sheet-surface .Spreadsheet {
   --background-color: transparent;
   --text-color: var(--ink);
@@ -7050,35 +7056,29 @@ iframe.order-youtube-embed {
   width: 100%;
 }
 .order-sheet-surface .Spreadsheet__header { color: var(--ink-faint); }
-.order-sheet-surface .Spreadsheet__active-cell--edit { background: var(--bg); }
+.order-sheet-surface .Spreadsheet__active-cell--edit { background: var(--bg); color: var(--ink); }
 
-/* Floating toolbar — always visible (works on touch, where there's no
-   hover), elevated over the grid like Excalidraw's / the dock. */
+/* Floating palette dock — pinned to the BOTTOM center (like the app dock) so
+   it never collides with the card's own top control icons; always visible so
+   it works on touch (no hover). */
 .order-sheet-toolbar {
   position: absolute;
-  top: 6px;
-  left: 50%;
+  bottom: 12px; left: 50%;
   transform: translateX(-50%);
   z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: calc(100% - 16px);
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; flex-wrap: wrap;
+  max-width: calc(100% - 12px);
   padding: 5px 8px;
   border: 1px solid var(--rule);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
   backdrop-filter: blur(8px);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 20%);
 }
 .order-sheet-tool-label { display: inline-flex; align-items: center; color: var(--ink-faint); margin-right: 2px; }
 .order-sheet-tool-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--rule-soft); }
-.order-sheet-swatch {
-  width: 18px; height: 18px; border-radius: 5px;
-  border: 1px solid var(--rule); cursor: pointer; padding: 0;
-}
+.order-sheet-swatch { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--rule); cursor: pointer; padding: 0; }
 .order-sheet-swatch:hover { outline: 2px solid var(--royal-soft); }
 .order-sheet-swatch-custom {
   display: inline-flex; align-items: center; justify-content: center;
@@ -7093,27 +7093,32 @@ iframe.order-youtube-embed {
 }
 .order-sheet-tool:hover { background: var(--royal-soft); color: var(--ink); }
 
-/* Grid scrolls under the floating toolbar; a little top room so the toolbar
-   doesn't sit on row 1. */
-.order-sheet-scroll { overflow: auto; min-height: 0; flex: 1; padding-top: 44px; }
+.order-sheet-scroll { overflow: auto; min-height: 0; flex: 1; padding-top: 30px; padding-bottom: 52px; }
 
-/* Overflow model: cells let text continue past to the right, and each column
-   paints above the one to its left (z-index set per column above), so a
-   later opaque cell background covers earlier overflow while empty cells let
-   it through — i.e. text flows across empty cells like a real spreadsheet. */
-.order-sheet-surface .Spreadsheet__cell { overflow: visible; }
-.order-sheet-surface .Spreadsheet__data-viewer {
-  overflow: visible;
+/* Overflow model. The value is rendered in an absolutely-positioned span so it
+   escapes the cell box and continues past to the right like a real
+   spreadsheet. Per-column z-index (set inline above) makes a later opaque cell
+   paint over the overflow, while an uncolored (transparent) cell lets it pass
+   through — so text flows across empty cells. */
+.order-sheet-surface .order-sheet-val {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
   white-space: nowrap;
-  text-align: left;
+  pointer-events: none;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
-/* While a cell is being edited, clip overflow so the viewer text underneath
-   the editor input doesn't render over the top of it (the "doubled text"). */
+/* While a cell is edited, clip its overflow so the view span doesn't render
+   past the editor input (the "doubled text"). overflow:hidden on the td (its
+   containing block) clips the absolute span to the cell. */
 .order-sheet-surface.is-editing .Spreadsheet__cell { overflow: hidden; }
-/* Collapse: this cell clips its own overflow instead of continuing past. */
+/* Collapse: this cell always clips its own overflow. */
 .order-sheet-surface .sheet-collapse { overflow: hidden; }
-.order-sheet-surface .sheet-collapse .Spreadsheet__data-viewer { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Drawing (Excalidraw) ---- */
-.order-drawing-surface { width: 100%; height: 62vh; position: relative; }
-.order-card.is-fullscreen .order-drawing-surface { height: calc(100vh - 96px); flex: 1; }
+.order-drawing-surface { width: 100%; height: 64vh; position: relative; }
+.order-card.is-fullscreen .order-drawing-surface { height: 100%; flex: 1; min-height: 0; }
