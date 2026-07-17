@@ -50,8 +50,19 @@ test("flip to sheet: sidecar created, view persisted, grid renders", async ({ pa
   const a1val = a1.locator(".order-sheet-val");
   await expect(a1val).toHaveText(/overflow past/, { timeout: 5_000 });
   const spanW = await a1val.evaluate((el) => (el as HTMLElement).scrollWidth);
-  const cellW = await a1.evaluate((el) => (el as HTMLElement).clientWidth);
-  expect(spanW).toBeGreaterThan(cellW + 40);
+  const cell = await a1.evaluate((el) => ({
+    w: (el as HTMLElement).clientWidth,
+    overflow: getComputedStyle(el as HTMLElement).overflow,
+  }));
+  // The span is wider than the cell AND the cell doesn't clip it — both are
+  // required for the text to actually spill visually (the earlier bug was a
+  // wide span clipped by an overflow:hidden cell).
+  expect(spanW).toBeGreaterThan(cell.w + 40);
+  expect(cell.overflow).toBe("visible");
+  // "Stops at content": a cell with content gets the opaque surface bg (clips
+  // overflow from its left); an empty neighbor stays transparent (lets it pass).
+  await expect(a1).toHaveClass(/sheet-bg-surface/);
+  await expect(card.locator(".Spreadsheet__cell.sheet-col-1").first()).not.toHaveClass(/sheet-bg-surface/);
 
   // Formula: B1 = "=1+2" evaluates to 3 in the viewer.
   const b1 = card.locator(".Spreadsheet__cell.sheet-col-1").first();
@@ -68,6 +79,13 @@ test("flip to sheet: sidecar created, view persisted, grid renders", async ({ pa
   await expect
     .poll(() => page.evaluate(() => (window as any).__VAULT__.read("Work/Work Spaces/Planning/Planning.sheet.html")))
     .toContain("data-bg=\"t:rose\"");
+
+  // Delete a column via the header right-click menu: after deleting column A,
+  // the formula that was in B1 shifts into A1 (still shows "3").
+  await card.locator(".Spreadsheet__header", { hasText: /^A$/ }).first().click({ button: "right" });
+  await expect(card.locator(".order-sheet-menu")).toBeVisible({ timeout: 5_000 });
+  await card.getByRole("button", { name: /Delete column A/ }).click();
+  await expect(card.locator(".Spreadsheet__cell.sheet-col-0 .order-sheet-val").first()).toHaveText("3", { timeout: 5_000 });
 
   // Flip back to the note by clicking the sheet icon again → view cleared.
   await card.locator(".order-card-sheet").click();

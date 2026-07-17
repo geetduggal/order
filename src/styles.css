@@ -7042,8 +7042,14 @@ iframe.order-youtube-embed {
 .order-card.is-fullscreen .order-sheet-surface { flex: 1; min-height: 0; }
 
 /* Theme the react-spreadsheet grid to Order's palette (it hard-codes
-   white/black). Cells stay transparent so the grid reads in every theme;
-   colored cells paint their own opaque background. */
+   white/black). The surface color is the card background: EMPTY cells stay
+   transparent (overflow text passes through), while cells WITH content get
+   this same opaque color (see .sheet-bg-surface) so they clip earlier
+   overflow — matching a real spreadsheet ("stops at the first cell with
+   content"). Because both are the same color, the grid looks uniform. */
+.order-sheet-surface {
+  --sheet-surface-bg: var(--card-bg, color-mix(in srgb, var(--royal) 6%, var(--bg)));
+}
 .order-sheet-surface .Spreadsheet {
   --background-color: transparent;
   --text-color: var(--ink);
@@ -7052,11 +7058,14 @@ iframe.order-youtube-embed {
   --header-background-color: var(--bg-elev);
   --outline-color: var(--royal);
   --outline-background-color: var(--royal-soft);
-  background: transparent;
+  background: var(--sheet-surface-bg);
   width: 100%;
 }
 .order-sheet-surface .Spreadsheet__header { color: var(--ink-faint); }
 .order-sheet-surface .Spreadsheet__active-cell--edit { background: var(--bg); color: var(--ink); }
+/* Opaque background for a content-bearing cell (its z-index paints over the
+   overflow from cells to its left). */
+.order-sheet-surface .sheet-bg-surface { background: var(--sheet-surface-bg); }
 
 /* Floating palette dock — pinned to the BOTTOM center (like the app dock) so
    it never collides with the card's own top control icons; always visible so
@@ -7097,9 +7106,12 @@ iframe.order-youtube-embed {
 
 /* Overflow model. The value is rendered in an absolutely-positioned span so it
    escapes the cell box and continues past to the right like a real
-   spreadsheet. Per-column z-index (set inline above) makes a later opaque cell
-   paint over the overflow, while an uncolored (transparent) cell lets it pass
-   through — so text flows across empty cells. */
+   spreadsheet. The cell (td) MUST allow overflow (react-spreadsheet defaults
+   it to hidden, which clips the span); per-column z-index (set inline above)
+   then makes a later opaque cell paint over the overflow, while an empty
+   transparent cell lets it pass through — text flows across empty cells and
+   stops at the first cell with content. */
+.order-sheet-surface .Spreadsheet__cell { overflow: visible; }
 .order-sheet-surface .order-sheet-val {
   position: absolute;
   left: 0; top: 0;
@@ -7122,3 +7134,30 @@ iframe.order-youtube-embed {
 /* ---- Drawing (Excalidraw) ---- */
 .order-drawing-surface { width: 100%; height: 64vh; position: relative; }
 .order-card.is-fullscreen .order-drawing-surface { height: 100%; flex: 1; min-height: 0; }
+
+/* Row/column header right-click menu (insert / delete). */
+.order-sheet-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  display: flex;
+  flex-direction: column;
+}
+.order-sheet-menu button {
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.order-sheet-menu button:hover { background: var(--royal-soft); }
+.order-sheet-menu button.is-danger { color: var(--coral); }
+.order-sheet-menu button.is-danger:hover { background: color-mix(in srgb, var(--coral) 22%, transparent); }

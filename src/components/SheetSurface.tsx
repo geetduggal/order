@@ -15,10 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Spreadsheet, { type CellBase, type Matrix } from "react-spreadsheet";
-import {
-  Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon,
-  Rows3 as RowsIcon, Columns3 as ColumnsIcon,
-} from "lucide-react";
+import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon } from "lucide-react";
 import {
   SHEET_PALETTE,
   emptySheet,
@@ -44,17 +41,32 @@ function bgClass(bg: string): string {
   return `sheet-bg-c${bg.replace(/[^a-z0-9]/gi, "")}`;
 }
 
+/** Column index → spreadsheet letter (0→A, 26→AA). */
+function colLabel(n: number): string {
+  let s = "";
+  let x = n + 1;
+  while (x > 0) { const m = (x - 1) % 26; s = String.fromCharCode(65 + m) + s; x = Math.floor((x - 1) / 26); }
+  return s;
+}
+
 function toRS(data: SheetCell[][]): Matrix<RSCell> {
   return data.map((row, r) =>
-    row.map((cell, c): RSCell => ({
-      value: cell.value,
-      ...(cell.bg ? { bg: cell.bg } : {}),
-      ...(cell.collapse ? { collapse: true } : {}),
-      className:
-        `sheet-col-${c}` +
-        (cell.bg ? ` ${bgClass(cell.bg)}` : "") +
-        (cell.collapse ? " sheet-collapse" : ""),
-    })),
+    row.map((cell, c): RSCell => {
+      const hasContent = cell.value != null && String(cell.value).trim() !== "";
+      // A cell with an explicit fill uses that; a cell with content but no fill
+      // gets the opaque surface color so it clips overflow from the left (like
+      // a real spreadsheet); an empty cell stays transparent so overflow passes.
+      const bgCls = cell.bg ? bgClass(cell.bg) : hasContent ? "sheet-bg-surface" : "";
+      return {
+        value: cell.value,
+        ...(cell.bg ? { bg: cell.bg } : {}),
+        ...(cell.collapse ? { collapse: true } : {}),
+        className:
+          `sheet-col-${c}` +
+          (bgCls ? ` ${bgCls}` : "") +
+          (cell.collapse ? " sheet-collapse" : ""),
+      };
+    }),
   );
 }
 
@@ -96,6 +108,16 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   // single-cell click; onSelect covers a dragged range.
   const selRef = useRef<Rect | null>(null);
   const [editing, setEditing] = useState(false);
+  // Row/column header right-click menu (insert / delete).
+  const [menu, setMenu] = useState<{ axis: "row" | "col"; index: number; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", onKey); };
+  }, [menu]);
 
   const rsData = useMemo(() => toRS(sheet), [sheet]);
   const rsDataRef = useRef(rsData);
@@ -123,6 +145,34 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
       );
     };
     return V;
+  }, []);
+
+  // Header indicators: keep react-spreadsheet's click-to-select-axis behavior,
+  // and add a right-click menu for insert / delete. Stable across renders
+  // (setMenu is stable) so the grid doesn't remount headers each render.
+  const ColumnIndicator = useMemo(() => {
+    const C = ({ column, label, selected, onSelect }: { column: number; label?: React.ReactNode; selected: boolean; onSelect: (c: number, extend: boolean) => void }) => (
+      <th
+        className={"Spreadsheet__header" + (selected ? " Spreadsheet__header--selected" : "")}
+        onClick={(e) => onSelect(column, e.shiftKey)}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ axis: "col", index: column, x: e.clientX, y: e.clientY }); }}
+      >
+        {label ?? colLabel(column)}
+      </th>
+    );
+    return C;
+  }, []);
+  const RowIndicator = useMemo(() => {
+    const R = ({ row, label, selected, onSelect }: { row: number; label?: React.ReactNode; selected: boolean; onSelect: (r: number, extend: boolean) => void }) => (
+      <th
+        className={"Spreadsheet__header" + (selected ? " Spreadsheet__header--selected" : "")}
+        onClick={(e) => onSelect(row, e.shiftKey)}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ axis: "row", index: row, x: e.clientX, y: e.clientY }); }}
+      >
+        {label ?? row + 1}
+      </th>
+    );
+    return R;
   }, []);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -187,23 +237,31 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
     });
   }, [mutateSelection, sheet]);
 
-  const deleteRows = useCallback(() => {
-    const sel = selRef.current;
-    if (!sel || readOnly) return;
+  // Row / column structural edits, driven by the header right-click menu.
+  const blankRow = (cols: number): SheetCell[] => Array.from({ length: cols }, () => ({ value: "" }));
+  const rowOps = useCallback((i: number, kind: "delete" | "above" | "below") => {
+    if (readOnly) return;
     setSheet((prev) => {
-      const next = padSheet(prev.filter((_, i) => i < sel.r0 || i > sel.r1), minRows, minCols);
-      persist(next);
-      return next;
+      const cols = prev.reduce((m, r) => Math.max(m, r.length), 1);
+      let next: SheetCell[][];
+      if (kind === "delete") next = prev.filter((_, r) => r !== i);
+      else next = [...prev.slice(0, kind === "above" ? i : i + 1), blankRow(cols), ...prev.slice(kind === "above" ? i : i + 1)];
+      const padded = padSheet(next, minRows, minCols);
+      persist(padded);
+      return padded;
     });
   }, [readOnly, persist, minRows, minCols]);
-
-  const deleteCols = useCallback(() => {
-    const sel = selRef.current;
-    if (!sel || readOnly) return;
+  const colOps = useCallback((j: number, kind: "delete" | "left" | "right") => {
+    if (readOnly) return;
     setSheet((prev) => {
-      const next = padSheet(prev.map((row) => row.filter((_, j) => j < sel.c0 || j > sel.c1)), minRows, minCols);
-      persist(next);
-      return next;
+      const next = prev.map((row) => {
+        if (kind === "delete") return row.filter((_, c) => c !== j);
+        const at = kind === "left" ? j : j + 1;
+        return [...row.slice(0, at), { value: "" } as SheetCell, ...row.slice(at)];
+      });
+      const padded = padSheet(next, minRows, minCols);
+      persist(padded);
+      return padded;
     });
   }, [readOnly, persist, minRows, minCols]);
 
@@ -257,12 +315,23 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
           <button type="button" className="order-sheet-tool" onClick={toggleCollapse} title="Collapse / expand cell overflow" aria-label="Toggle collapse overflow">
             <ScissorsIcon size={13} strokeWidth={2} />
           </button>
-          <button type="button" className="order-sheet-tool" onClick={deleteRows} title="Delete selected row(s)" aria-label="Delete rows">
-            <RowsIcon size={13} strokeWidth={2} />
-          </button>
-          <button type="button" className="order-sheet-tool" onClick={deleteCols} title="Delete selected column(s)" aria-label="Delete columns">
-            <ColumnsIcon size={13} strokeWidth={2} />
-          </button>
+        </div>
+      )}
+      {menu && !readOnly && (
+        <div className="order-sheet-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+          {menu.axis === "row" ? (
+            <>
+              <button type="button" onClick={() => { rowOps(menu.index, "above"); setMenu(null); }}>Insert row above</button>
+              <button type="button" onClick={() => { rowOps(menu.index, "below"); setMenu(null); }}>Insert row below</button>
+              <button type="button" className="is-danger" onClick={() => { rowOps(menu.index, "delete"); setMenu(null); }}>Delete row {menu.index + 1}</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => { colOps(menu.index, "left"); setMenu(null); }}>Insert column left</button>
+              <button type="button" onClick={() => { colOps(menu.index, "right"); setMenu(null); }}>Insert column right</button>
+              <button type="button" className="is-danger" onClick={() => { colOps(menu.index, "delete"); setMenu(null); }}>Delete column {colLabel(menu.index)}</button>
+            </>
+          )}
         </div>
       )}
       <div className="order-sheet-scroll">
@@ -273,6 +342,8 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
           onSelect={handleSelect as never}
           onModeChange={(m) => setEditing(m === "edit")}
           DataViewer={CellViewer as never}
+          ColumnIndicator={ColumnIndicator as never}
+          RowIndicator={RowIndicator as never}
           className="order-sheet-grid"
         />
       </div>
