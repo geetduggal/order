@@ -198,9 +198,11 @@ test("1g — OS file drop imports into the flipped NF folder view", async ({ pag
   await expect(page.locator(".filter-pill .filter-pill-name")).toHaveText(["Home Base"]);
 
   // Flip the Home Base main doc to its file-browser side. The flip
-  // affordance is the "Show folder contents" card button; the
-  // drag-drop listener mounts with the backside.
-  await page.click('.order-card.is-main button[aria-label="Show folder contents"]');
+  // affordance now lives in the card's "⋯" more-actions menu (rendered in
+  // a body portal); the drag-drop listener mounts with the backside.
+  await page.locator(".order-card.is-main").first().hover();
+  await page.locator(".order-card.is-main .order-card-more").first().click();
+  await page.getByRole("menuitem", { name: /Folder contents/ }).click();
 
   // Emit the native Tauri event the webview would send for an OS drop
   // and assert the Rust import command fired + the file is listed.

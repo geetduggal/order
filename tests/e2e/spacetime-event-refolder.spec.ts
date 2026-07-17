@@ -80,9 +80,11 @@ test("card's folder icon moves a note to the picked Notable Folder", async ({ pa
   await cell.locator(".ProseMirror").waitFor({ timeout: 10_000 });
   await page.waitForTimeout(500);
 
-  // The controls strip reveals on hover; the folder icon opens the picker.
+  // Secondary actions live in the "⋯" menu now; open it and pick "Move…".
   await cell.hover();
-  await cell.locator(".order-card-refolder").click();
+  await cell.locator(".order-card-more").click();
+  // The menu renders in a body portal, so it's page-level (not cell-scoped).
+  await page.locator(".order-card-more-refolder").click();
   const input = page.locator(".order-card-folderpick .order-card-folder-input");
   await input.fill("Side Quest");
   await input.press("Enter");

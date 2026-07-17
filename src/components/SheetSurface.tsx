@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Spreadsheet, { type CellBase, type Matrix } from "react-spreadsheet";
-import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon } from "lucide-react";
+import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon, ChevronsDown as ChevronsDownIcon } from "lucide-react";
 import {
   SHEET_PALETTE,
   emptySheet,
@@ -32,6 +32,12 @@ interface SheetSurfaceProps {
   initial: string;
   onChange: (html: string) => void;
   readOnly?: boolean;
+  /** Card view: hide the row/column headers and the palette dock, cap the
+   *  visible rows, and lock editing — a clean preview; the full editor is in
+   *  fullscreen. */
+  minimal?: boolean;
+  /** Called by the preview's "open fullscreen" enticer. */
+  onExpand?: () => void;
   minRows?: number;
   minCols?: number;
 }
@@ -49,16 +55,17 @@ function colLabel(n: number): string {
   return s;
 }
 
-function toRS(data: SheetCell[][]): Matrix<RSCell> {
+function toRS(data: SheetCell[][], locked: boolean): Matrix<RSCell> {
   return data.map((row, r) =>
     row.map((cell, c): RSCell => {
-      const hasContent = cell.value != null && String(cell.value).trim() !== "";
-      // A cell with an explicit fill uses that; a cell with content but no fill
-      // gets the opaque surface color so it clips overflow from the left (like
-      // a real spreadsheet); an empty cell stays transparent so overflow passes.
-      const bgCls = cell.bg ? bgClass(cell.bg) : hasContent ? "sheet-bg-surface" : "";
+      // The TD only carries the fill COLOR (a background layer that stays
+      // BELOW all text). "Stops at content" is handled by the text span
+      // (see CellViewer), which sits above every color so overflow text is
+      // never overwritten by a later cell's color.
+      const bgCls = cell.bg ? bgClass(cell.bg) : "";
       return {
         value: cell.value,
+        ...(locked ? { readOnly: true } : {}),
         ...(cell.bg ? { bg: cell.bg } : {}),
         ...(cell.collapse ? { collapse: true } : {}),
         className:
@@ -69,6 +76,15 @@ function toRS(data: SheetCell[][]): Matrix<RSCell> {
     }),
   );
 }
+
+/** Resolve a stored bg (palette token or raw color) to a CSS color. */
+function resolveBg(bg: string | undefined): string | undefined {
+  if (!bg) return undefined;
+  return bg.startsWith("t:") ? `var(--sheet-${bg.slice(2)})` : bg;
+}
+
+// Card view shows at most this many rows — a preview that entices fullscreen.
+const PREVIEW_ROWS = 8;
 
 function fromRS(m: Matrix<RSCell>): SheetCell[][] {
   return m.map((row) =>
@@ -96,12 +112,19 @@ function customTextColor(bg: string | undefined): string | undefined {
   return lum > 0.6 ? "#14171a" : "#f4f2ea";
 }
 
-export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCols = 8 }: SheetSurfaceProps) {
+export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, minRows = 12, minCols = 8 }: SheetSurfaceProps) {
   const [sheet, setSheet] = useState<SheetCell[][]>(() => {
     const parsed = initial.trim() ? parseSheet(initial) : [];
     return padSheet(parsed, minRows, minCols);
   });
-  useEffect(() => { setSheet((prev) => padSheet(prev, minRows, minCols)); }, [minRows, minCols]);
+  useEffect(() => {
+    setSheet((prev) => {
+      const cols = prev.reduce((m, r) => Math.max(m, r.length), 0);
+      // Only grow (new array) when actually needed — returning the same ref
+      // avoids a redundant render + a spurious react-spreadsheet onChange echo.
+      return prev.length >= minRows && cols >= minCols ? prev : padSheet(prev, minRows, minCols);
+    });
+  }, [minRows, minCols]);
 
   // Last known selection rectangle, kept in a ref so a toolbar click (which
   // blurs the grid) still applies to what was selected. onActivate covers a
@@ -119,13 +142,25 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", onKey); };
   }, [menu]);
 
-  const rsData = useMemo(() => toRS(sheet), [sheet]);
+  // Card view shows only the first PREVIEW_ROWS and locks editing; the last
+  // content row drives the "N rows — open fullscreen" enticer.
+  const contentRows = useMemo(() => {
+    let n = 0;
+    sheet.forEach((row, r) => { if (row.some((c) => c.value != null && String(c.value).trim() !== "")) n = r + 1; });
+    return n;
+  }, [sheet]);
+  const displaySheet = useMemo(() => (minimal ? sheet.slice(0, PREVIEW_ROWS) : sheet), [sheet, minimal]);
+  const hasMore = !!minimal && contentRows > PREVIEW_ROWS;
+
+  const rsData = useMemo(() => toRS(displaySheet, !!readOnly || !!minimal), [displaySheet, readOnly, minimal]);
   const rsDataRef = useRef(rsData);
   rsDataRef.current = rsData;
   // Logical data for the viewer (reads bg for contrast); a ref so the memoized
   // DataViewer stays stable (no per-render remount of every cell).
   const dataRef = useRef(sheet);
   dataRef.current = sheet;
+  const sheetRef = useRef(sheet);
+  sheetRef.current = sheet;
 
   // Custom cell viewer: renders the (evaluated) value in an ABSOLUTELY
   // positioned span so it escapes the cell box and continues past to the
@@ -134,17 +169,48 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   // readable on custom backgrounds.
   const CellViewer = useMemo(() => {
     const V = ({ row, column, cell, evaluatedCell }: { row: number; column: number; cell?: RSCell; evaluatedCell?: RSCell }) => {
-      const bg = dataRef.current[row]?.[column]?.bg;
-      const color = customTextColor(bg);
+      const logical = dataRef.current[row]?.[column];
+      const bg = logical?.bg;
+      const hasContent = logical?.value != null && String(logical.value).trim() !== "";
       // Prefer the evaluated value so `=A1+B1` shows its result, not the formula.
       const v = (evaluatedCell ?? cell)?.value;
+      // Column z-index puts later text above earlier overflow, and above ALL
+      // colors (colors live on the TD, below the span). A cell WITH content
+      // carries an opaque background (its color, else the surface) so it paints
+      // over overflow from its left — "stops at content". An empty cell (even a
+      // colored one) has a transparent span, so overflow passes over its color.
+      const style: React.CSSProperties = { zIndex: column + 1 };
+      if (hasContent) style.background = resolveBg(bg) ?? "var(--sheet-surface-bg)";
+      const color = customTextColor(bg);
+      if (color) style.color = color;
       return (
-        <span className="order-sheet-val" style={color ? { color } : undefined}>
+        <span className="order-sheet-val" style={style}>
           {v == null ? "" : String(v)}
         </span>
       );
     };
     return V;
+  }, []);
+
+  // Custom editor: an auto-growing input (via the `size` attribute) with an
+  // opaque surface background, so the edit box itself spills past the cell
+  // like a real spreadsheet WHILE typing — and paints over the view span
+  // underneath so there's no doubled text. (react-spreadsheet's default
+  // editor is a fixed cell-width input that just scrolls internally.)
+  const CellEditor = useMemo(() => {
+    const E = ({ cell, onChange }: { cell?: RSCell; onChange: (c: RSCell) => void }) => {
+      const value = String(cell?.value ?? "");
+      return (
+        <input
+          className="order-sheet-editor"
+          autoFocus
+          value={value}
+          size={Math.max(value.length + 1, 2)}
+          onChange={(e) => onChange({ ...(cell ?? { value: "" }), value: e.target.value })}
+        />
+      );
+    };
+    return E;
   }, []);
 
   // Header indicators: keep react-spreadsheet's click-to-select-axis behavior,
@@ -175,18 +241,35 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
     return R;
   }, []);
 
+  // Serialized form of what's currently committed. react-spreadsheet fires
+  // onChange whenever its `data` prop changes — INCLUDING when we change it
+  // ourselves (padding on fullscreen, a toolbar edit). Without this guard,
+  // that echo would call setSheet again → new data ref → onChange → an
+  // infinite loop that blanks the grid. Every commit updates this ref, and an
+  // onChange whose serialized content already matches is ignored.
+  const lastHtmlRef = useRef<string | null>(null);
+  if (lastHtmlRef.current === null) lastHtmlRef.current = serializeSheet(sheet);
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persist = useCallback((next: SheetCell[][]) => {
+  const persistHtml = useCallback((html: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => onChange(serializeSheet(next)), 500);
+    saveTimer.current = setTimeout(() => onChange(html), 500);
   }, [onChange]);
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
-  const handleRSChange = useCallback((m: Matrix<RSCell>) => {
-    const next = fromRS(m);
+  /** Commit new sheet data: dedupe against the last serialized form, stamp the
+   *  guard ref, update state, and schedule a save. */
+  const commit = useCallback((next: SheetCell[][]) => {
+    const html = serializeSheet(next);
+    if (html === lastHtmlRef.current) return;
+    lastHtmlRef.current = html;
     setSheet(next);
-    persist(next);
-  }, [persist]);
+    persistHtml(html);
+  }, [persistHtml]);
+
+  const handleRSChange = useCallback((m: Matrix<RSCell>) => {
+    commit(fromRS(m));
+  }, [commit]);
 
   const handleActivate = useCallback((pt: { row: number; column: number }) => {
     selRef.current = { r0: pt.row, c0: pt.column, r1: pt.row, c1: pt.column };
@@ -205,14 +288,11 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   const mutateSelection = useCallback((mut: (cell: SheetCell) => SheetCell) => {
     const sel = selRef.current;
     if (!sel || readOnly) return;
-    setSheet((prev) => {
-      const next = padSheet(prev, sel.r1 + 1, sel.c1 + 1).map((row) => row.slice());
-      for (let r = sel.r0; r <= sel.r1; r++)
-        for (let c = sel.c0; c <= sel.c1; c++) next[r][c] = mut({ ...next[r][c] });
-      persist(next);
-      return next;
-    });
-  }, [readOnly, persist]);
+    const next = padSheet(sheetRef.current, sel.r1 + 1, sel.c1 + 1).map((row) => row.slice());
+    for (let r = sel.r0; r <= sel.r1; r++)
+      for (let c = sel.c0; c <= sel.c1; c++) next[r][c] = mut({ ...next[r][c] });
+    commit(next);
+  }, [readOnly, commit]);
 
   const setBg = useCallback((bg: string | undefined) => {
     mutateSelection((cell) => {
@@ -241,36 +321,29 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   const blankRow = (cols: number): SheetCell[] => Array.from({ length: cols }, () => ({ value: "" }));
   const rowOps = useCallback((i: number, kind: "delete" | "above" | "below") => {
     if (readOnly) return;
-    setSheet((prev) => {
-      const cols = prev.reduce((m, r) => Math.max(m, r.length), 1);
-      let next: SheetCell[][];
-      if (kind === "delete") next = prev.filter((_, r) => r !== i);
-      else next = [...prev.slice(0, kind === "above" ? i : i + 1), blankRow(cols), ...prev.slice(kind === "above" ? i : i + 1)];
-      const padded = padSheet(next, minRows, minCols);
-      persist(padded);
-      return padded;
-    });
-  }, [readOnly, persist, minRows, minCols]);
+    const prev = sheetRef.current;
+    const cols = prev.reduce((m, r) => Math.max(m, r.length), 1);
+    const next = kind === "delete"
+      ? prev.filter((_, r) => r !== i)
+      : [...prev.slice(0, kind === "above" ? i : i + 1), blankRow(cols), ...prev.slice(kind === "above" ? i : i + 1)];
+    commit(padSheet(next, minRows, minCols));
+  }, [readOnly, commit, minRows, minCols]);
   const colOps = useCallback((j: number, kind: "delete" | "left" | "right") => {
     if (readOnly) return;
-    setSheet((prev) => {
-      const next = prev.map((row) => {
-        if (kind === "delete") return row.filter((_, c) => c !== j);
-        const at = kind === "left" ? j : j + 1;
-        return [...row.slice(0, at), { value: "" } as SheetCell, ...row.slice(at)];
-      });
-      const padded = padSheet(next, minRows, minCols);
-      persist(padded);
-      return padded;
+    const next = sheetRef.current.map((row) => {
+      if (kind === "delete") return row.filter((_, c) => c !== j);
+      const at = kind === "left" ? j : j + 1;
+      return [...row.slice(0, at), { value: "" } as SheetCell, ...row.slice(at)];
     });
-  }, [readOnly, persist, minRows, minCols]);
+    commit(padSheet(next, minRows, minCols));
+  }, [readOnly, commit, minRows, minCols]);
 
   // Per-column z-index (paint order) + one rule per in-use background color.
   const dynamicCss = useMemo(() => {
     const cols = sheet.reduce((m, row) => Math.max(m, row.length), 0);
     const rules: string[] = [];
     for (let c = 0; c < cols; c++) {
-      rules.push(`.order-sheet-surface .sheet-col-${c}{position:relative;z-index:${c + 1};}`);
+      rules.push(`.order-sheet-surface .sheet-col-${c}{position:relative;}`);
     }
     const seen = new Set<string>();
     for (const row of sheet) {
@@ -289,9 +362,9 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
   const keepSel = useCallback((e: React.MouseEvent) => { e.preventDefault(); }, []);
 
   return (
-    <div className={"order-sheet-surface" + (editing ? " is-editing" : "")}>
+    <div className={"order-sheet-surface" + (editing ? " is-editing" : "") + (minimal ? " is-minimal" : "")}>
       <style>{dynamicCss}</style>
-      {!readOnly && (
+      {!readOnly && !minimal && (
         <div className="order-sheet-toolbar" role="toolbar" aria-label="Cell formatting" onMouseDown={keepSel}>
           <span className="order-sheet-tool-label"><PaletteIcon size={13} strokeWidth={2} /></span>
           {SHEET_PALETTE.map((p) => (
@@ -342,11 +415,25 @@ export function SheetSurface({ initial, onChange, readOnly, minRows = 12, minCol
           onSelect={handleSelect as never}
           onModeChange={(m) => setEditing(m === "edit")}
           DataViewer={CellViewer as never}
+          DataEditor={CellEditor as never}
           ColumnIndicator={ColumnIndicator as never}
           RowIndicator={RowIndicator as never}
+          hideColumnIndicators={minimal}
+          hideRowIndicators={minimal}
           className="order-sheet-grid"
         />
       </div>
+      {hasMore && (
+        <button
+          type="button"
+          className="order-sheet-expand"
+          onClick={onExpand}
+          title={`${contentRows} rows — open fullscreen to see all & edit`}
+          aria-label={`Open fullscreen — ${contentRows} rows`}
+        >
+          <ChevronsDownIcon size={13} strokeWidth={2} />
+        </button>
+      )}
     </div>
   );
 }

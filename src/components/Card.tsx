@@ -59,7 +59,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -323,6 +323,30 @@ export function Card(props: Props) {
   // icon click (persisted in parallel). Only markdown notes can flip —
   // spacetime / yaml / txt surfaces always stay in their raw editor.
   const [viewOverride, setViewOverride] = useState<NoteView | null>(null);
+  // Secondary card actions collapse behind a "⋯" popover so the top control
+  // row stays uncrowded (and doesn't overlap the date chip or a flipped
+  // surface's own toolbar).
+  const [moreOpen, setMoreOpen] = useState(false);
+  // The menu renders in a portal (fixed coords from the button) so it escapes
+  // sibling cards' stacking contexts / overflow — otherwise a later card
+  // paints over it.
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const [morePos, setMorePos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const openMore = useCallback(() => {
+    const r = moreBtnRef.current?.getBoundingClientRect();
+    if (r) setMorePos({ top: r.bottom + 4, right: Math.max(6, window.innerWidth - r.right) });
+    setMoreOpen((v) => !v);
+  }, []);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e: Event) => {
+      if (!(e.target as HTMLElement | null)?.closest?.(".order-card-more, .order-card-more-menu")) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
   // Loaded sidecar contents for the active view (null = not loaded yet).
   const [sheetContent, setSheetContent] = useState<string | null>(null);
   const [drawingContent, setDrawingContent] = useState<string | null>(null);
@@ -1194,81 +1218,8 @@ export function Card(props: Props) {
             8. Fullscreen toggle
             9. × close (dismiss from filtered view) */}
       <div className={"order-card-controls" + (flipped || termOpen ? " is-flipped" : "")} aria-hidden={false}>
-        {isMainDoc && !readOnly && onSetHome && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-home" + (effectiveIsHome ? " is-on" : "")}
-            onClick={() => {
-              // Optimistically toggle so the icon flips immediately.
-              // If the parent's confirm/prompt is cancelled the prop
-              // never advances, the pending value lingers harmless,
-              // and the next render after a real change clears it.
-              setPendingHome(!effectiveIsHome);
-              void onSetHome();
-            }}
-            title={effectiveIsHome ? "This is the home folder — tap to clear" : "Mark as home folder (will prompt for publish URL)"}
-            aria-label={effectiveIsHome ? "Clear home folder" : "Mark as home folder"}
-            aria-pressed={effectiveIsHome}
-          >
-            <HomeIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {isMainDoc && !readOnly && onCreateUpdate && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-update" + (updateOpen ? " is-on" : "")}
-            onClick={() => setUpdateOpen((v) => !v)}
-            title={updateOpen ? "Close notable" : "Log a notable"}
-            aria-label="Notable"
-            aria-pressed={updateOpen}
-          >
-            <StarIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {permalink && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-permalink" + (copiedLink ? " is-copied" : "")}
-            onClick={copyPermalink}
-            title={copiedLink ? "Permalink copied" : "Copy permalink"}
-            aria-label="Copy permalink"
-          >
-            {copiedLink ? <Check size={14} strokeWidth={2.4} /> : <Link2 size={14} strokeWidth={2} />}
-          </button>
-        )}
-        <button
-          type="button"
-          className={"order-card-btn order-card-copy" + (copiedText ? " is-copied" : "")}
-          onClick={copyBodyText}
-          title={copiedText ? "Text copied" : "Copy text"}
-          aria-label="Copy text"
-        >
-          {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}
-        </button>
-        {isMainDoc && !readOnly && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-flip" + (flipped ? " is-on" : "")}
-            onClick={() => { setFlipped((f) => !f); setTermOpen(false); }}
-            title={flipped ? "Back to note" : "Folder contents"}
-            aria-label={flipped ? "Show note" : "Show folder contents"}
-            aria-pressed={flipped}
-          >
-            <FolderOpenIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {!readOnly && !isIosSync() && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-terminal" + (termOpen ? " is-on" : "")}
-            onClick={() => { setTermOpen((t) => !t); setFlipped(false); }}
-            title={termOpen ? "Close terminal" : "Open a terminal here"}
-            aria-label={termOpen ? "Close terminal" : "Open terminal"}
-            aria-pressed={termOpen}
-          >
-            <TerminalIcon size={14} strokeWidth={2} />
-          </button>
-        )}
+        {/* Primary, always inline: the flip views + fullscreen. Everything
+            else lives in the "⋯" popover so the row stays uncrowded. */}
         {canFlip && !readOnly && (
           <>
             <button
@@ -1293,75 +1244,6 @@ export function Card(props: Props) {
             </button>
           </>
         )}
-        {!readOnly && (confirmingDelete ? (
-          <span className="order-card-delete-confirm">
-            <button
-              type="button"
-              className="confirm-btn"
-              onClick={() => { void performDelete(); }}
-            >
-              delete?
-            </button>
-            <button
-              type="button"
-              className="cancel-btn"
-              onClick={cancelDeleteConfirm}
-              title="Cancel"
-              aria-label="Cancel delete"
-            >
-              ×
-            </button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="order-card-btn order-card-delete"
-            onClick={startDeleteConfirm}
-            title="Delete this note"
-            aria-label="Delete note"
-          >
-            <Trash2 size={14} strokeWidth={2} />
-          </button>
-        ))}
-        {onAddToPile && (
-          <button
-            type="button"
-            className="order-card-btn order-card-topile"
-            onClick={onAddToPile}
-            title="Move to top of pile"
-            aria-label="Move to top of pile"
-          >
-            <ArrowUpToLineIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {!isMainDoc && !readOnly && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-refolder" + (folderPickOpen ? " is-on" : "")}
-            // preventDefault on mousedown keeps the click from moving focus
-            // (the editor would grab it and immediately blur-close the
-            // picker); stopPropagation skips the article's focus handler.
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onClick={() => { setFolderPickQuery(""); setFolderPickOpen((v) => !v); }}
-            title={currentFolder ? `Move to another folder — currently in ${currentFolder}` : "Move to a folder"}
-            aria-label="Move to folder"
-            aria-pressed={folderPickOpen}
-          >
-            <FolderInputIcon size={14} strokeWidth={2} />
-          </button>
-        )}
-        {!readOnly && !fullscreen && (
-          <button
-            type="button"
-            className={"order-card-btn order-card-fold" + (isFolded ? " is-on" : "")}
-            onClick={() => { void toggleFolded(!isFolded); }}
-            title={isFolded ? "Unfold" : "Fold to a single line"}
-            aria-label={isFolded ? "Unfold note" : "Fold note"}
-            aria-pressed={isFolded}
-          >
-            {isFolded ? <ChevronsUpDown size={14} strokeWidth={2} /> : <ChevronsDownUp size={14} strokeWidth={2} />}
-          </button>
-        )}
         <button
           type="button"
           className="order-card-btn order-card-fullscreen"
@@ -1371,29 +1253,126 @@ export function Card(props: Props) {
         >
           {fullscreen ? <Minimize2Icon size={14} strokeWidth={2} /> : <Maximize2Icon size={14} strokeWidth={2} />}
         </button>
-        {onRemoveFromFilter && !confirmingDelete && (
+        {readOnly ? (
+          <>
+            {permalink && (
+              <button
+                type="button"
+                className={"order-card-btn order-card-permalink" + (copiedLink ? " is-copied" : "")}
+                onClick={copyPermalink}
+                title={copiedLink ? "Permalink copied" : "Copy permalink"}
+                aria-label="Copy permalink"
+              >
+                {copiedLink ? <Check size={14} strokeWidth={2.4} /> : <Link2 size={14} strokeWidth={2} />}
+              </button>
+            )}
+            <button
+              type="button"
+              className={"order-card-btn order-card-copy" + (copiedText ? " is-copied" : "")}
+              onClick={copyBodyText}
+              title={copiedText ? "Text copied" : "Copy text"}
+              aria-label="Copy text"
+            >
+              {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}
+            </button>
+            {onRemoveFromFilter && (
+              <button type="button" className="order-card-btn order-card-dismiss" onClick={onRemoveFromFilter} title="Remove from filtered view" aria-label="Remove from filtered view">
+                <XIcon size={14} strokeWidth={2.4} />
+              </button>
+            )}
+            {onClosePile && (
+              <button type="button" className="order-card-btn order-card-dismiss" onClick={onClosePile} title="Close card" aria-label="Close card">
+                <XIcon size={14} strokeWidth={2.4} />
+              </button>
+            )}
+          </>
+        ) : (
           <button
+            ref={moreBtnRef}
             type="button"
-            className="order-card-btn order-card-dismiss"
-            onClick={onRemoveFromFilter}
-            title="Remove from filtered view"
-            aria-label="Remove from filtered view"
+            className={"order-card-btn order-card-more" + (moreOpen ? " is-on" : "")}
+            onClick={openMore}
+            title="More actions"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
           >
-            <XIcon size={14} strokeWidth={2.4} />
-          </button>
-        )}
-        {onClosePile && (
-          <button
-            type="button"
-            className="order-card-btn order-card-dismiss"
-            onClick={onClosePile}
-            title="Close card"
-            aria-label="Close card"
-          >
-            <XIcon size={14} strokeWidth={2.4} />
+            <MoreHorizontalIcon size={14} strokeWidth={2} />
           </button>
         )}
       </div>
+      {moreOpen && !readOnly && createPortal(
+        <div className="order-card-more-menu" role="menu" style={{ top: morePos.top, right: morePos.right }}>
+          {isMainDoc && onSetHome && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (effectiveIsHome ? " is-on" : "")} onClick={() => { setPendingHome(!effectiveIsHome); void onSetHome(); setMoreOpen(false); }}>
+              <HomeIcon size={14} strokeWidth={2} /><span>{effectiveIsHome ? "Clear home folder" : "Mark as home folder"}</span>
+            </button>
+          )}
+          {isMainDoc && onCreateUpdate && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (updateOpen ? " is-on" : "")} onClick={() => { setUpdateOpen((v) => !v); setMoreOpen(false); }}>
+              <StarIcon size={14} strokeWidth={2} /><span>Log a notable</span>
+            </button>
+          )}
+          {permalink && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { copyPermalink(); setMoreOpen(false); }}>
+              {copiedLink ? <Check size={14} strokeWidth={2.4} /> : <Link2 size={14} strokeWidth={2} />}<span>{copiedLink ? "Permalink copied" : "Copy permalink"}</span>
+            </button>
+          )}
+          <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { copyBodyText(); setMoreOpen(false); }}>
+            {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}<span>{copiedText ? "Text copied" : "Copy text"}</span>
+          </button>
+          {isMainDoc && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (flipped ? " is-on" : "")} onClick={() => { setFlipped((f) => !f); setTermOpen(false); setMoreOpen(false); }}>
+              <FolderOpenIcon size={14} strokeWidth={2} /><span>{flipped ? "Back to note" : "Folder contents"}</span>
+            </button>
+          )}
+          {!isIosSync() && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (termOpen ? " is-on" : "")} onClick={() => { setTermOpen((t) => !t); setFlipped(false); setMoreOpen(false); }}>
+              <TerminalIcon size={14} strokeWidth={2} /><span>{termOpen ? "Close terminal" : "Open terminal"}</span>
+            </button>
+          )}
+          {onAddToPile && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onAddToPile(); setMoreOpen(false); }}>
+              <ArrowUpToLineIcon size={14} strokeWidth={2} /><span>Move to top of pile</span>
+            </button>
+          )}
+          {!isMainDoc && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (
+            <button type="button" role="menuitem" className="order-card-more-item order-card-more-refolder" onClick={() => { setFolderPickQuery(""); setFolderPickOpen(true); setMoreOpen(false); }}>
+              <FolderInputIcon size={14} strokeWidth={2} /><span>{currentFolder ? `Move from ${currentFolder}…` : "Move to a folder…"}</span>
+            </button>
+          )}
+          {!fullscreen && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (isFolded ? " is-on" : "")} onClick={() => { void toggleFolded(!isFolded); setMoreOpen(false); }}>
+              {isFolded ? <ChevronsUpDown size={14} strokeWidth={2} /> : <ChevronsDownUp size={14} strokeWidth={2} />}<span>{isFolded ? "Unfold" : "Fold to a line"}</span>
+            </button>
+          )}
+          {onRemoveFromFilter && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onRemoveFromFilter(); setMoreOpen(false); }}>
+              <XIcon size={14} strokeWidth={2.2} /><span>Remove from view</span>
+            </button>
+          )}
+          {onClosePile && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onClosePile(); setMoreOpen(false); }}>
+              <XIcon size={14} strokeWidth={2.2} /><span>Close card</span>
+            </button>
+          )}
+          {confirmingDelete ? (
+            <>
+              <button type="button" role="menuitem" className="order-card-more-item is-danger" onClick={() => { void performDelete(); setMoreOpen(false); }}>
+                <Trash2 size={14} strokeWidth={2} /><span>Confirm delete</span>
+              </button>
+              <button type="button" role="menuitem" className="order-card-more-item" onClick={cancelDeleteConfirm}>
+                <XIcon size={14} strokeWidth={2.2} /><span>Cancel</span>
+              </button>
+            </>
+          ) : (
+            <button type="button" role="menuitem" className="order-card-more-item is-danger" onClick={() => startDeleteConfirm()}>
+              <Trash2 size={14} strokeWidth={2} /><span>Delete note</span>
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
       {folderPickOpen && onAssignFolder && (
         <div className="order-card-folderpick">
           <FolderPicker
@@ -1494,6 +1473,8 @@ export function Card(props: Props) {
                 initial={sheetContent}
                 onChange={saveSheet}
                 readOnly={readOnly}
+                minimal={!fullscreen}
+                onExpand={() => setFullscreen(true)}
                 minRows={fullscreen ? 40 : 12}
                 minCols={fullscreen ? 20 : 8}
               />
@@ -1502,7 +1483,7 @@ export function Card(props: Props) {
         ) : view === "drawing" ? (
           <Suspense fallback={<div className="order-surface-loading">Loading drawing…</div>}>
             {drawingContent !== null && (
-              <DrawingSurface initial={drawingContent} onChange={saveDrawing} readOnly={readOnly} fitSignal={fullscreen} />
+              <DrawingSurface initial={drawingContent} onChange={saveDrawing} readOnly={readOnly} fullscreen={fullscreen} />
             )}
           </Suspense>
         ) : isSpacetimeFile(filename) ? (

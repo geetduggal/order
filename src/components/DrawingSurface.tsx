@@ -15,10 +15,10 @@ interface DrawingSurfaceProps {
   /** Persist serialized scene JSON. */
   onChange: (json: string) => void;
   readOnly?: boolean;
-  /** Toggling this (e.g. entering/leaving fullscreen) re-fits the canvas to
-   *  the drawing's content so it isn't left scrolled off-screen after the
-   *  container resizes. */
-  fitSignal?: unknown;
+  /** Card view (false) shows the drawing minimally — no Excalidraw toolbars,
+   *  view-only, centered on the content. Fullscreen (true) is the full editor.
+   *  Also drives the re-fit-to-content when the container resizes. */
+  fullscreen?: boolean;
 }
 
 // Order has many themes; Excalidraw only knows light/dark. Map the dark-ish
@@ -29,14 +29,17 @@ function currentExcalidrawTheme(): "light" | "dark" {
   return DARK_THEMES.has(t) ? "dark" : "light";
 }
 
-export function DrawingSurface({ initial, onChange, readOnly, fitSignal }: DrawingSurfaceProps) {
+export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: DrawingSurfaceProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(currentExcalidrawTheme);
+  // Card view = minimal, view-only preview centered on the drawing; only
+  // fullscreen shows the full editor + toolbars.
+  const viewMode = !fullscreen;
 
-  // Re-fit to content whenever the container resizes (fullscreen toggle) —
-  // Excalidraw keeps its scroll offset across resizes, which would otherwise
-  // leave the drawing off-screen. Skip the very first run (initial mount
-  // already centers). refresh() first so the canvas picks up the new size.
+  // Re-fit to content whenever the view/size changes (fullscreen toggle, or
+  // switching into the minimal card view) — Excalidraw keeps its scroll offset
+  // across resizes, which would otherwise leave the drawing off-screen. Skip
+  // the first run (initial mount already centers).
   const firstFit = useRef(true);
   useEffect(() => {
     if (firstFit.current) { firstFit.current = false; return; }
@@ -47,9 +50,9 @@ export function DrawingSurface({ initial, onChange, readOnly, fitSignal }: Drawi
         api.refresh();
         api.scrollToContent(api.getSceneElements(), { fitToContent: true, animate: false });
       } catch { /* API may not be ready — ignore */ }
-    }, 60);
+    }, 80);
     return () => clearTimeout(id);
-  }, [fitSignal]);
+  }, [fullscreen]);
 
   // Follow Order's theme toggle.
   useEffect(() => {
@@ -94,13 +97,13 @@ export function DrawingSurface({ initial, onChange, readOnly, fitSignal }: Drawi
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   return (
-    <div className="order-drawing-surface">
+    <div className={"order-drawing-surface" + (viewMode ? " is-preview" : "")}>
       <Excalidraw
         excalidrawAPI={(api) => { apiRef.current = api; }}
         initialData={initialData}
         onChange={handleChange}
         theme={theme}
-        viewModeEnabled={readOnly}
+        viewModeEnabled={readOnly || viewMode}
         UIOptions={{ canvasActions: { loadScene: false } }}
       />
     </div>

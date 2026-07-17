@@ -7049,6 +7049,19 @@ iframe.order-youtube-embed {
    content"). Because both are the same color, the grid looks uniform. */
 .order-sheet-surface {
   --sheet-surface-bg: var(--card-bg, color-mix(in srgb, var(--royal) 6%, var(--bg)));
+  /* Palette fills, redefined ADAPTIVELY: a hue washed over THIS theme's
+     surface color. That keeps every tint at the theme's own lightness, so the
+     cell text (--ink) always contrasts — even in the retro themes
+     (wordperfect / terminal / christmas / lcars) where the static light tints
+     used to sit under light text. Overrides the static --sheet-* defs by
+     scope. */
+  --sheet-rose:   color-mix(in srgb, #e0607a 30%, var(--sheet-surface-bg));
+  --sheet-amber:  color-mix(in srgb, #e0a63c 32%, var(--sheet-surface-bg));
+  --sheet-green:  color-mix(in srgb, #5bb56a 30%, var(--sheet-surface-bg));
+  --sheet-teal:   color-mix(in srgb, #3fb0a8 30%, var(--sheet-surface-bg));
+  --sheet-blue:   color-mix(in srgb, #5a86e0 30%, var(--sheet-surface-bg));
+  --sheet-violet: color-mix(in srgb, #9a72d0 30%, var(--sheet-surface-bg));
+  --sheet-slate:  color-mix(in srgb, #7a8290 32%, var(--sheet-surface-bg));
 }
 .order-sheet-surface .Spreadsheet {
   --background-color: transparent;
@@ -7067,12 +7080,12 @@ iframe.order-youtube-embed {
    overflow from cells to its left). */
 .order-sheet-surface .sheet-bg-surface { background: var(--sheet-surface-bg); }
 
-/* Floating palette dock — pinned to the BOTTOM center (like the app dock) so
-   it never collides with the card's own top control icons; always visible so
-   it works on touch (no hover). */
+/* Floating palette dock — bottom center, but raised ABOVE the app's own
+   global bottom dock so its swatches stay clickable in fullscreen. Only shown
+   in fullscreen (card view is minimal); always visible so touch works. */
 .order-sheet-toolbar {
   position: absolute;
-  bottom: 12px; left: 50%;
+  bottom: calc(78px + env(safe-area-inset-bottom)); left: 50%;
   transform: translateX(-50%);
   z-index: 40;
   display: flex; align-items: center; justify-content: center;
@@ -7102,7 +7115,7 @@ iframe.order-youtube-embed {
 }
 .order-sheet-tool:hover { background: var(--royal-soft); color: var(--ink); }
 
-.order-sheet-scroll { overflow: auto; min-height: 0; flex: 1; padding-top: 30px; padding-bottom: 52px; }
+.order-sheet-scroll { overflow: auto; min-height: 0; flex: 1; padding-top: 30px; padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
 
 /* Overflow model. The value is rendered in an absolutely-positioned span so it
    escapes the cell box and continues past to the right like a real
@@ -7116,6 +7129,10 @@ iframe.order-youtube-embed {
   position: absolute;
   left: 0; top: 0;
   height: 100%;
+  /* At least the cell width so a content cell's opaque span clips earlier
+     overflow at THIS cell's left edge (not just at its text width). */
+  min-width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   padding: 0 5px;
@@ -7124,10 +7141,25 @@ iframe.order-youtube-embed {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-/* While a cell is edited, clip its overflow so the view span doesn't render
-   past the editor input (the "doubled text"). overflow:hidden on the td (its
-   containing block) clips the absolute span to the cell. */
-.order-sheet-surface.is-editing .Spreadsheet__cell { overflow: hidden; }
+/* Editor: let the auto-growing input spill past the cell WHILE typing, with an
+   opaque surface background so it paints over the view span underneath (no
+   doubled text) — the "edit box extends" behavior of a real spreadsheet.
+   The active-cell overlay MUST sit above every column (the per-column z-index
+   above would otherwise let a view span paint over the editor → doubled). */
+.order-sheet-surface .Spreadsheet__active-cell { z-index: 1000; }
+.order-sheet-surface .Spreadsheet__active-cell--edit { overflow: visible; }
+.order-sheet-surface .Spreadsheet__data-editor { overflow: visible; width: auto; }
+.order-sheet-editor {
+  font: inherit;
+  color: var(--ink);
+  background: var(--sheet-surface-bg);
+  border: none;
+  outline: none;
+  padding: 0 5px;
+  height: 100%;
+  min-width: 100%;
+  box-sizing: border-box;
+}
 /* Collapse: this cell always clips its own overflow. */
 .order-sheet-surface .sheet-collapse { overflow: hidden; }
 
@@ -7161,3 +7193,87 @@ iframe.order-youtube-embed {
 .order-sheet-menu button:hover { background: var(--royal-soft); }
 .order-sheet-menu button.is-danger { color: var(--coral); }
 .order-sheet-menu button.is-danger:hover { background: color-mix(in srgb, var(--coral) 22%, transparent); }
+
+/* Card "⋯" more-actions popover (secondary controls). Rendered in a body
+   portal with fixed coords so it floats above sibling cards. */
+.order-card-more-menu {
+  position: fixed;
+  z-index: 250;
+  min-width: 194px;
+  padding: 5px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 30%);
+  display: flex;
+  flex-direction: column;
+  max-height: 72vh;
+  overflow: auto;
+}
+.order-card-more-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+.order-card-more-item svg { flex: none; }
+.order-card-more-item:hover { background: var(--royal-soft); }
+.order-card-more-item.is-on { color: var(--royal); }
+.order-card-more-item.is-danger { color: var(--coral); }
+.order-card-more-item.is-danger:hover { background: color-mix(in srgb, var(--coral) 20%, transparent); }
+
+/* Drawing / sheet: keep the card's own controls above Excalidraw's chrome,
+   and push the drawing canvas down so Excalidraw's top toolbar + side panels
+   start BELOW the card control row instead of under it. */
+.order-card.is-drawing .order-card-controls,
+.order-card.is-sheet .order-card-controls { z-index: 20; }
+.order-drawing-surface {
+  box-sizing: border-box;
+  padding-top: 40px;
+}
+
+/* Minimal card view: no palette dock or header indicators — a clean preview.
+   The full editor (indicators, dock) returns in fullscreen. */
+.order-sheet-surface.is-minimal .order-sheet-scroll { padding: 4px; }
+
+/* Drawing card view: hide ALL Excalidraw chrome (toolbar, menu, zoom) so the
+   card shows just the drawing, centered. The full editor returns in
+   fullscreen. No top toolbar here, so no top padding either. */
+.order-drawing-surface.is-preview { padding-top: 0; }
+.order-drawing-surface.is-preview .layer-ui__wrapper { display: none; }
+
+/* Card-view enticer for a tall sheet: a very subtle chevron over the bottom
+   fade — hints there's more and that fullscreen shows it, without shouting. */
+.order-sheet-expand {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-ghost);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.12s var(--ease-out);
+}
+.order-sheet-expand:hover { opacity: 1; color: var(--ink-soft); }
+/* Subtle fade at the bottom of the capped preview grid. */
+.order-sheet-surface.is-minimal .order-sheet-scroll {
+  -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent);
+  mask-image: linear-gradient(to bottom, #000 84%, transparent);
+}
