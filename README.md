@@ -11,6 +11,7 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 ## What you get
 
 - **Edit in place** — WYSIWYG markdown cards (Milkdown Crepe). No modes, no preview pane.
+- **Flip a card to a sheet or a drawing** — the same note becomes a spreadsheet (formulas, spreadsheet-style overflow, colors) or an Excalidraw canvas, backed by a sidecar file and remembered per note. See [SHEET-DRAWING.md](docs/SHEET-DRAWING.md).
 - **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10.
 - **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same notes.
 - **todo.txt, always in sync** — every calendar event mirrored as one readable line.
@@ -143,6 +144,7 @@ America, Christmas, LCARS.
 | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | the core Order conventions — Notable Folder, Vault, Pile, Calendar |
 | [docs/SPACETIME.md](docs/SPACETIME.md) | the Spacetime format specification — YAML + Markwhen side by side, field reference, composability rules, brood invariant, examples |
 | [docs/GCAL-SYNC.md](docs/GCAL-SYNC.md) | Google Calendar curated sync — email-recipient model, connecting an account, push, import, natural-key philosophy |
+| [docs/SHEET-DRAWING.md](docs/SHEET-DRAWING.md) | flipping a note to a spreadsheet or drawing — sidecar files, the overflow/z-index model, card-vs-fullscreen, the no-render-loop guard |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | code map, data flows, invariants |
 | [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | why it's shaped this way |
 | [docs/RELEASING.md](docs/RELEASING.md) | building binaries, App Store |

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sheet & Drawing views.** A note card can now flip between its markdown
+  editor and two others via icons next to the terminal icon: a spreadsheet
+  (react-spreadsheet, stored as `<Name>.sheet.html`) and a drawing (Excalidraw,
+  stored as `<Name>.excalidraw`). The active view persists in the note's `view:`
+  frontmatter; sidecar files are created on first flip and stay attached to the
+  note (never their own card). The card is a minimal, centered preview; the full
+  editor opens in fullscreen. The spreadsheet does real spreadsheet-style text
+  overflow (text always foreground, stops at the first cell with content),
+  supports formulas, theme-adaptive cell fills + a custom color picker, and
+  right-click row/column insert & delete. See `docs/SHEET-DRAWING.md`.
+- **Card "⋯" menu.** Secondary card actions (home, copy, terminal, to-pile,
+  refolder, fold, delete, …) collapse behind a "⋯" more-actions menu, keeping
+  the control row uncrowded.
 - **Auto theme.** A new default "Auto" theme follows the operating system's
   light/dark setting and reacts live when the OS flips — in both the desktop/iOS
   app and the published page (the published site now follows each visitor's OS

@@ -323,6 +323,10 @@ different **surface** inside itself:
 - **`MilkdownSurface`** — the rich WYSIWYG editor, for normal `.md` notes.
 - **`RawTextSurface`** — a plain monospace textarea, for `.txt`, `.yml`, and the
   `spacetime.md` file (you want to see those raw, not prettified).
+- **`SheetSurface` / `DrawingSurface`** — flip a note to a spreadsheet
+  (react-spreadsheet, `<Name>.sheet.html`) or an Excalidraw drawing
+  (`<Name>.excalidraw`); the active view lives in the note's `view:`
+  frontmatter. Lazy-loaded. See [SHEET-DRAWING.md](SHEET-DRAWING.md).
 - **`ListCards` / `ListLines`** — special renderings for list-style notes.
 - **`NotableFolderBackside`** — flip a folder card over and you get a file browser +
   drag-and-drop.

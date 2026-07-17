@@ -47,6 +47,7 @@ CardGrid ── owns notes[], view, filters; routes every mutation
 ├── LazyCell[] → Card per note: load → edit → debounced save
 │   ├── MilkdownSurface   Crepe wrapper: paste, links, wikilinks
 │   ├── RawTextSurface    monospace textarea for .txt/.yml/.mw files
+│   ├── SheetSurface / DrawingSurface   flip a note to a spreadsheet / drawing (sidecar files)
 │   ├── ListCards / ListLines   list: cards/lines rendering
 │   ├── NotableFolderBackside   flip side: folder browser + OS drag-drop
 │   └── OrderTerminal    in-card PTY (xterm.js), ⌘4 / button toggle
