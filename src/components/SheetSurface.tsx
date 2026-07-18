@@ -343,11 +343,17 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   }, [readOnly, commit, minRows, minCols]);
   // ---- Cell drag (press-and-drag a cell / block to a new location) ----
   const cellAt = useCallback((x: number, y: number): { r: number; c: number } | null => {
-    const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest(".Spreadsheet__cell");
-    if (!el) return null;
-    const rm = /sheet-row-(\d+)/.exec(el.className);
-    const cm = /sheet-col-(\d+)/.exec(el.className);
-    return rm && cm ? { r: +rm[1], c: +cm[1] } : null;
+    // elementsFromPoint (not elementFromPoint) so we see THROUGH react-
+    // spreadsheet's active-cell overlay (which sits on top of the selected
+    // cell and isn't itself a .Spreadsheet__cell).
+    for (const node of document.elementsFromPoint(x, y)) {
+      const el = (node as HTMLElement).closest?.(".Spreadsheet__cell");
+      if (!el) continue;
+      const rm = /sheet-row-(\d+)/.exec(el.className);
+      const cm = /sheet-col-(\d+)/.exec(el.className);
+      if (rm && cm) return { r: +rm[1], c: +cm[1] };
+    }
+    return null;
   }, []);
   const onDragPointerDown = useCallback((e: React.PointerEvent) => {
     if (!cellDrag || readOnly || e.button !== 0) return;

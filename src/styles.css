@@ -7295,13 +7295,19 @@ iframe.order-youtube-embed {
   transform: none !important; /* no drag translate in masonry */
 }
 /* Full text — the whole point of masonry is size-by-content. */
-.basecard-grid.is-masonry .basecard-body {
+.basecard-grid.is-masonry .basecard-body,
+.basecard-grid.is-masonry .basecard-title,
+.basecard-grid.is-masonry .basecard-meta {
   -webkit-line-clamp: unset;
   line-clamp: unset;
   display: block;
   overflow: visible;
-  white-space: pre-wrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+/* The whole box is the text — let the frame grow with it. */
+.basecard-grid.is-masonry .basecard-frame { height: auto; min-height: 0; }
+.basecard-grid.is-masonry .basecard-title { font-size: 13px; }
 .basecard-grid.is-masonry .basecard-add { break-inside: avoid; }
 
 /* Cell-drag toggle + affordance (sheet dock). */

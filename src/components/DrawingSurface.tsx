@@ -103,11 +103,9 @@ export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: Draw
         initialData={initialData}
         onChange={handleChange}
         theme={theme}
-        // Only a published/read-only card is truly view-only. In the card
-        // preview the canvas stays interactive (select, move, double-click to
-        // edit text) — its toolbars are just hidden via CSS (.is-preview); the
-        // full toolset returns in fullscreen.
-        viewModeEnabled={readOnly}
+        // Card view is view-only (a clean, centered preview); editing — moving
+        // shapes, text — happens only in fullscreen.
+        viewModeEnabled={readOnly || viewMode}
         UIOptions={{ canvasActions: { loadScene: false } }}
       />
     </div>
