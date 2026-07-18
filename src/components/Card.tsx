@@ -188,6 +188,8 @@ interface Props {
   /** Focus the editor after the editor mounts. Used to land the
    *  cursor inside a freshly created note. */
   autoFocus?: boolean;
+  /** One-shot: open this card in fullscreen when it becomes true (calendar → note). */
+  wantFullscreen?: boolean;
   /** Bumped by the parent when the watcher reports this file changed
    *  externally. Card re-reads the disk and replaces the Milkdown
    *  document in-place (no remount) so the editor doesn't flicker. */
@@ -279,6 +281,7 @@ export function Card(props: Props) {
     onAddFilter,
     onRemoveFromFilter,
     autoFocus,
+    wantFullscreen,
     focused: focusedProp,
     onFocus: onCardFocus,
     initialBody,
@@ -304,6 +307,9 @@ export function Card(props: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  // Open fullscreen when the parent signals it (calendar → note). Only acts on
+  // the false→true transition, so it never fights a manual exit.
+  useEffect(() => { if (wantFullscreen) setFullscreen(true); }, [wantFullscreen]);
   /** Notable Folder Main Documents only: flips the card to the folder
    *  contents browser (see NotableFolderBackside). Desktop-only
    *  feature; the calling card hides the flip button on iOS / viewer.

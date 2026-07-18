@@ -463,6 +463,15 @@ export function CardGrid() {
    *  the moment it appears. Cleared by the same scroll-target
    *  effect that handles the highlight pulse. */
   const [focusPath, setFocusPath] = useState<string | null>(null);
+  /** One-shot signal: the matching Card opens itself in fullscreen. Set when a
+   *  note is opened from the calendar (→ Pile + fullscreen). Cleared shortly
+   *  after so remounts/reloads don't re-trigger it. */
+  const [fullscreenPath, setFullscreenPath] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fullscreenPath) return;
+    const id = setTimeout(() => setFullscreenPath(null), 800);
+    return () => clearTimeout(id);
+  }, [fullscreenPath]);
   /** Path of the card the user is currently focused on. Sticky:
    *  navigation (sidebar / calendar / palette / wikilink / new) sets
    *  it; an external file change to a DIFFERENT path doesn't disturb
@@ -1794,11 +1803,15 @@ export function CardGrid() {
         return;
       }
       if (e.key === "k" || e.key === "K") {
-        // Cmd+K opens the centered folder palette — the single way to
-        // open a folder by name. Inside an editor Cmd+K belongs to
-        // Milkdown's link tooltip (selected text → link prompt), so we
-        // only intercept it outside the editor.
-        if (isTyping(e.target)) return;
+        // Cmd+K opens the centered folder palette — the quick way to open a
+        // note/folder by name. Inside an editor Milkdown's Cmd+K is the link
+        // tooltip, but that only matters with a text SELECTION; with the caret
+        // just sitting in a note (or on a fresh, untouched board) Cmd+K should
+        // still open the palette. So only defer to the editor when text is
+        // actually selected.
+        const sel = window.getSelection?.();
+        const hasSelection = !!sel && !sel.isCollapsed && sel.toString().length > 0;
+        if (isTyping(e.target) && hasSelection) return;
         e.preventDefault();
         setPaletteOpen((open) => !open);
         return;
@@ -3400,6 +3413,7 @@ export function CardGrid() {
           joinFrontmatter(fm, `# ${mwEv.title}\n`),
         );
         navigateAndFocus(notePath);
+        setFullscreenPath(notePath);
       })();
       return;
     }
@@ -3430,7 +3444,9 @@ export function CardGrid() {
       });
       return;
     }
+    // Opened from the calendar → land in the Pile with this note fullscreen.
     navigateAndFocus(path);
+    setFullscreenPath(path);
   }, [navigateAndFocus]);
 
   /** Materialise the prompted todo.txt-only event into a real .md
@@ -4736,6 +4752,7 @@ export function CardGrid() {
         onBrowserRename={isMain ? (oldName: string, newName: string) => renameVaultFile(vaultDirRelFor(n), oldName, newName) : undefined}
         onBrowserDelete={isMain ? (name: string) => deleteVaultFile(vaultDirRelFor(n), name) : undefined}
         autoFocus={focusPath === n.path}
+        wantFullscreen={fullscreenPath === n.path}
         focused={focusedPath === n.path}
         onFocus={() => setFocusedPath(n.path)}
         capHeight={capHeight}
