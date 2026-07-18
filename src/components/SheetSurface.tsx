@@ -371,9 +371,20 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   const recomputeHandle = useCallback(() => {
     const scroll = scrollRef.current;
     if (!cellDrag || readOnly || editing || !selState || !scroll) { setHandlePos(null); return; }
-    const cell = scroll.querySelector<HTMLElement>(`.sheet-row-${selState.r0}.sheet-col-${selState.c1}`);
-    if (!cell) { setHandlePos(null); return; }
-    setHandlePos({ left: cell.offsetLeft + cell.offsetWidth, top: cell.offsetTop });
+    // Rect-based (not offsetLeft/Top) so react-spreadsheet's positioned wrappers
+    // don't skew the origin, then converted to the scroll container's CONTENT
+    // coordinates so the grip scrolls glued to the cell. Sits centered on the
+    // selection's right edge.
+    const top = scroll.querySelector<HTMLElement>(`.sheet-row-${selState.r0}.sheet-col-${selState.c1}`);
+    const bot = scroll.querySelector<HTMLElement>(`.sheet-row-${selState.r1}.sheet-col-${selState.c1}`);
+    if (!top || !bot) { setHandlePos(null); return; }
+    const tr = top.getBoundingClientRect();
+    const br = bot.getBoundingClientRect();
+    const sr = scroll.getBoundingClientRect();
+    setHandlePos({
+      left: tr.right - sr.left + scroll.scrollLeft,
+      top: (tr.top + br.bottom) / 2 - sr.top + scroll.scrollTop,
+    });
   }, [cellDrag, readOnly, editing, selState]);
   useLayoutEffect(() => { recomputeHandle(); }, [recomputeHandle, sheet]);
   useEffect(() => {

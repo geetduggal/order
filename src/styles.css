@@ -7374,17 +7374,19 @@ iframe.order-youtube-embed {
    it's an absolute child of the (position:relative) scroll container. */
 .order-sheet-drag-handle {
   position: absolute;
-  z-index: 30;
+  /* Above react-spreadsheet's active-cell overlay (z-index:1000), which else
+     sits on top of the grip when it hugs the selected cell and eats the press. */
+  z-index: 1001;
   transform: translate(-50%, -50%);
-  width: 20px; height: 20px;
+  width: 17px; height: 17px;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
-  border: 1px solid var(--bg);
+  border: 1.5px solid var(--sheet-surface-bg);
   border-radius: 999px;
   background: var(--royal);
   color: #fff;
   cursor: grab;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
   touch-action: none;
 }
 .order-sheet-drag-handle:active { cursor: grabbing; }
