@@ -1,7 +1,7 @@
 // Run: npx tsx src/lib/note-view.test.ts  → "ALL CHECKS PASS"
 import {
   parseView, sheetSidecarPath, drawingSidecarPath,
-  serializeSheet, parseSheet, emptySheet, padSheet, resolveSheetBg,
+  serializeSheet, parseSheet, emptySheet, padSheet, resolveSheetBg, moveBlock,
   type SheetCell,
 } from "./note-view";
 
@@ -56,5 +56,27 @@ const padded = padSheet([[{ value: "x" }]], 5, 6);
 check(padded.length === 5 && padded[0].length === 6 && padded[0][0].value === "x", "pad grows, keeps content");
 check(eq(padSheet(emptySheet(10, 10), 3, 3).length, 10), "pad never shrinks");
 
+// ---- moveBlock (cell drag) ----
+{
+  const grid = (rows: string[][]): SheetCell[][] => rows.map((r) => r.map((v) => ({ value: v })));
+  // Move A1 ("X") right by 1 into empty B1 → A1 empty, B1 = X.
+  let g = grid([["X", "", ""]]);
+  let m = moveBlock(g, { r0: 0, c0: 0, r1: 0, c1: 0 }, 0, 1);
+  check(m[0][0].value === "" && m[0][1].value === "X", "moveBlock: single cell to empty");
+  // Swap: A1="X" onto B1="Y" → B1=X, A1=Y (Y displaced back to the vacated source).
+  g = grid([["X", "Y", ""]]);
+  m = moveBlock(g, { r0: 0, c0: 0, r1: 0, c1: 0 }, 0, 1);
+  check(m[0][1].value === "X" && m[0][0].value === "Y", "moveBlock: occupied target swaps back");
+  // Block move: A1:A2 = [X,Z] down-right by (1,1) into empties.
+  g = grid([["X", ""], ["Z", ""], ["", ""]]);
+  m = moveBlock(g, { r0: 0, c0: 0, r1: 1, c1: 0 }, 1, 1);
+  check(m[1][1].value === "X" && m[2][1].value === "Z" && m[0][0].value === "" && m[1][0].value === "", "moveBlock: 2-cell block moves down-right");
+  // Grows the matrix when dropped past the edge.
+  g = grid([["X"]]);
+  m = moveBlock(g, { r0: 0, c0: 0, r1: 0, c1: 0 }, 2, 0);
+  check(m.length >= 3 && m[2][0].value === "X" && m[0][0].value === "", "moveBlock: grows past the edge");
+}
+
 if (failed > 0) { console.error(`\n${failed} CHECK(S) FAILED`); process.exit(1); }
 console.log("\nALL CHECKS PASS");
+

@@ -137,3 +137,35 @@ export function padSheet(data: SheetCell[][], rows: number, cols: number): Sheet
     Array.from({ length: c }, (_, j) => data[i]?.[j] ?? ({ value: "" } as SheetCell)),
   );
 }
+
+/** A rectangular cell selection (inclusive), for cell-drag moves. */
+export interface SheetRect { r0: number; c0: number; r1: number; c1: number }
+
+/** Move the source rectangle `sel` by (dr, dc). Cells the block lands on that
+ *  are NOT part of the source are displaced into the slots the block vacated —
+ *  a "somewhat intelligent" swap so nothing is silently overwritten. Grows the
+ *  matrix as needed; never shrinks. */
+export function moveBlock(data: SheetCell[][], sel: SheetRect, dr: number, dc: number): SheetCell[][] {
+  const rows = Math.max(data.length, sel.r1 + dr + 1);
+  const cols = Math.max(data.reduce((m, r) => Math.max(m, r.length), 0), sel.c1 + dc + 1);
+  const out: SheetCell[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => ({ ...(data[r]?.[c] ?? { value: "" }) })),
+  );
+  const inSrc = (r: number, c: number) => r >= sel.r0 && r <= sel.r1 && c >= sel.c0 && c <= sel.c1;
+  const nonEmpty = (cell: SheetCell) => !!(cell.value || cell.bg || cell.collapse);
+  const block: { r: number; c: number; cell: SheetCell }[] = [];
+  for (let r = sel.r0; r <= sel.r1; r++)
+    for (let c = sel.c0; c <= sel.c1; c++) { block.push({ r, c, cell: { ...out[r][c] } }); out[r][c] = { value: "" }; }
+  const displaced: SheetCell[] = [];
+  for (const { r, c } of block) {
+    const tr = r + dr, tc = c + dc;
+    if (!inSrc(tr, tc) && nonEmpty(out[tr][tc])) displaced.push({ ...out[tr][tc] });
+  }
+  for (const { r, c, cell } of block) out[r + dr][c + dc] = cell;
+  let di = 0;
+  for (const { r, c } of block) {
+    if (di >= displaced.length) break;
+    if (!nonEmpty(out[r][c])) out[r][c] = displaced[di++];
+  }
+  return out;
+}

@@ -19,6 +19,7 @@ import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon,
 import {
   SHEET_PALETTE,
   emptySheet,
+  moveBlock,
   padSheet,
   parseSheet,
   serializeSheet,
@@ -69,13 +70,14 @@ function toRS(data: SheetCell[][], locked: boolean): Matrix<RSCell> {
         ...(cell.bg ? { bg: cell.bg } : {}),
         ...(cell.collapse ? { collapse: true } : {}),
         className:
-          `sheet-col-${c}` +
+          `sheet-col-${c} sheet-row-${r}` +
           (bgCls ? ` ${bgCls}` : "") +
           (cell.collapse ? " sheet-collapse" : ""),
       };
     }),
   );
 }
+
 
 /** Resolve a stored bg (palette token or raw color) to a CSS color. */
 function resolveBg(bg: string | undefined): string | undefined {
@@ -131,6 +133,11 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   // single-cell click; onSelect covers a dragged range.
   const selRef = useRef<Rect | null>(null);
   const [editing, setEditing] = useState(false);
+  // Optional press-and-drag to move a cell / block (see the "Cell drag" toggle).
+  const [cellDrag, setCellDrag] = useState(false);
+  const [dragOver, setDragOver] = useState<{ r: number; c: number } | null>(null);
+  const dragRef = useRef<{ sel: Rect; startX: number; startY: number; moved: boolean } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   // Row/column header right-click menu (insert / delete).
   const [menu, setMenu] = useState<{ axis: "row" | "col"; index: number; x: number; y: number } | null>(null);
   useEffect(() => {
@@ -334,6 +341,46 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
       : [...prev.slice(0, kind === "above" ? i : i + 1), blankRow(cols), ...prev.slice(kind === "above" ? i : i + 1)];
     commit(padSheet(next, minRows, minCols));
   }, [readOnly, commit, minRows, minCols]);
+  // ---- Cell drag (press-and-drag a cell / block to a new location) ----
+  const cellAt = useCallback((x: number, y: number): { r: number; c: number } | null => {
+    const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest(".Spreadsheet__cell");
+    if (!el) return null;
+    const rm = /sheet-row-(\d+)/.exec(el.className);
+    const cm = /sheet-col-(\d+)/.exec(el.className);
+    return rm && cm ? { r: +rm[1], c: +cm[1] } : null;
+  }, []);
+  const onDragPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!cellDrag || readOnly || e.button !== 0) return;
+    const start = cellAt(e.clientX, e.clientY);
+    const sel = selRef.current;
+    if (!start || !sel) return;
+    // Preempt only when the press lands inside the current selection — that's a
+    // drag of the block; a press elsewhere still selects normally.
+    if (start.r < sel.r0 || start.r > sel.r1 || start.c < sel.c0 || start.c > sel.c1) return;
+    e.stopPropagation();
+    dragRef.current = { sel, startX: e.clientX, startY: e.clientY, moved: false };
+    scrollRef.current?.setPointerCapture(e.pointerId);
+  }, [cellDrag, readOnly, cellAt]);
+  const onDragPointerMove = useCallback((e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 6) return;
+    d.moved = true;
+    setDragOver(cellAt(e.clientX, e.clientY));
+  }, [cellAt]);
+  const onDragPointerUp = useCallback((e: React.PointerEvent) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragOver(null);
+    if (!d || !d.moved) return;
+    const t = cellAt(e.clientX, e.clientY);
+    if (!t) return;
+    const dr = t.r - d.sel.r0, dc = t.c - d.sel.c0;
+    if (dr === 0 && dc === 0) return;
+    commit(padSheet(moveBlock(sheetRef.current, d.sel, dr, dc), minRows, minCols));
+    selRef.current = { r0: d.sel.r0 + dr, c0: d.sel.c0 + dc, r1: d.sel.r1 + dr, c1: d.sel.c1 + dc };
+  }, [cellAt, commit, minRows, minCols]);
+
   const colOps = useCallback((j: number, kind: "delete" | "left" | "right") => {
     if (readOnly) return;
     const next = sheetRef.current.map((row) => {
@@ -394,7 +441,15 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
           <button type="button" className="order-sheet-tool" onClick={toggleCollapse} title="Collapse / expand cell overflow" aria-label="Toggle collapse overflow">
             <ScissorsIcon size={13} strokeWidth={2} />
           </button>
+          <span className="order-sheet-tool-sep" />
+          <label className="order-sheet-checkbox" title="Press and drag a cell or selection to move it; it swaps with whatever's there">
+            <input type="checkbox" checked={cellDrag} onChange={(e) => setCellDrag(e.target.checked)} />
+            Cell drag
+          </label>
         </div>
+      )}
+      {dragOver && (
+        <style>{`.order-sheet-surface .sheet-row-${dragOver.r}.sheet-col-${dragOver.c}{outline:2px solid var(--royal);outline-offset:-2px;}`}</style>
       )}
       {menu && !readOnly && (
         <div className="order-sheet-menu" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
@@ -413,7 +468,13 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
           )}
         </div>
       )}
-      <div className="order-sheet-scroll">
+      <div
+        className={"order-sheet-scroll" + (cellDrag ? " is-cell-drag" : "")}
+        ref={scrollRef}
+        onPointerDownCapture={onDragPointerDown}
+        onPointerMove={onDragPointerMove}
+        onPointerUp={onDragPointerUp}
+      >
         <Spreadsheet
           data={rsData}
           onChange={handleRSChange}
