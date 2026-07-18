@@ -80,6 +80,15 @@ test("flip to sheet: minimal card view renders overflow, formulas, and colors", 
   // Formula: B1 = "=1+2" evaluates to 3.
   await expect(card.locator(".Spreadsheet__cell.sheet-col-1 .order-sheet-val").first()).toHaveText("3");
 
+  // Card view is still EDITABLE (type values inline), just minimal — typing in
+  // an empty cell persists to the sidecar without truncating the hidden rows.
+  await card.locator(".Spreadsheet__cell.sheet-col-1").nth(1).click();
+  await page.keyboard.type("42");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__VAULT__.read("Work/Work Spaces/Planning/Planning.sheet.html")))
+    .toContain(">42<");
+
   // Flip back to the note by clicking the sheet icon again → view cleared.
   await card.locator(".order-card-sheet").click();
   await expect

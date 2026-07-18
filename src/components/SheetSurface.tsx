@@ -152,7 +152,9 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   const displaySheet = useMemo(() => (minimal ? sheet.slice(0, PREVIEW_ROWS) : sheet), [sheet, minimal]);
   const hasMore = !!minimal && contentRows > PREVIEW_ROWS;
 
-  const rsData = useMemo(() => toRS(displaySheet, !!readOnly || !!minimal), [displaySheet, readOnly, minimal]);
+  // Card view stays editable (type values inline) — only a published/read-only
+  // card locks cells. Formatting + structural edits are the fullscreen extras.
+  const rsData = useMemo(() => toRS(displaySheet, !!readOnly), [displaySheet, readOnly]);
   const rsDataRef = useRef(rsData);
   rsDataRef.current = rsData;
   // Logical data for the viewer (reads bg for contrast); a ref so the memoized
@@ -268,8 +270,12 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   }, [persistHtml]);
 
   const handleRSChange = useCallback((m: Matrix<RSCell>) => {
-    commit(fromRS(m));
-  }, [commit]);
+    const edited = fromRS(m);
+    // Card view renders only the first PREVIEW_ROWS — merge edits back over the
+    // hidden rows so typing in the preview never truncates the sheet.
+    const next = minimal ? [...edited, ...sheetRef.current.slice(edited.length)] : edited;
+    commit(padSheet(next, minRows, minCols));
+  }, [commit, minimal, minRows, minCols]);
 
   const handleActivate = useCallback((pt: { row: number; column: number }) => {
     selRef.current = { r0: pt.row, c0: pt.column, r1: pt.row, c1: pt.column };
