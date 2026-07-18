@@ -30,16 +30,18 @@ test("a `list: masonry` folder renders items in the masonry grid", async ({ page
   const card = page.locator(".order-card.is-main").first();
   await expect(card).toBeVisible({ timeout: 15_000 });
 
-  // The masonry container renders (CSS columns), with the three item boxes.
-  const grid = card.locator(".basecard-grid.is-masonry");
+  // The masonry container renders (CSS columns), with the three text boxes.
+  const grid = card.locator(".mason-grid");
   await expect(grid).toBeVisible({ timeout: 10_000 });
-  expect(await grid.locator(".basecard").count()).toBeGreaterThanOrEqual(3);
+  expect(await grid.locator(".mason-item").count()).toBeGreaterThanOrEqual(3);
+  // The item CONTENT is the text itself.
+  await expect(grid.locator(".mason-text").first()).toHaveText(/Short/);
 
   // The masonry layout is actually applied: a CSS multi-column flow (not the
   // default grid), and items avoid breaking across columns.
   const layout = await grid.evaluate((el) => {
     const gs = getComputedStyle(el);
-    const cell = el.querySelector(".basecard") as HTMLElement;
+    const cell = el.querySelector(".mason-item") as HTMLElement;
     return {
       display: gs.display,
       columnWidth: gs.columnWidth,
@@ -52,7 +54,7 @@ test("a `list: masonry` folder renders items in the masonry grid", async ({ page
 
   // The point of masonry: a box with more text is meaningfully taller than a
   // short one (full text, no 2-line clamp).
-  const heights = await grid.locator(".basecard-frame").evaluateAll((els) =>
+  const heights = await grid.locator(".mason-item").evaluateAll((els) =>
     els.map((e) => (e as HTMLElement).offsetHeight),
   );
   expect(Math.max(...heights)).toBeGreaterThan(Math.min(...heights) + 30);

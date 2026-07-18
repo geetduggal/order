@@ -7279,36 +7279,78 @@ iframe.order-youtube-embed {
 }
 
 /* ---- Masonry list layout (list: masonry) ---------------------------------
-   Variable-height item boxes flowed into CSS columns — boxes grow/shrink with
-   their text (mostly text lists, images fine too). Drag-reorder is disabled in
-   this mode (columns flow doesn't map to grid positions). */
-.basecard-grid.is-masonry {
-  display: block;
-  columns: 190px;
+   Each item is a box whose CONTENT is its text (or image). Boxes grow with
+   their content and flow into a column masonry — a clean 2D text layout where
+   more content gets more space. */
+.mason-grid {
+  columns: 200px;
   column-gap: 12px;
   margin: 16px 0 4px;
 }
-.basecard-grid.is-masonry .basecard {
+.mason-item {
+  position: relative;
   break-inside: avoid;
   width: 100%;
   margin: 0 0 12px;
-  transform: none !important; /* no drag translate in masonry */
+  padding: 11px 12px;
+  box-sizing: border-box;
+  background: var(--card-bg, color-mix(in srgb, var(--royal) 5%, var(--bg)));
+  border: 1px solid var(--rule-soft);
+  border-radius: 10px;
 }
-/* Full text — the whole point of masonry is size-by-content. */
-.basecard-grid.is-masonry .basecard-body,
-.basecard-grid.is-masonry .basecard-title,
-.basecard-grid.is-masonry .basecard-meta {
-  -webkit-line-clamp: unset;
-  line-clamp: unset;
-  display: block;
-  overflow: visible;
-  white-space: normal;
+.mason-item.is-image { padding: 4px; }
+.mason-img { display: block; width: 100%; height: auto; border-radius: 7px; }
+.mason-text {
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  cursor: text;
 }
-/* The whole box is the text — let the frame grow with it. */
-.basecard-grid.is-masonry .basecard-frame { height: auto; min-height: 0; }
-.basecard-grid.is-masonry .basecard-title { font-size: 13px; }
-.basecard-grid.is-masonry .basecard-add { break-inside: avoid; }
+.mason-text.is-link { cursor: pointer; color: var(--royal); }
+.mason-text.is-link:hover { text-decoration: underline; }
+.mason-meta { margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
+.mason-edit {
+  width: 100%;
+  min-height: 3.2em;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  resize: none;
+  outline: none;
+}
+.mason-del {
+  position: absolute;
+  top: 5px; right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-elev) 85%, transparent);
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out);
+}
+.mason-item:hover .mason-del { opacity: 0.85; }
+.mason-del:hover { color: var(--coral); }
+.mason-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  border-style: dashed;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+.mason-add:hover { color: var(--ink); background: var(--royal-soft); }
 
 /* Cell-drag toggle + affordance (sheet dock). */
 .order-sheet-checkbox {

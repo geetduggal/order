@@ -4,6 +4,7 @@
 
 import { ListCards } from "./ListCards";
 import { ListLines } from "./ListLines";
+import { ListMasonry } from "./ListMasonry";
 import type { ListItem, ListNoteRef, ListRender } from "../lib/list-folder";
 
 interface Props {
@@ -54,9 +55,22 @@ export function ListView({ render, items, vaultNotes, onChange, readOnly, readOn
       />
     );
   }
+  if (render === "masonry") {
+    return (
+      <ListMasonry
+        items={items}
+        vaultNotes={vaultNotes}
+        onChange={onChange}
+        readOnly={readOnly}
+        readOnlyMembership={readOnlyMembership}
+        onNavigate={onNavigate}
+        onAddFilter={onAddFilter}
+        noteDir={noteDir}
+      />
+    );
+  }
   return (
     <ListCards
-      masonry={render === "masonry"}
       items={items}
       vaultNotes={vaultNotes}
       onChange={onChange}
