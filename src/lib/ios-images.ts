@@ -31,24 +31,33 @@ function mimeFor(rel: string): string {
     case "svg": return "image/svg+xml";
     case "heic": return "image/heic";
     case "bmp": return "image/bmp";
+    case "mp4": case "m4v": return "video/mp4";
+    case "mov": return "video/quicktime";
+    case "webm": return "video/webm";
+    case "ogv": return "video/ogg";
     default: return "application/octet-stream";
   }
 }
 
-async function swap(img: HTMLImageElement): Promise<void> {
-  const rel = relFromVaultasset(img.getAttribute("src"));
+const MEDIA_SELECTOR = 'img[src^="vaultasset://"], video[src^="vaultasset://"]';
+
+async function swap(el: HTMLImageElement | HTMLVideoElement): Promise<void> {
+  const rel = relFromVaultasset(el.getAttribute("src"));
   if (!rel) return;
   const cached = cache.get(rel);
-  if (cached) { if (img.src !== cached) img.src = cached; return; }
+  if (cached) { if (el.src !== cached) el.src = cached; return; }
   if (inflight.has(rel)) return;
   inflight.add(rel);
   try {
+    // NOTE: video is loaded whole (no HTTP-Range streaming that the
+    // vaultasset scheme provided), so large clips buffer entirely. Acceptable
+    // while the scheme is unusable in WKWebView; images are the common case.
     const buf = await invoke<ArrayBuffer>("vault_read_asset_bytes", { rel });
     const url = URL.createObjectURL(new Blob([buf], { type: mimeFor(rel) }));
     cache.set(rel, url);
-    // Point every img still on this rel at the blob (there may be several).
-    document.querySelectorAll<HTMLImageElement>('img[src^="vaultasset://"]').forEach((el) => {
-      if (relFromVaultasset(el.getAttribute("src")) === rel) el.src = url;
+    // Point every element still on this rel at the blob (there may be several).
+    document.querySelectorAll<HTMLElement>(MEDIA_SELECTOR).forEach((node) => {
+      if (relFromVaultasset(node.getAttribute("src")) === rel) (node as HTMLImageElement).src = url;
     });
   } catch {
     /* leave the original src — nothing better to show */
@@ -58,7 +67,7 @@ async function swap(img: HTMLImageElement): Promise<void> {
 }
 
 function scan(root: ParentNode): void {
-  root.querySelectorAll('img[src^="vaultasset://"]').forEach((img) => void swap(img as HTMLImageElement));
+  root.querySelectorAll(MEDIA_SELECTOR).forEach((el) => void swap(el as HTMLImageElement | HTMLVideoElement));
 }
 
 /** Start the iOS image loader (no-op on desktop). */

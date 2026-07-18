@@ -13,9 +13,9 @@
 // Formulas: react-spreadsheet evaluates any cell whose value starts with "="
 // (fast-formula-parser), so basic `=A1+B1`, `=SUM(...)` etc. work for free.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Spreadsheet, { type CellBase, type Matrix } from "react-spreadsheet";
-import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon, ChevronsDown as ChevronsDownIcon } from "lucide-react";
+import { Palette as PaletteIcon, Scissors as ScissorsIcon, Eraser as EraserIcon, ChevronsDown as ChevronsDownIcon, Move as MoveIcon } from "lucide-react";
 import {
   SHEET_PALETTE,
   emptySheet,
@@ -133,8 +133,14 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   // single-cell click; onSelect covers a dragged range.
   const selRef = useRef<Rect | null>(null);
   const [editing, setEditing] = useState(false);
-  // Optional press-and-drag to move a cell / block (see the "Cell drag" toggle).
+  // Optional drag-to-move a cell / block (see the "Cell drag" toggle). Rather
+  // than intercept cell presses (which fights react-spreadsheet's own selection
+  // drag and left the headers flashing the text-selection color), we surface a
+  // small grip on the current selection; dragging THAT grip moves the block and
+  // swaps it with the destination. Normal selection/editing is untouched.
   const [cellDrag, setCellDrag] = useState(false);
+  const [selState, setSelState] = useState<Rect | null>(null);
+  const [handlePos, setHandlePos] = useState<{ left: number; top: number } | null>(null);
   const [dragOver, setDragOver] = useState<{ r: number; c: number } | null>(null);
   const dragRef = useRef<{ sel: Rect; startX: number; startY: number; moved: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -285,17 +291,21 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   }, [commit, minimal, minRows, minCols]);
 
   const handleActivate = useCallback((pt: { row: number; column: number }) => {
-    selRef.current = { r0: pt.row, c0: pt.column, r1: pt.row, c1: pt.column };
+    const s = { r0: pt.row, c0: pt.column, r1: pt.row, c1: pt.column };
+    selRef.current = s;
+    setSelState(s);
   }, []);
   const handleSelect = useCallback((sel: { toRange: (d: Matrix<RSCell>) => { start: { row: number; column: number }; end: { row: number; column: number } } | null }) => {
     const pr = sel.toRange(rsDataRef.current);
-    if (!pr) return;
-    selRef.current = {
+    if (!pr) { setSelState(null); return; }
+    const s = {
       r0: Math.min(pr.start.row, pr.end.row),
       c0: Math.min(pr.start.column, pr.end.column),
       r1: Math.max(pr.start.row, pr.end.row),
       c1: Math.max(pr.start.column, pr.end.column),
     };
+    selRef.current = s;
+    setSelState(s);
   }, []);
 
   const mutateSelection = useCallback((mut: (cell: SheetCell) => SheetCell) => {
@@ -355,26 +365,40 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
     }
     return null;
   }, []);
-  const onDragPointerDown = useCallback((e: React.PointerEvent) => {
-    if (!cellDrag || readOnly || e.button !== 0) return;
-    const start = cellAt(e.clientX, e.clientY);
-    const sel = selRef.current;
-    if (!start || !sel) return;
-    // Preempt only when the press lands inside the current selection — that's a
-    // drag of the block; a press elsewhere still selects normally.
-    if (start.r < sel.r0 || start.r > sel.r1 || start.c < sel.c0 || start.c > sel.c1) return;
+  // Position the drag grip at the top-right corner of the current selection.
+  // The grip lives inside the (position:relative) scroll container and uses the
+  // cell's offset coordinates, so it scrolls with the content automatically.
+  const recomputeHandle = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!cellDrag || readOnly || editing || !selState || !scroll) { setHandlePos(null); return; }
+    const cell = scroll.querySelector<HTMLElement>(`.sheet-row-${selState.r0}.sheet-col-${selState.c1}`);
+    if (!cell) { setHandlePos(null); return; }
+    setHandlePos({ left: cell.offsetLeft + cell.offsetWidth, top: cell.offsetTop });
+  }, [cellDrag, readOnly, editing, selState]);
+  useLayoutEffect(() => { recomputeHandle(); }, [recomputeHandle, sheet]);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const on = () => recomputeHandle();
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, [recomputeHandle]);
+
+  const onHandleDown = useCallback((e: React.PointerEvent) => {
+    if (!selState || readOnly) return;
+    e.preventDefault();
     e.stopPropagation();
-    dragRef.current = { sel, startX: e.clientX, startY: e.clientY, moved: false };
-    scrollRef.current?.setPointerCapture(e.pointerId);
-  }, [cellDrag, readOnly, cellAt]);
-  const onDragPointerMove = useCallback((e: React.PointerEvent) => {
+    dragRef.current = { sel: selState, startX: e.clientX, startY: e.clientY, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, [selState, readOnly]);
+  const onHandleMove = useCallback((e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
-    if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 6) return;
+    if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 5) return;
     d.moved = true;
     setDragOver(cellAt(e.clientX, e.clientY));
   }, [cellAt]);
-  const onDragPointerUp = useCallback((e: React.PointerEvent) => {
+  const onHandleUp = useCallback((e: React.PointerEvent) => {
     const d = dragRef.current;
     dragRef.current = null;
     setDragOver(null);
@@ -384,7 +408,9 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
     const dr = t.r - d.sel.r0, dc = t.c - d.sel.c0;
     if (dr === 0 && dc === 0) return;
     commit(padSheet(moveBlock(sheetRef.current, d.sel, dr, dc), minRows, minCols));
-    selRef.current = { r0: d.sel.r0 + dr, c0: d.sel.c0 + dc, r1: d.sel.r1 + dr, c1: d.sel.c1 + dc };
+    const moved = { r0: d.sel.r0 + dr, c0: d.sel.c0 + dc, r1: d.sel.r1 + dr, c1: d.sel.c1 + dc };
+    selRef.current = moved;
+    setSelState(moved);
   }, [cellAt, commit, minRows, minCols]);
 
   const colOps = useCallback((j: number, kind: "delete" | "left" | "right") => {
@@ -448,7 +474,7 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
             <ScissorsIcon size={13} strokeWidth={2} />
           </button>
           <span className="order-sheet-tool-sep" />
-          <label className="order-sheet-checkbox" title="Press and drag a cell or selection to move it; it swaps with whatever's there">
+          <label className="order-sheet-checkbox" title="Select a cell or range, then drag the move grip to relocate it — it swaps with whatever's there">
             <input type="checkbox" checked={cellDrag} onChange={(e) => setCellDrag(e.target.checked)} />
             Cell drag
           </label>
@@ -477,10 +503,21 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
       <div
         className={"order-sheet-scroll" + (cellDrag ? " is-cell-drag" : "")}
         ref={scrollRef}
-        onPointerDownCapture={onDragPointerDown}
-        onPointerMove={onDragPointerMove}
-        onPointerUp={onDragPointerUp}
       >
+        {handlePos && (
+          <button
+            type="button"
+            className="order-sheet-drag-handle"
+            style={{ left: handlePos.left, top: handlePos.top }}
+            title="Drag to move the selected cell(s) — swaps with the destination"
+            aria-label="Move selection"
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+          >
+            <MoveIcon size={11} strokeWidth={2.4} />
+          </button>
+        )}
         <Spreadsheet
           data={rsData}
           onChange={handleRSChange}

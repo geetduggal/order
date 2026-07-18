@@ -7115,7 +7115,12 @@ iframe.order-youtube-embed {
 }
 .order-sheet-tool:hover { background: var(--royal-soft); color: var(--ink); }
 
-.order-sheet-scroll { overflow: auto; min-height: 0; flex: 1; padding-top: 30px; padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
+.order-sheet-scroll { position: relative; overflow: auto; min-height: 0; flex: 1; padding-top: 30px; padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
+
+/* Dragging never selects the header/cell TEXT (the app's ::selection is coral,
+   which otherwise flashed the row/column labels red as you swept a range). */
+.order-sheet-surface .Spreadsheet__table,
+.order-sheet-surface .Spreadsheet__header { user-select: none; -webkit-user-select: none; }
 
 /* Overflow model. The value is rendered in an absolutely-positioned span so it
    escapes the cell box and continues past to the right like a real
@@ -7364,5 +7369,23 @@ iframe.order-youtube-embed {
   white-space: nowrap;
 }
 .order-sheet-checkbox input { cursor: pointer; margin: 0; }
-.order-sheet-scroll.is-cell-drag .Spreadsheet__cell { cursor: grab; }
-.order-sheet-scroll.is-cell-drag .order-sheet-val { cursor: grab; }
+/* Drag grip on the current selection (Cell drag mode). Sits at the selection's
+   top-right corner; grab it to move the block. Scrolls with the content since
+   it's an absolute child of the (position:relative) scroll container. */
+.order-sheet-drag-handle {
+  position: absolute;
+  z-index: 30;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 1px solid var(--bg);
+  border-radius: 999px;
+  background: var(--royal);
+  color: #fff;
+  cursor: grab;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  touch-action: none;
+}
+.order-sheet-drag-handle:active { cursor: grabbing; }
+.order-sheet-drag-handle:hover { filter: brightness(1.08); }

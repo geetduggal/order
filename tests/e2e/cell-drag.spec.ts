@@ -1,5 +1,6 @@
-// Cell drag: with the "Cell drag" toggle on (fullscreen dock), press-and-drag a
-// cell moves it to the drop location.
+// Cell drag: with the "Cell drag" toggle on (fullscreen dock), selecting a cell
+// shows a move grip on the selection; dragging that grip moves the cell to the
+// drop location (swapping with whatever is there).
 
 import { test, expect } from "@playwright/test";
 import { bootVault } from "./helpers";
@@ -36,15 +37,17 @@ test("Cell drag moves a cell to the drop target", async ({ page }) => {
   await card.locator(".order-card-fullscreen").click();
   await card.locator(".order-sheet-checkbox input").check();
 
-  // Select A1, then press-and-drag it to C2.
+  // Select A1 → the move grip appears; drag it to C2.
   const a1 = card.locator(".Spreadsheet__cell.sheet-col-0.sheet-row-0").first();
   const c2 = card.locator(".Spreadsheet__cell.sheet-col-2.sheet-row-1").first();
   await a1.click();
-  const b1 = (await a1.boundingBox())!;
+  const grip = card.locator(".order-sheet-drag-handle");
+  await grip.waitFor({ timeout: 5_000 });
+  const g = (await grip.boundingBox())!;
   const b2 = (await c2.boundingBox())!;
-  await page.mouse.move(b1.x + b1.width / 2, b1.y + b1.height / 2);
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
   await page.mouse.down();
-  await page.mouse.move(b1.x + 25, b1.y + 15); // pass the drag threshold
+  await page.mouse.move(g.x + 20, g.y + 15); // pass the drag threshold
   await page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2, { steps: 6 });
   await page.mouse.up();
 
