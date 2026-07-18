@@ -34,4 +34,3 @@ playwright-report/
 
 # One-time, local-only vault/spacetime recovery scripts — never committed.
 scripts/*.mjs
-public/fonts

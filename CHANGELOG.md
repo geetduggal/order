@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cell drag (spreadsheet).** An opt-in "Cell drag" toggle in the sheet dock:
   press-and-drag a cell or selection to move it; cells it lands on are displaced
   back into the vacated slots (a swap) rather than overwritten.
-- **Offline drawings.** Excalidraw fonts now ship with the app instead of its
-  CDN, so drawings render without a network connection.
 
 ### Fixed
 

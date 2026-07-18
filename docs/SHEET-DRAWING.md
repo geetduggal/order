@@ -87,13 +87,10 @@ Standard Excalidraw JSON (`serializeAsJSON` / `restore`), theme-synced to Order
 (its many themes map to Excalidraw's light/dark). Persist is debounced and
 skips scene-identical echoes.
 
-**Offline fonts.** Excalidraw's fonts ship with the app: the `excalidrawFonts`
-Vite plugin copies them into `public/fonts` (gitignored), and `main.tsx` sets
-`EXCALIDRAW_ASSET_PATH = "/"` so they load locally — drawings render offline.
-
 **iOS assets.** Attachment images/videos are served via the `vaultasset://`
 scheme; the response carries `Access-Control-Allow-Origin: *` so iOS WKWebView
 allows the cross-scheme `<img>`/`<video>` load (desktop WebViews don't need it).
 
-**Follow-up:** renaming a note does not yet carry its `.sheet.html` /
-`.excalidraw` sidecars along.
+**Follow-ups:** Excalidraw loads its fonts from its CDN, so a drawing's
+handwritten fonts need a network connection the first time. Renaming a note does
+not yet carry its `.sheet.html` / `.excalidraw` sidecars along.
