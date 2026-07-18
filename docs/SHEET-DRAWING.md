@@ -29,12 +29,15 @@ normal note path never pays for them.
 
 The card is a **minimal preview**; the full editor is fullscreen.
 
-- **Sheet, card view:** no row/column headers, no palette dock, editing locked,
-  rows capped (a subtle chevron over a bottom fade opens fullscreen). **Sheet,
-  fullscreen:** headers, the palette dock, editing, structural edits.
-- **Drawing, card view:** Excalidraw chrome hidden, view-only, centered on the
-  content. **Drawing, fullscreen:** the full Excalidraw editor. The canvas
-  re-fits to content on every fullscreen toggle.
+- **Sheet, card view:** no row/column headers, no palette dock, rows capped (a
+  subtle chevron over a bottom fade opens fullscreen) — but cells are still
+  editable (type values inline; edits merge back over the hidden rows so nothing
+  truncates). **Sheet, fullscreen:** headers, the palette dock, colors, cell
+  drag, structural edits.
+- **Drawing, card view:** Excalidraw chrome hidden but the canvas is interactive
+  (select, move, double-click to edit text) — a minimal editor. **Drawing,
+  fullscreen:** the full Excalidraw toolset. The canvas re-fits to content on
+  every fullscreen toggle. Only a published/read-only card is truly view-only.
 
 ## Spreadsheet specifics
 
@@ -67,6 +70,13 @@ for any value starting with `=`).
 
 **Structure.** Right-click a row number or column letter for insert / delete.
 
+**Cell drag.** The "Cell drag" dock toggle enables press-and-drag: press inside
+the current selection and drag it elsewhere; the block moves there and any cells
+it lands on are displaced back into the slots it vacated (a swap), so nothing is
+silently overwritten. The move logic is `moveBlock` in `note-view.ts`
+(unit-tested); the interaction preempts react-spreadsheet's selection only when
+the press starts inside the selection, so a normal click still selects.
+
 **Storage.** The sheet is a plain HTML `<table>`; cells carry `data-bg` (palette
 token `t:<key>` or a raw color) and `data-collapse`. Trailing empty rows/columns
 are trimmed on save.
@@ -77,6 +87,13 @@ Standard Excalidraw JSON (`serializeAsJSON` / `restore`), theme-synced to Order
 (its many themes map to Excalidraw's light/dark). Persist is debounced and
 skips scene-identical echoes.
 
-**Follow-up:** Excalidraw loads fonts from its CDN by default; fully-offline
-drawing needs `EXCALIDRAW_ASSET_PATH` pointed at bundled assets. Renaming a note
-does not yet carry its sidecars along.
+**Offline fonts.** Excalidraw's fonts ship with the app: the `excalidrawFonts`
+Vite plugin copies them into `public/fonts` (gitignored), and `main.tsx` sets
+`EXCALIDRAW_ASSET_PATH = "/"` so they load locally — drawings render offline.
+
+**iOS assets.** Attachment images/videos are served via the `vaultasset://`
+scheme; the response carries `Access-Control-Allow-Origin: *` so iOS WKWebView
+allows the cross-scheme `<img>`/`<video>` load (desktop WebViews don't need it).
+
+**Follow-up:** renaming a note does not yet carry its `.sheet.html` /
+`.excalidraw` sidecars along.

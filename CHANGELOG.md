@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Masonry list layout.** A third list mode (`list: masonry`) beside cards and
+  lines: items render as variable-height boxes flowed into CSS columns, sized by
+  their content — for text-forward lists. Selectable from the inspector `list`
+  dropdown / the list cycle.
+- **Cell drag (spreadsheet).** An opt-in "Cell drag" toggle in the sheet dock:
+  press-and-drag a cell or selection to move it; cells it lands on are displaced
+  back into the vacated slots (a swap) rather than overwritten.
+- **Offline drawings.** Excalidraw fonts now ship with the app instead of its
+  CDN, so drawings render without a network connection.
+
+### Fixed
+
+- **iOS images.** Attachment images/videos (served via the `vaultasset://`
+  scheme) now load in the card on iOS — WKWebView needed the asset response to
+  be CORS-permitted for a cross-scheme `<img>`; desktop WebViews didn't.
+- Sheet and drawing card views are editable again (minimal): type values inline
+  in a sheet, move/edit shapes in a drawing — the full toolset stays in
+  fullscreen.
+
+### Added
+
 - **Sheet & Drawing views.** A note card can now flip between its markdown
   editor and two others via icons next to the terminal icon: a spreadsheet
   (react-spreadsheet, stored as `<Name>.sheet.html`) and a drawing (Excalidraw,
