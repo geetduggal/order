@@ -4825,17 +4825,19 @@ export function CardGrid() {
         listMode={
           (n.frontmatter.list === "cards" ? "cards"
             : n.frontmatter.list === "lines" ? "lines"
+            : n.frontmatter.list === "masonry" ? "masonry"
             : "none")
         }
         onCycleList={async () => {
-          // Cycle the `list:` YAML through none → cards → lines →
+          // Cycle the `list:` YAML through none → cards → lines → masonry →
           // none. Body untouched — the renderer reacts on next load.
           const raw = await vaultFs.readText(toVaultRel(n.path));
           const split = splitFrontmatter(raw);
           const fm = { ...split.frontmatter };
-          const cur = fm.list === "cards" ? "cards" : fm.list === "lines" ? "lines" : "none";
+          const cur = fm.list === "cards" ? "cards" : fm.list === "lines" ? "lines" : fm.list === "masonry" ? "masonry" : "none";
           if (cur === "none") fm.list = "cards";
           else if (cur === "cards") fm.list = "lines";
+          else if (cur === "lines") fm.list = "masonry";
           else delete fm.list;
           await writeVault(n.path, joinFrontmatter(fm, split.body));
           // Self-writes are filtered by the watcher, so reload by

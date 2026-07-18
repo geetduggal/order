@@ -242,7 +242,7 @@ interface Props {
   onSetHome?: () => Promise<void> | void;
   /** Notable Folder Main Documents only: cycle the `list:` YAML key
    *  through {none → cards → lines → none}. Parent writes YAML. */
-  listMode?: "none" | "cards" | "lines";
+  listMode?: "none" | "cards" | "lines" | "masonry";
   onCycleList?: () => Promise<void> | void;
   /** File Piles (session-only). Present only for non-main cards in the
    *  single-folder "Notable Folder view". onAddToPile moves this card to the
@@ -466,7 +466,7 @@ export function Card(props: Props) {
    *  and a reload; until the new prop arrives back here, we render
    *  the pending value so feedback is immediate. Setting the pending
    *  value to null lets the prop win again. */
-  const [pendingListMode, setPendingListMode] = useState<"none" | "cards" | "lines" | null>(null);
+  const [pendingListMode, setPendingListMode] = useState<"none" | "cards" | "lines" | "masonry" | null>(null);
   const [pendingHome, setPendingHome] = useState<boolean | null>(null);
   // When the prop catches up to the optimistic value, clear the pending
   // override so further external changes (a vault edit on disk) flow

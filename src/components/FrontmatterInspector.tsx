@@ -398,7 +398,7 @@ function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, f
       );
     }
     case "list": {
-      // Three-state: not present (drop key) | "cards" | "lines".
+      // not present (drop key) | "cards" | "lines" | "masonry".
       const v = typeof value === "string" ? value : "";
       return (
         <select
@@ -409,6 +409,7 @@ function KnownInput({ fieldKey, value, onSet, folderCandidates, recentFolders, f
           <option value="">(none)</option>
           <option value="cards">cards</option>
           <option value="lines">lines</option>
+          <option value="masonry">masonry</option>
         </select>
       );
     }

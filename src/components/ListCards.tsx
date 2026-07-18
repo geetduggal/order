@@ -43,6 +43,9 @@ interface Props {
    *  vaultasset:// URL of the stored image. Wired from Card so the
    *  image inspector's Replace button can swap the image. */
   onUploadImage?: (file: File) => Promise<string>;
+  /** Masonry render: variable-height boxes flowed into CSS columns, full
+   *  text (no clamp), drag-reorder disabled. */
+  masonry?: boolean;
 }
 
 /** Build the URL for an image-only list item.
@@ -68,7 +71,7 @@ function pickMeta(item: ListItem, note?: ListNoteRef): string {
   return "";
 }
 
-export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter, noteDir, onUploadImage }: Props) {
+export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter, noteDir, onUploadImage, masonry }: Props) {
   const [adding, setAdding] = useState(false);
   const [addingTop, setAddingTop] = useState(false);
   /** Open image inspector for a specific image-only list item. */
@@ -177,10 +180,10 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
 
   if (items.length === 0 && !adding) {
     if (hideControls) {
-      return <div className="basecard-grid"><div className="basecard-empty">No items match.</div></div>;
+      return <div className={"basecard-grid" + (masonry ? " is-masonry" : "")}><div className="basecard-empty">No items match.</div></div>;
     }
     return (
-      <div className="basecard-grid">
+      <div className={"basecard-grid" + (masonry ? " is-masonry" : "")}>
         <AddTile
           slim
           onCancel={() => setAdding(false)}
@@ -196,7 +199,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   return (
     <div
       ref={gridRef}
-      className="basecard-grid"
+      className={"basecard-grid" + (masonry ? " is-masonry" : "")}
     >
       {!hideControls && (
         <AddTile
@@ -228,7 +231,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
               displayTitle=""
               metaSuggestion=""
               dragging={dragging}
-              draggable={!readOnly}
+              draggable={!readOnly && !masonry}
               readOnly={hideControls}
               imageOnly
               onNavigate={url ? () => setInspectingIdx(originalIdx) : undefined}
@@ -271,7 +274,7 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
             displayTitle={isText ? item.text! : displayTitleFor(item, note)}
             metaSuggestion={isText ? "" : pickMeta(item, note)}
             dragging={dragging}
-            draggable={!readOnly}
+            draggable={!readOnly && !masonry}
             readOnly={hideControls}
             onNavigate={(() => {
               if (isText) return undefined;

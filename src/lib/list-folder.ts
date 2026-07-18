@@ -6,7 +6,7 @@
 
 import type { Frontmatter } from "./frontmatter";
 
-export type ListRender = "cards" | "lines";
+export type ListRender = "cards" | "lines" | "masonry";
 
 export interface ListItem {
   ref: string;
@@ -53,7 +53,7 @@ export interface ListNoteRef {
 
 export function listRender(frontmatter: Frontmatter): ListRender | null {
   const v = frontmatter.list;
-  if (v === "cards" || v === "lines") return v;
+  if (v === "cards" || v === "lines" || v === "masonry") return v;
   // Legacy: `type: list` → cards.
   if (frontmatter.type === "list") return "cards";
   return null;

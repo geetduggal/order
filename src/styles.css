@@ -7277,3 +7277,29 @@ iframe.order-youtube-embed {
   -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent);
   mask-image: linear-gradient(to bottom, #000 84%, transparent);
 }
+
+/* ---- Masonry list layout (list: masonry) ---------------------------------
+   Variable-height item boxes flowed into CSS columns — boxes grow/shrink with
+   their text (mostly text lists, images fine too). Drag-reorder is disabled in
+   this mode (columns flow doesn't map to grid positions). */
+.basecard-grid.is-masonry {
+  display: block;
+  columns: 190px;
+  column-gap: 12px;
+  margin: 16px 0 4px;
+}
+.basecard-grid.is-masonry .basecard {
+  break-inside: avoid;
+  width: 100%;
+  margin: 0 0 12px;
+  transform: none !important; /* no drag translate in masonry */
+}
+/* Full text — the whole point of masonry is size-by-content. */
+.basecard-grid.is-masonry .basecard-body {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+}
+.basecard-grid.is-masonry .basecard-add { break-inside: avoid; }

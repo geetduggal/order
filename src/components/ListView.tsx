@@ -56,6 +56,7 @@ export function ListView({ render, items, vaultNotes, onChange, readOnly, readOn
   }
   return (
     <ListCards
+      masonry={render === "masonry"}
       items={items}
       vaultNotes={vaultNotes}
       onChange={onChange}
