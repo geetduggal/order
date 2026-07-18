@@ -78,6 +78,12 @@ pub fn run() {
                                         .header("Content-Length", bytes.len().to_string())
                                         .header("Content-Range", format!("bytes {start}-{end}/{total}"))
                                         .header("Accept-Ranges", "bytes")
+                                        // iOS WKWebView blocks cross-scheme <img>/<video>
+                                        // subresource loads (the webview origin is
+                                        // tauri://localhost, the asset is vaultasset://)
+                                        // unless the response is CORS-permitted. Desktop
+                                        // WebViews don't require this; iOS does.
+                                        .header("Access-Control-Allow-Origin", "*")
                                         .body(bytes)
                                         .unwrap();
                                 }
@@ -97,6 +103,9 @@ pub fn run() {
                         // Advertise range support so video elements
                         // know they can seek without re-fetching.
                         .header("Accept-Ranges", "bytes")
+                        // Required for iOS WKWebView to load the asset cross-scheme
+                        // (see the 206 branch above).
+                        .header("Access-Control-Allow-Origin", "*")
                         .body(bytes)
                         .unwrap()
                 }
