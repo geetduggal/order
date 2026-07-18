@@ -123,6 +123,7 @@ pub fn run() {
             vault_fs::vault_walk_metadata,
             vault_fs::vault_walk_mtimes,
             vault_fs::vault_read_text,
+            vault_fs::vault_read_asset_bytes,
             vault_fs::vault_write_text,
             vault_fs::vault_write_binary,
             vault_fs::vault_read_dir,

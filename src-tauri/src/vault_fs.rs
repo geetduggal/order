@@ -443,6 +443,18 @@ pub fn read_asset(state: &VaultState, rel: &str) -> Result<Vec<u8>, String> {
     fs::read(resolve(state, rel)?).map_err(|e| e.to_string())
 }
 
+/// Read an attachment's raw bytes over IPC (returned as an ArrayBuffer). On
+/// iOS the `vaultasset://` URI scheme doesn't reach `<img>`, so the frontend
+/// loads images through this proven-working command instead and swaps in a
+/// blob: URL (see src/lib/ios-images.ts).
+#[tauri::command]
+pub fn vault_read_asset_bytes(
+    state: tauri::State<VaultState>,
+    rel: String,
+) -> Result<tauri::ipc::Response, String> {
+    read_asset(&state, &rel).map(tauri::ipc::Response::new)
+}
+
 /// Read a byte range (start..=end inclusive) of a vault-relative file.
 /// Used by the vaultasset handler to serve HTTP-Range requests for
 /// video files — without this, WebKit can't stream a multi-MB .mov

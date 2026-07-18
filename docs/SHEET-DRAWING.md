@@ -88,8 +88,11 @@ Standard Excalidraw JSON (`serializeAsJSON` / `restore`), theme-synced to Order
 skips scene-identical echoes.
 
 **iOS assets.** Attachment images/videos are served via the `vaultasset://`
-scheme; the response carries `Access-Control-Allow-Origin: *` so iOS WKWebView
-allows the cross-scheme `<img>`/`<video>` load (desktop WebViews don't need it).
+scheme on desktop. That scheme doesn't reach `<img>` in iOS WKWebView, so on
+iOS the frontend loads images over the IPC bridge instead — `vault_read_asset_bytes`
+returns the bytes and `src/lib/ios-images.ts` (a MutationObserver) swaps in a
+`blob:` URL. (Notes already load over IPC, which is why they work; the scheme is
+the odd one out.)
 
 **Follow-ups:** Excalidraw loads its fonts from its CDN, so a drawing's
 handwritten fonts need a network connection the first time. Renaming a note does
