@@ -36,6 +36,32 @@ A Vault is a collection of Notable Folders in a Johnny Decimal hierarchy:
 - **Categories** — groupings of Notable Folders. At most 10 per Area.
 - Notable Folders live inside Categories; all files live inside Notable Folders.
 
+**Johnny-Decimal Mode** (Settings toggle) makes the ids explicit: it prefixes
+every Area, Category, and Notable Folder with its id — Areas as ranges
+(`10-19 Self-Care`), Categories as numbers (`11 Selfish Projects`), Notable
+Folders as `AC.ID` (`11.01 Living Room Refresh`). It rewrites `spacetime.md`
+and renames the matching directories, updating inbound `[[wikilinks]]` and event
+tags to match. Turning it off strips the ids back off. The setting is
+per-machine; the ids computed from the current hierarchy order, so it is
+idempotent.
+
+## List modes
+
+A Notable Folder Main Document (or any note) with a `list:` frontmatter key
+renders its bullet items as a list instead of prose. Three modes:
+
+- `list: cards` — icon-cover cards in a responsive grid (the default for
+  reference collections).
+- `list: lines` — a dense one-per-row layout with inline meta.
+- `list: masonry` — variable-height "cards on a card" flowed into columns and
+  sized by their content, for text-forward lists. Item text renders inline
+  wikilinks, markdown links, and images; cards drag-reorder from anywhere and
+  open an immersive gallery in fullscreen.
+
+Switching `list:` in the frontmatter inspector re-renders live. Items are the
+body's bullets; setting `list:` lifts them out of the editor, and clearing it
+folds them back in as a normal markdown list.
+
 ## Pile
 
 The Pile is the open stack of Notable Folders for a working session. Recently touched

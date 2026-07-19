@@ -16,10 +16,14 @@ import {
 
 export function SettingsPanel({
   onChangeVault, onClose, onOpenTodoTxt,
+  johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
   onOpenTodoTxt: () => Promise<void>;
+  johnnyDecimal: boolean;
+  johnnyDecimalBusy: boolean;
+  onToggleJohnnyDecimal: (enable: boolean) => Promise<void>;
 }) {
   const initialTodo = getTodoTxtSettings();
   const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
@@ -41,7 +45,9 @@ export function SettingsPanel({
   const [gcalError, setGcalError] = useState<string | null>(null);
   const [gcalHelpOpen, setGcalHelpOpen] = useState(false);
   const refreshGcal = useCallback(async () => {
-    try { setGcal(await import("../lib/gcal-accounts").then((m) => m.listAccounts())); }
+    // Keep the default view if the backend returns nothing — otherwise a null
+    // response nulls out `gcal` and every `gcal.client_id` read below throws.
+    try { const v = await import("../lib/gcal-accounts").then((m) => m.listAccounts()); if (v) setGcal(v); }
     catch (e) { setGcalError(String(e)); }
     // Notify the calendar shell so its Google-sync pending list recomputes.
     window.dispatchEvent(new Event("order:gcal-accounts-changed"));
@@ -186,6 +192,29 @@ export function SettingsPanel({
             calendar event — one line per event, readable and editable in any
             text editor. Events you create in Order are markdown files; lines
             you add by hand show up on the calendar too.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Johnny-Decimal Mode</span>
+          <span className="settings-value">
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={johnnyDecimal}
+                disabled={johnnyDecimalBusy}
+                onChange={(e) => { void onToggleJohnnyDecimal(e.target.checked); }}
+              />
+              <span>Prefix Areas, Categories & Notable Folders with Johnny.Decimal ids</span>
+            </label>
+          </span>
+          <span className="settings-hint">
+            {johnnyDecimalBusy
+              ? "Renaming folders…"
+              : <>Rewrites <code>spacetime.md</code> and renames the matching directories so every
+                node carries an id — Areas as ranges (<code>10-19</code>), Categories as numbers
+                (<code>11</code>), Notable Folders as <code>11.01</code>. Turning it off strips the
+                ids back off. Wikilinks and event tags are updated to match.</>}
           </span>
         </div>
 

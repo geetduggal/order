@@ -12,7 +12,8 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 
 - **Edit in place** — WYSIWYG markdown cards (Milkdown Crepe). No modes, no preview pane.
 - **Flip a card to a sheet or a drawing** — the same note becomes a spreadsheet (formulas, spreadsheet-style overflow, colors) or an Excalidraw canvas, backed by a sidecar file and remembered per note. See [SHEET-DRAWING.md](docs/SHEET-DRAWING.md).
-- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10.
+- **List modes** — a note with `list:` frontmatter renders its bullets as `cards`, `lines`, or `masonry` (variable-height cards-on-a-card with inline links/images, drag-reorder, and an immersive fullscreen gallery).
+- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10. A **Johnny-Decimal Mode** toggle in Settings makes the ids explicit (`10-19`, `11`, `11.01`) across `spacetime.md` and the directories.
 - **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same notes.
 - **todo.txt, always in sync** — every calendar event mirrored as one readable line.
 - **Seasons** — name your own date ranges and see each one as a grid of what happened, by Area.

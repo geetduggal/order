@@ -327,7 +327,8 @@ different **surface** inside itself:
   (react-spreadsheet, `<Name>.sheet.html`) or an Excalidraw drawing
   (`<Name>.excalidraw`); the active view lives in the note's `view:`
   frontmatter. Lazy-loaded. See [SHEET-DRAWING.md](SHEET-DRAWING.md).
-- **`ListCards` / `ListLines`** — special renderings for list-style notes.
+- **`ListCards` / `ListLines` / `ListMasonry`** — the `list: cards|lines|masonry`
+  renderings for list-style notes (dispatched by `ListView`).
 - **`NotableFolderBackside`** — flip a folder card over and you get a file browser +
   drag-and-drop.
 - **`OrderTerminal`** — yes, there's a real terminal (xterm.js) you can open inside a

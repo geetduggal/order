@@ -10,12 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Masonry list layout.** A third list mode (`list: masonry`) beside cards and
-  lines: items render as variable-height boxes flowed into CSS columns, sized by
-  their content — for text-forward lists. Selectable from the inspector `list`
-  dropdown / the list cycle.
+  lines: items render as variable-height "cards on a card" flowed into CSS
+  columns, sized by their content — for text-forward lists. Item text renders
+  inline `[[wikilinks]]`, `[markdown links](url)`, and `![[images]]` as live
+  links/images; cards reorder by dragging anywhere on them, and fullscreen opens
+  an immersive centered gallery. Selecting `list:` in the frontmatter inspector
+  switches the render live (splitting the body's bullets into items, or folding
+  them back into the editor when set to "(none)").
+- **Johnny-Decimal Mode.** A Settings toggle that prefixes every Area, Category,
+  and Notable Folder with a Johnny.Decimal id — Areas as ranges (`10-19`),
+  Categories as numbers (`11`), Notable Folders as `11.01` — rewriting
+  `spacetime.md` and renaming the matching directories (inbound wikilinks and
+  event tags are updated to match). Turning it off strips the ids back off.
 - **Cell drag (spreadsheet).** An opt-in "Cell drag" toggle in the sheet dock:
-  press-and-drag a cell or selection to move it; cells it lands on are displaced
-  back into the vacated slots (a swap) rather than overwritten.
+  select a cell or range and drag the move grip on it to relocate the block; the
+  cells it lands on are displaced back into the vacated slots (a swap) rather
+  than overwritten.
 
 ### Fixed
 

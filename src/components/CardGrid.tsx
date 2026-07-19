@@ -73,6 +73,7 @@ import {
   type TodoTxtSettings,
 } from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
+import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal } from "../lib/johnny-decimal";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
 import { vaultDir, embeddedImageFiles } from "../lib/attachments";
@@ -2379,6 +2380,73 @@ export function CardGrid() {
       setMwReviewOpen(false);
     }
   }, [reconcileSpaceChanges, reloadNotes, persistMwBaseline]);
+
+  // ---- Johnny-Decimal Mode (settings toggle) ----------------------
+  // Prefix every Area / Category / Notable Folder in spacetime with a
+  // Johnny.Decimal id, and rename the matching directories. Unlike applyMwSync
+  // (which infers a single unambiguous rename), the id→name mapping here is
+  // known exactly, so we rename every folder deterministically, deepest-first,
+  // and rewrite the inbound wikilinks + event folder tags to match.
+  const [johnnyDecimal, setJohnnyDecimalState] = useState<boolean>(() => getJohnnyDecimal());
+  const [jdBusy, setJdBusy] = useState(false);
+  const applyJohnnyDecimalMode = useCallback(async (enable: boolean): Promise<void> => {
+    setJdBusy(true);
+    try {
+      const san = (n: string) => n.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+      const src = await readVault(spacetimeRootPathRef.current).catch(() => "");
+      const st = parseMarkwhenFormat(src);
+      if (st.space.length === 0) { persistJohnnyDecimal(enable); setJohnnyDecimalState(enable); return; }
+      const { space: newSpace, renames, folderRenames } = applyJohnnyDecimal(st.space, enable);
+      const list = notesRef.current ?? [];
+
+      // Directory renames, deepest-first (folders → categories → areas), so a
+      // parent still holds its current name while its children are renamed.
+      for (const r of renames) {
+        const parent = r.oldSegs.slice(0, -1).map(san).join("/");
+        const oldPath = parent ? `${parent}/${san(r.oldName)}` : san(r.oldName);
+        const newPath = parent ? `${parent}/${san(r.newName)}` : san(r.newName);
+        if (!(await vaultFs.exists(oldPath)) || (await vaultFs.exists(newPath))) continue;
+        await vaultFs.rename(oldPath, newPath);
+        if (r.level !== "folder") continue;
+        // A Notable Folder: rename its main doc, sync the title, and rewrite
+        // every inbound [[OldName]] wikilink across the vault.
+        const oldIndex = `${newPath}/${san(r.oldName)}.md`;
+        const newIndex = `${newPath}/${san(r.newName)}.md`;
+        try { await vaultFs.rename(oldIndex, newIndex); } catch { /* no main doc */ }
+        try {
+          const raw = await readVault(newIndex);
+          const { frontmatter, body } = splitFrontmatter(raw);
+          const t = frontmatter.title;
+          if (!t || t === r.oldName || t === san(r.oldName)) {
+            await writeVault(newIndex, joinFrontmatter({ ...frontmatter, title: r.newName }, body));
+          }
+        } catch { /* no main doc */ }
+        const target = r.oldName.toLowerCase();
+        for (const n of list) {
+          try {
+            const nPath = toVaultRel(n.path);
+            const raw = await readVault(nPath).catch(() => "");
+            if (!raw) continue;
+            const { frontmatter, body } = splitFrontmatter(raw);
+            if (!body.toLowerCase().includes(target)) continue;
+            const rb = rewriteWikilinksForRename(body, r.oldName, san(r.newName));
+            if (rb !== body) await writeVault(nPath, joinFrontmatter(frontmatter, rb));
+          } catch { /* skip */ }
+        }
+      }
+
+      // Rewrite events' folder tags to the renamed folders, then persist the
+      // prefixed (or stripped) space to spacetime.md + spacetime.yml.
+      const newEvents = st.events.map((e) =>
+        e.folder && folderRenames.has(e.folder) ? { ...e, folder: folderRenames.get(e.folder)! } : e);
+      await writeSpacetimeModel({ ...st, space: newSpace, events: newEvents });
+      persistJohnnyDecimal(enable);
+      setJohnnyDecimalState(enable);
+      await reloadNotes();
+    } finally {
+      setJdBusy(false);
+    }
+  }, [writeSpacetimeModel, reloadNotes]);
 
   const declineMwSync = useCallback(() => {
     // Just close the dialog. The file edits and the pending indicator stay
@@ -5589,6 +5657,9 @@ export function CardGrid() {
           onChangeVault={handleChangeVault}
           onClose={() => setSettingsOpen(false)}
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
+          johnnyDecimal={johnnyDecimal}
+          johnnyDecimalBusy={jdBusy}
+          onToggleJohnnyDecimal={applyJohnnyDecimalMode}
         />
       )}
 
