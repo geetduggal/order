@@ -85,7 +85,7 @@ test("masonry renders inline wikilinks and images inside text", async ({ page })
   await expect(card.locator(".mason-text").first()).toContainText("for the plan");
 });
 
-test("masonry items reorder by dragging the grip", async ({ page }) => {
+test("masonry items reorder by dragging the card", async ({ page }) => {
   await bootVault(page, {
     extraFiles: {
       "spacetime.md": SPACETIME,
@@ -102,16 +102,15 @@ test("masonry items reorder by dragging the grip", async ({ page }) => {
   const texts = () => card.locator(".mason-item .mason-text").allInnerTexts();
   expect(await texts()).toEqual(["Alpha", "Bravo", "Charlie"]);
 
-  // Drag Alpha's grip down past Charlie.
+  // Press anywhere on Alpha's card and drag it down past Charlie.
   const alpha = card.locator('.mason-item[data-tile-ref="Alpha"]');
   const charlie = card.locator('.mason-item[data-tile-ref="Charlie"]');
-  const grip = alpha.locator(".mason-handle");
-  await alpha.hover();
-  const g = (await grip.boundingBox())!;
+  const g = (await alpha.boundingBox())!;
   const c = (await charlie.boundingBox())!;
-  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  // Grab the lower-left of the card, away from the top-right delete button.
+  await page.mouse.move(g.x + 12, g.y + g.height - 6);
   await page.mouse.down();
-  await page.mouse.move(g.x + 6, g.y + 20);
+  await page.mouse.move(g.x + 18, g.y + 20);
   await page.mouse.move(c.x + c.width / 2, c.y + c.height - 4, { steps: 8 });
   await page.mouse.up();
 

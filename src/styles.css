@@ -7293,16 +7293,27 @@ iframe.order-youtube-embed {
   margin: 16px 0 4px;
 }
 .mason-item {
+  /* "Cards on top of a card": the list sits inside a royal-tinted base card,
+     so each item lifts off that surface — an elevated background + real border
+     + soft shadow, the same recipe as .basecard-frame. The contrast is what
+     makes them read as nested cards rather than flat bullets. */
   position: relative;
   break-inside: avoid;
   width: 100%;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   padding: 11px 12px;
   box-sizing: border-box;
-  background: var(--card-bg, color-mix(in srgb, var(--royal) 5%, var(--bg)));
-  border: 1px solid var(--rule-soft);
-  border-radius: 10px;
+  background: var(--bg-elev, var(--bg));
+  border: var(--card-border-w, 1px) solid var(--card-border, var(--rule));
+  border-radius: var(--radius-card, 10px);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 5%);
+  transition: box-shadow 160ms var(--ease-out), transform 160ms var(--ease-out), opacity 160ms var(--ease-out);
 }
+.mason-item:hover { box-shadow: 0 4px 12px rgb(20 20 40 / 9%); }
+/* Press anywhere to drag (interactive bits opt out via the hook's exclude). */
+.mason-item.draggable { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.mason-item.draggable:active { cursor: grabbing; }
+.mason-item.is-dragging { opacity: 0.5; z-index: 10; }
 .mason-item.is-image { padding: 4px; }
 .mason-img { display: block; width: 100%; height: auto; border-radius: 7px; }
 .mason-text {
@@ -7320,26 +7331,6 @@ iframe.order-youtube-embed {
 .mason-link:hover { text-decoration: underline; }
 .mason-inline-img { display: block; max-width: 100%; height: auto; border-radius: 6px; margin: 6px 0; }
 .mason-meta { margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
-/* Reorder grip — appears on hover, top-left, mirrors the delete affordance. */
-.mason-handle {
-  position: absolute;
-  top: 5px; left: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px; height: 18px;
-  border-radius: 5px;
-  color: var(--ink-faint);
-  cursor: grab;
-  opacity: 0;
-  touch-action: none;
-  transition: opacity 0.12s var(--ease-out);
-}
-.mason-item:hover .mason-handle { opacity: 0.7; }
-.mason-handle:active { cursor: grabbing; }
-.mason-item.is-dragging { opacity: 0.5; }
-.mason-item .mason-text { padding-left: 16px; }
-.mason-item.is-image .mason-text { padding-left: 0; }
 .mason-edit {
   width: 100%;
   min-height: 3.2em;
@@ -7380,6 +7371,17 @@ iframe.order-youtube-embed {
   font-size: 13px;
 }
 .mason-add:hover { color: var(--ink); background: var(--royal-soft); }
+
+/* Fullscreen: immerse in the masonry — a wider, centered gallery with more
+   breathing room and slightly larger cards, so the layout fills the page. */
+.order-card.is-fullscreen .mason-grid {
+  columns: 200px;
+  column-gap: 16px;
+  max-width: 1200px;
+  margin: 24px auto 8px;
+}
+.order-card.is-fullscreen .mason-item { padding: 14px 16px; margin-bottom: 16px; }
+.order-card.is-fullscreen .mason-text { font-size: 15px; line-height: 1.55; }
 
 /* Cell-drag toggle + affordance (sheet dock). */
 .order-sheet-checkbox {

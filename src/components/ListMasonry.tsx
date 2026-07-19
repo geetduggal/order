@@ -11,7 +11,7 @@
 
 import type React from "react";
 import { useState } from "react";
-import { GripVertical, Plus, X as XIcon } from "lucide-react";
+import { Plus, X as XIcon } from "lucide-react";
 import { assetUrl } from "../lib/attachments";
 import { resolveNoteRef } from "../lib/wikilink";
 import { isMainDocRef } from "../lib/folders";
@@ -107,10 +107,12 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
     const next = order.map((r) => byRef.get(r)).filter((i): i is ListItem => !!i);
     if (next.length === items.length) onChange(next);
   }
+  // Press anywhere on a card to drag it; interactive bits (links, the edit
+  // box, the delete button) are excluded so they still click/type normally.
   const { gridRef, dragRef, onTilePointerDown } = useTileDrag(
     items.map((i) => i.ref),
     canEdit ? reorder : undefined,
-    { handle: ".mason-handle" },
+    { exclude: "a, button, textarea, input, .mason-link, .mason-del, .mason-edit" },
   );
 
   const commitEdit = (i: number) => {
@@ -140,18 +142,14 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
         return (
           <div
             key={item.ref + i}
-            className={"mason-item" + (img ? " is-image" : "") + (dragging ? " is-dragging" : "")}
+            className={"mason-item" + (img ? " is-image" : "") + (dragging ? " is-dragging" : "") + (canEdit ? " draggable" : "")}
             data-tile-ref={item.ref}
+            onPointerDown={canEdit ? (e) => onTilePointerDown(e, item.ref) : undefined}
           >
             {canEdit && (
-              <>
-                <span className="mason-handle" title="Drag to reorder" onPointerDown={(e) => onTilePointerDown(e, item.ref)}>
-                  <GripVertical size={13} strokeWidth={1.7} />
-                </span>
-                <button type="button" className="mason-del" onClick={() => del(i)} title="Remove" aria-label="Remove item">
-                  <XIcon size={12} strokeWidth={2.4} />
-                </button>
-              </>
+              <button type="button" className="mason-del" onClick={() => del(i)} title="Remove" aria-label="Remove item">
+                <XIcon size={12} strokeWidth={2.4} />
+              </button>
             )}
             {img ? (
               <img className="mason-img" src={img} alt={item.caption ?? ""} loading="lazy" />
