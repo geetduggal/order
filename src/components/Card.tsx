@@ -930,6 +930,24 @@ export function Card(props: Props) {
     });
   }, [itemsForView, vaultNotes]);
 
+  // Turning a plain note into a list (picking `list: cards|masonry|…` in the
+  // frontmatter inspector) must populate the list immediately. The body's
+  // bullets are only split into items at mount, so when `list:` first appears
+  // while we're holding none, lift them out of the editor NOW — no reload. The
+  // editor keeps the prose; the bullets become items (and re-serialize back on
+  // save, so the on-disk body is unchanged).
+  const liveListType = viewFm ? listRender(viewFm) : null;
+  useEffect(() => {
+    if (readOnly || parsedBase || !liveListType) return;
+    if (listItemsRef.current.length > 0) return;
+    const split = splitBodyAndBullets(editorBodyRef.current);
+    if (split.items.length === 0) return;
+    listItemsRef.current = split.items;
+    setListItems(split.items);
+    editorBodyRef.current = split.prose;
+    milkdownRef.current?.replaceContent(split.prose);
+  }, [liveListType, parsedBase, readOnly]);
+
   // Click on a rendered `[[Name]]` in the editor: resolve folder vs note
   // and route. Folder links accumulate into the filter (like list NF
   // clicks); note links navigate. Broken links no-op.

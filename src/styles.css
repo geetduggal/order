@@ -7315,7 +7315,31 @@ iframe.order-youtube-embed {
 }
 .mason-text.is-link { cursor: pointer; color: var(--royal); }
 .mason-text.is-link:hover { text-decoration: underline; }
+/* Inline links & images inside a text card — the "just works" bits. */
+.mason-link { color: var(--royal); cursor: pointer; text-decoration: none; }
+.mason-link:hover { text-decoration: underline; }
+.mason-inline-img { display: block; max-width: 100%; height: auto; border-radius: 6px; margin: 6px 0; }
 .mason-meta { margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
+/* Reorder grip — appears on hover, top-left, mirrors the delete affordance. */
+.mason-handle {
+  position: absolute;
+  top: 5px; left: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 5px;
+  color: var(--ink-faint);
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+  transition: opacity 0.12s var(--ease-out);
+}
+.mason-item:hover .mason-handle { opacity: 0.7; }
+.mason-handle:active { cursor: grabbing; }
+.mason-item.is-dragging { opacity: 0.5; }
+.mason-item .mason-text { padding-left: 16px; }
+.mason-item.is-image .mason-text { padding-left: 0; }
 .mason-edit {
   width: 100%;
   min-height: 3.2em;

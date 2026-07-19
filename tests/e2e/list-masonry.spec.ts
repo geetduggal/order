@@ -59,3 +59,63 @@ test("a `list: masonry` folder renders items in the masonry grid", async ({ page
   );
   expect(Math.max(...heights)).toBeGreaterThan(Math.min(...heights) + 30);
 });
+
+test("masonry renders inline wikilinks and images inside text", async ({ page }) => {
+  await bootVault(page, {
+    extraFiles: {
+      "spacetime.md": SPACETIME,
+      [NOTE]:
+        "---\nlist: masonry\n---\n# Planning\n\n" +
+        "- See [[Work Spaces]] for the plan\n" +
+        "- Just plain text\n",
+    },
+  });
+  for (const ref of ["Work", "Work Spaces", "Planning"]) {
+    await page.click(`[data-tile-ref="${ref}"]`);
+    await page.waitForTimeout(400);
+  }
+  const card = page.locator(".order-card.is-main").first();
+  await expect(card.locator(".mason-grid")).toBeVisible({ timeout: 15_000 });
+
+  // The inline [[Work Spaces]] becomes a functional link inside the text card.
+  const link = card.locator(".mason-link", { hasText: "Work Spaces" });
+  await expect(link).toBeVisible();
+  // Surrounding words stay as text.
+  await expect(card.locator(".mason-text").first()).toContainText("See");
+  await expect(card.locator(".mason-text").first()).toContainText("for the plan");
+});
+
+test("masonry items reorder by dragging the grip", async ({ page }) => {
+  await bootVault(page, {
+    extraFiles: {
+      "spacetime.md": SPACETIME,
+      [NOTE]: "---\nlist: masonry\n---\n# Planning\n\n- Alpha\n- Bravo\n- Charlie\n",
+    },
+  });
+  for (const ref of ["Work", "Work Spaces", "Planning"]) {
+    await page.click(`[data-tile-ref="${ref}"]`);
+    await page.waitForTimeout(400);
+  }
+  const card = page.locator(".order-card.is-main").first();
+  await expect(card.locator(".mason-grid")).toBeVisible({ timeout: 15_000 });
+
+  const texts = () => card.locator(".mason-item .mason-text").allInnerTexts();
+  expect(await texts()).toEqual(["Alpha", "Bravo", "Charlie"]);
+
+  // Drag Alpha's grip down past Charlie.
+  const alpha = card.locator('.mason-item[data-tile-ref="Alpha"]');
+  const charlie = card.locator('.mason-item[data-tile-ref="Charlie"]');
+  const grip = alpha.locator(".mason-handle");
+  await alpha.hover();
+  const g = (await grip.boundingBox())!;
+  const c = (await charlie.boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + 6, g.y + 20);
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height - 4, { steps: 8 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => (await texts()).join(","))
+    .not.toEqual("Alpha,Bravo,Charlie");
+});
