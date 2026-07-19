@@ -7246,8 +7246,10 @@ iframe.order-youtube-embed {
 }
 
 /* Minimal card view: no palette dock or header indicators — a clean preview.
-   The full editor (indicators, dock) returns in fullscreen. */
-.order-sheet-surface.is-minimal .order-sheet-scroll { padding: 4px; }
+   The full editor (indicators, dock) returns in fullscreen. The top padding
+   clears the card's date/frontmatter chip (position:absolute, top:6px) so it
+   never overlaps the first row of the grid. */
+.order-sheet-surface.is-minimal .order-sheet-scroll { padding: 30px 4px 4px; }
 
 /* Drawing card view: hide ALL Excalidraw chrome (toolbar, menu, zoom) so the
    card shows just the drawing, centered. The full editor returns in

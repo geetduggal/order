@@ -36,23 +36,22 @@ export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: Draw
   // fullscreen shows the full editor + toolbars.
   const viewMode = !fullscreen;
 
-  // Re-fit to content whenever the view/size changes (fullscreen toggle, or
-  // switching into the minimal card view) — Excalidraw keeps its scroll offset
-  // across resizes, which would otherwise leave the drawing off-screen. Skip
-  // the first run (initial mount already centers).
-  const firstFit = useRef(true);
-  useEffect(() => {
-    if (firstFit.current) { firstFit.current = false; return; }
+  // Zoom-to-fit so the WHOLE drawing shows, both on first render and whenever
+  // the view/size changes (fullscreen toggle, or into the minimal card view) —
+  // Excalidraw otherwise keeps its scroll offset and native zoom, which leaves a
+  // wide diagram cropped to its centre inside a narrow card.
+  const fit = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
-    const id = setTimeout(() => {
-      try {
-        api.refresh();
-        api.scrollToContent(api.getSceneElements(), { fitToContent: true, animate: false });
-      } catch { /* API may not be ready — ignore */ }
-    }, 80);
+    try {
+      api.refresh();
+      api.scrollToContent(api.getSceneElements(), { fitToContent: true, animate: false });
+    } catch { /* API may not be ready — ignore */ }
+  }, []);
+  useEffect(() => {
+    const id = setTimeout(fit, 80);
     return () => clearTimeout(id);
-  }, [fullscreen]);
+  }, [fullscreen, fit]);
 
   // Follow Order's theme toggle.
   useEffect(() => {
@@ -99,7 +98,7 @@ export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: Draw
   return (
     <div className={"order-drawing-surface" + (viewMode ? " is-preview" : "")}>
       <Excalidraw
-        excalidrawAPI={(api) => { apiRef.current = api; }}
+        excalidrawAPI={(api) => { apiRef.current = api; setTimeout(fit, 80); }}
         initialData={initialData}
         onChange={handleChange}
         theme={theme}

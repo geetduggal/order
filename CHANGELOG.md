@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drawing card view now zooms-to-fit on first render, so a wide diagram shows in
+  full inside the minimal card instead of being cropped to its centre (it already
+  re-fit on the fullscreen toggle, just not on initial mount).
+- The card's date / frontmatter chip no longer overlaps the first row of a
+  spreadsheet in the minimal card view — the preview grid gets top clearance.
+
 ## [0.1.2] - 2026-07-19
 
 This release turns a note card into a canvas: flip it to a **spreadsheet** or a
