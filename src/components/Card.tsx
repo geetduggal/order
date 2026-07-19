@@ -938,14 +938,31 @@ export function Card(props: Props) {
   // save, so the on-disk body is unchanged).
   const liveListType = viewFm ? listRender(viewFm) : null;
   useEffect(() => {
-    if (readOnly || parsedBase || !liveListType) return;
-    if (listItemsRef.current.length > 0) return;
-    const split = splitBodyAndBullets(editorBodyRef.current);
-    if (split.items.length === 0) return;
-    listItemsRef.current = split.items;
-    setListItems(split.items);
-    editorBodyRef.current = split.prose;
-    milkdownRef.current?.replaceContent(split.prose);
+    if (readOnly || parsedBase) return;
+    if (liveListType) {
+      // Entering a list: lift the body's bullets into items if we hold none.
+      if (listItemsRef.current.length > 0) return;
+      const split = splitBodyAndBullets(editorBodyRef.current);
+      if (split.items.length === 0) return;
+      listItemsRef.current = split.items;
+      setListItems(split.items);
+      editorBodyRef.current = split.prose;
+      milkdownRef.current?.replaceContent(split.prose);
+    } else {
+      // Left list mode (picked "(none)"): the items were split OUT of the
+      // editor, so fold them back in as a normal markdown bullet list — else
+      // they'd just vanish from view. Clear the items so the save path doesn't
+      // re-append them (the editor now owns the bullets), and mark dirty so the
+      // merged body persists.
+      if (listItemsRef.current.length === 0) return;
+      const bullets = serializeListItems(listItemsRef.current);
+      const next = bullets ? `${editorBodyRef.current.replace(/\n+$/, "")}\n\n${bullets}\n` : editorBodyRef.current;
+      listItemsRef.current = [];
+      setListItems([]);
+      editorBodyRef.current = next;
+      dirty.current = true;
+      milkdownRef.current?.replaceContent(next);
+    }
   }, [liveListType, parsedBase, readOnly]);
 
   // Click on a rendered `[[Name]]` in the editor: resolve folder vs note

@@ -52,8 +52,12 @@ function useGo(vaultNotes: ListNoteRef[], onNavigate?: (r: string) => void, onAd
   };
 }
 
-// Split a text run into plain text + inline images / wikilinks / URLs.
-const INLINE_RE = /!\[\[([^\]]+)\]\]|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|(https?:\/\/[^\s)]+)/g;
+// Split a text run into plain text + inline media / links. Handles, in order:
+//   1  ![[file]]        wiki image        4  [label](url)   markdown link
+//   2  ![alt](url)      markdown image    5  https://…       bare URL
+//   3  [[ref|label]]    wiki link
+const INLINE_RE =
+  /!\[\[([^\]]+)\]\]|!\[[^\]]*\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s)]+)/g;
 function renderInline(
   text: string,
   noteDir: string | undefined,
@@ -64,30 +68,24 @@ function renderInline(
   let key = 0;
   let m: RegExpExecArray | null;
   INLINE_RE.lastIndex = 0;
+  const link = (label: string, onClick: (e: React.MouseEvent) => void, href?: string) => (
+    <a key={key++} className="mason-link" href={href} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick(e); }}>{label}</a>
+  );
   while ((m = INLINE_RE.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    if (m[1] != null) {
+    if (m[1] != null) {                       // wiki image ![[file]]
       out.push(<img key={key++} className="mason-inline-img" src={assetFor(m[1].trim(), noteDir)} alt="" loading="lazy" />);
-    } else if (m[2] != null) {
-      const ref = m[2].trim();
-      const label = m[3]?.trim() || ref;
-      out.push(
-        <a
-          key={key++}
-          className="mason-link"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); go(ref); }}
-        >{label}</a>,
-      );
-    } else if (m[4] != null) {
-      const url = m[4];
-      out.push(
-        <a
-          key={key++}
-          className="mason-link"
-          href={url}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openExternalUrl(url); }}
-        >{url}</a>,
-      );
+    } else if (m[2] != null) {                // markdown image ![alt](url)
+      out.push(<img key={key++} className="mason-inline-img" src={assetFor(m[2].trim(), noteDir)} alt="" loading="lazy" />);
+    } else if (m[3] != null) {                // wiki link [[ref|label]]
+      const ref = m[3].trim();
+      out.push(link(m[4]?.trim() || ref, () => go(ref)));
+    } else if (m[5] != null) {                // markdown link [label](url)
+      const url = m[6];
+      out.push(link(m[5], () => openExternalUrl(url), url));
+    } else if (m[7] != null) {                // bare URL
+      const url = m[7];
+      out.push(link(url, () => openExternalUrl(url), url));
     }
     last = INLINE_RE.lastIndex;
   }

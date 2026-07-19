@@ -119,3 +119,26 @@ test("masonry items reorder by dragging the grip", async ({ page }) => {
     .poll(async () => (await texts()).join(","))
     .not.toEqual("Alpha,Bravo,Charlie");
 });
+
+test("masonry renders a markdown link to an external page", async ({ page }) => {
+  await bootVault(page, {
+    extraFiles: {
+      "spacetime.md": SPACETIME,
+      [NOTE]:
+        "---\nlist: masonry\n---\n# Planning\n\n" +
+        "- Read [the docs](https://example.com/docs) later\n",
+    },
+  });
+  for (const ref of ["Work", "Work Spaces", "Planning"]) {
+    await page.click(`[data-tile-ref="${ref}"]`);
+    await page.waitForTimeout(400);
+  }
+  const card = page.locator(".order-card.is-main").first();
+  await expect(card.locator(".mason-grid")).toBeVisible({ timeout: 15_000 });
+
+  const link = card.locator("a.mason-link", { hasText: "the docs" });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "https://example.com/docs");
+  await expect(card.locator(".mason-text").first()).toContainText("Read");
+  await expect(card.locator(".mason-text").first()).toContainText("later");
+});

@@ -7288,8 +7288,8 @@ iframe.order-youtube-embed {
    their content and flow into a column masonry — a clean 2D text layout where
    more content gets more space. */
 .mason-grid {
-  columns: 200px;
-  column-gap: 12px;
+  columns: 150px;
+  column-gap: 10px;
   margin: 16px 0 4px;
 }
 .mason-item {
