@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-19
+
+This release turns a note card into a canvas: flip it to a **spreadsheet** or a
+**drawing**, lay a list out as a **masonry** wall, and switch on **Johnny-Decimal
+Mode** to put explicit ids on your whole hierarchy.
+
 ### Added
 
+- **Sheet & Drawing views.** A note card can now flip between its markdown
+  editor and two others via icons next to the terminal icon: a spreadsheet
+  (react-spreadsheet, stored as `<Name>.sheet.html`) and a drawing (Excalidraw,
+  stored as `<Name>.excalidraw`). The active view persists in the note's `view:`
+  frontmatter; sidecar files are created on first flip and stay attached to the
+  note (never their own card). The card is a minimal, centered preview; the full
+  editor opens in fullscreen. The spreadsheet does real spreadsheet-style text
+  overflow (text always foreground, stops at the first cell with content),
+  supports formulas, theme-adaptive cell fills + a custom color picker, and
+  right-click row/column insert & delete. See `docs/SHEET-DRAWING.md`.
 - **Masonry list layout.** A third list mode (`list: masonry`) beside cards and
   lines: items render as variable-height "cards on a card" flowed into CSS
   columns, sized by their content — for text-forward lists. Item text renders
@@ -26,28 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   select a cell or range and drag the move grip on it to relocate the block; the
   cells it lands on are displaced back into the vacated slots (a swap) rather
   than overwritten.
-
-### Fixed
-
-- **iOS images.** Attachment images/videos (served via the `vaultasset://`
-  scheme) now load in the card on iOS — WKWebView needed the asset response to
-  be CORS-permitted for a cross-scheme `<img>`; desktop WebViews didn't.
-- Sheet and drawing card views are editable again (minimal): type values inline
-  in a sheet, move/edit shapes in a drawing — the full toolset stays in
-  fullscreen.
-
-### Added
-
-- **Sheet & Drawing views.** A note card can now flip between its markdown
-  editor and two others via icons next to the terminal icon: a spreadsheet
-  (react-spreadsheet, stored as `<Name>.sheet.html`) and a drawing (Excalidraw,
-  stored as `<Name>.excalidraw`). The active view persists in the note's `view:`
-  frontmatter; sidecar files are created on first flip and stay attached to the
-  note (never their own card). The card is a minimal, centered preview; the full
-  editor opens in fullscreen. The spreadsheet does real spreadsheet-style text
-  overflow (text always foreground, stops at the first cell with content),
-  supports formulas, theme-adaptive cell fills + a custom color picker, and
-  right-click row/column insert & delete. See `docs/SHEET-DRAWING.md`.
 - **Card "⋯" menu.** Secondary card actions (home, copy, terminal, to-pile,
   refolder, fold, delete, …) collapse behind a "⋯" more-actions menu, keeping
   the control row uncrowded.
@@ -59,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **iOS images & video.** Attachment images and videos (served via the
+  `vaultasset://` scheme) now load in the card on iOS — WKWebView won't reach the
+  custom scheme from an `<img>`/`<video>`, so on iOS Order fetches the bytes over
+  the IPC bridge and swaps in a `blob:` URL. Desktop is untouched.
+- Sheet and drawing card views are editable again (minimal): type values inline
+  in a sheet, move/edit shapes in a drawing — the full toolset stays in
+  fullscreen.
 - Connecting a Google account no longer fails with "the specified item already
   exists in the keychain" when a stale duplicate token lingers from a previous
   build: the store now loop-deletes reachable items and retries.
