@@ -3594,22 +3594,18 @@ iframe.order-youtube-embed {
   font-size: 12px; color: var(--ink-soft); letter-spacing: 0.02em;
 }
 .sb-spacetime-done {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 10px;
-  font-family: var(--sans); font-size: 12px; font-weight: 500;
-  color: #fff; background: var(--royal);
-  border: none; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 4px;
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.02em;
+  color: var(--ink-faint); background: transparent;
+  border: none; cursor: pointer;
+  transition: color 0.12s var(--ease-out);
 }
-.sb-spacetime-done:hover { background: color-mix(in srgb, var(--royal) 88%, #000); }
-.sb-spacetime-editor {
-  flex: 1;
-  min-height: 0;
-  border: 1px solid var(--rule-soft);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg-elev, var(--bg));
-}
-.sb-spacetime-editor .cm-surface,
+.sb-spacetime-done:hover { color: var(--royal); }
+/* No box — a clean, borderless editor that fills the sidebar (matches the pile
+   card's raw-text surface). */
+.sb-spacetime-editor { flex: 1; min-height: 0; }
+.sb-spacetime-editor .cm-surface { height: 100%; min-height: 0; border-radius: 0; }
 .sb-spacetime-editor .cm-editor { height: 100%; }
 
 /* ---------- Settings panel ---------- */
