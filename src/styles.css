@@ -3573,9 +3573,9 @@ iframe.order-youtube-embed {
 }
 .sb-spacetime-edit-btn:hover { color: var(--royal); background: var(--royal-soft); border-color: var(--royal-soft); }
 
-/* Editing mode: the editor takes over the sidebar, filling all available
-   height for a clean, roomy place to edit spacetime.md. */
-.pane-right.is-editing-spacetime { overflow: hidden; }
+/* Editing mode: the editor takes over the sidebar, filling nearly the entire
+   pane (minimal margin) for a clean, roomy place to edit spacetime.md. */
+.pane-right.is-editing-spacetime { overflow: hidden; padding: 8px 8px 8px; }
 .sb-spacetime-edit {
   flex: 1;
   min-height: 0;
@@ -3585,7 +3585,9 @@ iframe.order-youtube-embed {
 }
 .sb-spacetime-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  /* Clear the fixed sidebar-collapse toggle in the top-right corner. */
+  padding: 2px 34px 0 2px;
 }
 .sb-spacetime-title {
   font-family: var(--mono, ui-monospace, monospace);
