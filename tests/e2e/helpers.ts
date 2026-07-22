@@ -229,6 +229,13 @@ function installMock(arg: { files: Record<string, string | null>; seeds: Record<
     },
     "plugin:event|unlisten": () => null,
     "plugin:event|emit": () => null,
+    // Apple EventKit — driven by a per-test `window.__APPLECAL` fixture.
+    applecal_access_status: () => (w.__APPLECAL?.status ?? "notDetermined"),
+    applecal_request_access: () => { if (w.__APPLECAL) w.__APPLECAL.status = "authorized"; return true; },
+    applecal_list_calendars: () => (w.__APPLECAL?.calendars ?? []),
+    applecal_list_day_events: () => (w.__APPLECAL?.dayEvents ?? []),
+    applecal_save_event: (a) => { (w.__APPLECAL_SAVED ??= []).push(a.input); return "mock-id"; },
+    applecal_delete_event: () => "deleted",
   };
 
   w.__TAURI_INTERNALS__ = {

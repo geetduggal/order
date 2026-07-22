@@ -39,6 +39,20 @@ open = "5"
 tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 
+# Apple EventKit (system calendar) — macOS + iOS only. Same objc2 family Tauri
+# already pulls in for the Apple targets.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+  "NSArray", "NSString", "NSDate", "NSPredicate", "NSError", "NSCalendar",
+  "NSTimeZone", "NSEnumerator", "NSObject",
+] }
+objc2-event-kit = { version = "0.3", features = [
+  "block2", "EKTypes", "EKObject", "EKCalendar", "EKCalendarItem", "EKEvent",
+  "EKParticipant", "EKSource",
+] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

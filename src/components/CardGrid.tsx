@@ -39,6 +39,7 @@ import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, re
 import { computePileOrder } from "../lib/file-piles";
 import { buildPushIntents, descriptionHash, eventDescriptionFromRaw, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
+import { appleIntents, appleSig, appleSyncPlan, loadAppleSyncRecord, saveAppleSyncRecord } from "../lib/apple-sync-plan";
 import { distinctEmails } from "../lib/gcal-recipients";
 
 /** Schedule/attendee portion of the push signature — the fields whose change
@@ -2705,8 +2706,53 @@ export function CardGrid() {
 
   // Import review modal: the day being imported, the rows (checked = accept),
   // the chosen account, and the target folder.
-  const [importReview, setImportReview] = useState<{ date: string; account: string; rows: (import("../lib/gcal-import").ImportRow & { accept: boolean })[]; folder: string } | null>(null);
+  const [importReview, setImportReview] = useState<{ date: string; provider: "google" | "apple"; account?: string; rows: (import("../lib/gcal-import").ImportRow & { accept: boolean })[]; folder: string } | null>(null);
   const [importBusy, setImportBusy] = useState(false);
+
+  // Whether the per-day Apple-import button shows: system calendar authorized
+  // with ≥1 included calendar. Rechecked when Settings closes (it may toggle).
+  const [appleImportReady, setAppleImportReady] = useState(false);
+  const refreshAppleReady = useCallback(async () => {
+    try {
+      const m = await import("../lib/apple-cal");
+      setAppleImportReady((await m.accessStatus()) === "authorized" && m.getIncludedCalendarIds().length > 0);
+    } catch { setAppleImportReady(false); }
+  }, []);
+  useEffect(() => { void refreshAppleReady(); }, [refreshAppleReady]);
+
+  // Auto-create/update Apple events for any spacetime event carrying `@[Cal]`,
+  // deduped via a per-device natural-key record (mirrors the Google push, kept
+  // separate). Runs only when the system calendar is authorized. Invite-free by
+  // design — EventKit attendees are read-only.
+  const appleSyncedRef = useRef(loadAppleSyncRecord());
+  useEffect(() => {
+    if (!appleImportReady) return;
+    const intents = appleIntents(mwEvents, () => "");
+    const plan = appleSyncPlan(appleSyncedRef.current, intents);
+    if (plan.writes.length === 0 && plan.deletes.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const m = await import("../lib/apple-cal");
+      const cals = await m.listCalendars();
+      const titleToId = new Map(cals.map((c) => [c.title.toLowerCase(), c.id]));
+      const record = { ...appleSyncedRef.current };
+      for (const w of plan.writes) {
+        const calendarId = titleToId.get(w.calendar.toLowerCase());
+        if (!calendarId) continue; // named calendar not found / not on this device
+        try {
+          await m.saveEvent({ calendarId, date: w.date, time: w.time, endTime: w.endTime, endDate: w.endDate, allDay: w.allDay, title: w.title, description: w.description });
+          record[naturalKey(w.date, w.time, w.title)] = { calendar: w.calendar, date: w.date, time: w.time, title: w.title, sig: appleSig(w) };
+        } catch { /* leave unsynced; retried on next change */ }
+      }
+      for (const d of plan.deletes) {
+        const calendarId = titleToId.get(d.calendar.toLowerCase());
+        if (calendarId) { try { await m.deleteEvent(calendarId, d.date, d.time, d.title); } catch { /* ignore */ } }
+        delete record[naturalKey(d.date, d.time, d.title)];
+      }
+      if (!cancelled) { appleSyncedRef.current = record; saveAppleSyncRecord(record); }
+    })();
+    return () => { cancelled = true; };
+  }, [mwEvents, appleImportReady]);
 
   const mwEventsRefForImport = useRef<SpacetimeEvent[]>([]);
   mwEventsRefForImport.current = mwEvents;
@@ -2722,7 +2768,24 @@ export function CardGrid() {
       const { classifyImports } = await import("../lib/gcal-import");
       const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
       const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
-      setImportReview({ date: dateIso, account, rows, folder: homeFolderRef.current ?? "" });
+      setImportReview({ date: dateIso, provider: "google", account, rows, folder: homeFolderRef.current ?? "" });
+    } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
+  }, []);
+
+  // Import a day's events from the ticked Apple/system calendars (Settings →
+  // Apple Calendar). Reuses the same review modal + classify as the Google path.
+  const startAppleImport = useCallback(async (dateIso: string) => {
+    try {
+      const m = await import("../lib/apple-cal");
+      const status = await m.accessStatus();
+      if (status !== "authorized") { await tauriMessage("Grant calendar access in Settings → Apple Calendar first.", { title: "Import" }); return; }
+      const included = m.getIncludedCalendarIds();
+      const fetched = await m.listDayEvents(included, dateIso);
+      if (fetched.length === 0) { await tauriMessage(`No system-calendar events on ${dateIso}.`, { title: "Import" }); return; }
+      const { classifyImports } = await import("../lib/gcal-import");
+      const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
+      const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
+      setImportReview({ date: dateIso, provider: "apple", rows, folder: homeFolderRef.current ?? "" });
     } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
   }, []);
 
@@ -2763,9 +2826,12 @@ export function CardGrid() {
         ...(r.endDate ? { endDate: r.endDate } : {}),
         ...(r.allDay ? { allDay: true } : {}),
         ...(review.folder ? { folder: review.folder } : {}),
-        // Host account + the event's guests (deduped, lowercased) so invitees
-        // land on the spacetime line and round-trip on a later push.
-        emails: [...new Set([review.account.toLowerCase(), ...r.attendees.map((a) => a.toLowerCase())])],
+        // Google: host account + the event's guests (deduped, lowercased) so
+        // invitees land on the spacetime line and round-trip on a later push.
+        // Apple: imported plain (no emails) — Apple events are invite-free.
+        ...(review.provider === "google" && review.account
+          ? { emails: [...new Set([review.account.toLowerCase(), ...r.attendees.map((a) => a.toLowerCase())])] }
+          : {}),
       }), mw));
       setImportReview(null);
       const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}.`;
@@ -5478,6 +5544,7 @@ export function CardGrid() {
             currentView="day"
             onSelectView={setView}
             onImportDay={(iso) => { void startImport(iso); }}
+            onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
         )}
         {view === "week" && (
@@ -5492,6 +5559,7 @@ export function CardGrid() {
             currentView="week"
             onSelectView={setView}
             onImportDay={(iso) => { void startImport(iso); }}
+            onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
         )}
         {view === "month" && (
@@ -5655,7 +5723,7 @@ export function CardGrid() {
       {settingsOpen && (
         <SettingsPanel
           onChangeVault={handleChangeVault}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); void refreshAppleReady(); }}
           onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
           johnnyDecimal={johnnyDecimal}
           johnnyDecimalBusy={jdBusy}
@@ -5868,8 +5936,8 @@ export function CardGrid() {
       {importReview && (
         <div className="settings-overlay" onMouseDown={() => { if (!importBusy) setImportReview(null); }}>
           <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
-            <h2 className="settings-title">Import {importReview.date} from Google</h2>
-            <p className="mw-orphan-hint">From {importReview.account}. New events are pre-checked; events you already have are unchecked. Accepted events are added to spacetime in the chosen folder.</p>
+            <h2 className="settings-title">Import {importReview.date} from {importReview.provider === "apple" ? "the system calendar" : "Google"}</h2>
+            <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events are added to spacetime in the chosen folder.</p>
             <div className="settings-row">
               <span className="settings-label">Folder</span>
               <input className="settings-input" list="mw-folder-options" placeholder="home"

@@ -19,6 +19,7 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 - **Seasons** — name your own date ranges and see each one as a grid of what happened, by Area.
 - **Spacetime** — a single canonical map of your space (hierarchy) and time (events + seasons) at the vault root, in two companion formats: `spacetime.yml` and `spacetime.mw`. Edit either one and Order syncs the other immediately. See [SPACETIME.md](docs/SPACETIME.md).
 - **Google Calendar curated sync** — push hand-picked events (with invites) to Google Calendar and pull a day's events back in, via the spacetime reconciliation flow. No Google IDs stored; identity is the natural key. See [GCAL-SYNC.md](docs/GCAL-SYNC.md).
+- **Apple / system calendar (EventKit)** — pick which macOS/iOS system calendars to include, import a day's events into spacetime, and create events on a calendar with an `@[Calendar]` token. Native, no accounts. Invitations route through Google (Apple's API can't add guests). See [APPLE-CAL.md](docs/APPLE-CAL.md).
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
 ## Build & run

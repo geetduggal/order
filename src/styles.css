@@ -6993,6 +6993,7 @@ iframe.order-youtube-embed {
 .fc-day-import-btn { display: inline-flex; align-items: center; justify-content: center; padding: 1px; border: none; background: transparent; color: var(--ink-faint); cursor: pointer; border-radius: 3px; opacity: 0; }
 .fc-col-header-cell:hover .fc-day-import-btn { opacity: 1; }
 .fc-day-import-btn:hover { color: var(--royal); background: var(--royal-soft); }
+.fc-day-import-apple:hover { color: var(--coral); background: var(--coral-soft); }
 
 /* ---------- EventActionMenu recipients section ---------- */
 .event-action-recipients { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px solid var(--rule); margin-top: 2px; }

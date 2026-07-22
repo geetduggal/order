@@ -9,7 +9,7 @@
 // LinearView plugin we haven't ported yet.
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Download as DownloadIcon } from "lucide-react";
+import { Download as DownloadIcon, CalendarClock as CalendarClockIcon } from "lucide-react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -54,8 +54,11 @@ interface Props {
    *  state stays in CardGrid / ViewerApp. */
   onSelectView?: (v: "day" | "week" | "month" | "year" | "season") => void;
   /** Called with an ISO date string when the user clicks the per-day
-   *  import icon in Day / Week time-grid headers. */
+   *  import icon in Day / Week time-grid headers (Google). */
   onImportDay?: (dateIso: string) => void;
+  /** Same, for the Apple/system calendar. Only passed when the system
+   *  calendar is authorized with at least one included calendar. */
+  onImportAppleDay?: (dateIso: string) => void;
 }
 
 /** Add one day to a `YYYY-MM-DD` string (UTC-safe via the Date ctor).
@@ -286,7 +289,7 @@ function deriveFirstDay(hidden: ReadonlySet<number>): number {
 }
 
 export const CalendarView = forwardRef<CalendarViewHandle, Props>(function CalendarView(props, navRef) {
-  const { notes, initialView, onMoveEvent, onImportDay } = props;
+  const { notes, initialView, onMoveEvent, onImportDay, onImportAppleDay } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   useImperativeHandle(navRef, () => ({
@@ -586,6 +589,17 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
                   onClick={(e) => { e.stopPropagation(); onImportDay(iso); }}
                 >
                   <DownloadIcon size={11} strokeWidth={2.2} />
+                </button>
+              )}
+              {isTimeGrid && onImportAppleDay && (
+                <button
+                  type="button"
+                  className="fc-day-import-btn fc-day-import-apple"
+                  title="Import this day from the system calendar"
+                  aria-label="Import this day from the system calendar"
+                  onClick={(e) => { e.stopPropagation(); onImportAppleDay(iso); }}
+                >
+                  <CalendarClockIcon size={11} strokeWidth={2.2} />
                 </button>
               )}
             </span>

@@ -62,6 +62,24 @@ export function SettingsPanel({
   const [iosId, setIosId] = useState("");
   useEffect(() => { if (gcal.client_id_ios && !iosId) setIosId(gcal.client_id_ios); }, [gcal.client_id_ios, iosId]);
 
+  // ---- Apple / system calendar (EventKit) ----
+  const [appleStatus, setAppleStatus] = useState<string>("");
+  const [appleCals, setAppleCals] = useState<import("../lib/apple-cal").CalendarInfo[]>([]);
+  const [appleIncluded, setAppleIncluded] = useState<string[]>([]);
+  const [appleBusy, setAppleBusy] = useState(false);
+  const [appleErr, setAppleErr] = useState<string | null>(null);
+  const refreshApple = useCallback(async () => {
+    try {
+      const m = await import("../lib/apple-cal");
+      const status = await m.accessStatus();
+      setAppleStatus(status);
+      setAppleIncluded(m.getIncludedCalendarIds());
+      if (status === "authorized") setAppleCals(await m.listCalendars());
+      else setAppleCals([]);
+    } catch (e) { setAppleErr(String(e)); }
+  }, []);
+  useEffect(() => { void refreshApple(); }, [refreshApple]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -216,6 +234,64 @@ export function SettingsPanel({
                 (<code>11</code>), Notable Folders as <code>11.01</code>. Turning it off strips the
                 ids back off. Wikilinks and event tags are updated to match.</>}
           </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Apple Calendar</span>
+          {appleErr && <span className="settings-hint" style={{ color: "#d9534f" }}>{appleErr}</span>}
+          {appleStatus !== "authorized" && (
+            <span className="settings-value">
+              <button
+                type="button"
+                className="settings-btn"
+                disabled={appleBusy || appleStatus === "unsupported" || appleStatus === "denied"}
+                onClick={async () => {
+                  setAppleBusy(true); setAppleErr(null);
+                  try { const m = await import("../lib/apple-cal"); await m.requestAccess(); await refreshApple(); }
+                  catch (e) { setAppleErr(String(e)); } finally { setAppleBusy(false); }
+                }}
+              >
+                {appleBusy ? "Requesting…" : "Grant calendar access"}
+              </button>
+            </span>
+          )}
+          {appleStatus === "denied" && (
+            <span className="settings-hint">
+              Calendar access was denied. Enable it in System Settings → Privacy &amp; Security →
+              Calendars (macOS) or Settings → Privacy → Calendars (iOS), then reopen Order.
+            </span>
+          )}
+          {appleStatus === "unsupported" && (
+            <span className="settings-hint">System-calendar sync is available on macOS and iOS.</span>
+          )}
+          {appleStatus === "authorized" && (
+            <>
+              <span className="settings-hint">Tick the calendars to include when importing a day's events.</span>
+              <ul className="gcal-account-list">
+                {appleCals.map((c) => (
+                  <li key={c.id} className="gcal-account-row">
+                    <label className="settings-toggle">
+                      <input
+                        type="checkbox"
+                        checked={appleIncluded.includes(c.id)}
+                        onChange={async (e) => {
+                          const m = await import("../lib/apple-cal");
+                          setAppleIncluded(m.toggleIncludedCalendar(c.id, e.target.checked));
+                        }}
+                      />
+                      <span>{c.title}{c.source ? ` · ${c.source}` : ""}{!c.writable ? " (read-only)" : ""}</span>
+                    </label>
+                  </li>
+                ))}
+                {appleCals.length === 0 && <li className="settings-hint">No calendars found.</li>}
+              </ul>
+              <span className="settings-hint">
+                Assign an event to a calendar with <code>@[Calendar Name]</code> on its spacetime
+                line to create it there. Invitations are sent via Google — Apple's calendar API
+                can't add guests.
+              </span>
+            </>
+          )}
         </div>
 
         <div className="settings-row">

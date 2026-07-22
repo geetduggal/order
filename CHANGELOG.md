@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Apple / system calendar (EventKit).** Pick which macOS/iOS system calendars
+  to include (Settings → Apple Calendar), import a day's events into spacetime
+  via the per-day import button (same review modal as Google), and create events
+  on a calendar by tagging a spacetime line with `@[Calendar Name]`. Native — a
+  single permission grant, no accounts or OAuth. Identity is the natural key; no
+  EventKit IDs stored. Invitations route through Google, since Apple's EventKit
+  attendees are read-only. See `docs/APPLE-CAL.md`.
+
 ### Changed
 
 - Card toolbar: the close / "remove from view" button is now a visible inline

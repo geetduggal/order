@@ -6,6 +6,7 @@ mod publish_ios;
 mod fts;
 mod terminal;
 mod gcal;
+mod applecal;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -160,6 +161,12 @@ pub fn run() {
             gcal::gcal_delete_event,
             gcal::gcal_list_day_events,
             gcal::gcal_set_ios_client_id,
+            applecal::applecal_access_status,
+            applecal::applecal_request_access,
+            applecal::applecal_list_calendars,
+            applecal::applecal_list_day_events,
+            applecal::applecal_save_event,
+            applecal::applecal_delete_event,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,

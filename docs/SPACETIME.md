@@ -262,6 +262,22 @@ Events with no email addresses are ordinary Order events; the sync feature
 never touches them. See [GCAL-SYNC.md](GCAL-SYNC.md) for how email addresses
 determine the host calendar and invitees.
 
+### Apple / system calendar tag
+
+An `@[Calendar Name]` token assigns the event to a macOS/iOS **system calendar**;
+Order creates (and updates) it there. It's the Apple counterpart to the Google
+email trigger and trails the folder tag:
+
+```markdown
+2026-07-25             : Furniture day  #[Living Room Refresh] @[Home]
+2026-07-20 09:00-09:30 : Sprint sync    #[Map Pipeline v2]     @[Work] you@example.com
+```
+
+The token is order-independent with the folder tag and emails; the canonical
+written form is `Title #[Folder] @[Calendar] emails…`. Apple events are
+invite-free (EventKit attendees are read-only); use emails for invitations. See
+[APPLE-CAL.md](APPLE-CAL.md).
+
 ### Time — seasons
 
 Under `## Seasons`.

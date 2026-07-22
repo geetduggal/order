@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Calendar (EventKit) access. Required or the permission prompt crashes;
+	     shown to the user when Order first requests calendar access. Merged into
+	     both the macOS and iOS bundle Info.plist by Tauri. -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar. Invitations are sent through Google, not Apple.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar.</string>
+</dict>
+</plist>

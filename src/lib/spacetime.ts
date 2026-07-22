@@ -72,6 +72,7 @@ export interface SpacetimeEvent {
   endDate?: string;        // YYYY-MM-DD
   allDay?: boolean;
   emails?: string[];       // Google sync recipients written on the line (Task 3 classifies)
+  apple?: string;          // Apple/system calendar to create this event on (@[Calendar] token)
 }
 
 export interface SpacetimeSeason {
@@ -679,8 +680,9 @@ export function serializeMarkwhen(st: Spacetime): string {
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       const tag = e.folder ? ` ${toBraceTag(e.folder)}` : "";
+      const appleTok = e.apple ? ` @[${e.apple}]` : "";
       const recips = e.emails?.length ? ` ${e.emails.join(" ")}` : "";
-      lines.push(`${prefixes[i].padEnd(prefixW)}: ${e.title}${tag}${recips}`);
+      lines.push(`${prefixes[i].padEnd(prefixW)}: ${e.title}${tag}${appleTok}${recips}`);
     }
     lines.push("");
   }
@@ -704,8 +706,9 @@ export function spliceMwEvents(mw: string, eventsIn: SpacetimeEvent[]): string {
     const w = Math.max(...prefixes.map((p) => p.length));
     evBlock += "\n" + events.map((e, i) => {
       const tag = e.folder ? ` ${toBraceTag(e.folder)}` : "";
+      const appleTok = e.apple ? ` @[${e.apple}]` : "";
       const recips = e.emails?.length ? ` ${e.emails.join(" ")}` : "";
-      return `${prefixes[i].padEnd(w)}: ${e.title}${tag}${recips}`;
+      return `${prefixes[i].padEnd(w)}: ${e.title}${tag}${appleTok}${recips}`;
     }).join("\n") + "\n";
   }
   const idx = mw.indexOf("## Events");
@@ -941,6 +944,14 @@ export function parseMarkwhenFormat(text: string): Spacetime {
         emails.unshift(em[1]);
         work = work.slice(0, work.length - em[0].length).trimEnd();
       }
+      // Apple/system-calendar assignment: an `@[Calendar Name]` token (canonical
+      // order is `Title #[Folder] @[Cal] emails…`, so it trails the folder tag).
+      let apple: string | undefined;
+      const appleM = work.match(/\s+@\[([^\]]+)\]$/);
+      if (appleM) {
+        apple = appleM[1].trim();
+        work = work.slice(0, work.length - appleM[0].length).trimEnd();
+      }
       // Folder tag: try the brace form #[Exact Name] first (spaces/case ok),
       // then the legacy #kebab form. Store the raw token; it's resolved to the
       // real folder name after the Space section is parsed (when present).
@@ -957,6 +968,7 @@ export function parseMarkwhenFormat(text: string): Spacetime {
         ...(endTime ? { endTime } : {}),
         ...(endDate ? { endDate } : {}),
         ...(emails.length ? { emails } : {}),
+        ...(apple ? { apple } : {}),
         ...(!time && !endDate ? { allDay: true } : {}),
       });
       continue;
