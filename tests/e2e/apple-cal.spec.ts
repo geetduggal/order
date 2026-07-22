@@ -48,3 +48,32 @@ test("import a day from the system calendar via the review modal", async ({ page
     .poll(() => page.evaluate(() => (window as any).__VAULT__.read("spacetime.md")))
     .toContain("Standup");
 });
+
+test("ticking a calendar in Settings persists (controlled-checkbox async fix)", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__APPLECAL = {
+      status: "authorized",
+      calendars: [
+        { id: "cal-home", title: "Home", source: "iCloud", writable: true },
+        { id: "cal-work", title: "Work", source: "iCloud", writable: true },
+      ],
+    };
+    // Start with NOTHING included, so ticking must actually turn a box on.
+  });
+  await bootVault(page, { extraFiles: { "spacetime.md": SPACETIME } });
+  await expect(page.locator('[data-tile-ref="Work"]')).toBeVisible({ timeout: 15_000 });
+
+  await page.click(".dock-btn-settings");
+  await page.click(".dock-tools-item:has-text('Vault settings')");
+  const row = page.locator(".settings-row", { hasText: "Apple Calendar" });
+  const homeBox = row.locator(".settings-toggle", { hasText: "Home" }).locator("input[type=checkbox]");
+  await expect(homeBox).not.toBeChecked();
+
+  await homeBox.check();
+  // The box stays checked (not reverted by the async handler)…
+  await expect(homeBox).toBeChecked({ timeout: 5_000 });
+  // …and the selection persisted to localStorage.
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("order.applecal.included")))
+    .toContain("cal-home");
+});

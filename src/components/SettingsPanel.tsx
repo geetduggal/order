@@ -13,6 +13,10 @@ import {
   getTodoTxtSettings,
   setTodoTxtSettings,
 } from "../lib/todo-txt";
+// Pure localStorage helper — static-imported so the checkbox toggle is
+// SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
+// checkbox reverts in between, so the box won't tick).
+import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal";
 
 export function SettingsPanel({
   onChangeVault, onClose, onOpenTodoTxt,
@@ -274,10 +278,7 @@ export function SettingsPanel({
                       <input
                         type="checkbox"
                         checked={appleIncluded.includes(c.id)}
-                        onChange={async (e) => {
-                          const m = await import("../lib/apple-cal");
-                          setAppleIncluded(m.toggleIncludedCalendar(c.id, e.target.checked));
-                        }}
+                        onChange={(e) => setAppleIncluded(toggleAppleCalendar(c.id, e.target.checked))}
                       />
                       <span>{c.title}{c.source ? ` · ${c.source}` : ""}{!c.writable ? " (read-only)" : ""}</span>
                     </label>
