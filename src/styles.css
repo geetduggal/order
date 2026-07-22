@@ -7071,6 +7071,10 @@ iframe.order-youtube-embed {
   --header-background-color: var(--bg-elev);
   --outline-color: var(--royal);
   --outline-background-color: var(--royal-soft);
+  /* Scale the sheet with the zoom buttons / ⌘±. The library sizes cells in
+     `em` (min-width: 6em, height: 1.9em), so scaling this font-size scales the
+     text AND the grid together; the cell value spans + editor inherit it. */
+  font-size: calc(13px * var(--text-scale, 1));
   background: var(--sheet-surface-bg);
   width: 100%;
 }

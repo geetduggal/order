@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Spreadsheet text now scales with the zoom buttons / ⌘± (it previously stayed
+  a fixed size). react-spreadsheet sizes cells in `em`, so a scaled font-size on
+  the grid grows the text and the cells together.
 - Drawing card view now zooms-to-fit on first render, so a wide diagram shows in
   full inside the minimal card instead of being cropped to its centre (it already
   re-fit on the fullscreen toggle, just not on initial mount).
