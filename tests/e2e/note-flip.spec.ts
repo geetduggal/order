@@ -30,6 +30,18 @@ async function openPlanningCardWith(
 }
 const openPlanningCard = (page: import("@playwright/test").Page) => openPlanningCardWith(page);
 
+// The spreadsheet / drawing flips live in the "⋯" menu now (the toolbar keeps
+// only fullscreen + close). `label` is the menu item text: "Edit as a
+// spreadsheet" / "Edit as a drawing" to flip in, or "Back to note" to flip out.
+async function flipVia(
+  page: import("@playwright/test").Page,
+  card: ReturnType<import("@playwright/test").Page["locator"]>,
+  label: string,
+) {
+  await card.locator(".order-card-more").click();
+  await page.locator(".order-card-more-menu").locator(`text=${label}`).click();
+}
+
 // Long value + formula + a colored cell, seeded so we can verify RENDERING
 // (overflow, formula eval, color) in the minimal card view without driving
 // the fullscreen editor.
@@ -40,7 +52,7 @@ const SHEET_HTML = `<table class="order-sheet">
 
 test("flip to sheet: minimal card view renders overflow, formulas, and colors", async ({ page }) => {
   const card = await openPlanningCardWith(page, { "Work/Work Spaces/Planning/Planning.sheet.html": SHEET_HTML });
-  await card.locator(".order-card-sheet").click();
+  await flipVia(page, card, "Edit as a spreadsheet");
 
   await expect
     .poll(() => page.evaluate((p) => (window as any).__VAULT__.read(p), NOTE))
@@ -89,8 +101,8 @@ test("flip to sheet: minimal card view renders overflow, formulas, and colors", 
     .poll(() => page.evaluate(() => (window as any).__VAULT__.read("Work/Work Spaces/Planning/Planning.sheet.html")))
     .toContain(">42<");
 
-  // Flip back to the note by clicking the sheet icon again → view cleared.
-  await card.locator(".order-card-sheet").click();
+  // Flip back to the note via the menu (now labelled "Back to note").
+  await flipVia(page, card, "Back to note");
   await expect
     .poll(() => page.evaluate((p) => (window as any).__VAULT__.read(p), NOTE))
     .not.toContain("view: sheet");
@@ -100,7 +112,7 @@ test("tall sheet shows the subtle 'open fullscreen' enticer in card view", async
   const rows = Array.from({ length: 14 }, (_, i) => `  <tr><td>Row ${i + 1}</td></tr>`).join("\n");
   const tall = `<table class="order-sheet">\n${rows}\n</table>`;
   const card = await openPlanningCardWith(page, { "Work/Work Spaces/Planning/Planning.sheet.html": tall });
-  await card.locator(".order-card-sheet").click();
+  await flipVia(page, card, "Edit as a spreadsheet");
   await expect(card.locator(".order-sheet-surface")).toBeVisible({ timeout: 15_000 });
   // The enticer appears (content exceeds the preview cap) but the full row set
   // is NOT all rendered in the capped card view.
@@ -109,7 +121,7 @@ test("tall sheet shows the subtle 'open fullscreen' enticer in card view", async
 
 test("flip to drawing: excalidraw sidecar created, view persisted", async ({ page }) => {
   const card = await openPlanningCard(page);
-  await card.locator(".order-card-draw").click();
+  await flipVia(page, card, "Edit as a drawing");
 
   await expect
     .poll(() => page.evaluate(() => (window as any).__VAULT__.has("Work/Work Spaces/Planning/Planning.excalidraw")))

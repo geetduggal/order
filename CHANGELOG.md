@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Card toolbar: the close / "remove from view" button is now a visible inline
+  toolbar button (previously only in the "⋯" menu), and the spreadsheet /
+  drawing flip buttons moved into the "⋯" menu, so the inline row stays to
+  fullscreen, close, and "⋯".
+
 ### Fixed
 
 - Spreadsheet text now scales with the zoom buttons / ⌘± (it previously stayed

@@ -1259,32 +1259,9 @@ export function Card(props: Props) {
             8. Fullscreen toggle
             9. × close (dismiss from filtered view) */}
       <div className={"order-card-controls" + (flipped || termOpen ? " is-flipped" : "")} aria-hidden={false}>
-        {/* Primary, always inline: the flip views + fullscreen. Everything
-            else lives in the "⋯" popover so the row stays uncrowded. */}
-        {canFlip && !readOnly && (
-          <>
-            <button
-              type="button"
-              className={"order-card-btn order-card-sheet" + (view === "sheet" ? " is-on" : "")}
-              onClick={() => { void flipView("sheet"); }}
-              title={view === "sheet" ? "Back to note" : "Edit as a spreadsheet"}
-              aria-label={view === "sheet" ? "Back to note" : "Spreadsheet view"}
-              aria-pressed={view === "sheet"}
-            >
-              <TableIcon size={14} strokeWidth={2} />
-            </button>
-            <button
-              type="button"
-              className={"order-card-btn order-card-draw" + (view === "drawing" ? " is-on" : "")}
-              onClick={() => { void flipView("drawing"); }}
-              title={view === "drawing" ? "Back to note" : "Edit as a drawing"}
-              aria-label={view === "drawing" ? "Back to note" : "Drawing view"}
-              aria-pressed={view === "drawing"}
-            >
-              <PenToolIcon size={14} strokeWidth={2} />
-            </button>
-          </>
-        )}
+        {/* Primary, always inline: fullscreen, the close/dismiss button, and the
+            "⋯" popover. The spreadsheet / drawing flips and everything else live
+            in the popover so the row stays uncrowded. */}
         <button
           type="button"
           className="order-card-btn order-card-fullscreen"
@@ -1328,18 +1305,30 @@ export function Card(props: Props) {
             )}
           </>
         ) : (
-          <button
-            ref={moreBtnRef}
-            type="button"
-            className={"order-card-btn order-card-more" + (moreOpen ? " is-on" : "")}
-            onClick={openMore}
-            title="More actions"
-            aria-label="More actions"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-          >
-            <MoreHorizontalIcon size={14} strokeWidth={2} />
-          </button>
+          <>
+            {onRemoveFromFilter && (
+              <button type="button" className="order-card-btn order-card-dismiss" onClick={onRemoveFromFilter} title="Remove from view" aria-label="Remove from view">
+                <XIcon size={14} strokeWidth={2.4} />
+              </button>
+            )}
+            {onClosePile && (
+              <button type="button" className="order-card-btn order-card-dismiss" onClick={onClosePile} title="Close card" aria-label="Close card">
+                <XIcon size={14} strokeWidth={2.4} />
+              </button>
+            )}
+            <button
+              ref={moreBtnRef}
+              type="button"
+              className={"order-card-btn order-card-more" + (moreOpen ? " is-on" : "")}
+              onClick={openMore}
+              title="More actions"
+              aria-label="More actions"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+            >
+              <MoreHorizontalIcon size={14} strokeWidth={2} />
+            </button>
+          </>
         )}
       </div>
       {moreOpen && !readOnly && createPortal(
@@ -1362,6 +1351,16 @@ export function Card(props: Props) {
           <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { copyBodyText(); setMoreOpen(false); }}>
             {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}<span>{copiedText ? "Text copied" : "Copy text"}</span>
           </button>
+          {canFlip && (
+            <>
+              <button type="button" role="menuitem" className={"order-card-more-item" + (view === "sheet" ? " is-on" : "")} onClick={() => { void flipView("sheet"); setMoreOpen(false); }}>
+                <TableIcon size={14} strokeWidth={2} /><span>{view === "sheet" ? "Back to note" : "Edit as a spreadsheet"}</span>
+              </button>
+              <button type="button" role="menuitem" className={"order-card-more-item" + (view === "drawing" ? " is-on" : "")} onClick={() => { void flipView("drawing"); setMoreOpen(false); }}>
+                <PenToolIcon size={14} strokeWidth={2} /><span>{view === "drawing" ? "Back to note" : "Edit as a drawing"}</span>
+              </button>
+            </>
+          )}
           {isMainDoc && (
             <button type="button" role="menuitem" className={"order-card-more-item" + (flipped ? " is-on" : "")} onClick={() => { setFlipped((f) => !f); setTermOpen(false); setMoreOpen(false); }}>
               <FolderOpenIcon size={14} strokeWidth={2} /><span>{flipped ? "Back to note" : "Folder contents"}</span>
@@ -1385,16 +1384,6 @@ export function Card(props: Props) {
           {!fullscreen && (
             <button type="button" role="menuitem" className={"order-card-more-item" + (isFolded ? " is-on" : "")} onClick={() => { void toggleFolded(!isFolded); setMoreOpen(false); }}>
               {isFolded ? <ChevronsUpDown size={14} strokeWidth={2} /> : <ChevronsDownUp size={14} strokeWidth={2} />}<span>{isFolded ? "Unfold" : "Fold to a line"}</span>
-            </button>
-          )}
-          {onRemoveFromFilter && (
-            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onRemoveFromFilter(); setMoreOpen(false); }}>
-              <XIcon size={14} strokeWidth={2.2} /><span>Remove from view</span>
-            </button>
-          )}
-          {onClosePile && (
-            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onClosePile(); setMoreOpen(false); }}>
-              <XIcon size={14} strokeWidth={2.2} /><span>Close card</span>
             </button>
           )}
           {confirmingDelete ? (
