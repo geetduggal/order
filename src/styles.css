@@ -3558,6 +3558,58 @@ iframe.order-youtube-embed {
    pushes the tools to the bottom edge. */
 .pane-right { display: flex; flex-direction: column; }
 
+/* ---- Edit spacetime.md from the sidebar ---- */
+.sb-spacetime-toolbar { margin-bottom: 12px; display: flex; justify-content: flex-end; }
+.sb-spacetime-edit-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px;
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease-out), background 0.12s var(--ease-out), border-color 0.12s var(--ease-out);
+}
+.sb-spacetime-edit-btn:hover { color: var(--royal); background: var(--royal-soft); border-color: var(--royal-soft); }
+
+/* Editing mode: the editor takes over the sidebar, filling all available
+   height for a clean, roomy place to edit spacetime.md. */
+.pane-right.is-editing-spacetime { overflow: hidden; }
+.sb-spacetime-edit {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+.sb-spacetime-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sb-spacetime-title {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px; color: var(--ink-soft); letter-spacing: 0.02em;
+}
+.sb-spacetime-done {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  color: #fff; background: var(--royal);
+  border: none; border-radius: 7px; cursor: pointer;
+}
+.sb-spacetime-done:hover { background: color-mix(in srgb, var(--royal) 88%, #000); }
+.sb-spacetime-editor {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--rule-soft);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elev, var(--bg));
+}
+.sb-spacetime-editor .cm-surface,
+.sb-spacetime-editor .cm-editor { height: 100%; }
+
 /* ---------- Settings panel ---------- */
 .settings-overlay {
   position: fixed;

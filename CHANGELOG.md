@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Edit spacetime.md from the sidebar.** An "Edit spacetime.md" toggle in the
+  sidebar opens the same raw-text editor the pile view uses, expanded to fill the
+  sidebar for a clean, roomy edit. Saving goes through the usual path — structural
+  changes light the "spacetime · pending" review just like a pile hand-edit.
+
 - **Apple / system calendar (EventKit).** Pick which macOS/iOS system calendars
   to include (Settings → Apple Calendar), import a day's events into spacetime
   via the per-day import button (same review modal as Google), and create events

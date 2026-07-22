@@ -860,6 +860,29 @@ export function CardGrid() {
   const spacetimeRootPathRef = useRef(spacetimeRootPath);
   spacetimeRootPathRef.current = spacetimeRootPath;
 
+  // The spacetime source (spacetime.md) body, for the in-sidebar editor. Same
+  // content the pile's raw-text card shows.
+  const spacetimeSourceBody = useMemo<string | undefined>(() => {
+    const n = (notes ?? []).find((x) => toVaultRel(x.path) === spacetimeRootPath);
+    return n?.body;
+  }, [notes, spacetimeRootPath]);
+
+  // Persist an edited spacetime.md from the sidebar. Same effect as a pile
+  // hand-edit: write the file + update the in-memory note body (which the
+  // mw-change detector effect picks up), so structural edits light the
+  // "spacetime · pending" review. Debounced; NOT stamped into lastMarkwhenRef,
+  // so the detector treats it as a real hand-edit (unlike programmatic writes).
+  const spacetimeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSpacetimeSource = useCallback((text: string) => {
+    if (spacetimeSaveTimer.current) clearTimeout(spacetimeSaveTimer.current);
+    spacetimeSaveTimer.current = setTimeout(() => {
+      const rel = spacetimeRootPathRef.current;
+      void writeVault(rel, text);
+      setNotes((prev) => prev?.map((n) => (toVaultRel(n.path) === rel ? { ...n, body: text } : n)) ?? null);
+    }, 500);
+  }, []);
+  useEffect(() => () => { if (spacetimeSaveTimer.current) clearTimeout(spacetimeSaveTimer.current); }, []);
+
   // Walk the chain rooted at Areas.md to produce Areas → Categories
   // → Folder refs. When .mw sources or spacetime.yml carry a space tree,
   // that drives the taxonomy; chain files stay on disk as a fallback.
@@ -5623,6 +5646,8 @@ export function CardGrid() {
             }
           }}
           onCreateFolder={handleCreateFolder}
+          spacetimeSource={spacetimeSourceBody}
+          onEditSpacetime={saveSpacetimeSource}
           storedAreas={storedAreas}
           storedCategories={storedCategories}
           onAddArea={handleAddArea}
