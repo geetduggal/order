@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Copying from a note now mirrors the on-disk markdown: inflated `vaultasset://`
+  image/video URLs are deflated back to `![[file]]` / `![](Attachments/…)` on
+  copy, instead of pasting the runtime asset URL.
+- Apple/system calendar on macOS: added the Hardened Runtime calendar entitlement
+  (`com.apple.security.personal-information.calendars`) and merged the calendar
+  usage `Info.plist`, which were missing from the signed bundle — the cause of the
+  "XPC error communicating with calaccessd" and the permission prompt never
+  appearing. Also falls back to the pre-macOS-14 access API and surfaces the real
+  reason when a request is declined.
 - Spreadsheet text now scales with the zoom buttons / ⌘± (it previously stayed
   a fixed size). react-spreadsheet sizes cells in `em`, so a scaled font-size on
   the grid grows the text and the cells together.

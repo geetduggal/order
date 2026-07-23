@@ -84,6 +84,37 @@ the card being typed in.
 → JS coalesces 250 ms → metadata re-walk → notes matched by path so mounted editors
 keep their cursor through a `git pull` happening underneath.
 
+## Media: the `vaultasset://` URI scheme
+
+Attachment images and videos are real files **in the vault** (`Attachments/foo.png`,
+or right next to a note). On disk the markdown keeps the **vault-relative** path
+(`![[foo.png]]`, `![](Attachments/foo.png)`) so notes stay portable and
+Obsidian-compatible. A WebView can't load those directly, so a custom URI scheme,
+`vaultasset://localhost/<vault-relative-path>`, bridges the gap: the Rust handler
+(`lib.rs`) resolves the path against the same `VaultState` as the FS bridge, reads
+the bytes, and serves them. At display time the body is **inflated** to the
+`vaultasset://` URL; on save (and on copy) it is **deflated** back to the portable
+source form (`lib/attachments.ts`).
+
+Why a custom scheme rather than the stock `asset://` protocol, base64, or plain IPC:
+
+- **Bookmark-aware access.** On iOS the vault lives outside the app sandbox and is
+  reached through a security-scoped bookmark. Stock `asset://` can't go through that
+  bookmark; the custom handler shares `VaultState`, so it works for a desktop
+  absolute root and a bookmarked iOS folder alike.
+- **HTTP Range — the load-bearing reason it's a URI scheme.** WebKit seeks video via
+  `Range: bytes=…` requests. Without a scheme that answers `206 Partial Content`,
+  every scrub re-downloads the whole multi-MB file, saturating the IPC bridge and
+  freezing the UI. The handler serves capped 4 MiB slices on demand.
+- **CORS.** On iOS the WebView origin is `tauri://localhost` while the asset is
+  `vaultasset://` — a cross-scheme subresource load WKWebView blocks unless
+  CORS-permitted, so the handler sends `Access-Control-Allow-Origin: *`. Desktop
+  WebViews don't need it.
+
+**iOS wrinkle.** Even so, `vaultasset://` doesn't reliably reach `<img>`/`<video>`
+in WKWebView, so on iOS the frontend fetches the bytes over the normal IPC bridge
+(`vault_read_asset_bytes`) and swaps in a `blob:` URL (`lib/ios-images.ts`).
+
 ## Spacetime: the canonical map
 
 `lib/spacetime.ts` is the heart of the data model. It owns the in-memory

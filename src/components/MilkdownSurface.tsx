@@ -12,7 +12,7 @@ import { editorViewCtx, parserCtx, serializerCtx } from "@milkdown/kit/core";
 import { Slice } from "@milkdown/kit/prose/model";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
-import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix, isImagePath } from "../lib/attachments";
+import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix, deflateImageEmbeds, isImagePath } from "../lib/attachments";
 
 // Tauri-only path detector: the @tauri-apps/api runtime injects
 // `window.__TAURI_INTERNALS__`. Absent in the published web viewer.
@@ -250,7 +250,14 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
                   // Milkdown's serializer emits "loose" lists with a
                   // blank line between every item; tighten them so a
                   // copied list pastes the way the source file reads.
-                  return stripMarkdownEscapes(normalizeWikilinkBrackets(tightenListSpacing(widenListIndent(md))));
+                  // Mirror the on-disk markdown: turn the editor's inflated
+                  // vaultasset:// image/video URLs back into `![[file]]` /
+                  // `![](Attachments/…)` so a copy pastes the source form, not
+                  // the runtime asset URL.
+                  return deflateImageEmbeds(
+                    stripMarkdownEscapes(normalizeWikilinkBrackets(tightenListSpacing(widenListIndent(md)))),
+                    pathDirRef.current,
+                  );
                 } catch {
                   // Fall back to the slice's text content with newline-
                   // joined blocks rather than the default double-newline.
@@ -290,7 +297,9 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
               if (!e.clipboardData) return;
               const text = e.clipboardData.getData("text/plain");
               if (!text) return;
-              const cleaned = stripMarkdownEscapes(tightenListSpacing(text));
+              // Deflate inflated vaultasset:// media URLs back to the on-disk
+              // source form so the pasted text mirrors the original markdown.
+              const cleaned = deflateImageEmbeds(stripMarkdownEscapes(tightenListSpacing(text)), pathDirRef.current);
               if (cleaned !== text) e.clipboardData.setData("text/plain", cleaned);
             };
             view.dom.addEventListener("copy", onCopy, false);
