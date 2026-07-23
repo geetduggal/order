@@ -58,7 +58,7 @@ mod imp {
     use block2::RcBlock;
     use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
     use objc2::rc::Retained;
-    use objc2::runtime::Bool;
+    use objc2::runtime::{Bool, NSObjectProtocol};
     use objc2_event_kit::{
         EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStore, EKSpan,
     };
@@ -116,14 +116,24 @@ mod imp {
         .to_string()
     }
 
+    #[allow(deprecated)]
     pub fn request_access() -> Result<bool, String> {
         let st = store();
         let (tx, rx) = mpsc::channel::<bool>();
         let handler = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
             let _ = tx.send(granted.as_bool());
         });
+        let completion = RcBlock::as_ptr(&handler) as *mut _;
+        // requestFullAccessToEventsWithCompletion is macOS 14 / iOS 17+. On
+        // older systems it doesn't exist, so fall back to the (now deprecated)
+        // requestAccessToEntityType, which still grants event access there.
+        // Without this, an older Mac never prompts and never sees calendars.
         unsafe {
-            st.requestFullAccessToEventsWithCompletion(RcBlock::as_ptr(&handler) as *mut _);
+            if st.respondsToSelector(objc2::sel!(requestFullAccessToEventsWithCompletion:)) {
+                st.requestFullAccessToEventsWithCompletion(completion);
+            } else {
+                st.requestAccessToEntityType_completion(EKEntityType::Event, completion);
+            }
         }
         // Keep `handler` alive until the completion fires (see recv below).
         let granted = rx

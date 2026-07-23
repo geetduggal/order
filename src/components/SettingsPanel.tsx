@@ -64,8 +64,11 @@ export function SettingsPanel({
       const status = await m.accessStatus();
       setAppleStatus(status);
       setAppleIncluded(m.getIncludedCalendarIds());
-      if (status === "authorized") setAppleCals(await m.listCalendars());
-      else setAppleCals([]);
+      // Always TRY to list calendars, not only when the status string is
+      // exactly "authorized" — some macOS versions report a status we don't map
+      // cleanly but still allow reads. If any come back, we show them.
+      try { setAppleCals(await m.listCalendars()); }
+      catch { setAppleCals([]); }
     } catch (e) { setAppleErr(String(e)); }
   }, []);
   useEffect(() => { void refreshApple(); }, [refreshApple]);
@@ -185,35 +188,53 @@ export function SettingsPanel({
           </span>
         </div>
 
+        {(() => {
+          // Show the calendar list whenever we actually have calendars OR the
+          // status reads authorized — decoupled from the exact status string so
+          // an unusual macOS state still lets you pick calendars.
+          const showCals = appleCals.length > 0 || appleStatus === "authorized";
+          return (
         <div className="settings-row">
           <span className="settings-label">Apple Calendar</span>
           {appleErr && <span className="settings-hint" style={{ color: "#d9534f" }}>{appleErr}</span>}
-          {appleStatus !== "authorized" && (
-            <span className="settings-value">
+          {appleStatus !== "unsupported" && (
+            <span className="settings-value" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {!showCals && (
+                <button
+                  type="button"
+                  className="settings-btn"
+                  disabled={appleBusy || appleStatus === "denied"}
+                  onClick={async () => {
+                    setAppleBusy(true); setAppleErr(null);
+                    try { const m = await import("../lib/apple-cal"); await m.requestAccess(); await refreshApple(); }
+                    catch (e) { setAppleErr(String(e)); } finally { setAppleBusy(false); }
+                  }}
+                >
+                  {appleBusy ? "Requesting…" : "Grant calendar access"}
+                </button>
+              )}
               <button
                 type="button"
                 className="settings-btn"
-                disabled={appleBusy || appleStatus === "unsupported" || appleStatus === "denied"}
-                onClick={async () => {
-                  setAppleBusy(true); setAppleErr(null);
-                  try { const m = await import("../lib/apple-cal"); await m.requestAccess(); await refreshApple(); }
-                  catch (e) { setAppleErr(String(e)); } finally { setAppleBusy(false); }
-                }}
+                disabled={appleBusy}
+                onClick={async () => { setAppleBusy(true); setAppleErr(null); try { await refreshApple(); } finally { setAppleBusy(false); } }}
+                title="Re-check calendar access and reload the calendar list"
               >
-                {appleBusy ? "Requesting…" : "Grant calendar access"}
+                Refresh
               </button>
+              {appleStatus && <span className="settings-hint" style={{ margin: 0 }}>access: {appleStatus}</span>}
             </span>
           )}
           {appleStatus === "denied" && (
             <span className="settings-hint">
               Calendar access was denied. Enable it in System Settings → Privacy &amp; Security →
-              Calendars (macOS) or Settings → Privacy → Calendars (iOS), then reopen Order.
+              Calendars (macOS) or Settings → Privacy → Calendars (iOS), then click Refresh.
             </span>
           )}
           {appleStatus === "unsupported" && (
             <span className="settings-hint">System-calendar sync is available on macOS and iOS.</span>
           )}
-          {appleStatus === "authorized" && (
+          {showCals && (
             <>
               <span className="settings-hint">Tick the calendars to include when importing a day's events.</span>
               <ul className="gcal-account-list">
@@ -229,7 +250,13 @@ export function SettingsPanel({
                     </label>
                   </li>
                 ))}
-                {appleCals.length === 0 && <li className="settings-hint">No calendars found.</li>}
+                {appleCals.length === 0 && (
+                  <li className="settings-hint">
+                    Access is granted but no calendars were returned. If Calendar.app shows
+                    calendars, click Refresh; on older macOS, ensure Order was rebuilt with the
+                    calendar entitlement.
+                  </li>
+                )}
               </ul>
               <span className="settings-hint">
                 Assign an event to a calendar with <code>@[Calendar Name]</code> on its spacetime
@@ -239,6 +266,8 @@ export function SettingsPanel({
             </>
           )}
         </div>
+          );
+        })()}
 
         <div className="settings-row">
           <span className="settings-label">
