@@ -183,12 +183,15 @@ export function displayTitleFor(
   item: ListItem,
   note?: { frontmatter: Frontmatter; body?: string } | null,
 ): string {
-  const t = note?.frontmatter.title;
-  if (typeof t === "string" && t.trim()) return t;
+  // The note's first major header (`# Title`) wins — that's what the user asked
+  // links to read as. It also sidesteps a `title:` that Johnny-Decimal mode
+  // baked a decimal id into (JD syncs a filename-mirroring title to the renamed
+  // name, e.g. `52.59 …`).
   const header = firstMajorHeader(note?.body);
   if (header) return header;
-  // No note/header (e.g. an Area/Category ref) — still don't show the raw
-  // Johnny-Decimal id; strip it (a no-op for non-prefixed refs).
+  // Else a custom `title:` (with any JD id stripped), else the ref (JD stripped).
+  const t = note?.frontmatter.title;
+  if (typeof t === "string" && t.trim()) return stripJdPrefix(t.trim());
   return stripJdPrefix(item.ref);
 }
 

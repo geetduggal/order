@@ -18,10 +18,11 @@ eq(firstMajorHeader("# Title with **bold** and `code`"), "Title with bold and co
 eq(firstMajorHeader("#NoSpace"), null, "not a header without space");
 eq(firstMajorHeader(undefined), null, "undefined body → null");
 
-// displayTitleFor: title → first h1 → ref (list cards/lines/masonry + list-of-lists).
-eq(displayTitleFor({ ref: "11.01 Planning" }, { frontmatter: { title: "Sprint Planning" }, body: "# Something" }), "Sprint Planning", "frontmatter title wins");
+// displayTitleFor: first h1 header → JD-stripped title → JD-stripped ref.
+eq(displayTitleFor({ ref: "11.01 Planning" }, { frontmatter: { title: "Sprint Planning" }, body: "# Something" }), "Something", "header wins over title");
 eq(displayTitleFor({ ref: "11.01 Living Room Refresh" }, { frontmatter: {}, body: "# Living Room Refresh\n\nnotes" }), "Living Room Refresh", "JD ref → header (no decimal id)");
-eq(displayTitleFor({ ref: "planning" }, { frontmatter: {}, body: "no header" }), "planning", "no title/header → ref");
+// JD baked the decimal into the title, no header → title with the id stripped.
+eq(displayTitleFor({ ref: "52.59 Article" }, { frontmatter: { title: "52.59 This Is How…" }, body: "no header here" }), "This Is How…", "JD-prefixed title stripped");
 eq(displayTitleFor({ ref: "10-19 Self-Care" }, null), "Self-Care", "area ref, no note → JD stripped");
 eq(displayTitleFor({ ref: "11 Selfish Projects" }, { frontmatter: {}, body: "" }), "Selfish Projects", "category ref, empty body → JD stripped");
 
