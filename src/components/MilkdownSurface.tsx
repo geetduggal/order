@@ -52,6 +52,24 @@ function widenListIndent(md: string): string {
   return lines.join("\n");
 }
 
+// Milkdown's CommonMark serializer backslash-escapes ASCII punctuation so the
+// markdown re-parses unambiguously (`1\.`, `\-`, `\[`, `\#`, `\!`…). Great for
+// round-tripping, ugly when the text is copied to paste as PLAIN text. Strip
+// those escapes for the clipboard — outside fenced code blocks, where escapes
+// are meaningful and the serializer doesn't add them anyway.
+const MD_ESCAPE_RE = /\\([!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~])/g;
+function stripMarkdownEscapes(md: string): string {
+  if (!md || !md.includes("\\")) return md;
+  const lines = md.split("\n");
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    lines[i] = lines[i].replace(MD_ESCAPE_RE, "$1");
+  }
+  return lines.join("\n");
+}
+
 export interface MilkdownHandle {
   /** Replace the entire document with new markdown content — no remount,
    *  no cursor disruption to an in-progress edit. Returns false when the
@@ -218,7 +236,7 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
                   // Milkdown's serializer emits "loose" lists with a
                   // blank line between every item; tighten them so a
                   // copied list pastes the way the source file reads.
-                  return normalizeWikilinkBrackets(tightenListSpacing(widenListIndent(md)));
+                  return stripMarkdownEscapes(normalizeWikilinkBrackets(tightenListSpacing(widenListIndent(md))));
                 } catch {
                   // Fall back to the slice's text content with newline-
                   // joined blocks rather than the default double-newline.
@@ -258,8 +276,8 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
               if (!e.clipboardData) return;
               const text = e.clipboardData.getData("text/plain");
               if (!text) return;
-              const tightened = tightenListSpacing(text);
-              if (tightened !== text) e.clipboardData.setData("text/plain", tightened);
+              const cleaned = stripMarkdownEscapes(tightenListSpacing(text));
+              if (cleaned !== text) e.clipboardData.setData("text/plain", cleaned);
             };
             view.dom.addEventListener("copy", onCopy, false);
             copyCleanup = () => view.dom.removeEventListener("copy", onCopy, false);
