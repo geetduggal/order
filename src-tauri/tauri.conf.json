@@ -25,8 +25,19 @@
   },
   "plugins": {
     "deep-link": {
-      "mobile": [{ "scheme": ["com.googleusercontent.apps.357878094743-2kvcaj8il0reh86lclsqndv7jkg4ulm2"], "appLink": false }],
-      "desktop": { "schemes": ["com.googleusercontent.apps.357878094743-2kvcaj8il0reh86lclsqndv7jkg4ulm2"] }
+      "mobile": [
+        {
+          "scheme": [
+            "com.googleusercontent.apps.357878094743-2kvcaj8il0reh86lclsqndv7jkg4ulm2"
+          ],
+          "appLink": false
+        }
+      ],
+      "desktop": {
+        "schemes": [
+          "com.googleusercontent.apps.357878094743-2kvcaj8il0reh86lclsqndv7jkg4ulm2"
+        ]
+      }
     }
   },
   "bundle": {
@@ -40,10 +51,12 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "Apple Development: geetduggal@gmail.com (59TJ84BVPY)"
+      "signingIdentity": "Apple Development: geetduggal@gmail.com (59TJ84BVPY)",
+      "infoPlist": "Info.plist"
     },
     "iOS": {
-      "developmentTeam": "93AB46Q3G7"
+      "developmentTeam": "93AB46Q3G7",
+      "infoPlist": "Info.plist"
     }
   }
 }
