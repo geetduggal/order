@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Drag files into a note.** Dragging files from Finder onto a note card imports
+  them into that note's Notable Folder and inserts links — images as `![[img]]`,
+  other files as `[name](name)`. (Tauri strips the browser drop event, so this
+  uses the OS drag-drop path.)
+- **Fullscreen image viewer for embedded images.** Click an image in a note to
+  open the zoom viewer, which now also has a **Copy** button.
+- **Open attached files in the system viewer.** Clicking a note's link to a local
+  file (a dropped PDF, etc.) opens it in the OS default app.
+- **Wikilinks labeled by header.** In the Milkdown editor, a `[[Note]]` wikilink
+  displays the target note's first major header (`# Title`) instead of the raw
+  filename, and reveals the editable source when the caret enters it. (Explicit
+  `[[Name|Alias]]` and the sidebar folder names are unchanged.)
+
+### Added
+
 - **Edit spacetime.md from the sidebar.** An "Edit spacetime.md" toggle in the
   sidebar opens the same raw-text editor the pile view uses, expanded to fill the
   sidebar for a clean, roomy edit. Saving goes through the usual path — structural

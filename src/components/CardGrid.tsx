@@ -14,8 +14,10 @@ import { join } from "@tauri-apps/api/path";
 import { open as openDialog, confirm as tauriConfirm, message as tauriMessage } from "@tauri-apps/plugin-dialog";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
+import { ImageInspector } from "./ImageInspector";
 import { LazyCell } from "./LazyCell";
 import { FtsOverlay } from "./FtsOverlay";
 import { CalendarView, type CalendarViewHandle, type NoteMeta } from "./CalendarView";
@@ -481,6 +483,17 @@ export function CardGrid() {
    *  card mid-edit). Cleared when the user picks a different card or
    *  the focused note is gone (deleted / out of view). */
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  // Fullscreen image viewer (zoom + copy), opened by clicking an embedded note
+  // image (MilkdownSurface dispatches order:view-image).
+  const [viewImageUrl, setViewImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const url = (e as CustomEvent<{ url: string }>).detail?.url;
+      if (url) setViewImageUrl(url);
+    };
+    window.addEventListener("order:view-image", on as EventListener);
+    return () => window.removeEventListener("order:view-image", on as EventListener);
+  }, []);
   // Ref mirror so the []-dep effectiveFolder callback can see the live value.
   const focusedPathRef = useRef<string | null>(null);
   focusedPathRef.current = focusedPath;
@@ -1257,6 +1270,59 @@ export function CardGrid() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [reloadNotes, bumpExternal]);
+
+  // OS drag-drop router. Tauri's webview eats the HTML5 drop event, so files
+  // dragged from Finder never reach a React onDrop — the native event gives us
+  // absolute paths + the drop position instead. We find the note card under the
+  // drop, import the files into its Notable Folder dir, and tell that Card to
+  // insert links (images as ![[…]], other files as [name](name)). Drops over a
+  // flipped folder browser (.nf-flip-panel) are left to its own handler.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const handle = await getCurrentWebview().onDragDropEvent((e) => {
+          const p = e.payload as { type: string; paths?: string[]; position?: { x: number; y: number } };
+          if (p.type !== "drop") return;
+          const paths = p.paths ?? [];
+          if (paths.length === 0) return;
+          // Physical → CSS px; try both since Tauri versions differ.
+          const dpr = window.devicePixelRatio || 1;
+          const px = p.position?.x ?? 0, py = p.position?.y ?? 0;
+          const el =
+            document.elementFromPoint(px / dpr, py / dpr) ??
+            document.elementFromPoint(px, py);
+          const card = el?.closest?.(".order-card") as HTMLElement | null;
+          if (card && (card.closest(".nf-flip-panel") || card.querySelector(".nf-flip-panel"))) return;
+          // Prefer the dropped-on card; fall back to the focused note.
+          const notePath = card?.getAttribute("data-note-path") ?? focusedPathRef.current ?? null;
+          let noteDir = card?.getAttribute("data-note-dir") ?? null;
+          if (!notePath) return;
+          if (noteDir == null) {
+            const rel = notePath;
+            noteDir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+          }
+          void (async () => {
+            try {
+              const names = await vaultFs.importFiles(paths, noteDir || "");
+              await reloadNotes();
+              window.dispatchEvent(new CustomEvent("order:insert-attachments", { detail: { notePath, names } }));
+            } catch (err) {
+              console.error("[drag-drop] import failed", err);
+              flashCap(`Couldn't import: ${String(err)}`);
+            }
+          })();
+        });
+        if (cancelled) handle();
+        else unlisten = handle;
+      } catch (err) {
+        console.error("[drag-drop] listener failed", err);
+      }
+    })();
+    return () => { cancelled = true; unlisten?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadNotes]);
 
   /** iOS: present the native folder picker; on selection the bookmark is
    *  persisted, so a reload restores + opens it for the session. */
@@ -4679,7 +4745,6 @@ export function CardGrid() {
           category: c.ref,
           frontmatter: doc?.frontmatter ?? {},
           path: doc?.path ?? `${a.ref}/${c.ref}/${f}`,
-          body: doc?.body,
         };
       }),
     ),
@@ -5746,6 +5811,14 @@ export function CardGrid() {
         />
       )}
 
+      {viewImageUrl && (
+        <ImageInspector
+          imageUrl={viewImageUrl}
+          readOnly
+          onCaptionChange={() => {}}
+          onClose={() => setViewImageUrl(null)}
+        />
+      )}
       {settingsOpen && (
         <SettingsPanel
           onChangeVault={handleChangeVault}

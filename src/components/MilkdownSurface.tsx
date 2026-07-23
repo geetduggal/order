@@ -75,6 +75,8 @@ export interface MilkdownHandle {
    *  no cursor disruption to an in-progress edit. Returns false when the
    *  editor isn't mounted yet (safe to ignore). */
   replaceContent: (markdown: string) => boolean;
+  /** Insert markdown at the current selection (used for dropped attachments). */
+  insertMarkdown: (markdown: string) => boolean;
 }
 
 type Props = {
@@ -143,6 +145,18 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
         applyingExternalRef.current = false;
         queueMicrotask(() => { applyingExternalRef.current = false; });
       }
+      return true;
+    },
+    insertMarkdown(markdown: string): boolean {
+      const crepe = crepeRef.current;
+      if (!crepe) return false;
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const doc = ctx.get(parserCtx)(markdown);
+        if (!doc) return;
+        view.dispatch(view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView());
+        view.focus();
+      });
       return true;
     },
   }), []);
@@ -321,6 +335,14 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
     async function onClick(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (!t) return;
+      // An embedded image (`![[img]]`) → open the fullscreen zoom viewer.
+      const img = t.closest("img");
+      if (img instanceof HTMLImageElement && img.src && !img.closest("a")) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("order:view-image", { detail: { url: img.src } }));
+        return;
+      }
       // Wikilink decoration spans carry data-wikilink — navigate on
       // click. Exception: when the link target is an image file
       // (`[[X.png]]` — bare wiki-link to an image, NOT embedded),
@@ -420,6 +442,19 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
         }
       } catch (err) {
         console.warn("link resolve failed:", err);
+      }
+      // A bare relative link with a file extension (e.g. a dropped `[doc.pdf]
+      // (doc.pdf)`) — resolve it against the note's own directory and open it in
+      // the system default viewer.
+      if (!absolute && !/^[a-z]+:\/\//i.test(raw) && /\.[a-z0-9]{1,8}$/i.test(raw)) {
+        try {
+          const vault = await vaultRoot();
+          let decoded = raw;
+          try { decoded = decodeURI(raw); } catch { /* keep raw */ }
+          absolute = await join(vault, pathDirRef.current, decoded);
+        } catch (err) {
+          console.warn("relative file resolve failed:", err);
+        }
       }
       if (!absolute) return;
       e.preventDefault();

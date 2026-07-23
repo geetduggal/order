@@ -4,7 +4,7 @@
 // the rendered list. Legacy `type: list` is still accepted on read
 // (treated as `list: cards`) so a half-migrated vault still renders.
 
-import { firstMajorHeader, type Frontmatter } from "./frontmatter";
+import type { Frontmatter } from "./frontmatter";
 
 export type ListRender = "cards" | "lines" | "masonry";
 
@@ -172,19 +172,17 @@ export function splitBodyAndBullets(body: string): { prose: string; items: ListI
   return { prose: proseLines.join("\n"), items };
 }
 
-/** What to show as the visible title for a row. Prefers the linked note's
- *  `title:` frontmatter, then its first major header (`# Title`) so a Notable
- *  Folder link reads as the note's own heading rather than its filename, then
- *  falls back to the bullet's wikilink ref. The LINK TARGET (item.ref) is never
- *  changed — only the visible label. */
+/** What to show as the visible title for a row. Prefers the linked
+ *  note's `title:` frontmatter — useful when filenames are
+ *  prettified (`Tech Habits — How I…`) but the article title proper
+ *  carries punctuation we can't put on disk (`Tech Habits: How I…`).
+ *  Falls back to the bullet's wikilink ref. */
 export function displayTitleFor(
   item: ListItem,
-  note?: { frontmatter: Frontmatter; body?: string } | null,
+  note?: { frontmatter: Frontmatter } | null,
 ): string {
   const t = note?.frontmatter.title;
   if (typeof t === "string" && t.trim()) return t;
-  const header = firstMajorHeader(note?.body);
-  if (header) return header;
   return item.ref;
 }
 

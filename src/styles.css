@@ -1703,6 +1703,9 @@ iframe.order-youtube-embed {
   cursor: pointer;
   border-radius: 2px;
 }
+/* Raw `[[…]]` source hidden while a header-label chip stands in for it (shown
+   again when the caret enters the link, so it stays editable). */
+.milkdown-host .ProseMirror .wikilink-hidden { display: none; }
 .milkdown-host .ProseMirror .wikilink:hover {
   color: var(--royal, #4169e1);
   background: var(--royal-soft, rgba(65, 105, 225, 0.1));

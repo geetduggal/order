@@ -52,6 +52,7 @@ import {
   deflateImageEmbeds,
   inflateAttachmentUrls,
   inflateImageEmbeds,
+  isImagePath,
   vaultDir,
 } from "../lib/attachments";
 import {
@@ -859,6 +860,26 @@ export function Card(props: Props) {
     }
   }, []);
 
+  // The CardGrid OS drag-drop router imports dropped files into a note's dir,
+  // then fires this with the written basenames. Insert them into THIS note's
+  // editor: images as `![[name]]`, other files as `[name](name)` links (which
+  // open in the system viewer on click).
+  useEffect(() => {
+    const onInsert = (e: Event) => {
+      const detail = (e as CustomEvent<{ notePath: string; names: string[] }>).detail;
+      if (readOnly || !detail || detail.notePath !== toVaultRel(pathRef.current)) return;
+      const md = detail.names
+        .map((n) => (isImagePath(n) ? `![[${n}]]` : `[${n}](${encodeURI(n)})`))
+        .join("\n\n") + "\n";
+      if (milkdownRef.current?.insertMarkdown(md)) {
+        dirty.current = true;
+        void flushNow();
+      }
+    };
+    window.addEventListener("order:insert-attachments", onInsert as EventListener);
+    return () => window.removeEventListener("order:insert-attachments", onInsert as EventListener);
+  }, [readOnly, flushNow]);
+
   const scheduleSave = useCallback(() => {
     if (readOnly) return;
     dirty.current = true;
@@ -1212,6 +1233,8 @@ export function Card(props: Props) {
       className={cardClass}
       ref={articleRef}
       onMouseDown={onCardFocus}
+      data-note-path={toVaultRel(pathRef.current)}
+      data-note-dir={vaultDir(toVaultRel(pathRef.current))}
     >
       {/* Top-left date chip — a lightweight calendar icon plus the note's
           date, always visible (subtle). Doubles as the frontmatter inspector

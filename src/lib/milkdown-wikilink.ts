@@ -17,6 +17,7 @@ import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { resolveWikilink, type WikiRef } from "./wikilink";
+import { firstMajorHeader } from "./frontmatter";
 import { isMainDocRef } from "./folders";
 
 const KEY = new PluginKey("order-wikilink");
@@ -36,6 +37,7 @@ export function wikilinkProsePlugin(getVault: () => WikiRef[]) {
           decorations(state) {
             const vault = getVault();
             const decos: Decoration[] = [];
+            const sel = state.selection;
             state.doc.descendants((node: ProseNode, pos: number) => {
               // Don't decorate inside fenced code blocks — the source
               // there is meant to display literally.
@@ -49,15 +51,43 @@ export function wikilinkProsePlugin(getVault: () => WikiRef[]) {
               while ((m = WIKI_RE.exec(text)) !== null) {
                 const from = pos + m.index;
                 const to = from + m[0].length;
+                const ref = m[1].trim();
                 const res = resolveWikilink(m[0], vault);
                 const cls =
                   res.kind === "broken" ? "wikilink wikilink-broken" : "wikilink";
-                decos.push(
-                  Decoration.inline(from, to, {
-                    class: cls,
-                    "data-wikilink": m[1].trim(),
-                  }),
-                );
+                // Label the link by the target note's first major header
+                // (`# Title`) rather than the raw filename — UNLESS the user
+                // typed an explicit `[[Name|Alias]]`, the link is broken, or the
+                // caret is inside the link (then show the raw source so it stays
+                // editable).
+                const editing = sel.from <= to && sel.to >= from;
+                const label =
+                  !editing && !ref.includes("|") && res.kind !== "broken"
+                    ? firstMajorHeader(res.ref.body)
+                    : null;
+                if (label && label !== ref) {
+                  // Hide the raw `[[…]]` and render the header as a chip widget.
+                  decos.push(
+                    Decoration.inline(from, to, { class: "wikilink-hidden", "data-wikilink": ref }),
+                  );
+                  decos.push(
+                    Decoration.widget(
+                      from,
+                      () => {
+                        const span = document.createElement("span");
+                        span.className = cls;
+                        span.setAttribute("data-wikilink", ref);
+                        span.textContent = label;
+                        return span;
+                      },
+                      { side: -1, key: `wl:${from}:${label}` },
+                    ),
+                  );
+                } else {
+                  decos.push(
+                    Decoration.inline(from, to, { class: cls, "data-wikilink": ref }),
+                  );
+                }
               }
               return undefined;
             });
