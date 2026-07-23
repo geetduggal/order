@@ -9,7 +9,7 @@
 // Closed by Esc, backdrop click, or the explicit ×.
 
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Trash2, X as XIcon } from "lucide-react";
+import { ImagePlus, Trash2, X as XIcon, Copy as CopyIcon, Check } from "lucide-react";
 
 interface Props {
   imageUrl: string;
@@ -34,6 +34,30 @@ export function ImageInspector({
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captionRef = useRef(initialCaption ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Copy the image to the clipboard by drawing the loaded <img> to a canvas
+  // (avoids fetching the vaultasset:// URL, which the webview may not allow).
+  async function copyImage() {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      if (!blob) return;
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch (err) {
+      console.error("copy image failed:", err);
+    }
+  }
 
   // Esc closes; on close, persist the caption if it changed.
   useEffect(() => {
@@ -112,6 +136,7 @@ export function ImageInspector({
         </button>
         <div className="img-inspector-stage">
           <img
+            ref={imgRef}
             src={imageUrl}
             alt={caption || ""}
             className="img-inspector-img"
@@ -126,6 +151,15 @@ export function ImageInspector({
             <button type="button" onClick={() => setScale((s) => Math.min(8, s * 1.25))} aria-label="Zoom in">+</button>
             <button type="button" onClick={() => setScale(1)} aria-label="Reset zoom">⤺</button>
           </div>
+          <button
+            type="button"
+            className="img-inspector-action"
+            onClick={copyImage}
+            title="Copy image to clipboard"
+          >
+            {copied ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2.1} />}
+            <span>{copied ? "Copied" : "Copy"}</span>
+          </button>
           <input
             type="text"
             className="img-inspector-caption"
