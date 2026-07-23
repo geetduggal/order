@@ -4,7 +4,8 @@
 // the rendered list. Legacy `type: list` is still accepted on read
 // (treated as `list: cards`) so a half-migrated vault still renders.
 
-import type { Frontmatter } from "./frontmatter";
+import { firstMajorHeader, type Frontmatter } from "./frontmatter";
+import { stripJdPrefix } from "./johnny-decimal";
 
 export type ListRender = "cards" | "lines" | "masonry";
 
@@ -172,18 +173,23 @@ export function splitBodyAndBullets(body: string): { prose: string; items: ListI
   return { prose: proseLines.join("\n"), items };
 }
 
-/** What to show as the visible title for a row. Prefers the linked
- *  note's `title:` frontmatter — useful when filenames are
- *  prettified (`Tech Habits — How I…`) but the article title proper
- *  carries punctuation we can't put on disk (`Tech Habits: How I…`).
- *  Falls back to the bullet's wikilink ref. */
+/** What to show as the visible title for a list row (cards / lines / masonry /
+ *  list-of-lists). Prefers the linked note's `title:` frontmatter, then its
+ *  first major header (`# Title`) so a Notable Folder link reads as the note's
+ *  heading rather than its filename (e.g. its Johnny-Decimal id), then falls
+ *  back to the bullet's wikilink ref. The LINK TARGET (item.ref) is unchanged —
+ *  only the visible label. Mirrors the Milkdown editor wikilink labeling. */
 export function displayTitleFor(
   item: ListItem,
-  note?: { frontmatter: Frontmatter } | null,
+  note?: { frontmatter: Frontmatter; body?: string } | null,
 ): string {
   const t = note?.frontmatter.title;
   if (typeof t === "string" && t.trim()) return t;
-  return item.ref;
+  const header = firstMajorHeader(note?.body);
+  if (header) return header;
+  // No note/header (e.g. an Area/Category ref) — still don't show the raw
+  // Johnny-Decimal id; strip it (a no-op for non-prefixed refs).
+  return stripJdPrefix(item.ref);
 }
 
 /** Strip any stale backslash escapes that snuck into an item ref
