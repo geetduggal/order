@@ -119,9 +119,17 @@ mod imp {
     #[allow(deprecated)]
     pub fn request_access() -> Result<bool, String> {
         let st = store();
-        let (tx, rx) = mpsc::channel::<bool>();
-        let handler = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
-            let _ = tx.send(granted.as_bool());
+        // (granted, optional error description) from the completion.
+        let (tx, rx) = mpsc::channel::<(bool, Option<String>)>();
+        let handler = RcBlock::new(move |granted: Bool, err: *mut NSError| {
+            let msg = if err.is_null() {
+                None
+            } else {
+                // `err` is a valid, autoreleased NSError while the completion runs.
+                let e: &NSError = unsafe { &*err };
+                Some(e.localizedDescription().to_string())
+            };
+            let _ = tx.send((granted.as_bool(), msg));
         });
         let completion = RcBlock::as_ptr(&handler) as *mut _;
         // requestFullAccessToEventsWithCompletion is macOS 14 / iOS 17+. On
@@ -130,17 +138,36 @@ mod imp {
         // Without this, an older Mac never prompts and never sees calendars.
         unsafe {
             if st.respondsToSelector(objc2::sel!(requestFullAccessToEventsWithCompletion:)) {
+                eprintln!("[applecal] requesting FULL access to events");
                 st.requestFullAccessToEventsWithCompletion(completion);
             } else {
+                eprintln!("[applecal] requesting access to events (legacy API)");
                 st.requestAccessToEntityType_completion(EKEntityType::Event, completion);
             }
         }
         // Keep `handler` alive until the completion fires (see recv below).
-        let granted = rx
+        let (granted, err_msg) = rx
             .recv_timeout(Duration::from_secs(120))
-            .map_err(|_| "calendar access request timed out".to_string())?;
+            .map_err(|_| "calendar access request timed out (macOS never responded)".to_string())?;
         drop(handler);
-        Ok(granted)
+        eprintln!("[applecal] request completed: granted={granted} err={err_msg:?} status={}", access_status());
+        if granted {
+            return Ok(true);
+        }
+        // Not granted — surface WHY so the user isn't left staring at a silent
+        // notDetermined. A real "denied" means the user declined; a completion
+        // that fires with granted=false while the status stays notDetermined
+        // (no prompt shown) is the managed-Mac / non-notarized case.
+        let status = access_status();
+        if status == "denied" {
+            return Err("Calendar access was denied. Enable Order under System Settings → Privacy & Security → Calendars.".into());
+        }
+        if let Some(m) = err_msg {
+            return Err(format!("macOS declined the calendar request: {m} (status: {status})"));
+        }
+        Err(format!(
+            "macOS did not present the calendar prompt (status: {status}). On a managed Mac this usually means an MDM privacy policy is blocking the prompt for this (non-notarized) app — ask IT to allow Order calendar access, or use a notarized build."
+        ))
     }
 
     pub fn list_calendars() -> Result<Vec<CalendarInfo>, String> {
