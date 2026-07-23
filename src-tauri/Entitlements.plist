@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Hardened Runtime resource-access entitlement for EventKit. Order is
+	     signed with the Hardened Runtime enabled, which blocks the XPC
+	     connection to calaccessd (the calendar daemon) unless this is present —
+	     the "XPC error communicating with calaccessd" seen without it. Required
+	     even though the app is not sandboxed. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
+</plist>

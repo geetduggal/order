@@ -52,7 +52,8 @@
     ],
     "macOS": {
       "signingIdentity": "Apple Development: geetduggal@gmail.com (59TJ84BVPY)",
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "entitlements": "Entitlements.plist"
     },
     "iOS": {
       "developmentTeam": "93AB46Q3G7",
