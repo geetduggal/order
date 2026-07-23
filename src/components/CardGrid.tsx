@@ -5749,7 +5749,6 @@ export function CardGrid() {
         <SettingsPanel
           onChangeVault={handleChangeVault}
           onClose={() => { setSettingsOpen(false); void refreshAppleReady(); }}
-          onOpenTodoTxt={async () => { await openTodoTxt(); setSettingsOpen(false); }}
           johnnyDecimal={johnnyDecimal}
           johnnyDecimalBusy={jdBusy}
           onToggleJohnnyDecimal={applyJohnnyDecimalMode}

@@ -5,38 +5,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { X as XIcon, Folder as FolderIcon, FileText as FileTextIcon, Info as InfoIcon } from "lucide-react";
+import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
-import {
-  DEFAULT_TODO_TXT_PATH,
-  getTodoTxtSettings,
-  setTodoTxtSettings,
-} from "../lib/todo-txt";
 // Pure localStorage helper — static-imported so the checkbox toggle is
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
 import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal";
 
 export function SettingsPanel({
-  onChangeVault, onClose, onOpenTodoTxt,
+  onChangeVault, onClose,
   johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
-  onOpenTodoTxt: () => Promise<void>;
   johnnyDecimal: boolean;
   johnnyDecimalBusy: boolean;
   onToggleJohnnyDecimal: (enable: boolean) => Promise<void>;
 }) {
-  const initialTodo = getTodoTxtSettings();
-  const [todoEnabled, setTodoEnabled] = useState(initialTodo.enabled);
-  const [todoPath, setTodoPath] = useState(initialTodo.path);
-  const persistTodo = (next: Partial<{ enabled: boolean; path: string }>) => {
-    const merged = setTodoTxtSettings(next);
-    setTodoEnabled(merged.enabled);
-    setTodoPath(merged.path);
-  };
   const [current, setCurrent] = useState<string>("");
   const [fallback, setFallback] = useState<string>("");
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
@@ -173,47 +159,6 @@ export function SettingsPanel({
             Order reads and writes notes here. Pick a different folder when this
             machine's vault lives elsewhere — the choice is saved on this machine
             only.
-          </span>
-        </div>
-
-        <div className="settings-row">
-          <span className="settings-label">Todo.txt</span>
-          <span className="settings-value">
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={todoEnabled}
-                onChange={(e) => persistTodo({ enabled: e.target.checked })}
-              />
-              <span>Use {todoPath || DEFAULT_TODO_TXT_PATH} as a calendar source</span>
-            </label>
-          </span>
-          <span className="settings-value">
-            <FileTextIcon size={12} strokeWidth={2} />
-            <input
-              type="text"
-              className="settings-input"
-              value={todoPath}
-              placeholder={DEFAULT_TODO_TXT_PATH}
-              onChange={(e) => setTodoPath(e.target.value)}
-              onBlur={() => persistTodo({ path: todoPath })}
-            />
-          </span>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="settings-btn"
-              onClick={() => { void onOpenTodoTxt(); }}
-              disabled={!todoEnabled}
-            >
-              Open todo.txt
-            </button>
-          </div>
-          <span className="settings-hint">
-            Keeps <code>{todoPath || DEFAULT_TODO_TXT_PATH}</code> in sync with every
-            calendar event — one line per event, readable and editable in any
-            text editor. Events you create in Order are markdown files; lines
-            you add by hand show up on the calendar too.
           </span>
         </div>
 
