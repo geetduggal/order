@@ -4679,6 +4679,7 @@ export function CardGrid() {
           category: c.ref,
           frontmatter: doc?.frontmatter ?? {},
           path: doc?.path ?? `${a.ref}/${c.ref}/${f}`,
+          body: doc?.body,
         };
       }),
     ),

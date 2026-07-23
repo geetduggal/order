@@ -68,6 +68,21 @@ export function bodyHasH1(body: string): boolean {
   return false;
 }
 
+/** The first "major header" (ATX h1, `# Title`) text in the body, or null if
+ *  there is none. Used to label Notable Folder wikilinks/tiles by the note's
+ *  own heading rather than its filename. Inline markdown is stripped. */
+export function firstMajorHeader(body: string | undefined): string | null {
+  if (!body) return null;
+  for (const line of body.split(/\r?\n/)) {
+    const m = /^#\s+(.+?)\s*#*\s*$/.exec(line);
+    if (m) {
+      const cleaned = stripMarkdownInline(m[1]).trim();
+      return cleaned || null;
+    }
+  }
+  return null;
+}
+
 /** ISO date — YYYY-MM-DD — for the supplied Date or `new Date()`. */
 export function isoDate(d: Date = new Date()): string {
   const y = d.getFullYear();

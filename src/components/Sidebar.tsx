@@ -18,7 +18,7 @@ import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X, Fi
 import { folderColor, folderIcon } from "../lib/folders";
 import { useTileDrag } from "../lib/use-tile-drag";
 import { CodeMirrorSurface } from "./CodeMirrorSurface";
-import type { Frontmatter } from "../lib/frontmatter";
+import { firstMajorHeader, type Frontmatter } from "../lib/frontmatter";
 
 export type View = "pile" | "day" | "week" | "month" | "year" | "season";
 
@@ -32,6 +32,8 @@ export interface NotableFolder {
   category: string;
   frontmatter: Frontmatter;
   path: string;
+  /** Main-doc body — lets the tile label by the note's first major header. */
+  body?: string;
 }
 
 type DrillState =
@@ -735,7 +737,11 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
   const Icon: LucideIcon = folderIcon(folder.name, folder.frontmatter.icon);
   const color = folderColor(folder.name, folder.frontmatter.color);
   const titleFm = folder.frontmatter.title;
-  const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
+  // Label by the note's `title:`, then its first major header (`# Title`), then
+  // the folder name. The ref (data-tile-ref / rename target) stays folder.name.
+  const label = (typeof titleFm === "string" && titleFm.trim())
+    ? titleFm.trim()
+    : (firstMajorHeader(folder.body) ?? folder.name);
   const hasControls = !!(onMoveUp || onMoveDown || onRemove);
   // Inline rename — armed by double-click on the folder name; commit
   // on Enter / blur, cancel on Escape. The committed value is the
