@@ -15,13 +15,14 @@ import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal"
 
 export function SettingsPanel({
   onChangeVault, onClose,
-  johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal,
+  johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal, onAssignMissingJdIds,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
   johnnyDecimal: boolean;
   johnnyDecimalBusy: boolean;
   onToggleJohnnyDecimal: (enable: boolean) => Promise<void>;
+  onAssignMissingJdIds: () => Promise<void>;
 }) {
   const [current, setCurrent] = useState<string>("");
   const [fallback, setFallback] = useState<string>("");
@@ -177,6 +178,17 @@ export function SettingsPanel({
               />
               <span>Prefix Areas, Categories & Notable Folders with Johnny.Decimal ids</span>
             </label>
+            {johnnyDecimal && (
+              <button
+                type="button"
+                className="settings-btn"
+                disabled={johnnyDecimalBusy}
+                onClick={() => { void onAssignMissingJdIds(); }}
+                title="Give any Notable Folder that currently lacks an id the next free id in its category — without renumbering the folders that already have one."
+              >
+                Assign missing IDs
+              </button>
+            )}
           </span>
           <span className="settings-hint">
             {johnnyDecimalBusy

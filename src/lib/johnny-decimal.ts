@@ -36,6 +36,61 @@ export function stripJdPrefix(name: string): string {
   return name.replace(JD_PREFIX_RE, "");
 }
 
+/** The category's leading JD number ("52 Creative Projects" → "52",
+ *  "11 Selfish Projects" → "11"), or null if the category isn't JD-numbered. */
+export function categoryJdNumber(categoryName: string): string | null {
+  const m = categoryName.match(/^(\d{2,3})[.\s]/);
+  return m ? m[1] : null;
+}
+
+/** Next available Notable-Folder id for a JD category, e.g. "52.15". Returns
+ *  null when the category has no JD number. `siblings` are the folder names
+ *  already in that category; the next id is (highest existing NN) + 1 so it
+ *  never collides with a kept id, even after deletions. */
+export function nextJdFolderId(categoryName: string, siblings: string[]): string | null {
+  const cat = categoryJdNumber(categoryName);
+  if (!cat) return null;
+  let max = 0;
+  for (const s of siblings) {
+    const m = s.match(/^\d{2,3}\.(\d{2,})\s/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${cat}.${pad2(max + 1)}`;
+}
+
+export interface JdMissingRename {
+  area: string;
+  category: string;
+  oldName: string;
+  newName: string;
+}
+
+/** Assign JD ids to Notable Folders that currently LACK one, WITHOUT disturbing
+ *  folders that already have an id (unlike applyJohnnyDecimal, which renumbers
+ *  everything positionally). Each un-prefixed folder takes the next free NN in
+ *  its category. Only categories that are themselves JD-numbered are touched.
+ *  Returns the folder-level renames to apply on disk. */
+export function assignMissingJdIds(space: SpaceNode[]): JdMissingRename[] {
+  const out: JdMissingRename[] = [];
+  for (const area of space) {
+    for (const cat of area.children ?? []) {
+      const catNum = categoryJdNumber(cat.name);
+      if (!catNum) continue;
+      let max = 0;
+      for (const f of cat.children ?? []) {
+        const m = f.name.match(/^\d{2,3}\.(\d{2,})\s/);
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      }
+      for (const f of cat.children ?? []) {
+        if (isJohnnyDecimalName(f.name)) continue;
+        max += 1;
+        out.push({ area: area.name, category: cat.name, oldName: f.name, newName: `${catNum}.${pad2(max)} ${f.name}` });
+      }
+    }
+  }
+  return out;
+}
+
 export interface JdRename {
   level: "area" | "category" | "folder";
   /** Current directory segments from the vault root, leaf last — valid so long

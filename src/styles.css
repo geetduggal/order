@@ -20,6 +20,12 @@
   --ink-soft:  #232628;
   --ink-faint: #6a665a;  /* deeper warm grey — sharper secondary text on cream */
   --ink-ghost: #b8b09a;
+  /* Input/field surface. Defined ONCE as a solid tint — a little ink mixed
+     into the elevated surface — so a field is readable on EVERY theme (a plain
+     #fff field turned white-on-white in the dark themes). The vars inside
+     resolve per-theme at use time, so this needs no per-theme override, and it
+     stays opaque so it composes cleanly inside other color-mix() calls. */
+  --paper: color-mix(in srgb, var(--ink) 9%, var(--bg-elev));
   --rule:      #c2b896;  /* deeper warm-tan rule — borders read as ink, not haze */
   --rule-soft: #d8cfb4;
 
@@ -3425,6 +3431,7 @@ iframe.order-youtube-embed {
   color: var(--ink);
 }
 .mw-orphan-input:focus { outline: none; border-color: var(--coral); }
+.mw-orphan-input::placeholder { color: var(--ink-ghost); }
 .mw-orphan-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 .mw-orphan-btn {
   font-size: calc(11px * var(--text-scale, 1));
@@ -4955,6 +4962,21 @@ iframe.order-youtube-embed {
   line-height: 1.2;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* A section HEADING reserves its natural width (basis auto) instead of the
+     base .lr-title's `flex: 1 1 0` — otherwise the same-row description flexes
+     against it and squeezes a short title like "Articles" to an ellipsis,
+     especially in the monospace themes where --sans is wide. It still shrinks
+     if genuinely too long for the card. */
+  flex: 0 1 auto;
+}
+/* Let the description yield space to the heading (and truncate itself). */
+.list-line-section > .list-line .lr-meta,
+.list-line-section > .list-line .lr-meta-secondary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .list-line-section > .list-line .lr-title.is-link {
   color: var(--ink);
@@ -5693,6 +5715,7 @@ iframe.order-youtube-embed {
   color: var(--ink);
 }
 .cmdk-create-input:focus { outline: none; border-color: var(--coral); }
+.cmdk-create-input::placeholder { color: var(--ink-ghost); }
 .cmdk-create-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .cmdk-create-btn {
   font-size: calc(12px * var(--text-scale, 1));

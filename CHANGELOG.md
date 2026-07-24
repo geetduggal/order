@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Johnny-Decimal Mode auto-numbers new folders.** Creating a folder while JD
+  Mode is on gives it the next free id in its category (`52 Creative Projects` →
+  `52.15 …`); its Main-Doc H1 stays the clean name so lists/links render pretty
+  while the sidebar shows the id. Settings → JD Mode also gained an **Assign
+  missing IDs** button that numbers any folder currently lacking an id (next free
+  NN in its category) without renumbering the ones that already have one.
 - **Create a folder from the command palette.** In `Cmd+K`, typing a name that
   doesn't match an existing folder now offers "Create folder …"; pick an
   Area → Category (prefilled, with autocomplete) and it's created and focused —
@@ -78,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Invisible input fields in dark themes.** Reconcile-dialog, palette
+  create-folder, and event-time inputs used an undefined `--paper` var that fell
+  back to white, so their text (`--ink`, light on dark themes) vanished. `--paper`
+  is now defined once as a theme-adaptive tint of the ink color, readable on
+  every theme.
+- **Section titles cut off in the monospace themes.** In WordPerfect / Terminal /
+  Typewriter (where `--sans` is monospace and wider), a short list heading like
+  "Articles" was squeezed to an ellipsis by the same-row description. Section
+  headings now reserve their natural width and let the description truncate
+  instead.
 - **Navigating away from a fullscreen note exits fullscreen.** Following a
   wikilink, opening the folder palette, or jumping to another note while a card
   is fullscreen now collapses it so you land on the destination instead of

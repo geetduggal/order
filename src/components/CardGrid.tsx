@@ -76,7 +76,7 @@ import {
   type TodoTxtSettings,
 } from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
-import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix } from "../lib/johnny-decimal";
+import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix, isJohnnyDecimalName, nextJdFolderId, assignMissingJdIds } from "../lib/johnny-decimal";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
 import { vaultDir, embeddedImageFiles } from "../lib/attachments";
@@ -2699,6 +2699,65 @@ export function CardGrid() {
     }
   }, [writeSpacetimeModel, reloadNotes]);
 
+  // Assign a Johnny-Decimal id to every Notable Folder that currently LACKS one
+  // (e.g. a folder added outside JD-aware creation), WITHOUT renumbering folders
+  // that already have an id. Each un-numbered folder takes the next free NN in
+  // its category; the directory + Main Doc are renamed, inbound wikilinks and
+  // event tags updated, and spacetime rewritten. No-op (with a note) when every
+  // folder is already numbered.
+  const handleAssignMissingJdIds = useCallback(async () => {
+    setJdBusy(true);
+    try {
+      const san = (n: string) => n.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+      const src = await readVault(spacetimeRootPathRef.current).catch(() => "");
+      const st = parseMarkwhenFormat(src);
+      const renames = assignMissingJdIds(st.space);
+      if (renames.length === 0) { flashCap("Every folder already has a Johnny-Decimal ID."); return; }
+      const list = notesRef.current ?? [];
+      const folderRenames = new Map<string, string>(); // oldName → full new name (spacetime form)
+      for (const r of renames) {
+        const catRel = `${san(r.area)}/${san(r.category)}`;
+        const oldPath = `${catRel}/${san(r.oldName)}`;
+        const newLeaf = san(r.newName);
+        const newPath = `${catRel}/${newLeaf}`;
+        if (!(await vaultFs.exists(oldPath)) || (await vaultFs.exists(newPath))) continue;
+        await vaultFs.rename(oldPath, newPath);
+        try { await vaultFs.rename(`${newPath}/${san(r.oldName)}.md`, `${newPath}/${newLeaf}.md`); } catch { /* no main doc */ }
+        // Keep the Main-Doc title the clean (id-stripped) name for pretty renders.
+        try {
+          const idx = `${newPath}/${newLeaf}.md`;
+          const raw = await readVault(idx);
+          const { frontmatter, body } = splitFrontmatter(raw);
+          const t = frontmatter.title;
+          if (!t || t === r.oldName) await writeVault(idx, joinFrontmatter({ ...frontmatter, title: stripJdPrefix(r.newName) }, body));
+        } catch { /* no main doc */ }
+        folderRenames.set(r.oldName, r.newName);
+        const target = r.oldName.toLowerCase();
+        for (const n of list) {
+          try {
+            const nPath = toVaultRel(n.path);
+            const raw = await readVault(nPath).catch(() => "");
+            if (!raw || !raw.toLowerCase().includes(target)) continue;
+            const { frontmatter, body } = splitFrontmatter(raw);
+            const rb = rewriteWikilinksForRename(body, r.oldName, newLeaf);
+            if (rb !== body) await writeVault(nPath, joinFrontmatter(frontmatter, rb));
+          } catch { /* skip */ }
+        }
+      }
+      // Rename the nodes in the space tree + re-tag events, then persist.
+      const renameNode = (nodes: SpaceNode[]) => {
+        for (const n of nodes) { const nn = folderRenames.get(n.name); if (nn) n.name = nn; renameNode(n.children ?? []); }
+      };
+      renameNode(st.space);
+      const newEvents = st.events.map((e) => e.folder && folderRenames.has(e.folder) ? { ...e, folder: folderRenames.get(e.folder)! } : e);
+      await writeSpacetimeModel({ ...st, events: newEvents });
+      flashCap(`Assigned IDs to ${folderRenames.size} folder${folderRenames.size === 1 ? "" : "s"}.`);
+      await reloadNotes();
+    } finally {
+      setJdBusy(false);
+    }
+  }, [writeSpacetimeModel, reloadNotes, flashCap]);
+
   const declineMwSync = useCallback(() => {
     // Just close the dialog. The file edits and the pending indicator stay
     // (mwReview is non-null) until the user applies or reverts in the editor.
@@ -4797,25 +4856,34 @@ export function CardGrid() {
    *  <vault>/<Area>/<Category>/<Name>/<Name>.md and the Category's
    *  bullet list gains a [[Name]] entry. */
   const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    const base = stripJdPrefix(name.trim());
+    if (!base) return;
+    // In Johnny-Decimal Mode a new folder gets the next free id in its category
+    // (e.g. "52 Creative Projects" → "52.15 …") so the sidebar/directory stay
+    // numbered. Its Main-Doc H1 stays the CLEAN name, so list/wikilink renders
+    // show the pretty title while the sidebar shows the id.
+    let jdId: string | null = null;
+    if (getJohnnyDecimal() && !isJohnnyDecimalName(name.trim())) {
+      const aNode = vaultTaxonomy.areas.find((a) => folderMatchKey(a.ref) === folderMatchKey(areaName));
+      const cNode = aNode?.categories.find((c) => folderMatchKey(c.ref) === folderMatchKey(categoryName));
+      jdId = nextJdFolderId(categoryName, cNode?.folders ?? []);
+    }
+    const dirBase = jdId ? `${jdId} ${base}` : base;
     // Resolve the Category's directory structurally — categories no longer
     // exist as notes on disk (placement is structural), so this must not
     // depend on a Category `.md` being present.
     const catDir = await categoryDirFor(areaName, categoryName);
     // Cap on-disk folder names at 78 chars so we don't bump into
-    // path-length limits and so the filesystem stays browsable. The
-    // bullet ref + filename track each other (the resolver matches
-    // by filename); the full original goes to `title:` so the card
-    // label and list rows can render the pretty form.
-    const safe = trimmed.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+    // path-length limits and so the filesystem stays browsable.
+    const safe = dirBase.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
     // A Notable Folder's identity is structural (<NF>/<NF>.md inside its
     // Area/Category path) — no `category:`/`area:` YAML. The directory is
-    // created by writing the main doc inside it below.
+    // created by writing the main doc inside it below. Title stays the clean
+    // base name; the H1 too, so displays render the pretty title.
     const frontmatter: Frontmatter = {
-      ...(safe !== trimmed ? { title: trimmed } : {}),
+      ...(jdId || safe !== dirBase ? { title: base } : {}),
     };
-    const body = `# ${trimmed}\n`;
+    const body = `# ${base}\n`;
     const content = joinFrontmatter(frontmatter, body);
     const nfDir = await join(catDir, safe);
     const path = await uniqueWrite(nfDir, `${safe}.md`, content);
@@ -4828,9 +4896,9 @@ export function CardGrid() {
     await patchSpacetimeSpace({ kind: "addFolder", area: areaName, category: categoryName, name: bulletRef });
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter, title: trimmed, body, mtime: Date.now() },
+      { id: newNoteId(), path, filename, frontmatter, title: base, body, mtime: Date.now() },
     ]);
-  }, [patchSpacetimeSpace]);
+  }, [patchSpacetimeSpace, vaultTaxonomy]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     // Todo.txt items are a parallel calendar source — route to the line writer.
@@ -6103,6 +6171,7 @@ export function CardGrid() {
           johnnyDecimal={johnnyDecimal}
           johnnyDecimalBusy={jdBusy}
           onToggleJohnnyDecimal={applyJohnnyDecimalMode}
+          onAssignMissingJdIds={handleAssignMissingJdIds}
         />
       )}
 
