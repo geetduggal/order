@@ -30,11 +30,19 @@ interface Props {
   /** Extra non-folder actions (e.g. "Open todo.txt"). Shown above
    *  the folders when their keywords match the query. */
   extras?: PaletteExtra[];
+  /** Every Area → Category pair, for the quick "create folder" step. */
+  placements?: { area: string; category: string }[];
+  /** Create a Notable Folder named `name` under `area` → `category`.
+   *  When set, a "Create folder…" row appears for an unmatched query. */
+  onCreateFolder?: (name: string, area: string, category: string) => Promise<void> | void;
 }
 
-export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras }: Props) {
+export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras, placements, onCreateFolder }: Props) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // When set, the palette is in its two-step "create folder" placement mode.
+  const [creating, setCreating] = useState<{ name: string; area: string; category: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   // Hover only selects after a real mouse move — opening with the keyboard, or
   // items scrolling under a resting cursor, must not steal the selection.
   const mouseMovedRef = useRef(false);
@@ -54,10 +62,20 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
   // render in the same list; Enter / click dispatches accordingly.
   type Match =
     | { kind: "folder"; folder: NotableFolder }
-    | { kind: "extra"; extra: PaletteExtra };
+    | { kind: "extra"; extra: PaletteExtra }
+    | { kind: "create"; name: string };
   const matches = useMemo<Match[]>(() => {
     const q = query.trim().toLowerCase();
     const xs = extras ?? [];
+    // Offer "create folder" when the query doesn't exactly name an existing
+    // folder (by ref or title) and a create handler + placements are wired.
+    const trimmed = query.trim();
+    const canCreate = !!onCreateFolder && (placements?.length ?? 0) > 0 && trimmed.length > 0
+      && !folders.some((f) => {
+        const t = f.frontmatter.title;
+        return f.name.toLowerCase() === q || (typeof t === "string" && t.toLowerCase() === q);
+      });
+    const createMatch: Match[] = canCreate ? [{ kind: "create", name: trimmed }] : [];
     if (!q) {
       const extraMatches: Match[] = xs.map((e) => ({ kind: "extra", extra: e }));
       // Recents first, then the rest in folders' natural order, capped
@@ -89,9 +107,30 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
       })
       .slice(0, 12 - extraMatches.length)
       .map((f) => ({ kind: "folder", folder: f }));
-    return [...extraMatches, ...folderMatches];
-  }, [folders, query, recents, byName, extras]);
+    return [...extraMatches, ...folderMatches, ...createMatch];
+  }, [folders, query, recents, byName, extras, onCreateFolder, placements]);
   const recentSet = useMemo(() => new Set(recents ?? []), [recents]);
+  const areaOptions = useMemo(() => [...new Set((placements ?? []).map((p) => p.area))], [placements]);
+  const catOptions = useMemo(() => {
+    if (!creating) return [] as string[];
+    const forArea = (placements ?? []).filter((p) => p.area === creating.area).map((p) => p.category);
+    return forArea.length > 0 ? [...new Set(forArea)] : [...new Set((placements ?? []).map((p) => p.category))];
+  }, [placements, creating]);
+
+  function beginCreate(name: string) {
+    const first = placements?.[0];
+    setCreating({ name, area: first?.area ?? "", category: first?.category ?? "" });
+  }
+  async function submitCreate() {
+    if (!creating || !onCreateFolder || busy) return;
+    const name = creating.name.trim();
+    const area = creating.area.trim();
+    const category = creating.category.trim();
+    if (!name || !area || !category) return;
+    setBusy(true);
+    try { await onCreateFolder(name, area, category); onClose(); }
+    finally { setBusy(false); }
+  }
 
   function labelOf(f: typeof folders[number]): string {
     const t = f.frontmatter.title;
@@ -109,6 +148,12 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
   }, [active]);
 
   function onKeyDown(e: React.KeyboardEvent) {
+    // In placement mode, Esc steps back to the list; the form's own inputs
+    // handle Enter. Don't run the list navigation below.
+    if (creating) {
+      if (e.key === "Escape") { e.preventDefault(); setCreating(null); }
+      return;
+    }
     if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -127,6 +172,7 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
       const pick = matches[active];
       if (!pick) return;
       if (pick.kind === "extra") { pick.extra.onPick(); onClose(); return; }
+      if (pick.kind === "create") { beginCreate(pick.name); return; }
       onToggle(pick.folder.name);
       onClose();
     }
@@ -142,6 +188,46 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
         onMouseMove={() => { mouseMovedRef.current = true; }}
         onKeyDown={onKeyDown}
       >
+        {creating ? (
+          <div className="cmdk-create">
+            <div className="cmdk-create-title">New folder <strong>{creating.name}</strong></div>
+            <label className="cmdk-create-field">
+              <span className="cmdk-create-label">Area</span>
+              <input
+                autoFocus
+                className="cmdk-create-input"
+                list="cmdk-area-options"
+                value={creating.area}
+                disabled={busy}
+                placeholder="Area"
+                onChange={(e) => setCreating((c) => c && { ...c, area: e.target.value })}
+              />
+            </label>
+            <datalist id="cmdk-area-options">
+              {areaOptions.map((a) => <option key={a} value={a} />)}
+            </datalist>
+            <label className="cmdk-create-field">
+              <span className="cmdk-create-label">Category</span>
+              <input
+                className="cmdk-create-input"
+                list="cmdk-cat-options"
+                value={creating.category}
+                disabled={busy}
+                placeholder="Category"
+                onChange={(e) => setCreating((c) => c && { ...c, category: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void submitCreate(); } }}
+              />
+            </label>
+            <datalist id="cmdk-cat-options">
+              {catOptions.map((c) => <option key={c} value={c} />)}
+            </datalist>
+            <div className="cmdk-create-actions">
+              <button type="button" className="cmdk-create-btn is-ghost" disabled={busy} onClick={() => setCreating(null)}>Back</button>
+              <button type="button" className="cmdk-create-btn" disabled={busy || !creating.area.trim() || !creating.category.trim()} onClick={() => { void submitCreate(); }}>Create folder</button>
+            </div>
+          </div>
+        ) : (
+        <>
         <input
           ref={inputRef}
           type="text"
@@ -172,6 +258,21 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
                   </li>
                 );
               }
+              if (m.kind === "create") {
+                return (
+                  <li
+                    key="create-folder"
+                    role="option"
+                    aria-selected={i === active}
+                    className={"cmdk-item cmdk-item-create" + (i === active ? " is-active" : "")}
+                    onMouseEnter={() => { if (mouseMovedRef.current) setActive(i); }}
+                    onClick={() => beginCreate(m.name)}
+                  >
+                    <span className="cmdk-item-name">+ Create folder “{m.name}”…</span>
+                    <span className="cmdk-item-crumb">pick a place</span>
+                  </li>
+                );
+              }
               const f = m.folder;
               const color = folderColor(f.name, f.frontmatter.color);
               const Icon = folderIcon(f.name, f.frontmatter.icon);
@@ -199,6 +300,8 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
               );
             })}
           </ul>
+        )}
+        </>
         )}
       </div>
     </div>

@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Create a folder from the command palette.** In `Cmd+K`, typing a name that
+  doesn't match an existing folder now offers "Create folder …"; pick an
+  Area → Category (prefilled, with autocomplete) and it's created and focused —
+  no drilling into the sidebar first.
+- **Edit a calendar event's time from its menu.** Clicking an event now shows a
+  start/end time pair and an all-day toggle alongside the title and move-to-day
+  chips. Changes write through spacetime (the source of truth) and sync the
+  backing note's frontmatter / todo.txt line.
+- **Moving/renumbering a folder in spacetime relocates its directory.** When you
+  move a Notable Folder to a different Area/Category in `spacetime.md` — with or
+  without renumbering it (e.g. `41 People › 41.01 Readwise` → `43 Spaces ›
+  43.01 Readwise`) — the "spacetime changed" review now shows a **Move** item and
+  **Apply** physically moves/renames the directory, renames its Main Document,
+  syncs its title, and rewrites inbound wikilinks. Previously such a move left
+  the old directory orphaned while an empty stub was created at the new id.
+  Folders are paired by their Johnny-Decimal-stripped name; an unambiguous match
+  moves automatically, and those already-moved folders no longer also nag as
+  orphans. If the destination already holds an **empty stub** (from an older
+  add-instead-of-move apply), it's replaced by the real content rather than
+  blocking the move. And the folder-materialize step no longer creates a stub for
+  a folder whose content already lives under a differently-named/numbered on-disk
+  folder — the exact bug that produced empty `43.*` placeholders beside orphaned
+  `41.*` content.
+- **Rename a folder to match spacetime (manual fallback).** For the residual case
+  where a folder's human name *also* changed (so it can't be auto-paired), the
+  reconcile dialog's "On disk but not in spacetime" rows gained an editable
+  folder-name field (autocompleting the unplaced spacetime folders) plus a
+  "Rename to match" action that does the same directory rename/move + link fix.
 - **Drag files into a note.** Dragging files from Finder onto a note card imports
   them into that note's Notable Folder and inserts links — images as `![[img]]`,
   other files as `[name](name)`. (Tauri strips the browser drop event, so this
@@ -39,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Calendar view shortcuts now require Shift** — `Cmd+Shift+D/W/M/Y/S` for
+  Day / Week / Month / Year / Season. Plain `Cmd+W` (and `Cmd+Shift+[` / `]`)
+  are left to the browser/OS as tab-management keys instead of being captured
+  as view switches.
 - Card toolbar: the close / "remove from view" button is now a visible inline
   toolbar button (previously only in the "⋯" menu), and the spreadsheet /
   drawing flip buttons moved into the "⋯" menu, so the inline row stays to
@@ -46,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Navigating away from a fullscreen note exits fullscreen.** Following a
+  wikilink, opening the folder palette, or jumping to another note while a card
+  is fullscreen now collapses it so you land on the destination instead of
+  staying stuck on the old note. (View switches already exited via unmount.)
+- **Calendar event titles follow the note's first `# ` header** instead of a
+  possibly-stale frontmatter `title:`, matching the card / list / wikilink
+  renders. Notes without an H1 keep the frontmatter/filename fallback. (This
+  regenerates event titles in `spacetime.mw`/`.yml` once, with no file renames.)
 - Copying from a note now mirrors the on-disk markdown: inflated `vaultasset://`
   image/video URLs are deflated back to `![[file]]` / `![](Attachments/…)` on
   copy, instead of pasting the runtime asset URL.

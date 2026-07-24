@@ -30,7 +30,7 @@ import {
   mwUpdateEvent, mwDeleteEvent, mwAddEvent, isSpacetimeFile,
   type SpacetimeEvent, type Spacetime, type SpacetimeSource, type SpaceNode,
 } from "../lib/spacetime";
-import { planSpacetimeSync, summarizePlan, summarizeMwChanges, type SyncPlan, type MwChangeItem } from "../lib/spacetime-sync";
+import { planSpacetimeSync, summarizePlan, summarizeMwChanges, detectFolderMoves, type SyncPlan, type MwChangeItem } from "../lib/spacetime-sync";
 import { parseMarkwhenEvents } from "../lib/markwhen";
 import { Sidebar, type NotableFolder } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
@@ -76,7 +76,7 @@ import {
   type TodoTxtSettings,
 } from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
-import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal } from "../lib/johnny-decimal";
+import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix } from "../lib/johnny-decimal";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
 import { vaultDir, embeddedImageFiles } from "../lib/attachments";
@@ -435,6 +435,19 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
   return out;
 }
 
+/** A "lone stub" Notable Folder directory: it holds only its own Main Document
+ *  (`<Folder>.md`) and nothing else — the empty placeholder a folder add creates
+ *  when it should have been a move. Such a target can be safely replaced by the
+ *  real content being relocated onto it. Uses the real filesystem (not the notes
+ *  index, which omits images/PDFs) so a folder with attachments is never
+ *  mistaken for a stub. */
+async function isLoneStubDir(rel: string, folderSafe: string): Promise<boolean> {
+  try {
+    const entries = (await vaultFs.readDir(rel)).filter((e) => !e.name.startsWith("."));
+    return entries.length === 1 && !entries[0].isDir && entries[0].name === `${folderSafe}.md`;
+  } catch { return false; }
+}
+
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   const [view, setView] = useState<View>(readInitialView);
@@ -535,6 +548,11 @@ export function CardGrid() {
   // Bumped by the home-reset to collapse every section's Show-more
   // expansion back to its first batch.
   const [collapseNonce, setCollapseNonce] = useState(0);
+  // Bumped on any page navigation (wikilink / palette / calendar-open →
+  // note) so a card left in fullscreen exits it and the user lands on the
+  // navigation target instead of staying stuck on the old note. View
+  // switches already exit fullscreen by unmounting the pile.
+  const [fsCollapseNonce, setFsCollapseNonce] = useState(0);
   // The folder whose Main Document is pinned to the top of the Pile.
   // Set by clicking a filter pill or picking one in the command
   // palette. Cleared only when that folder is no longer an active
@@ -703,6 +721,10 @@ export function CardGrid() {
    *  navigation breadcrumb ("you're inside Cal Newport now") that
    *  the user can dismiss with the pill's ×. */
   const navigateAndFocus = useCallback((path: string) => {
+    // Any navigation collapses a fullscreen card. When the target itself
+    // wants fullscreen (calendar → note), it mounts fresh AFTER this bump,
+    // so it takes the new nonce as its baseline and won't self-collapse.
+    setFsCollapseNonce((n) => n + 1);
     setView("pile");
     const note = notesRef.current?.find((n) => n.path === path);
     if (note) {
@@ -927,6 +949,15 @@ export function CardGrid() {
   }, [vaultTaxonomy]);
   folderDirIndexRef.current = folderDirIndex;
 
+  // Every Area → Category pair, for the command palette's quick "create
+  // folder" step (pick a placement without drilling the sidebar).
+  const folderPlacements = useMemo<{ area: string; category: string }[]>(() => {
+    const out: { area: string; category: string }[] = [];
+    for (const a of vaultTaxonomy.areas)
+      for (const c of a.categories) out.push({ area: a.ref, category: c.ref });
+    return out;
+  }, [vaultTaxonomy]);
+
   // Drift detection (spacetime.mw is the source of truth): Notable Folder main
   // docs that exist on disk but are NOT in the mw space tree. These are cruft —
   // e.g. a folder removed from spacetime.mw whose directory was kept, or a
@@ -937,9 +968,31 @@ export function CardGrid() {
   // directory). Area + Category are read straight from the path. The note's
   // `area:` / `category:` frontmatter is NOT consulted — the directory tree and
   // spacetime.mw are the only sources of truth.
-  const orphanedFolders = useMemo<{ name: string; path: string; fileCount: number; area: string; category: string }[]>(() => {
+  // Folders present in spacetime but with NO matching directory on disk — the
+  // inverse of orphanedFolders. A folder that was renamed / renumbered in
+  // spacetime (e.g. "41.01 Readwise" → "43.01 Readwise") shows up here (the new
+  // name has no dir) AND in orphanedFolders (the old dir isn't in spacetime).
+  // We pair them by their Johnny-Decimal-stripped human name so the reconcile
+  // can offer "rename the disk folder to match spacetime" in one step.
+  const unplacedSpacetimeFolders = useMemo<{ name: string; area: string; category: string; stripKey: string }[]>(() => {
+    const diskKeys = new Set<string>();
+    if (notes) for (const n of notes) {
+      const parts = toVaultRel(n.path).split("/");
+      if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2]) diskKeys.add(folderMatchKey(parts[2]));
+    }
+    const out: { name: string; area: string; category: string; stripKey: string }[] = [];
+    for (const a of vaultTaxonomy.areas)
+      for (const c of a.categories)
+        for (const f of c.folders)
+          if (!diskKeys.has(folderMatchKey(f)))
+            out.push({ name: f, area: a.ref, category: c.ref, stripKey: folderMatchKey(stripJdPrefix(f)) });
+    return out;
+  }, [notes, vaultTaxonomy]);
+
+  const orphanedFolders = useMemo<{ name: string; path: string; fileCount: number; area: string; category: string; suggestedName: string }[]>(() => {
     if (!notes) return [];
-    const out: { name: string; path: string; fileCount: number; area: string; category: string }[] = [];
+    type Cand = { name: string; path: string; fileCount: number; area: string; category: string; suggestedName: string; strip: string; diskAreaKey: string; diskCatKey: string };
+    const cands: Cand[] = [];
     for (const n of notes) {
       const rel = toVaultRel(n.path);
       const parts = rel.split("/");
@@ -949,10 +1002,39 @@ export function CardGrid() {
       if (folderDirIndex.has(folderMatchKey(folder))) continue; // already in spacetime.mw (normalized + truncation-aware)
       const dir = vaultDir(rel);
       const fileCount = notes.filter((x) => toVaultRel(x.path).startsWith(dir + "/")).length;
-      out.push({ name: folder, path: n.path, fileCount, area: parts[0], category: parts[1] });
+      // If a spacetime folder with the same stripped name is waiting for a dir,
+      // it's almost certainly this folder renamed/renumbered — prefill from it.
+      const strip = folderMatchKey(stripJdPrefix(folder));
+      const match = unplacedSpacetimeFolders.find((u) => u.stripKey === strip);
+      cands.push({
+        name: folder,
+        path: n.path,
+        fileCount,
+        area: match?.area ?? parts[0],
+        category: match?.category ?? parts[1],
+        suggestedName: match?.name ?? folder,
+        strip,
+        diskAreaKey: folderMatchKey(parts[0]),
+        diskCatKey: folderMatchKey(parts[1]),
+      });
     }
-    return out;
-  }, [notes, folderDirIndex]);
+    // Drop candidates that form an unambiguous CROSS-PARENT move (same stripped
+    // name, unique on both sides, different Area/Category) — Apply relocates
+    // those automatically (see detectFolderMoves / reconcileSpaceChanges), so
+    // they shouldn't also nag as orphans. Same-parent renumbers stay visible.
+    const candByStrip = new Map<string, number>();
+    for (const c of cands) candByStrip.set(c.strip, (candByStrip.get(c.strip) ?? 0) + 1);
+    const unplacedByStrip = new Map<string, number>();
+    for (const u of unplacedSpacetimeFolders) unplacedByStrip.set(u.stripKey, (unplacedByStrip.get(u.stripKey) ?? 0) + 1);
+    return cands
+      .filter((c) => {
+        const twin = unplacedSpacetimeFolders.find((u) => u.stripKey === c.strip);
+        const isMove = !!twin && candByStrip.get(c.strip) === 1 && unplacedByStrip.get(c.strip) === 1
+          && (folderMatchKey(twin.area) !== c.diskAreaKey || folderMatchKey(twin.category) !== c.diskCatKey);
+        return !isMove;
+      })
+      .map(({ strip, diskAreaKey, diskCatKey, ...rest }) => rest);
+  }, [notes, folderDirIndex, unplacedSpacetimeFolders]);
 
   const cardsSubdir = useCallback(async (): Promise<string> => {
     // Name kept for compat with existing callers — returns the vault
@@ -1954,17 +2036,20 @@ export function CardGrid() {
         else void createNoteRef.current?.(patch);
         return;
       }
-      if (e.key === "s" || e.key === "S") {
+      // Calendar view switches require Shift (Cmd+Shift+D/W/M/Y/S). Plain
+      // Cmd+W/etc. are left for the OS/browser (close tab, and Cmd+Shift+[/]
+      // tab-switching) — so they fall through here WITHOUT preventDefault.
+      if ((e.key === "s" || e.key === "S") && e.shiftKey) {
         e.preventDefault();
         setView("season");
         return;
       }
-      if (e.key === "d" || e.key === "D") {
+      if ((e.key === "d" || e.key === "D") && e.shiftKey) {
         e.preventDefault();
         setView("day");
         return;
       }
-      if (e.key === "w" || e.key === "W") {
+      if ((e.key === "w" || e.key === "W") && e.shiftKey) {
         e.preventDefault();
         setView("week");
         return;
@@ -1975,7 +2060,7 @@ export function CardGrid() {
         toggleTheme();
         return;
       }
-      if (e.key === "m" || e.key === "M") {
+      if ((e.key === "m" || e.key === "M") && e.shiftKey) {
         e.preventDefault();
         setView("month");
         return;
@@ -1987,7 +2072,7 @@ export function CardGrid() {
         openTerminalRef.current?.();
         return;
       }
-      if (e.key === "y" || e.key === "Y") {
+      if ((e.key === "y" || e.key === "Y") && e.shiftKey) {
         e.preventDefault();
         setView("year");
         return;
@@ -2237,6 +2322,69 @@ export function CardGrid() {
     newSpace: SpaceNode[],
   ): Promise<void> => {
     const san = (n: string) => n.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
+    const list0 = notesRef.current ?? [];
+
+    // ---- Cross-parent folder MOVES (rename + relocate) ----
+    // A folder moved to a different category/area — possibly renumbered
+    // (`41.01 Readwise` in `41 …` → `43.01 Readwise` in `43 …`) — is matched by
+    // its Johnny-Decimal-stripped name and its directory is physically moved,
+    // instead of being left orphaned while an empty stub is created at the new
+    // id. Handled BEFORE the per-parent rename logic; moved folders are then
+    // excluded from both trees so they can't pair into a bogus sibling rename.
+    const moves = detectFolderMoves(oldSpace, newSpace);
+    for (const m of moves) {
+      const oldPath = m.oldPath.map(san).join("/");
+      const newPath = m.newPath.map(san).join("/");
+      if (oldPath === newPath) continue;
+      if (!(await vaultFs.exists(oldPath))) continue;
+      // Target may already hold an empty stub (from an older add-instead-of-move
+      // apply) — replace it; a target with real content is a conflict, so skip.
+      if (await vaultFs.exists(newPath)) {
+        if (await isLoneStubDir(newPath, san(m.newName))) await vaultFs.remove(newPath);
+        else continue;
+      }
+      try {
+        await vaultFs.rename(oldPath, newPath);
+        const oldSafe = san(m.oldName), newSafe = san(m.newName);
+        if (oldSafe !== newSafe) {
+          // Rename the Main Document to match the new folder name.
+          try { await vaultFs.rename(`${newPath}/${oldSafe}.md`, `${newPath}/${newSafe}.md`); } catch { /* no main doc */ }
+        }
+        // Sync the title only when it still mirrors the old folder name (leave
+        // real citation/article titles untouched).
+        try {
+          const idx = `${newPath}/${newSafe}.md`;
+          const raw = await readVault(idx);
+          const { frontmatter, body } = splitFrontmatter(raw);
+          const t = frontmatter.title;
+          if (!t || t === m.oldName || t === oldSafe) {
+            await writeVault(idx, joinFrontmatter({ ...frontmatter, title: m.newName }, body));
+          }
+        } catch { /* no main doc */ }
+        // Rewrite inbound [[OldName]] wikilinks across the vault.
+        if (m.oldName !== newSafe) {
+          const target = m.oldName.toLowerCase();
+          for (const n of list0) {
+            try {
+              const nPath = toVaultRel(n.path);
+              const raw = await readVault(nPath).catch(() => "");
+              if (!raw || !raw.toLowerCase().includes(target)) continue;
+              const { frontmatter, body } = splitFrontmatter(raw);
+              const rb = rewriteWikilinksForRename(body, m.oldName, newSafe);
+              if (rb !== body) await writeVault(nPath, joinFrontmatter(frontmatter, rb));
+            } catch { /* skip */ }
+          }
+        }
+      } catch (e) { console.error("folder move failed", m, e); }
+    }
+    // Exclude moved folders from the per-parent rename logic below.
+    const movedOld = new Set(moves.map((m) => m.oldPath.map(folderMatchKey).join("/")));
+    const movedNew = new Set(moves.map((m) => m.newPath.map(folderMatchKey).join("/")));
+    const pruneFolders = (space: SpaceNode[], drop: Set<string>): SpaceNode[] =>
+      space.map((a) => ({ ...a, children: (a.children ?? []).map((c) => ({ ...c,
+        children: (c.children ?? []).filter((f) => !drop.has([a.name, c.name, f.name].map(folderMatchKey).join("/"))) })) }));
+    oldSpace = pruneFolders(oldSpace, movedOld);
+    newSpace = pruneFolders(newSpace, movedNew);
 
     type Named = { name: string; safe: string; key: string };
     type RenamePair = { old: Named; new: Named };
@@ -2404,7 +2552,7 @@ export function CardGrid() {
   const [mwApplying, setMwApplying] = useState(false);
   // Per-orphan Area/Category overrides keyed by note path; defaults come from
   // the folder's on-disk path. Lets the user re-file an orphan when reconciling.
-  const [orphanEdits, setOrphanEdits] = useState<Record<string, { area: string; category: string }>>({});
+  const [orphanEdits, setOrphanEdits] = useState<Record<string, { area: string; category: string; name: string }>>({});
 
   // Count note files under a space path. The Area/Category segments use raw
   // names, but the leaf folder directory is sanitized + truncated to 78 chars,
@@ -2444,10 +2592,15 @@ export function CardGrid() {
       // so using it would skip exactly the folders whose main doc still needs
       // creating (the "added via spacetime edit → no main document" bug).
       const onDiskFolders = new Set<string>();
+      const onDiskStrip = new Map<string, Set<string>>(); // stripped name → full keys on disk
       for (const n of notesRef.current ?? []) {
         const parts = toVaultRel(n.path).split("/");
-        if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2])
-          onDiskFolders.add(folderMatchKey(parts[2]));
+        if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2]) {
+          const key = folderMatchKey(parts[2]);
+          onDiskFolders.add(key);
+          const s = folderMatchKey(stripJdPrefix(parts[2]));
+          (onDiskStrip.get(s) ?? onDiskStrip.set(s, new Set()).get(s)!).add(key);
+        }
       }
       for (const area of newSt.space)
         for (const cat of area.children)
@@ -2455,7 +2608,15 @@ export function CardGrid() {
             // Skip only when the folder's main doc already exists on disk —
             // otherwise materialize it below so a folder added via a spacetime
             // edit gets its <NF>/<NF>.md cover.
-            if (onDiskFolders.has(folderMatchKey(nf.name))) continue;
+            const nfKey = folderMatchKey(nf.name);
+            if (onDiskFolders.has(nfKey)) continue;
+            // Don't stub a folder whose content is sitting under a DIFFERENTLY
+            // named on-disk folder with the same JD-stripped name — that's a
+            // move/renumber to reconcile (auto-moved above, or surfaced as an
+            // orphan), NOT a genuinely new folder. Stubbing here is exactly what
+            // created the empty-placeholder + orphaned-content mess.
+            const twins = onDiskStrip.get(folderMatchKey(stripJdPrefix(nf.name)));
+            if (twins && [...twins].some((k) => k !== nfKey)) continue;
             const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
             const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
             try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
@@ -2552,14 +2713,22 @@ export function CardGrid() {
   // without generating a spurious "add" and without absorbing other un-applied
   // mw edits. Idempotent: a folder already present (by normalized key) is never
   // duplicated.
-  const reconcileOrphan = useCallback(async (path: string, areaIn: string, categoryIn: string) => {
+  const reconcileOrphan = useCallback(async (path: string, areaIn: string, categoryIn: string, nameIn?: string) => {
     const area = areaIn.trim();
     const category = categoryIn.trim();
     const note = notesRef.current?.find((n) => n.path === path);
     if (!note) return;
-    const name = note.filename.replace(/\.md$/i, "");
-    if (!area || !category) { flashCap(`Pick an area and category for ${name}.`); return; }
-    const key = folderMatchKey(name);
+    const oldName = note.filename.replace(/\.md$/i, "");
+    // The target folder name — defaults to the disk name, but the user can
+    // rename here to match a spacetime folder that was renumbered/renamed
+    // (e.g. disk "41.01 Readwise" → spacetime "43.01 Readwise"). Spacetime
+    // keeps the full name; the on-disk leaf uses the 78-char sanitized form.
+    const newName = (nameIn ?? oldName).trim() || oldName;
+    const oldLeaf = oldName;
+    const newLeaf = folderDirName(newName);
+    const renaming = newLeaf !== oldLeaf;
+    if (!area || !category) { flashCap(`Pick an area and category for ${newName}.`); return; }
+    const key = folderMatchKey(newName);
     const hasFolder = (space: SpaceNode[]) =>
       space.some((a) => a.children.some((c) => c.children.some((f) => folderMatchKey(f.name) === key)));
     const addAll = (space: SpaceNode[]) =>
@@ -2567,7 +2736,7 @@ export function CardGrid() {
         applySpaceMutation(
           applySpaceMutation(space, { kind: "addArea", name: area }),
           { kind: "addCategory", area, name: category }),
-        { kind: "addFolder", area, category, name });
+        { kind: "addFolder", area, category, name: newName });
 
     const mwAbs = notesRef.current?.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current)?.path;
     const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
@@ -2582,13 +2751,42 @@ export function CardGrid() {
 
     // Move the directory only if the chosen placement differs from where it is.
     const curDir = vaultDir(toVaultRel(path));
-    const targetDir = `${area}/${category}/${name}`;
+    const targetDir = `${area}/${category}/${newLeaf}`;
     let moved = false;
     if (curDir && curDir !== targetDir) {
       try {
-        if (await vaultFs.exists(targetDir)) flashCap(`${name}: ${targetDir} already exists — left in place.`);
-        else { await vaultFs.rename(curDir, targetDir); moved = true; }
+        if (await vaultFs.exists(targetDir)) {
+          // A lone-stub target (empty placeholder from an older add-instead-of-move)
+          // is replaced by the real content; a target with real files is a conflict.
+          if (await isLoneStubDir(targetDir, newLeaf)) {
+            await vaultFs.remove(targetDir);
+            await vaultFs.rename(curDir, targetDir);
+            moved = true;
+          } else {
+            flashCap(`${newName}: ${targetDir} already exists — left in place.`);
+          }
+        } else { await vaultFs.rename(curDir, targetDir); moved = true; }
       } catch (e) { console.error("orphan move failed", e); }
+    }
+    // When the folder name itself changed, rename its Main Document to match the
+    // new directory (the `<NF>/<NF>.md` invariant), sync its title/H1, and
+    // rewrite inbound wikilinks so links keep resolving.
+    if (moved && renaming) {
+      try {
+        const oldDoc = `${targetDir}/${oldLeaf}.md`;
+        const newDoc = `${targetDir}/${newLeaf}.md`;
+        if (await vaultFs.exists(oldDoc)) {
+          await vaultFs.rename(oldDoc, newDoc);
+          const raw = await readVault(newDoc).catch(() => "");
+          if (raw) {
+            const { frontmatter, body } = splitFrontmatter(raw);
+            const nextFm: Frontmatter = { ...frontmatter, title: newName };
+            const nextBody = rewriteWikilinksForRename(body, oldLeaf, newLeaf);
+            await writeVault(newDoc, joinFrontmatter(nextFm, nextBody));
+          }
+        }
+        await rewriteInboundWikilinks(oldLeaf, newLeaf);
+      } catch (e) { console.error("orphan rename failed", e); }
     }
 
     if (next !== mw) await writeVault(spacetimeRootPathRef.current, next);
@@ -2602,6 +2800,9 @@ export function CardGrid() {
         toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: next } : n) ?? null);
       if (mwAbs) { delete focusedKeyVersionRef.current[mwAbs]; bumpExternal([mwAbs]); }
     }
+    // rewriteInboundWikilinks is defined later in this component with a stable
+    // ([]-deps) identity, so it's referenced in the body but kept out of the
+    // deps array to avoid a temporal-dead-zone read during render.
   }, [reloadNotes, flashCap, persistMwBaseline, bumpExternal]);
 
   // Reconcile an orphaned folder the destructive way: delete its directory and
@@ -3477,13 +3678,16 @@ export function CardGrid() {
   // move-to-day chips / change-folder picker) instead of jumping straight
   // to the note.
   const [eventMenu, setEventMenu] = useState<
-    { path: string; title: string; x: number; y: number; date: string | null; folder: string | null; emails: string[] } | null
+    { path: string; title: string; x: number; y: number; date: string | null; folder: string | null; emails: string[]; startTime: string | null; endTime: string | null; allDay: boolean } | null
   >(null);
   const handleEventClick = useCallback((path: string, coords?: { x: number; y: number }) => {
     let title = "Untitled";
     let d: string | null = null;
     let f: string | null = null;
     let em: string[] = [];
+    let startTime: string | null = null;
+    let endTime: string | null = null;
+    let allDay = false;
     if (isTodoTxtPath(path)) {
       // The "note" here is the underlying todo.txt file; the line
       // index in the synthetic path picks out the actual item so the
@@ -3501,6 +3705,9 @@ export function CardGrid() {
             .trim();
           title = cleanTitle || "Untitled";
           d = item.due ?? null;
+          startTime = item.startTime ?? null;
+          endTime = item.endTime ?? null;
+          allDay = item.allDay;
           if (item.project) {
             const names = notableFoldersRef.current ?? [];
             f = resolveProjectToNf(item.project, names);
@@ -3518,10 +3725,16 @@ export function CardGrid() {
         d = chip.ev.date;
         f = chip.ev.folder ?? null;
         em = chip.ev.emails ?? [];
+        startTime = chip.ev.time ?? null;
+        endTime = chip.ev.endTime ?? null;
+        allDay = chip.ev.allDay ?? !chip.ev.time;
       } else if (path.startsWith("mw-event:")) {
         // Fallback for a synthetic path not in the current chip map.
         const mwEv = mwEventIndexRef.current.get(path.slice("mw-event:".length));
-        if (mwEv) { title = mwEv.title; d = mwEv.date; f = mwEv.folder ?? null; }
+        if (mwEv) {
+          title = mwEv.title; d = mwEv.date; f = mwEv.folder ?? null;
+          startTime = mwEv.time ?? null; endTime = mwEv.endTime ?? null; allDay = mwEv.allDay ?? !mwEv.time;
+        }
       } else {
         // Last resort: a real note with no chip entry.
         const note = notesRef.current?.find((n) => n.path === path);
@@ -3529,6 +3742,9 @@ export function CardGrid() {
           title = note.title;
           d = typeof note.frontmatter.date === "string" ? note.frontmatter.date : null;
           f = effectiveFolder(note);
+          startTime = typeof note.frontmatter.startTime === "string" ? note.frontmatter.startTime : null;
+          endTime = typeof note.frontmatter.endTime === "string" ? note.frontmatter.endTime : null;
+          allDay = note.frontmatter.allDay === true;
         }
       }
     }
@@ -3540,6 +3756,9 @@ export function CardGrid() {
       date: d,
       folder: f,
       emails: em,
+      startTime,
+      endTime,
+      allDay,
     });
   }, []);
   /** Opening a todo.txt-only chip prompts to "promote" it to a real
@@ -3608,6 +3827,56 @@ export function CardGrid() {
         }
         const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
         await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, newBody));
+      }
+    }
+  }, [applyMwEdit]);
+
+  /** Change a calendar event's start/end time (or flip it to all-day) from
+   *  the action menu. spacetime.mw is the source of truth, so the mw event is
+   *  updated first; any backing note's frontmatter is kept in sync, and a
+   *  todo.txt line is rewritten in place. */
+  const retimeEvent = useCallback(async (
+    path: string,
+    patch: { startTime?: string; endTime?: string; allDay?: boolean },
+  ) => {
+    const allDay = patch.allDay === true;
+    const startTime = allDay ? undefined : (patch.startTime?.trim() || undefined);
+    const endTime = allDay ? undefined : (patch.endTime?.trim() || undefined);
+    if (isTodoTxtPath(path)) {
+      const split = splitTodoTxtPath(path);
+      if (!split) return;
+      const fileBody = await readVault(split.file);
+      const items = parseTodoTxt(fileBody);
+      const target = items.find((i) => i.index === split.index);
+      if (!target) return;
+      const next: TodoItem = { ...target, allDay, startTime, endTime };
+      const nextBody = mutateTodoLine(fileBody, split.index, next);
+      await writeVault(split.file, nextBody);
+      setNotes((prev) => prev?.map((n) => n.path === split.file ? { ...n, body: nextBody } : n) ?? null);
+      return;
+    }
+    const chip = eventChipRef.current.get(path);
+    if (!chip) return;
+    const { ev, notePath } = chip;
+    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, {
+      time: startTime,
+      endTime,
+      ...(allDay ? { allDay: true } : {}),
+    }));
+    if (notePath) {
+      const raw = await readVault(toVaultRel(notePath)).catch(() => "");
+      if (raw) {
+        const { frontmatter, body } = splitFrontmatter(raw);
+        const nextFm: Frontmatter = { ...frontmatter };
+        if (allDay) {
+          nextFm.allDay = true;
+          delete nextFm.startTime; delete nextFm.endTime;
+        } else {
+          delete nextFm.allDay;
+          if (startTime) nextFm.startTime = startTime; else delete nextFm.startTime;
+          if (endTime) nextFm.endTime = endTime; else delete nextFm.endTime;
+        }
+        await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, body));
       }
     }
   }, [applyMwEdit]);
@@ -4976,6 +5245,7 @@ export function CardGrid() {
         onBrowserDelete={isMain ? (name: string) => deleteVaultFile(vaultDirRelFor(n), name) : undefined}
         autoFocus={focusPath === n.path}
         wantFullscreen={fullscreenPath === n.path}
+        collapseFullscreenSignal={fsCollapseNonce}
         focused={focusedPath === n.path}
         onFocus={() => setFocusedPath(n.path)}
         capHeight={capHeight}
@@ -5775,6 +6045,13 @@ export function CardGrid() {
           onToggle={focusFolder}
           onClose={() => setPaletteOpen(false)}
           recents={recentFolders}
+          placements={folderPlacements}
+          onCreateFolder={async (name, area, category) => {
+            await handleCreateFolder(name, area, category);
+            // Land in the new folder. handleCreateFolder sanitizes the on-disk
+            // name (unsafe chars → "-", capped at 78), so focus that form.
+            focusFolder(name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim());
+          }}
           extras={[
             ...(todoSettings.enabled ? [{
               label: todoSettings.path || DEFAULT_TODO_TXT_PATH,
@@ -5913,28 +6190,34 @@ export function CardGrid() {
               {orphanedFolders.length > 0 && (
                 <div className="sync-deletes">
                   <strong>On disk but not in spacetime:</strong>
-                  <p className="mw-orphan-hint">Set where each belongs, then add it to spacetime — placement comes from the folder's location, never frontmatter.</p>
+                  <p className="mw-orphan-hint">Set where each belongs, then add it to spacetime — placement comes from the folder's location, never frontmatter. If you renamed or renumbered a folder in spacetime, edit its <em>name</em> here (it's prefilled with the matching spacetime folder) and the directory is renamed to match instead of duplicated.</p>
                   <datalist id="mw-area-options">
                     {vaultTaxonomy.areas.map((a) => <option key={a.ref} value={a.ref} />)}
                   </datalist>
                   <datalist id="mw-cat-options">
                     {vaultTaxonomy.areas.flatMap((a) => a.categories.map((c) => <option key={`${a.ref}/${c.ref}`} value={c.ref} />))}
                   </datalist>
+                  <datalist id="mw-folder-options">
+                    {unplacedSpacetimeFolders.map((u) => <option key={`${u.area}/${u.category}/${u.name}`} value={u.name} />)}
+                  </datalist>
                   <ul>
                     {orphanedFolders.map((o) => {
-                      const edit = orphanEdits[o.path] ?? { area: o.area, category: o.category };
-                      const setEdit = (patch: Partial<{ area: string; category: string }>) =>
+                      const edit = orphanEdits[o.path] ?? { area: o.area, category: o.category, name: o.suggestedName };
+                      const setEdit = (patch: Partial<{ area: string; category: string; name: string }>) =>
                         setOrphanEdits((prev) => ({ ...prev, [o.path]: { ...edit, ...patch } }));
+                      const renaming = folderDirName(edit.name.trim() || o.name) !== o.name;
                       return (
                         <li key={o.path} className="mw-orphan-row">
                           <span className="mw-orphan-name">📁 {o.name}{o.fileCount > 0 ? ` (${o.fileCount} file${o.fileCount === 1 ? "" : "s"})` : ""}</span>
                           <span className="mw-orphan-fields">
+                            <input className="mw-orphan-input mw-orphan-input-name" list="mw-folder-options" placeholder="Folder name" value={edit.name} disabled={mwApplying} onChange={(e) => setEdit({ name: e.target.value })} />
+                            <span className="mw-orphan-sep">in</span>
                             <input className="mw-orphan-input" list="mw-area-options" placeholder="Area" value={edit.area} disabled={mwApplying} onChange={(e) => setEdit({ area: e.target.value })} />
                             <span className="mw-orphan-sep">›</span>
                             <input className="mw-orphan-input" list="mw-cat-options" placeholder="Category" value={edit.category} disabled={mwApplying} onChange={(e) => setEdit({ category: e.target.value })} />
                           </span>
                           <span className="mw-orphan-actions">
-                            <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void reconcileOrphan(o.path, edit.area, edit.category); }}>Add to spacetime</button>
+                            <button type="button" className="mw-orphan-btn" disabled={mwApplying} onClick={() => { void reconcileOrphan(o.path, edit.area, edit.category, edit.name); }}>{renaming ? "Rename to match" : "Add to spacetime"}</button>
                             <button type="button" className="mw-orphan-btn is-danger" disabled={mwApplying} onClick={() => { void removeOrphanFolder(o.path, o.name); }}>Remove from disk</button>
                           </span>
                         </li>
@@ -6172,6 +6455,10 @@ export function CardGrid() {
           onRename={async (newTitle) => {
             await renameEventTitle(eventMenu.path, newTitle);
           }}
+          startTime={eventMenu.startTime}
+          endTime={eventMenu.endTime}
+          allDay={eventMenu.allDay}
+          onRetime={async (patch) => { await retimeEvent(eventMenu.path, patch); }}
           emails={eventMenu.emails}
           knownEmails={knownEmails}
           onSetEmails={(emails) => { void handleSetEmails(eventMenu.path, emails); }}
@@ -6200,7 +6487,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   const rows: { keys: string; label: string }[] = [
     { keys: `${cmd} N`, label: "New note (popup with title in calendar views)" },
     { keys: `${cmd} P`, label: "Pile view (top of pile)" },
-    { keys: `${cmd} D / W / M / Y / S`, label: "Day / Week / Month / Year / Season view" },
+    { keys: `${cmd} ⇧ D / W / M / Y / S`, label: "Day / Week / Month / Year / Season view" },
     { keys: `${cmd} ⌃ ←  /  →`, label: "Back / forward by the view's unit" },
     { keys: `${cmd} O  ·  ${cmd} K`, label: "Folder palette (folders + todo.txt)" },
     { keys: `${cmd} F  ·  /`, label: "Full-text search" },
@@ -6240,11 +6527,18 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
 function EventActionMenu({
   title, x, y, eventDate, currentFolder, availableFolders,
   onOpen, onDelete, onMoveToDay, onAssignFolder, onRename, onCancel,
+  startTime, endTime, allDay, onRetime,
   emails, knownEmails, onSetEmails,
 }: {
   title: string;
   x: number;
   y: number;
+  /** Current start / end time (HH:MM) and all-day flag, for the time editor. */
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+  /** Commit a new time (or all-day). Writes through spacetime.mw + backing note. */
+  onRetime?: (patch: { startTime?: string; endTime?: string; allDay?: boolean }) => Promise<void> | void;
   /** ISO date (YYYY-MM-DD) of the event being acted on. When set, the
    *  menu renders a row of 7 chips for the event's week so the user can
    *  tap a day to move the event there (same time-of-day). */
@@ -6277,6 +6571,19 @@ function EventActionMenu({
     const next = draftTitle.trim();
     if (next && next !== title) void onRename(next);
   };
+  // Time editor drafts — mirror the event's current start / end / all-day.
+  const [draftAllDay, setDraftAllDay] = useState(!!allDay);
+  const [draftStart, setDraftStart] = useState(startTime ?? "");
+  const [draftEnd, setDraftEnd] = useState(endTime ?? "");
+  useEffect(() => {
+    setDraftAllDay(!!allDay);
+    setDraftStart(startTime ?? "");
+    setDraftEnd(endTime ?? "");
+  }, [allDay, startTime, endTime]);
+  const commitTime = (patch: { startTime?: string; endTime?: string; allDay?: boolean }) => {
+    if (!onRetime) return;
+    void onRetime(patch);
+  };
   const [folderQuery, setFolderQuery] = useState("");
   const [folderOpen, setFolderOpen] = useState(false);
   const [recipDraft, setRecipDraft] = useState("");
@@ -6308,7 +6615,8 @@ function EventActionMenu({
   })();
   // Menu is taller when chips / folder picker are present.
   const recipH = onSetEmails ? 40 + (emails?.length ?? 0) * 26 : 0;
-  const menuH = (weekDays.length > 0 ? 170 : 120) + (availableFolders.length > 0 ? (folderOpen ? 220 : 56) : 0) + recipH;
+  const timeH = onRetime ? 40 : 0;
+  const menuH = (weekDays.length > 0 ? 170 : 120) + timeH + (availableFolders.length > 0 ? (folderOpen ? 220 : 56) : 0) + recipH;
   const menuW = (weekDays.length > 0 || availableFolders.length > 0 || onSetEmails) ? 280 : 200;
   const left = Math.min(Math.max(x, 8), window.innerWidth - menuW);
   const top = Math.min(Math.max(y, 8), window.innerHeight - menuH);
@@ -6337,6 +6645,39 @@ function EventActionMenu({
             if (e.key === "Escape") { e.preventDefault(); setDraftTitle(title); onCancel(); }
           }}
         />
+        {onRetime && (
+          <div className="event-action-time" role="group" aria-label="Event time">
+            <label className="event-action-allday">
+              <input
+                type="checkbox"
+                checked={draftAllDay}
+                onChange={(e) => { const v = e.target.checked; setDraftAllDay(v); commitTime(v ? { allDay: true } : { startTime: draftStart || "09:00", endTime: draftEnd }); }}
+              />
+              All-day
+            </label>
+            {!draftAllDay && (
+              <>
+                <input
+                  type="time"
+                  className="event-action-time-input"
+                  value={draftStart}
+                  aria-label="Start time"
+                  onChange={(e) => setDraftStart(e.target.value)}
+                  onBlur={() => { if ((draftStart || "") !== (startTime ?? "")) commitTime({ startTime: draftStart, endTime: draftEnd, allDay: false }); }}
+                />
+                <span className="event-action-time-sep">–</span>
+                <input
+                  type="time"
+                  className="event-action-time-input"
+                  value={draftEnd}
+                  aria-label="End time"
+                  onChange={(e) => setDraftEnd(e.target.value)}
+                  onBlur={() => { if ((draftEnd || "") !== (endTime ?? "")) commitTime({ startTime: draftStart, endTime: draftEnd, allDay: false }); }}
+                />
+              </>
+            )}
+          </div>
+        )}
         {weekDays.length > 0 && (
           <div className="event-action-days" role="group" aria-label="Move to day">
             {weekDays.map((d) => (

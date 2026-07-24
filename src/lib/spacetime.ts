@@ -11,7 +11,7 @@
 
 import yaml from "js-yaml";
 import type { VaultTaxonomy, AreaNode, CategoryNode } from "./taxonomy";
-import { type Frontmatter, toIsoDateValue, noteTitle } from "./frontmatter";
+import { type Frontmatter, toIsoDateValue, noteTitle, firstMajorHeader } from "./frontmatter";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
 
@@ -174,7 +174,11 @@ export function buildSpacetime(
     if (!allDay && !time) continue; // dated reference note, not an event
     const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
     const folder = folderOf(n);
-    const title = noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
+    // Event titles follow the note's first `# ` header (the same source the
+    // card / list / wikilink renders use), so an event's name reflects how the
+    // note actually reads — not a possibly-stale frontmatter `title:`. Falls
+    // back to the frontmatter/filename derivation when there's no H1.
+    const title = firstMajorHeader(n.body) ?? noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
     const ev: SpacetimeEvent = {
       date, title,
       ...(folder ? { folder } : {}),
