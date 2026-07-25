@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Excalidraw, serializeAsJSON, restore } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { Pencil, Check } from "lucide-react";
 import "@excalidraw/excalidraw/index.css";
 
 interface DrawingSurfaceProps {
@@ -32,9 +33,15 @@ function currentExcalidrawTheme(): "light" | "dark" {
 export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: DrawingSurfaceProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(currentExcalidrawTheme);
-  // Card view = minimal, view-only preview centered on the drawing; only
-  // fullscreen shows the full editor + toolbars.
-  const viewMode = !fullscreen;
+  // In the card, the drawing is a clean view-only preview by default. A
+  // lightweight in-card toggle flips it to an editable canvas (Excalidraw
+  // toolbars + interaction) WITHOUT going fullscreen — so quick edits don't
+  // need the full-screen detour. Fullscreen is always editable; readOnly never.
+  const [editing, setEditing] = useState(false);
+  const editable = !readOnly && (fullscreen || editing);
+  // `is-preview` (below) hides the Excalidraw toolbars for the card preview; we
+  // drop it once editing so the toolbars appear in place.
+  const previewChrome = !fullscreen && !editing;
 
   // Zoom-to-fit so the WHOLE drawing shows, both on first render and whenever
   // the view/size changes (fullscreen toggle, or into the minimal card view) —
@@ -51,7 +58,7 @@ export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: Draw
   useEffect(() => {
     const id = setTimeout(fit, 80);
     return () => clearTimeout(id);
-  }, [fullscreen, fit]);
+  }, [fullscreen, editing, fit]);
 
   // Follow Order's theme toggle.
   useEffect(() => {
@@ -96,15 +103,28 @@ export function DrawingSurface({ initial, onChange, readOnly, fullscreen }: Draw
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   return (
-    <div className={"order-drawing-surface" + (viewMode ? " is-preview" : "")}>
+    <div className={"order-drawing-surface" + (previewChrome ? " is-preview" : "") + (editing ? " is-editing" : "")}>
+      {/* Lightweight in-card enter/exit-draw toggle — only in the card (never
+          fullscreen or read-only), a small unobtrusive button. */}
+      {!fullscreen && !readOnly && (
+        <button
+          type="button"
+          className={"order-drawing-toggle" + (editing ? " is-on" : "")}
+          onClick={() => setEditing((e) => !e)}
+          title={editing ? "Done — back to preview" : "Draw here"}
+          aria-label={editing ? "Exit drawing mode" : "Enter drawing mode"}
+          aria-pressed={editing}
+        >
+          {editing ? <Check size={14} strokeWidth={2.4} /> : <Pencil size={13} strokeWidth={2.2} />}
+        </button>
+      )}
       <Excalidraw
         excalidrawAPI={(api) => { apiRef.current = api; setTimeout(fit, 80); }}
         initialData={initialData}
         onChange={handleChange}
         theme={theme}
-        // Card view is view-only (a clean, centered preview); editing — moving
-        // shapes, text — happens only in fullscreen.
-        viewModeEnabled={readOnly || viewMode}
+        // View-only unless fullscreen or the in-card draw toggle is on.
+        viewModeEnabled={!editable}
         UIOptions={{ canvasActions: { loadScene: false } }}
       />
     </div>

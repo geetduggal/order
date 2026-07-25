@@ -2518,6 +2518,20 @@ iframe.order-youtube-embed {
 
 /* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
 /* ---------- Weekly Hub (Week view: folder doc stacked over the grid) ------- */
+/* Week view fills the viewport exactly; the page itself must NOT scroll — only
+   the doc zone and the week grid do. Bound the document to the (dynamic)
+   viewport and clip, so the trailing dock-clearance padding spills off-screen
+   instead of adding a whole-page scrollbar. `position: fixed` chrome (the dock)
+   is unaffected — plain overflow:hidden doesn't clip fixed descendants. */
+html.week-hub-lock,
+html.week-hub-lock body,
+html.week-hub-lock #root {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+html.week-hub-lock .shell { min-height: 0; }
 .week-hub {
   display: block;
 }
@@ -7483,6 +7497,36 @@ iframe.order-youtube-embed {
    fullscreen. No top toolbar here, so no top padding either. */
 .order-drawing-surface.is-preview { padding-top: 0; }
 .order-drawing-surface.is-preview .layer-ui__wrapper { display: none; }
+/* Lightweight in-card draw toggle: a small, frosted corner button that enters
+   an editable canvas (and back) without the fullscreen detour. */
+.order-drawing-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 6;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--card-border, var(--rule));
+  background: color-mix(in srgb, var(--card-bg, var(--bg)) 82%, transparent);
+  color: var(--ink-soft, var(--ink));
+  cursor: pointer;
+  opacity: 0.5;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: opacity 120ms var(--ease-out), background 120ms, color 120ms, border-color 120ms;
+}
+.order-drawing-surface:hover .order-drawing-toggle { opacity: 0.85; }
+.order-drawing-toggle:hover { opacity: 1; }
+.order-drawing-toggle.is-on {
+  opacity: 1;
+  background: var(--coral, #e2725b);
+  border-color: var(--coral, #e2725b);
+  color: #fff;
+}
 
 /* Card-view enticer for a tall sheet: a very subtle chevron over the bottom
    fade — hints there's more and that fullscreen shows it, without shouting. */

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Edit a drawing in the card, without fullscreen.** A small frosted toggle in
+  the corner of a `view: drawing` card flips its Excalidraw preview to an
+  editable canvas (toolbars + interaction) in place, and back — a lightweight
+  alternative to the fullscreen detour for quick edits.
+
 - **`Cmd+Shift+H` hides the dock.** Toggles the bottom control dock for a
   distraction-free surface; the choice persists across reloads.
 
@@ -107,6 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Week view no longer scrolls the whole page.** The Week hub fills the viewport
+  and the document scroll is locked while it's open, so only the two zones (the
+  doc and the week grid) scroll — no stray page scrollbar stacked on top of them
+  (especially awkward on phone). Every other view keeps its normal page scroll.
 - **Invisible input fields in dark themes.** Reconcile-dialog, palette
   create-folder, and event-time inputs used an undefined `--paper` var that fell
   back to white, so their text (`--ink`, light on dark themes) vanished. `--paper`

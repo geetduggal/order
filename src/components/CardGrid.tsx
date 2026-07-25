@@ -2156,6 +2156,17 @@ export function CardGrid() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen, toggleSidebar, view, toggleDock]);
 
+  // Week view is a fixed two-zone hub (doc + grid) that fills the viewport —
+  // lock the whole-page scroll so ONLY the two zones scroll (no stray document
+  // scrollbar, which was especially awkward on phone). Scoped to Week; every
+  // other view keeps its normal page scroll.
+  useEffect(() => {
+    const cls = "week-hub-lock";
+    const root = document.documentElement;
+    if (view === "week") root.classList.add(cls); else root.classList.remove(cls);
+    return () => root.classList.remove(cls);
+  }, [view]);
+
   // One-shot migration to the unified list model. Generates Areas.md
   // + per-Area + per-Category files from the legacy localStorage
   // taxonomy and existing Notable Folder Main Docs, and rewrites NF
