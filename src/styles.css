@@ -2545,6 +2545,9 @@ iframe.order-youtube-embed {
   background: transparent;
   padding: 10px clamp(22px, 5vw, 64px) 6px;
 }
+/* Drop the note footer (saving state · breadcrumb · filename) in the hub — the
+   Week surface is for reading/processing the doc, not its metadata. */
+.week-hub-doc .order-card:not(.is-fullscreen) .order-card-status { display: none; }
 /* No-folder state: a compact, non-resizable prompt; the grid takes the rest. */
 .week-hub-doc.is-prompt {
   overflow: visible;
