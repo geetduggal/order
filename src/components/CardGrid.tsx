@@ -77,6 +77,8 @@ import {
 } from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix, isJohnnyDecimalName, nextJdFolderId, assignMissingJdIds } from "../lib/johnny-decimal";
+import { WeekHub } from "./WeekHub";
+import { getWeekHubFolder, setWeekHubFolder as persistWeekHubFolder } from "../lib/week-hub";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
 import { vaultDir, embeddedImageFiles } from "../lib/attachments";
@@ -102,6 +104,16 @@ function readSidebarOpen(): boolean {
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
+}
+
+// Bottom dock visibility — toggled with Cmd+Shift+H, persisted so a hidden
+// dock stays hidden across reloads.
+const DOCK_HIDDEN_KEY = "order.dock.hidden";
+function readDockHidden(): boolean {
+  try { return localStorage.getItem(DOCK_HIDDEN_KEY) === "1"; } catch { return false; }
+}
+function writeDockHidden(hidden: boolean): void {
+  try { localStorage.setItem(DOCK_HIDDEN_KEY, hidden ? "1" : "0"); } catch { /* non-fatal */ }
 }
 
 // Pile membership filter — three states, cycled by the prominent
@@ -518,6 +530,10 @@ export function CardGrid() {
   // (chipMap build); never cleared (validity is checked against the live mw).
   const noteEventLinkRef = useRef<Map<string, { date: string; title: string }>>(new Map());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
+  const [dockHidden, setDockHidden] = useState<boolean>(readDockHidden);
+  const toggleDock = useCallback(() => {
+    setDockHidden((h) => { const next = !h; writeDockHidden(next); return next; });
+  }, []);
   // Recently-opened Notable Folders — surfaced by the command palette
   // on an empty query so the search button doubles as a back-history.
   const [recentFolders, setRecentFolders] = useState<string[]>(readRecentFolders);
@@ -2108,6 +2124,12 @@ export function CardGrid() {
         toggleSidebar();
         return;
       }
+      // Cmd+Shift+H hides / shows the bottom dock for a distraction-free surface.
+      if ((e.key === "h" || e.key === "H") && e.shiftKey) {
+        e.preventDefault();
+        toggleDock();
+        return;
+      }
       // Cmd+' clears all active filters (mirrors the rail clear-all
       // icon). Apostrophe is a key that no system shortcut owns, so
       // it stays out of the macOS-menu fight zone.
@@ -2132,7 +2154,7 @@ export function CardGrid() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen, toggleSidebar, view]);
+  }, [sidebarOpen, toggleSidebar, view, toggleDock]);
 
   // One-shot migration to the unified list model. Generates Areas.md
   // + per-Area + per-Category files from the legacy localStorage
@@ -2640,6 +2662,14 @@ export function CardGrid() {
   // and rewrite the inbound wikilinks + event folder tags to match.
   const [johnnyDecimal, setJohnnyDecimalState] = useState<boolean>(() => getJohnnyDecimal());
   const [jdBusy, setJdBusy] = useState(false);
+
+  // Weekly Hub — which Notable Folder's Main Doc accompanies the Week view.
+  // Fixed-folder mode today; the per-week seam lives in lib/week-hub.ts.
+  const [weekHubFolder, setWeekHubFolderState] = useState<string>(() => getWeekHubFolder());
+  const changeWeekHubFolder = useCallback((ref: string) => {
+    persistWeekHubFolder(ref);
+    setWeekHubFolderState(ref);
+  }, []);
   const applyJohnnyDecimalMode = useCallback(async (enable: boolean): Promise<void> => {
     setJdBusy(true);
     try {
@@ -5714,7 +5744,7 @@ export function CardGrid() {
       {/* Bottom hovering dock — the five most-used controls grouped as
           a single cluster, equal-sized, sized for thumb taps. Sits
           above the bottom safe-area inset. */}
-      <div className="bottom-dock" role="toolbar" aria-label="Main controls">
+      <div className={"bottom-dock" + (dockHidden ? " is-hidden" : "")} role="toolbar" aria-label="Main controls">
         <button
           type="button"
           className="dock-btn dock-btn-new"
@@ -5974,21 +6004,53 @@ export function CardGrid() {
             onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
         )}
-        {view === "week" && (
-          <CalendarView
-            ref={calendarHandleRef}
-            key="week"
-            notes={calendarNotes}
-            initialView="timeGridWeek"
-            onMoveEvent={updateNoteFrontmatter}
-            onEventClick={handleEventClick}
-            onCreate={promptCreate}
-            currentView="week"
-            onSelectView={setView}
-            onImportDay={(iso) => { void startImport(iso); }}
-            onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
-          />
-        )}
+        {view === "week" && (() => {
+          // Weekly Hub: the configured folder's Main Doc sits above the week
+          // grid. `weekHubFolder` is the fixed-mode folder (fixed today; the
+          // per-week resolver seam lives in lib/week-hub.ts). Its editable card
+          // is the SAME cardNode used in the pile — editing writes to the main
+          // doc exactly as anywhere else.
+          const hubNote = weekHubFolder
+            ? (notes?.find((n) => isMainDoc(n) && folderMatchKey(n.filename.replace(/\.md$/i, "")) === folderMatchKey(weekHubFolder)) ?? null)
+            : null;
+          const grid = (
+            <CalendarView
+              ref={calendarHandleRef}
+              key="week"
+              notes={calendarNotes}
+              initialView="timeGridWeek"
+              onMoveEvent={updateNoteFrontmatter}
+              onEventClick={handleEventClick}
+              onCreate={promptCreate}
+              currentView="week"
+              onSelectView={setView}
+              onImportDay={(iso) => { void startImport(iso); }}
+              onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
+            />
+          );
+          return (
+            <WeekHub
+              mobile={isIosSync()}
+              docConfigured={!!hubNote}
+              grid={grid}
+              doc={hubNote ? cardNode(hubNote) : (
+                <div className="week-hub-prompt">
+                  <span className="week-hub-prompt-label">Weekly hub</span>
+                  <input
+                    className="week-hub-prompt-input"
+                    list="week-hub-folder-options"
+                    placeholder="Pin a folder's document above the week…"
+                    defaultValue=""
+                    onChange={(e) => { const v = e.target.value.trim(); if (availableFolderRefs.some((f) => f.name === v)) changeWeekHubFolder(v); }}
+                  />
+                  <datalist id="week-hub-folder-options">
+                    {availableFolderRefs.map((f) => <option key={f.name} value={f.name} />)}
+                  </datalist>
+                </div>
+              )}
+            />
+          );
+        })()}
         {view === "month" && (
           <CalendarView
             ref={calendarHandleRef}
@@ -6172,6 +6234,9 @@ export function CardGrid() {
           johnnyDecimalBusy={jdBusy}
           onToggleJohnnyDecimal={applyJohnnyDecimalMode}
           onAssignMissingJdIds={handleAssignMissingJdIds}
+          weekHubFolder={weekHubFolder}
+          onSetWeekHubFolder={changeWeekHubFolder}
+          folderOptions={availableFolderRefs.map((f) => f.name)}
         />
       )}
 
@@ -6563,6 +6628,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} R`, label: "Home ⇄ clear-filters toggle" },
     { keys: `${cmd} 4`, label: "Terminal in the focused folder ($ on 4)" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
+    { keys: `${cmd} ⇧ H`, label: "Hide / show the dock" },
     { keys: `${cmd} ⇧ P`, label: "Publish panel" },
     { keys: `${cmd} T`, label: "Cycle theme" },
     { keys: `${cmd} '`, label: "Clear all filters" },

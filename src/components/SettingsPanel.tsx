@@ -16,6 +16,7 @@ import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal"
 export function SettingsPanel({
   onChangeVault, onClose,
   johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal, onAssignMissingJdIds,
+  weekHubFolder, onSetWeekHubFolder, folderOptions,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
@@ -23,6 +24,9 @@ export function SettingsPanel({
   johnnyDecimalBusy: boolean;
   onToggleJohnnyDecimal: (enable: boolean) => Promise<void>;
   onAssignMissingJdIds: () => Promise<void>;
+  weekHubFolder: string;
+  onSetWeekHubFolder: (ref: string) => void;
+  folderOptions: string[];
 }) {
   const [current, setCurrent] = useState<string>("");
   const [fallback, setFallback] = useState<string>("");
@@ -197,6 +201,38 @@ export function SettingsPanel({
                 node carries an id — Areas as ranges (<code>10-19</code>), Categories as numbers
                 (<code>11</code>), Notable Folders as <code>11.01</code>. Turning it off strips the
                 ids back off. Wikilinks and event tags are updated to match.</>}
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Weekly hub</span>
+          <span className="settings-value">
+            <input
+              // Uncontrolled (keyed to the current setting so external changes
+              // reflect) so partial typing shows; commit only a real folder or
+              // empty, so a half-typed name never thrashes the setting.
+              key={weekHubFolder}
+              className="settings-input"
+              list="settings-week-hub-options"
+              placeholder="Notable folder (blank = off)"
+              defaultValue={weekHubFolder}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                if (v === "" || folderOptions.includes(v)) onSetWeekHubFolder(v);
+              }}
+            />
+            <datalist id="settings-week-hub-options">
+              {folderOptions.map((f) => <option key={f} value={f} />)}
+            </datalist>
+            {weekHubFolder && (
+              <button type="button" className="settings-btn" onClick={() => onSetWeekHubFolder("")}>Clear</button>
+            )}
+          </span>
+          <span className="settings-hint">
+            Pins this folder's Main Document above the <strong>Week</strong> view as an
+            editable "one stop shop" — the real editor, saving to the folder's doc like
+            anywhere else. Drag the divider to resize (persisted); blank turns it off and
+            the week grid fills the screen.
           </span>
         </div>
 

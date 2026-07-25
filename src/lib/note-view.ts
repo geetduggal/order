@@ -141,6 +141,30 @@ export function padSheet(data: SheetCell[][], rows: number, cols: number): Sheet
 /** A rectangular cell selection (inclusive), for cell-drag moves. */
 export interface SheetRect { r0: number; c0: number; r1: number; c1: number }
 
+/** A selected rectangle → TSV (tab between columns, newline between rows) — the
+ *  clipboard lingua franca that round-trips with Excel / Numbers / Sheets and
+ *  within Order. Raw cell values, so formulas copy as formulas. */
+export function rangeToTSV(data: SheetCell[][], sel: SheetRect): string {
+  const lines: string[] = [];
+  for (let r = sel.r0; r <= sel.r1; r++) {
+    const cols: string[] = [];
+    for (let c = sel.c0; c <= sel.c1; c++) {
+      const v = data[r]?.[c]?.value;
+      cols.push(v == null ? "" : String(v));
+    }
+    lines.push(cols.join("\t"));
+  }
+  return lines.join("\n");
+}
+
+/** TSV clipboard text → a matrix of strings. Tolerates CRLF and a single
+ *  trailing newline (common from Excel / a spreadsheet copy). */
+export function parseTSV(text: string): string[][] {
+  const rows = text.replace(/\r\n?/g, "\n").split("\n");
+  if (rows.length > 1 && rows[rows.length - 1] === "") rows.pop();
+  return rows.map((line) => line.split("\t"));
+}
+
 /** Move the source rectangle `sel` by (dr, dc). Cells the block lands on that
  *  are NOT part of the source are displaced into the slots the block vacated —
  *  a "somewhat intelligent" swap so nothing is silently overwritten. Grows the

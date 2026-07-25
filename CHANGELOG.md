@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Cmd+Shift+H` hides the dock.** Toggles the bottom control dock for a
+  distraction-free surface; the choice persists across reloads.
+
+- **Multi-cell copy / cut / paste in the spreadsheet.** Select a range and
+  `Cmd/Ctrl+C`, `X`, or `V` — copy and cut serialize the whole selection to TSV
+  (so it round-trips with Excel / Numbers / Sheets and within Order, formulas
+  included); paste drops a copied block at the selection's top-left (growing the
+  sheet as needed), and a single copied value fills a selected range. Order takes
+  the clipboard events itself (capture-phase, only when the sheet is focused and
+  not mid-edit) so it's reliable and preserves the cell model, rather than
+  relying on react-spreadsheet's focus-gated built-in.
+
+- **Weekly hub in the Week view.** A configured Notable Folder's Main Document
+  now sits above the week grid as a two-zone "one stop shop": the top zone is the
+  real, editable Milkdown card (saving to the folder's doc exactly like anywhere
+  else — no parallel store), the bottom zone is the existing week grid, unchanged.
+  Each zone scrolls independently; a draggable divider (touch-friendly) resizes
+  the split and the ratio persists across reloads (≈⅓ doc on desktop, ¼ on phone,
+  and the grid can never be fully hidden). Pick the folder in Settings → Weekly
+  hub; with none set, a compact prompt sits above a full-height grid. Fixed-folder
+  mode ships now, with a clean seam (`lib/week-hub.ts`) for a future per-week
+  resolver.
+
 - **Johnny-Decimal Mode auto-numbers new folders.** Creating a folder while JD
   Mode is on gives it the next free id in its category (`52 Creative Projects` →
   `52.15 …`); its Main-Doc H1 stays the clean name so lists/links render pretty

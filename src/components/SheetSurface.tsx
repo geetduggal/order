@@ -22,6 +22,8 @@ import {
   moveBlock,
   padSheet,
   parseSheet,
+  parseTSV,
+  rangeToTSV,
   serializeSheet,
   type SheetCell,
 } from "../lib/note-view";
@@ -133,6 +135,10 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
   // single-cell click; onSelect covers a dragged range.
   const selRef = useRef<Rect | null>(null);
   const [editing, setEditing] = useState(false);
+  // Mirror `editing` into a ref so the once-attached clipboard listeners can
+  // see the live mode without re-subscribing.
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   // Optional drag-to-move a cell / block (see the "Cell drag" toggle). Rather
   // than intercept cell presses (which fights react-spreadsheet's own selection
   // drag and left the headers flashing the text-selection color), we surface a
@@ -316,6 +322,87 @@ export function SheetSurface({ initial, onChange, readOnly, minimal, onExpand, m
       for (let c = sel.c0; c <= sel.c1; c++) next[r][c] = mut({ ...next[r][c] });
     commit(next);
   }, [readOnly, commit]);
+
+  // ---- Multi-cell copy / cut / paste ----------------------------------------
+  // react-spreadsheet only fires its own clipboard handling for the whole
+  // selection when the grid is :focus-within, and it loses our per-cell model
+  // (bg / collapse) on paste. We take clipboard ourselves so it's reliable and
+  // range-aware: listen on `document` in the CAPTURE phase (before react-
+  // spreadsheet's own bubble-phase document listeners), but only act when THIS
+  // sheet holds focus and isn't mid-edit — otherwise we pass the event through
+  // untouched so Milkdown, inputs, and other sheets keep working. TSV format
+  // round-trips with Excel / Numbers / Sheets and within Order.
+  const clearRange = useCallback((sel: Rect) => {
+    const next = padSheet(sheetRef.current, sel.r1 + 1, sel.c1 + 1).map((row) => row.slice());
+    for (let r = sel.r0; r <= sel.r1; r++)
+      for (let c = sel.c0; c <= sel.c1; c++) next[r][c] = { value: "" };
+    commit(padSheet(next, minRows, minCols));
+  }, [commit, minRows, minCols]);
+
+  const applyPaste = useCallback((sel: Rect, text: string) => {
+    const rows = parseTSV(text);
+    if (rows.length === 0) return;
+    const cur = sheetRef.current;
+    const single = rows.length === 1 && rows[0].length === 1;
+    const isRange = sel.r1 > sel.r0 || sel.c1 > sel.c0;
+    // A single copied value pasted onto a selected RANGE fills the range
+    // (Excel / Sheets behaviour). Otherwise the matrix lands at the top-left.
+    if (single && isRange) {
+      const v = rows[0][0];
+      const next = padSheet(cur, sel.r1 + 1, sel.c1 + 1).map((row) => row.slice());
+      for (let r = sel.r0; r <= sel.r1; r++)
+        for (let c = sel.c0; c <= sel.c1; c++) next[r][c] = { ...next[r][c], value: v };
+      commit(padSheet(next, minRows, minCols));
+      return;
+    }
+    const r0 = sel.r0, c0 = sel.c0;
+    const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const next = padSheet(cur, Math.max(r0 + rows.length, minRows), Math.max(c0 + maxCols, minCols)).map((row) => row.slice());
+    for (let i = 0; i < rows.length; i++)
+      for (let j = 0; j < rows[i].length; j++) next[r0 + i][c0 + j] = { ...next[r0 + i][c0 + j], value: rows[i][j] };
+    commit(next);
+  }, [commit, minRows, minCols]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const mine = () => !!el && el.contains(document.activeElement) && !editingRef.current;
+    const onCopy = (e: ClipboardEvent) => {
+      if (!mine()) return;
+      const sel = selRef.current;
+      if (!sel) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.clipboardData?.setData("text/plain", rangeToTSV(sheetRef.current, sel));
+    };
+    const onCut = (e: ClipboardEvent) => {
+      if (!mine() || readOnly) return;
+      const sel = selRef.current;
+      if (!sel) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.clipboardData?.setData("text/plain", rangeToTSV(sheetRef.current, sel));
+      clearRange(sel);
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (!mine() || readOnly) return;
+      const sel = selRef.current;
+      if (!sel) return;
+      const text = e.clipboardData?.getData("text/plain");
+      if (text == null || text === "") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      applyPaste(sel, text);
+    };
+    document.addEventListener("copy", onCopy, true);
+    document.addEventListener("cut", onCut, true);
+    document.addEventListener("paste", onPaste, true);
+    return () => {
+      document.removeEventListener("copy", onCopy, true);
+      document.removeEventListener("cut", onCut, true);
+      document.removeEventListener("paste", onPaste, true);
+    };
+  }, [readOnly, clearRange, applyPaste]);
 
   const setBg = useCallback((bg: string | undefined) => {
     mutateSelection((cell) => {

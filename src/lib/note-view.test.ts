@@ -2,6 +2,7 @@
 import {
   parseView, sheetSidecarPath, drawingSidecarPath,
   serializeSheet, parseSheet, emptySheet, padSheet, resolveSheetBg, moveBlock,
+  rangeToTSV, parseTSV,
   type SheetCell,
 } from "./note-view";
 
@@ -75,6 +76,24 @@ check(eq(padSheet(emptySheet(10, 10), 3, 3).length, 10), "pad never shrinks");
   g = grid([["X"]]);
   m = moveBlock(g, { r0: 0, c0: 0, r1: 0, c1: 0 }, 2, 0);
   check(m.length >= 3 && m[2][0].value === "X" && m[0][0].value === "", "moveBlock: grows past the edge");
+}
+
+// ---- clipboard TSV (multi-cell copy/paste) ----
+{
+  const g: SheetCell[][] = [
+    [{ value: "a" }, { value: "b" }, { value: "c" }],
+    [{ value: "1" }, { value: "" }, { value: "=A1+1" }],
+  ];
+  check(rangeToTSV(g, { r0: 0, c0: 0, r1: 1, c1: 1 }) === "a\tb\n1\t", "rangeToTSV: 2x2 block with an empty cell");
+  check(rangeToTSV(g, { r0: 1, c0: 2, r1: 1, c1: 2 }) === "=A1+1", "rangeToTSV: single cell keeps the formula");
+  check(rangeToTSV(g, { r0: 0, c0: 0, r1: 0, c1: 2 }) === "a\tb\tc", "rangeToTSV: single row");
+
+  check(eq(parseTSV("a\tb\n1\t2"), [["a", "b"], ["1", "2"]]), "parseTSV: 2x2");
+  check(eq(parseTSV("a\tb\r\n1\t2\r\n"), [["a", "b"], ["1", "2"]]), "parseTSV: CRLF + trailing newline dropped");
+  check(eq(parseTSV("solo"), [["solo"]]), "parseTSV: single value");
+  check(eq(parseTSV("x\ty\t"), [["x", "y", ""]]), "parseTSV: trailing tab → trailing empty cell");
+  // round-trip
+  check(eq(parseTSV(rangeToTSV(g, { r0: 0, c0: 0, r1: 1, c1: 2 })), [["a", "b", "c"], ["1", "", "=A1+1"]]), "TSV round-trips");
 }
 
 if (failed > 0) { console.error(`\n${failed} CHECK(S) FAILED`); process.exit(1); }

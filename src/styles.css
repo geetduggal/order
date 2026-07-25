@@ -2517,6 +2517,77 @@ iframe.order-youtube-embed {
 }
 
 /* ---------- FullCalendar (Week + Month) — Order theme overrides ---------- */
+/* ---------- Weekly Hub (Week view: folder doc stacked over the grid) ------- */
+.week-hub {
+  display: block;
+}
+/* Top zone: the configured folder's Main Doc, scrolling INSIDE its own bounded
+   height so a long document never pushes the week grid off screen. */
+.week-hub-doc {
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-bottom: 1px solid var(--rule-soft, var(--rule));
+  padding: 6px clamp(12px, 3vw, 32px) 8px;
+}
+/* The hub card spans the zone (it's the real note card, not a pile cell). */
+.week-hub-doc .order-card {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+}
+/* No-folder state: a compact, non-resizable prompt; the grid takes the rest. */
+.week-hub-doc.is-prompt {
+  overflow: visible;
+  padding: 10px clamp(12px, 3vw, 32px);
+}
+.week-hub-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.week-hub-prompt-label {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: calc(13px * var(--text-scale, 1));
+  color: var(--ink-soft, var(--ink));
+}
+.week-hub-prompt-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: calc(13px * var(--text-scale, 1));
+  padding: 5px 10px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.week-hub-prompt-input:focus { outline: none; border-color: var(--coral); }
+.week-hub-prompt-input::placeholder { color: var(--ink-ghost); }
+/* Draggable divider — touch-action:none so a touch-drag resizes instead of
+   scrolling the page. */
+.week-hub-divider {
+  height: 12px;
+  flex: 0 0 auto;
+  cursor: row-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--rule-soft, var(--rule));
+}
+.week-hub-divider-grip {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ink-faint);
+  opacity: 0.5;
+}
+.week-hub-divider:hover .week-hub-divider-grip { opacity: 0.9; }
+/* Bottom zone: the CalendarView self-measures its own bounded height. */
+.week-hub-grid { display: block; }
+
 .fc-shell {
   padding: 8px clamp(16px, 4vw, 40px) 80px;
   /* Full-bleed like the Year strip and the Pile — a wide monitor
@@ -3115,6 +3186,8 @@ iframe.order-youtube-embed {
    settings (popup), sidebar toggle — centered along the bottom of the
    viewport. z-index sits ABOVE the sidebar so the dock is always
    reachable, even with the sidebar open. */
+/* Cmd+Shift+H hides the dock for a distraction-free surface. */
+.bottom-dock.is-hidden { display: none; }
 .bottom-dock {
   position: fixed;
   left: 50%;
