@@ -2522,18 +2522,28 @@ iframe.order-youtube-embed {
   display: block;
 }
 /* Top zone: the configured folder's Main Doc, scrolling INSIDE its own bounded
-   height so a long document never pushes the week grid off screen. */
+   height so a long document never pushes the week grid off screen. Clean page
+   surface — the card chrome is dropped below so it reads like the fullscreen
+   editor, just with tasteful margins. */
 .week-hub-doc {
   overflow: auto;
   overscroll-behavior: contain;
-  border-bottom: 1px solid var(--rule-soft, var(--rule));
-  padding: 6px clamp(12px, 3vw, 32px) 8px;
+  background: var(--bg);
+  padding: 0;
 }
-/* The hub card spans the zone (it's the real note card, not a pile cell). */
-.week-hub-doc .order-card {
+/* The hub card is the real note card, but stripped of every box (border,
+   shadow, radius, lifted fill) so it feels like the fullscreen editor — with
+   smaller, tasteful margins instead of fullscreen's wide clamp. Scoped to the
+   in-zone card so a true fullscreen toggle keeps its own generous layout. */
+.week-hub-doc .order-card:not(.is-fullscreen) {
   max-width: none;
   width: 100%;
   margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 10px clamp(22px, 5vw, 64px) 6px;
 }
 /* No-folder state: a compact, non-resizable prompt; the grid takes the rest. */
 .week-hub-doc.is-prompt {
@@ -2564,27 +2574,28 @@ iframe.order-youtube-embed {
 }
 .week-hub-prompt-input:focus { outline: none; border-color: var(--coral); }
 .week-hub-prompt-input::placeholder { color: var(--ink-ghost); }
-/* Draggable divider — touch-action:none so a touch-drag resizes instead of
-   scrolling the page. */
+/* Draggable divider — thin and minimal: a bare hit strip with a whisper-faint
+   grip that brightens on hover. touch-action:none so a touch-drag resizes
+   instead of scrolling the page. */
 .week-hub-divider {
-  height: 12px;
+  height: 8px;
   flex: 0 0 auto;
   cursor: row-resize;
   touch-action: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-elev);
-  border-bottom: 1px solid var(--rule-soft, var(--rule));
+  background: transparent;
 }
 .week-hub-divider-grip {
-  width: 44px;
-  height: 4px;
+  width: 30px;
+  height: 2px;
   border-radius: 999px;
   background: var(--ink-faint);
-  opacity: 0.5;
+  opacity: 0.3;
+  transition: opacity 120ms var(--ease-out), width 120ms var(--ease-out);
 }
-.week-hub-divider:hover .week-hub-divider-grip { opacity: 0.9; }
+.week-hub-divider:hover .week-hub-divider-grip { opacity: 0.6; width: 46px; }
 /* Bottom zone: the CalendarView self-measures its own bounded height. */
 .week-hub-grid { display: block; }
 
