@@ -79,6 +79,7 @@ import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix, isJohnnyDecimalName, nextJdFolderId, assignMissingJdIds } from "../lib/johnny-decimal";
 import { WeekHub } from "./WeekHub";
 import { getWeekHubFolder, setWeekHubFolder as persistWeekHubFolder } from "../lib/week-hub";
+import { getBadgeEnabled, setBadgeEnabled as persistBadgeEnabled, badgeRequestPermission, badgeSet, upcomingSaturdayIso } from "../lib/badge";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
 import { vaultDir, embeddedImageFiles } from "../lib/attachments";
@@ -2677,10 +2678,54 @@ export function CardGrid() {
   // Weekly Hub — which Notable Folder's Main Doc accompanies the Week view.
   // Fixed-folder mode today; the per-week seam lives in lib/week-hub.ts.
   const [weekHubFolder, setWeekHubFolderState] = useState<string>(() => getWeekHubFolder());
+  // Ref mirror so empty-deps callbacks (createNote, new-event flow) can read the
+  // current hub folder without re-subscribing.
+  const weekHubFolderRef = useRef<string>(weekHubFolder);
+  weekHubFolderRef.current = weekHubFolder;
   const changeWeekHubFolder = useCallback((ref: string) => {
     persistWeekHubFolder(ref);
     setWeekHubFolderState(ref);
   }, []);
+
+  // ---- App-icon badge: count of events on the upcoming (or current) Saturday
+  // in the Week Hub folder. Opt-in (Settings), updated as often as the app can
+  // see: on every event/hub change while running, plus a foreground/interval
+  // tick that catches the Saturday rolling over.
+  const [badgeEnabled, setBadgeEnabledState] = useState<boolean>(() => getBadgeEnabled());
+  const [badgeTick, setBadgeTick] = useState(0);
+  useEffect(() => {
+    if (!badgeEnabled) return;
+    const bump = () => setBadgeTick((n) => n + 1);
+    const onVis = () => { if (document.visibilityState === "visible") bump(); };
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", onVis);
+    const id = window.setInterval(bump, 5 * 60 * 1000); // catch the Saturday rollover
+    return () => { window.removeEventListener("focus", bump); document.removeEventListener("visibilitychange", onVis); window.clearInterval(id); };
+  }, [badgeEnabled]);
+  const badgeCount = useMemo(() => {
+    if (!badgeEnabled || !weekHubFolder || !parsedSpacetime) return 0;
+    const sat = upcomingSaturdayIso();
+    const hubKey = folderMatchKey(weekHubFolder);
+    return parsedSpacetime.events.filter((e) => {
+      if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
+      const end = e.endDate ?? e.date;
+      return e.date <= sat && sat <= end; // include multi-day spans over Saturday
+    }).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [badgeEnabled, weekHubFolder, parsedSpacetime, badgeTick]);
+  useEffect(() => {
+    // Push the count whenever it changes (and clear to 0 when disabled).
+    void badgeSet(badgeEnabled ? badgeCount : 0);
+  }, [badgeEnabled, badgeCount]);
+  const toggleBadge = useCallback(async (on: boolean) => {
+    if (on) {
+      const granted = await badgeRequestPermission();
+      if (!granted) { flashCap("Enable notifications for Order to show the icon badge."); return; }
+    }
+    persistBadgeEnabled(on);
+    setBadgeEnabledState(on);
+    if (!on) void badgeSet(0);
+  }, [flashCap]);
   const applyJohnnyDecimalMode = useCallback(async (enable: boolean): Promise<void> => {
     setJdBusy(true);
     try {
@@ -4356,7 +4401,10 @@ export function CardGrid() {
     delete frontmatter.folder;
     if (!folderRef) {
       const activeIncludes = notableIncludesRef.current;
+      // The Week Hub folder is the default home for new events (falls back to
+      // the home folder when no hub is configured).
       if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
+      else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
       else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     }
     // New note's directory = the folder's directory in the space tree
@@ -5739,7 +5787,8 @@ export function CardGrid() {
       void createNote(patch);
       return;
     }
-    const home = homeFolderRef.current;
+    // New events default to the Week Hub folder (then home).
+    const home = weekHubFolderRef.current || homeFolderRef.current;
     setView("pile");
     if (home) {
       setFilters([{ kind: "include", ref: home }]);
@@ -6248,6 +6297,9 @@ export function CardGrid() {
           weekHubFolder={weekHubFolder}
           onSetWeekHubFolder={changeWeekHubFolder}
           folderOptions={availableFolderRefs.map((f) => f.name)}
+          badgeEnabled={badgeEnabled}
+          badgeCount={badgeCount}
+          onToggleBadge={toggleBadge}
         />
       )}
 
@@ -6514,7 +6566,8 @@ export function CardGrid() {
       {titlePrompt && (() => {
         const callerFolder = parseRef(titlePrompt.patch.folder) ?? null;
         const filterDefault = notableIncludes.length === 1 ? notableIncludes[0] : null;
-        const defaultFolder = callerFolder ?? filterDefault ?? homeFolderRef.current ?? null;
+        // New events default to the Week Hub folder (then home).
+        const defaultFolder = callerFolder ?? filterDefault ?? weekHubFolderRef.current ?? homeFolderRef.current ?? null;
         return (
           <CreateEventPrompt
             availableFolders={availableFolderRefs}

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Saturday app-icon badge (iOS / macOS).** Opt-in (Settings → "Saturday
+  badge"): the Order icon shows how many events fall on the upcoming (or
+  current) Saturday in the **Week Hub folder** — a glance at your weekend load.
+  Computed from spacetime (no parallel store), updated while the app runs (on
+  event/hub changes plus a foreground + 5-min tick for the Saturday rollover),
+  and written natively via `UNUserNotificationCenter`.
+- **New events default to the Week Hub folder** (then the home folder) instead
+  of always the home folder — the pinned weekly folder becomes the natural home
+  for quick calendar entries.
+
 - **Edit a drawing in the card, without fullscreen.** A small frosted toggle in
   the corner of a `view: drawing` card flips its Excalidraw preview to an
   editable canvas (toolbars + interaction) in place, and back — a lightweight
@@ -109,6 +119,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   toolbar button (previously only in the "⋯" menu), and the spreadsheet /
   drawing flip buttons moved into the "⋯" menu, so the inline row stays to
   fullscreen, close, and "⋯".
+
+### Changed
+
+- **Tighter, more immersive Day / Week / Month margins.** Trimmed the calendar
+  shell padding (especially the big vertical gaps) and the top chrome so the grid
+  reads closer to edge-to-edge.
 
 ### Fixed
 

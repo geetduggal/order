@@ -2617,7 +2617,10 @@ html.week-hub-lock .shell { min-height: 0; }
 .week-hub-grid { display: block; }
 
 .fc-shell {
-  padding: 8px clamp(16px, 4vw, 40px) 80px;
+  /* Tight, immersive margins — the grid should feel edge-to-edge. The bottom
+     no longer needs a big dock gap: the time-grid views self-measure their
+     height above the dock, and Month page-scrolls with a small tail. */
+  padding: 2px clamp(6px, 2vw, 20px) 10px;
   /* Full-bleed like the Year strip and the Pile — a wide monitor
      gets wide day columns instead of a centered 1400px island. */
   max-width: none;
@@ -2665,12 +2668,12 @@ html.week-hub-lock .shell { min-height: 0; }
      title bar (FC toolbar for day/week/month, year-head for year).
      Downstream stickies chain through this so every chrome strip
      stacks cleanly above the next on every view. */
-  --fc-controls-h: 40px;
+  --fc-controls-h: 34px;
   /* Height reserved for the title bar (prev/next/today + range or
      year label). The FC toolbar and the custom year-head land on
      the same offset so day/week/month/year all read as the same
      two-strip chrome. */
-  --fc-title-h: 46px;
+  --fc-title-h: 40px;
 }
 .fc-shell .fc-toolbar.fc-header-toolbar {
   margin-bottom: 14px;
@@ -6605,7 +6608,7 @@ html.week-hub-lock .shell { min-height: 0; }
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 3px 10px;
   background: var(--bg);
   border-bottom: 1px solid var(--rule);
   min-height: var(--fc-controls-h);

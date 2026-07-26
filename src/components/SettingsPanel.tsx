@@ -17,6 +17,7 @@ export function SettingsPanel({
   onChangeVault, onClose,
   johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal, onAssignMissingJdIds,
   weekHubFolder, onSetWeekHubFolder, folderOptions,
+  badgeEnabled, badgeCount, onToggleBadge,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
   onClose: () => void;
@@ -27,6 +28,9 @@ export function SettingsPanel({
   weekHubFolder: string;
   onSetWeekHubFolder: (ref: string) => void;
   folderOptions: string[];
+  badgeEnabled: boolean;
+  badgeCount: number;
+  onToggleBadge: (on: boolean) => Promise<void>;
 }) {
   const [current, setCurrent] = useState<string>("");
   const [fallback, setFallback] = useState<string>("");
@@ -232,7 +236,30 @@ export function SettingsPanel({
             Pins this folder's Main Document above the <strong>Week</strong> view as an
             editable "one stop shop" — the real editor, saving to the folder's doc like
             anywhere else. Drag the divider to resize (persisted); blank turns it off and
-            the week grid fills the screen.
+            the week grid fills the screen. New events also default to this folder.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Saturday badge</span>
+          <span className="settings-value">
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={badgeEnabled}
+                disabled={!weekHubFolder}
+                onChange={(e) => { void onToggleBadge(e.target.checked); }}
+              />
+              <span>Show a count on the app icon{badgeEnabled ? ` — currently ${badgeCount}` : ""}</span>
+            </label>
+          </span>
+          <span className="settings-hint">
+            {weekHubFolder
+              ? <>Badges the Order icon with how many events fall on the upcoming (or
+                current) <strong>Saturday</strong> in the Week Hub folder — a quick glance at
+                your weekend load. Updates while the app is open; needs notification
+                permission (iOS / macOS).</>
+              : <>Set a <strong>Weekly hub</strong> folder above to enable the Saturday badge.</>}
           </span>
         </div>
 

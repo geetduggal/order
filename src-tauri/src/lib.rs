@@ -7,6 +7,7 @@ mod fts;
 mod terminal;
 mod gcal;
 mod applecal;
+mod badge;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -167,6 +168,8 @@ pub fn run() {
             applecal::applecal_list_day_events,
             applecal::applecal_save_event,
             applecal::applecal_delete_event,
+            badge::badge_request_permission,
+            badge::badge_set,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,
