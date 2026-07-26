@@ -22,8 +22,10 @@ mod imp {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    /// UNAuthorizationOptionBadge (1 << 3).
-    const UN_AUTH_BADGE: usize = 1 << 3;
+    /// UNAuthorizationOptionBadge is `(1 << 0)` — badge only, no alerts/sounds.
+    /// (Not `1 << 3`, which is `UNAuthorizationOptionCarPlay` and never shows a
+    /// notification prompt — the cause of "no prompt appears".)
+    const UN_AUTH_BADGE: usize = 1 << 0;
 
     /// A proper `.app` bundle has a bundle identifier; a bare `cargo run` / dev
     /// binary does not. `UNUserNotificationCenter currentNotificationCenter`
