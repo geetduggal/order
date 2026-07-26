@@ -25,7 +25,6 @@ import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
   basenameForEvent,
   deriveNoteTitleFromBody,
-  isoDate,
   joinFrontmatter,
   splitFrontmatter,
   toIsoDateValue,
@@ -48,6 +47,7 @@ import { isSpacetimeFile } from "../lib/spacetime";
 import { resolveWikilink } from "../lib/wikilink";
 import {
   attachmentAssetPrefix,
+  attachmentName,
   assetUrl,
   deflateImageEmbeds,
   inflateAttachmentUrls,
@@ -67,28 +67,6 @@ import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
 
 const SAVE_DEBOUNCE_MS = 600;
-
-function attachmentName(file: File): string {
-  const raw = (file.name || "").split(/[/\\]/).pop() ?? "";
-  const dot = raw.lastIndexOf(".");
-  const rawStem = dot > 0 ? raw.slice(0, dot) : raw;
-  const extFromName = dot > 0 ? raw.slice(dot + 1).toLowerCase() : null;
-  const extFromMime = file.type.startsWith("image/") ? file.type.slice("image/".length) : null;
-  const ext = (extFromName || extFromMime || "png").replace(/[^a-z0-9]/g, "");
-  // Pasted / screenshot images usually carry no meaningful name (empty,
-  // "image", "Pasted Image", "Untitled", a temp hash, an IMG_#### blob).
-  // Sanitize the source stem and fall back to a clean, sortable date+time
-  // stamp so the on-disk name is predictable: `image-YYYY-MM-DD-HHMMSS.png`.
-  const cleanStem = rawStem.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
-  const generic =
-    !cleanStem ||
-    cleanStem.length > 60 ||
-    /^(image|images|pasted[ _-]?image|screen ?shot|untitled|photo|clipboard|unknown|img[ _-]?\d*)$/i.test(cleanStem);
-  const now = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  const stamp = `${isoDate(now)}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
-  return `${generic ? "image" : cleanStem}-${stamp}.${ext}`;
-}
 
 /** Rename a file to `<dir>/<basename>`, appending ` 2`, ` 3`, … to the
  *  stem if the desired name is already taken. Returns the resolved path.

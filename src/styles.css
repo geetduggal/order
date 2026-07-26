@@ -2476,6 +2476,16 @@ iframe.order-youtube-embed {
   background: var(--royal);
   border-radius: 3px;
   box-shadow: 0 0 0 1px var(--bg, #fff), 0 0 8px var(--royal);
+  /* Slide between slots instead of teleporting — reads as a smooth, live
+     placement cue. Short + eased so it keeps up with the drag. Opacity fades
+     it in on first paint (see .is-appearing). */
+  transition: left 90ms var(--ease-out), top 90ms var(--ease-out),
+              width 90ms var(--ease-out), height 90ms var(--ease-out),
+              opacity 120ms var(--ease-out);
+}
+.tile-drop-indicator.is-appearing { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .tile-drop-indicator { transition: opacity 120ms var(--ease-out); }
 }
 
 /* Touch devices have no hover, so the hover-revealed reorder/remove
@@ -7566,7 +7576,7 @@ html.week-hub-lock .shell { min-height: 0; }
 .mason-grid {
   columns: 150px;
   column-gap: 10px;
-  margin: 16px 0 4px;
+  margin: 3px 0 4px;
 }
 .mason-item {
   /* "Cards on top of a card": the list sits inside a royal-tinted base card,

@@ -89,9 +89,11 @@ export function useTileDrag(
     function ensureIndicator(): HTMLDivElement {
       if (!indicator.current) {
         const el = document.createElement("div");
-        el.className = "tile-drop-indicator";
+        el.className = "tile-drop-indicator is-appearing";
         document.body.appendChild(el);
         indicator.current = el;
+        // Fade in from the first painted position rather than popping in.
+        requestAnimationFrame(() => el.classList.remove("is-appearing"));
       }
       return indicator.current;
     }
@@ -141,6 +143,27 @@ export function useTileDrag(
       }
     }
 
+    // Coalesce the per-frame work (reading every tile's rect + repainting the
+    // indicator + moving the grabbed tile) into ONE requestAnimationFrame, so a
+    // burst of pointermove events doesn't thrash layout — the difference between
+    // a smooth drag and a stuttery one, especially with many tiles on iOS.
+    let rafId = 0;
+    function scheduleFrame() {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        const d = drag.current;
+        if (!d || !d.started) return;
+        if (d.el) {
+          d.el.style.transform = `translate(${d.lastX - d.x}px, ${d.lastY - d.y}px) scale(1.04)`;
+          d.el.style.zIndex = "500";
+        }
+        const cells = cellsNow();
+        const multiCol = isMultiCol(cells);
+        paintIndicator(d.lastX, d.lastY, insertIndex(d.lastX, d.lastY, cells, multiCol), cells, multiCol);
+      });
+    }
+
     function move(e: PointerEvent) {
       const d = drag.current;
       if (!d) return;
@@ -168,15 +191,9 @@ export function useTileDrag(
       // last move position, not the up event's coordinates.
       d.lastX = e.clientX;
       d.lastY = e.clientY;
-      // Make the drag obvious: the grabbed item lifts and follows the cursor.
-      if (d.el) {
-        d.el.style.transform = `translate(${e.clientX - d.x}px, ${e.clientY - d.y}px) scale(1.04)`;
-        d.el.style.zIndex = "500";
-      }
-      // Show where it will land.
-      const cells = cellsNow();
-      const multiCol = isMultiCol(cells);
-      paintIndicator(e.clientX, e.clientY, insertIndex(e.clientX, e.clientY, cells, multiCol), cells, multiCol);
+      // Everything visual (lift the grabbed tile, repaint the indicator) is
+      // batched into the next animation frame.
+      scheduleFrame();
     }
     function resetEl(el?: HTMLElement) {
       if (!el) return;
@@ -186,6 +203,7 @@ export function useTileDrag(
     function up() {
       const d = drag.current;
       drag.current = null;
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       setDragRef(null);
       resetEl(d?.el);
       removeIndicator();
@@ -225,6 +243,7 @@ export function useTileDrag(
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      if (rafId) cancelAnimationFrame(rafId);
       removeIndicator();
     };
   }, [onReorder]);

@@ -3,6 +3,8 @@
 // portable; in the editor we display vaultasset:// URLs so the webview
 // can load the bytes through the custom URI-scheme handler.
 
+import { isoDate } from "./frontmatter";
+
 export const ATTACHMENTS_DIRNAME = "Attachments";
 
 /** The runtime URL prefix that resolves to the vault's `Attachments/`
@@ -77,6 +79,29 @@ export function isMediaPath(name: string): boolean {
  *  slashes (nested folders) but escapes spaces / unicode. */
 export function assetUrl(vaultRelPath: string): string {
   return `${VAULTASSET_BASE}${encodeURI(vaultRelPath)}`;
+}
+
+/** Pick an on-disk filename for a pasted/dropped image `File`. Pasted or
+ *  screenshot images usually carry no meaningful name (empty, "image",
+ *  "Pasted Image", a temp hash, an IMG_#### blob), so we sanitize the source
+ *  stem and fall back to a clean, sortable stamp: `image-YYYY-MM-DD-HHMMSS.png`.
+ *  Shared by the editor's paste/drop upload and the masonry image paste. */
+export function attachmentName(file: File): string {
+  const raw = (file.name || "").split(/[/\\]/).pop() ?? "";
+  const dot = raw.lastIndexOf(".");
+  const rawStem = dot > 0 ? raw.slice(0, dot) : raw;
+  const extFromName = dot > 0 ? raw.slice(dot + 1).toLowerCase() : null;
+  const extFromMime = file.type.startsWith("image/") ? file.type.slice("image/".length) : null;
+  const ext = (extFromName || extFromMime || "png").replace(/[^a-z0-9]/g, "");
+  const cleanStem = rawStem.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim();
+  const generic =
+    !cleanStem ||
+    cleanStem.length > 60 ||
+    /^(image|images|pasted[ _-]?image|screen ?shot|untitled|photo|clipboard|unknown|img[ _-]?\d*)$/i.test(cleanStem);
+  const now = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${isoDate(now)}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  return `${generic ? "image" : cleanStem}-${stamp}.${ext}`;
 }
 
 /** Vault-relative directory of a path ("" for a root-level note). */

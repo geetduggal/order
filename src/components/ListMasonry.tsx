@@ -10,9 +10,10 @@
 // text stays selectable/editable).
 
 import type React from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
-import { assetUrl } from "../lib/attachments";
+import { assetUrl, attachmentName } from "../lib/attachments";
+import { vaultFs } from "../lib/vault-fs";
 import { resolveNoteRef } from "../lib/wikilink";
 import { isMainDocRef } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
@@ -101,6 +102,78 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
   const canEdit = !readOnly && !readOnlyMembership;
   const go = useGo(vaultNotes, onNavigate, onAddFilter);
 
+  // Paste an image → a new image card. Handled at the document level (a bare
+  // div gets no paste events of its own) but gated so only the masonry the
+  // user is actually pointing at / typing in reacts: pointer is over the grid,
+  // or focus is inside it (e.g. the Add box). Refs keep the listener stable
+  // while reading fresh state on each paste.
+  const hoverRef = useRef(false);
+  const noteDirRef = useRef(noteDir);
+  noteDirRef.current = noteDir;
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const addImageFiles = useCallback(async (files: File[]) => {
+    const imgs = files.filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    const dir = noteDirRef.current;
+    // Avoid clobbering an existing attachment (or another file in this same
+    // paste) that hashes to the same stamped name.
+    const taken = new Set(itemsRef.current.filter((i) => i.image).map((i) => i.ref));
+    const added: ListItem[] = [];
+    for (const file of imgs) {
+      try {
+        let name = attachmentName(file);
+        if (taken.has(name)) {
+          const dot = name.lastIndexOf(".");
+          const stem = dot > 0 ? name.slice(0, dot) : name;
+          const ext = dot > 0 ? name.slice(dot) : "";
+          let n = 2;
+          while (taken.has(`${stem}-${n}${ext}`)) n++;
+          name = `${stem}-${n}${ext}`;
+        }
+        taken.add(name);
+        const rel = dir ? `${dir}/${name}` : name;
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        await vaultFs.writeBinary(rel, Array.from(bytes));
+        added.push({ ref: name, image: name });
+      } catch (err) {
+        console.error("masonry image paste failed:", err);
+      }
+    }
+    if (added.length) onChangeRef.current([...itemsRef.current, ...added]);
+  }, []);
+
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (!canEditRef.current) return;
+      const grid = gridRef.current;
+      if (!grid) return;
+      if (!(hoverRef.current || grid.contains(document.activeElement))) return;
+      const clip = e.clipboardData?.items;
+      if (!clip) return;
+      const files: File[] = [];
+      for (const it of clip) {
+        if (it.kind === "file") {
+          const f = it.getAsFile();
+          if (f && f.type.startsWith("image/")) files.push(f);
+        }
+      }
+      if (files.length === 0) return;
+      // Stop the image also landing as stray text in a focused Add box.
+      e.preventDefault();
+      e.stopPropagation();
+      void addImageFiles(files);
+    }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addImageFiles]);
+
   // Reorder: map the new ref order back onto the items and persist.
   function reorder(order: string[]) {
     const byRef = new Map(items.map((i) => [i.ref, i]));
@@ -130,7 +203,12 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
   };
 
   return (
-    <div className="mason-grid" ref={gridRef}>
+    <div
+      className="mason-grid"
+      ref={gridRef}
+      onPointerEnter={() => { hoverRef.current = true; }}
+      onPointerLeave={() => { hoverRef.current = false; }}
+    >
       {items.map((item, i) => {
         const img = item.image ? assetFor(item.image, noteDir) : undefined;
         // A wikilink item (ref only, no text/image): show the linked note's
