@@ -3144,7 +3144,7 @@ export function CardGrid() {
 
   // Import review modal: the day being imported, the rows (checked = accept),
   // the chosen account, and the target folder.
-  const [importReview, setImportReview] = useState<{ date: string; provider: "google" | "apple"; account?: string; rows: (import("../lib/gcal-import").ImportRow & { accept: boolean })[]; folder: string } | null>(null);
+  const [importReview, setImportReview] = useState<{ date: string; provider: "google" | "apple"; account?: string; rows: (import("../lib/gcal-import").ImportRow & { accept: boolean; folder?: string })[]; folder: string } | null>(null);
   const [importBusy, setImportBusy] = useState(false);
 
   // Whether the per-day Apple-import button shows: system calendar authorized
@@ -3206,7 +3206,7 @@ export function CardGrid() {
       const { classifyImports } = await import("../lib/gcal-import");
       const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
       const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
-      setImportReview({ date: dateIso, provider: "google", account, rows, folder: homeFolderRef.current ?? "" });
+      setImportReview({ date: dateIso, provider: "google", account, rows, folder: weekHubFolderRef.current || homeFolderRef.current || "" });
     } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
   }, []);
 
@@ -3223,7 +3223,7 @@ export function CardGrid() {
       const { classifyImports } = await import("../lib/gcal-import");
       const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
       const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
-      setImportReview({ date: dateIso, provider: "apple", rows, folder: homeFolderRef.current ?? "" });
+      setImportReview({ date: dateIso, provider: "apple", rows, folder: weekHubFolderRef.current || homeFolderRef.current || "" });
     } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
   }, []);
 
@@ -3235,13 +3235,17 @@ export function CardGrid() {
       const accepted = review.rows.filter((r) => r.accept);
       if (accepted.length === 0) { setImportReview(null); return; }
       const root = await vaultRoot();
-      const dir = (review.folder && noteDirByRef(review.folder)) || root;
+      // Each event lands in its own folder if one was picked in the row's
+      // autocomplete, else the review's default folder (the weekly hub).
+      const folderFor = (r: (typeof accepted)[number]) => r.folder?.trim() || review.folder;
       // Create a backing note (description body) for each accepted event, then
       // add all events to spacetime.mw in one edit (tagged with the source
       // account email so they're recognized as that calendar's events).
       const noteErrors: string[] = [];
       for (const r of accepted) {
         try {
+          const effFolder = folderFor(r);
+          const dir = (effFolder && noteDirByRef(effFolder)) || root;
           const fm: Frontmatter = {
             date: r.date,
             allDay: r.allDay,
@@ -3263,7 +3267,7 @@ export function CardGrid() {
         ...(r.endTime ? { endTime: r.endTime } : {}),
         ...(r.endDate ? { endDate: r.endDate } : {}),
         ...(r.allDay ? { allDay: true } : {}),
-        ...(review.folder ? { folder: review.folder } : {}),
+        ...(folderFor(r) ? { folder: folderFor(r) } : {}),
         // Google: host account + the event's guests (deduped, lowercased) so
         // invitees land on the spacetime line and round-trip on a later push.
         // Apple: imported plain (no emails) — Apple events are invite-free.
@@ -3272,7 +3276,8 @@ export function CardGrid() {
           : {}),
       }), mw));
       setImportReview(null);
-      const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}.`;
+      const overrides = accepted.filter((r) => r.folder?.trim() && r.folder.trim() !== review.folder).length;
+      const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}${overrides ? ` (${overrides} into other folders)` : ""}.`;
       const fullMsg = noteErrors.length > 0 ? `${baseMsg}\n${noteErrors.length} note(s) failed:\n${noteErrors.join("\n")}` : baseMsg;
       await tauriMessage(fullMsg, { title: "Import", ...(noteErrors.length > 0 ? { kind: "warning" } : {}) });
     } catch (e) { await tauriMessage(`Import apply failed: ${String(e)}`, { title: "Import", kind: "error" }); }
@@ -6518,21 +6523,30 @@ export function CardGrid() {
         <div className="settings-overlay" onMouseDown={() => { if (!importBusy) setImportReview(null); }}>
           <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="settings-title">Import {importReview.date} from {importReview.provider === "apple" ? "the system calendar" : "Google"}</h2>
-            <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events are added to spacetime in the chosen folder.</p>
+            <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events default to the weekly hub folder — override any event with its own notable folder below.</p>
+            <datalist id="import-folder-options">
+              {notableFolders.map((f) => <option key={f.path} value={f.name} />)}
+            </datalist>
             <div className="settings-row">
-              <span className="settings-label">Folder</span>
-              <input className="settings-input" list="mw-folder-options" placeholder="home"
+              <span className="settings-label">Default folder</span>
+              <input className="settings-input" list="import-folder-options" placeholder="home"
                 value={importReview.folder}
                 onChange={(e) => setImportReview((r) => r ? { ...r, folder: e.target.value } : r)} />
             </div>
             <ul className="gcal-account-list">
               {importReview.rows.map((r, i) => (
-                <li key={`${r.date}|${r.time ?? ""}|${r.title}`} className="gcal-account-row">
+                <li key={`${r.date}|${r.time ?? ""}|${r.title}`} className="gcal-account-row import-review-row">
                   <label className="settings-toggle">
                     <input type="checkbox" checked={r.accept}
                       onChange={(e) => setImportReview((rv) => rv ? { ...rv, rows: rv.rows.map((x, j) => j === i ? { ...x, accept: e.target.checked } : x) } : rv)} />
                     <span>{r.date}{r.time ? ` ${r.time}` : ""} {r.title || "(untitled)"}{r.isNew ? "" : " · already have"}</span>
                   </label>
+                  <input className="settings-input import-review-folder" list="import-folder-options"
+                    placeholder={importReview.folder || "home"}
+                    title="Folder for this event (defaults to the weekly hub)"
+                    disabled={!r.accept}
+                    value={r.folder ?? ""}
+                    onChange={(e) => setImportReview((rv) => rv ? { ...rv, rows: rv.rows.map((x, j) => j === i ? { ...x, folder: e.target.value } : x) } : rv)} />
                 </li>
               ))}
             </ul>

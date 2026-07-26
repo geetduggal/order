@@ -7200,6 +7200,11 @@ html.week-hub-lock .shell { min-height: 0; }
 
 .gcal-account-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .gcal-account-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Import-review row: the event label flexes, its per-event folder override
+   input sits compact on the right. */
+.import-review-row .settings-toggle { flex: 1 1 auto; min-width: 0; }
+.import-review-folder { flex: 0 0 40%; max-width: 168px; min-width: 96px; }
+.import-review-folder:disabled { opacity: 0.4; }
 
 
 /* Settings inline help (Google Calendar credentials), mirrors publish-ios-help. */
