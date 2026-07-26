@@ -247,19 +247,18 @@ export function SettingsPanel({
               <input
                 type="checkbox"
                 checked={badgeEnabled}
-                disabled={!weekHubFolder}
                 onChange={(e) => { void onToggleBadge(e.target.checked); }}
               />
               <span>Show a count on the app icon{badgeEnabled ? ` — currently ${badgeCount}` : ""}</span>
             </label>
           </span>
           <span className="settings-hint">
-            {weekHubFolder
-              ? <>Badges the Order icon with how many events fall on the upcoming (or
-                current) <strong>Saturday</strong> in the Week Hub folder — a quick glance at
-                your weekend load. Updates while the app is open; needs notification
-                permission (iOS / macOS).</>
-              : <>Set a <strong>Weekly hub</strong> folder above to enable the Saturday badge.</>}
+            Badges the Order icon with how many events fall on the upcoming (or current)
+            {" "}<strong>Saturday</strong> in the Week Hub folder — a quick glance at your
+            weekend load. Turning this on asks iOS/macOS for notification permission (that's
+            what makes <em>Order</em> appear under Settings → Notifications); grant it, then
+            the badge shows.{!weekHubFolder && <> Set a <strong>Weekly hub</strong> folder
+            above so there's something to count (the count is 0 until then).</>}
           </span>
         </div>
 
