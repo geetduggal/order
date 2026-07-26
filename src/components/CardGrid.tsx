@@ -2714,8 +2714,11 @@ export function CardGrid() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [badgeEnabled, weekHubFolder, parsedSpacetime, badgeTick]);
   useEffect(() => {
-    // Push the count whenever it changes (and clear to 0 when disabled).
-    void badgeSet(badgeEnabled ? badgeCount : 0);
+    // Only touch the native badge when the feature is ON — the disable path
+    // clears it explicitly in toggleBadge. (Calling the native command while
+    // disabled would hit UNUserNotificationCenter on every launch, which
+    // crashes an UNBUNDLED dev binary — no .app / main bundle.)
+    if (badgeEnabled) void badgeSet(badgeCount);
   }, [badgeEnabled, badgeCount]);
   const toggleBadge = useCallback(async (on: boolean) => {
     if (on) {

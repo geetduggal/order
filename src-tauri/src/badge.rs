@@ -25,6 +25,19 @@ mod imp {
     /// UNAuthorizationOptionBadge (1 << 3).
     const UN_AUTH_BADGE: usize = 1 << 3;
 
+    /// A proper `.app` bundle has a bundle identifier; a bare `cargo run` / dev
+    /// binary does not. `UNUserNotificationCenter currentNotificationCenter`
+    /// hard-crashes (bundleProxyForCurrentProcess is nil) when unbundled, so we
+    /// gate on this and return a soft error instead — the frontend ignores it.
+    fn is_bundled() -> bool {
+        let bundle: *mut AnyObject = unsafe { msg_send![class!(NSBundle), mainBundle] };
+        if bundle.is_null() {
+            return false;
+        }
+        let ident: *mut AnyObject = unsafe { msg_send![bundle, bundleIdentifier] };
+        !ident.is_null()
+    }
+
     fn center() -> *mut AnyObject {
         unsafe { msg_send![class!(UNUserNotificationCenter), currentNotificationCenter] }
     }
@@ -32,6 +45,9 @@ mod imp {
     /// Ask for badge authorization (the standard notifications prompt, shown
     /// once). Returns whether it's granted.
     pub fn request_permission() -> Result<bool, String> {
+        if !is_bundled() {
+            return Err("badge/notifications need a bundled app (unavailable in dev)".into());
+        }
         let c = center();
         if c.is_null() {
             return Err("notification center unavailable".into());
@@ -63,6 +79,9 @@ mod imp {
 
     /// Write the icon badge count (0 clears it).
     pub fn set_badge(count: i64) -> Result<(), String> {
+        if !is_bundled() {
+            return Err("badge unavailable in an unbundled (dev) binary".into());
+        }
         let c = center();
         if c.is_null() {
             return Err("notification center unavailable".into());
