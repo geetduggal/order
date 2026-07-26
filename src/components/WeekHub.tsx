@@ -14,7 +14,9 @@ import { getWeekHubFraction, setWeekHubFraction } from "../lib/week-hub";
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), Math.max(lo, hi));
 // Must match CalendarView's own dock allowance so both agree on where the
 // usable region ends (54px dock + 14px inset + safe area).
-const DOCK = 84;
+// Keep in step with CalendarView's DOCK — the grid runs nearly to the bottom
+// edge; the translucent dock floats over its lowest strip.
+const DOCK = 34;
 const MIN_DOC = 96;
 
 interface Props {

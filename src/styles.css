@@ -2557,7 +2557,7 @@ html.week-hub-lock .shell { min-height: 0; }
   border-radius: 0;
   box-shadow: none;
   background: transparent;
-  padding: 10px clamp(22px, 5vw, 64px) 6px;
+  padding: 2px clamp(22px, 5vw, 64px) 2px;
 }
 /* Drop the note footer (saving state · breadcrumb · filename) in the hub — the
    Week surface is for reading/processing the doc, not its metadata. */
@@ -2620,7 +2620,7 @@ html.week-hub-lock .shell { min-height: 0; }
   /* Tight, immersive margins — the grid should feel edge-to-edge. The bottom
      no longer needs a big dock gap: the time-grid views self-measure their
      height above the dock, and Month page-scrolls with a small tail. */
-  padding: 2px clamp(6px, 2vw, 20px) 10px;
+  padding: 2px clamp(6px, 2vw, 20px) 2px;
   /* Full-bleed like the Year strip and the Pile — a wide monitor
      gets wide day columns instead of a centered 1400px island. */
   max-width: none;

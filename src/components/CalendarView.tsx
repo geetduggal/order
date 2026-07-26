@@ -332,7 +332,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
       const fcEl = shellRef.current?.querySelector(".fc") as HTMLElement | null;
       if (!fcEl) return;
       const top = fcEl.getBoundingClientRect().top;
-      const DOCK = 84; // hovering bottom dock (54) + inset (14) + safe area
+      // Minimal bottom clearance — the hovering dock is translucent and floats,
+      // so the grid runs almost to the bottom edge (immersive) and the dock
+      // overlays its lowest strip rather than reserving a big empty gap.
+      const DOCK = 34;
       setCalHeight(Math.max(360, Math.round(window.innerHeight - top - DOCK)));
     };
     const raf = requestAnimationFrame(measure);
