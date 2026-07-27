@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-27
+
+The **Weekly Hub** turns the Week view into a two-zone "one stop shop" — your
+pinned folder's live document stacked above the week grid. Around it this release
+adds a weekend app-icon badge, prominent "high bits" and next-event auto-scroll
+in the calendar, Apple/system-calendar import, Johnny-Decimal auto-numbering,
+full-text search from the palette, raw-source note editing, and much more.
+
+### Added
+
+- **Weekly Hub, front and center.** See below — a Notable Folder's Main Document
+  now lives above the week grid as an editable, independently-scrolling zone.
+- **"High bits" for the day.** All-day events in the Weekly Hub folder render as a
+  prominent, contrasting card in the Day / Week all-day band (larger, bolder
+  title) so the day's headline events read first.
+- **Auto-scroll to the next event.** Opening Day / Week lands you just above the
+  next upcoming event instead of a fixed now-centered position (desktop + iOS).
+- **Full-text search from the command palette.** A subtle button on the `Cmd+K`
+  input bar opens search across note *contents* — snippets, keyboard nav, jump to
+  the note.
+- **Edit source.** The `⋯` menu flips any markdown note — including list folders
+  and your home folder — to a raw-markdown editor over the on-disk file, and back.
+- **Paste an image into a masonry card,** and calendar imports (Google or the
+  system calendar) now default to the **Weekly Hub folder**, with a per-event
+  notable-folder override in the review.
+
 ### Added
 
 - **Saturday app-icon badge (iOS / macOS).** Opt-in (Settings → "Saturday
@@ -125,9 +151,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tighter, more immersive Day / Week / Month margins.** Trimmed the calendar
   shell padding (especially the big vertical gaps) and the top chrome so the grid
   reads closer to edge-to-edge.
+- **Subtler current-day marker.** The today column is no longer a loud wash — the
+  date text itself goes coral + bold; calendar grid lines are softened; event
+  cards get a hover lift; and note links carry a faint always-on underline.
 
 ### Fixed
 
+- **Deep links no longer hijack the app (iOS).** An external link — including the
+  "Watch on YouTube" / playlist links inside an embedded player — opens in the OS
+  app instead of loading over Order's own WebView and replacing your note. A
+  navigation guard hands any external `http(s)` navigation to the system.
+- **Copying part of a list item no longer grabs the bullet.** Selecting a few
+  words inside a bullet (or heading / quote) and copying now yields exactly the
+  highlighted text, not `- …`; whole-item selections keep their markdown.
 - **Week view no longer scrolls the whole page.** The Week hub fills the viewport
   and the document scroll is locked while it's open, so only the two zones (the
   doc and the week grid) scroll — no stray page scrollbar stacked on top of them
