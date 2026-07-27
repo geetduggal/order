@@ -3,6 +3,7 @@
 // toggle the selected folder's filter, Esc to dismiss.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FileSearch } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import type { NotableFolder } from "./Sidebar";
 
@@ -35,9 +36,12 @@ interface Props {
   /** Create a Notable Folder named `name` under `area` → `category`.
    *  When set, a "Create folder…" row appears for an unmatched query. */
   onCreateFolder?: (name: string, area: string, category: string) => Promise<void> | void;
+  /** Open full-text search (search the TEXT inside notes). When provided, a
+   *  subtle button appears on the right of the input bar. */
+  onOpenFullText?: () => void;
 }
 
-export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras, placements, onCreateFolder }: Props) {
+export function CommandPalette({ folders, selected, onToggle, onClose, recents, extras, placements, onCreateFolder, onOpenFullText }: Props) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   // When set, the palette is in its two-step "create folder" placement mode.
@@ -228,14 +232,27 @@ export function CommandPalette({ folders, selected, onToggle, onClose, recents, 
           </div>
         ) : (
         <>
-        <input
-          ref={inputRef}
-          type="text"
-          className="cmdk-input"
-          placeholder="Type a folder name…"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setActive(0); }}
-        />
+        <div className="cmdk-input-row">
+          <input
+            ref={inputRef}
+            type="text"
+            className="cmdk-input"
+            placeholder="Type a folder name…"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setActive(0); }}
+          />
+          {onOpenFullText && (
+            <button
+              type="button"
+              className="cmdk-mode-btn"
+              onClick={() => { onClose(); onOpenFullText(); }}
+              title="Search text inside notes"
+              aria-label="Search text inside notes"
+            >
+              <FileSearch size={16} strokeWidth={2} />
+            </button>
+          )}
+        </div>
         {matches.length === 0 ? (
           <p className="cmdk-empty">No folders match.</p>
         ) : (

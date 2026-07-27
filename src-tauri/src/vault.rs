@@ -591,9 +591,19 @@ pub fn open_terminal(path: String) -> Result<(), String> {
 // external anchor clicks (Tauri's webview navigates IN the webview by
 // default, which we don't want for http(s) links in note bodies).
 #[tauri::command]
-pub fn open_url(
-    #[allow(unused_variables)] app: tauri::AppHandle,
-    url: String,
+pub fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    open_url_native(&app, &url)
+}
+
+/// Open an http(s)/mailto/tel URL in the OS default app (never in Order's
+/// WebView). Shared by the `open_url` command and the navigation guard
+/// (see `run()` in lib.rs), which routes external main-frame navigations
+/// here — the iOS WebView has no new-window handler, so a `_blank` /
+/// `window.open` link (e.g. inside a YouTube embed) would otherwise load in
+/// the main frame and replace the note UI.
+pub fn open_url_native(
+    #[allow(unused_variables)] app: &tauri::AppHandle,
+    url: &str,
 ) -> Result<(), String> {
     if url.is_empty() {
         return Err("empty url".into());
@@ -606,14 +616,14 @@ pub fn open_url(
     #[cfg(target_os = "ios")]
     {
         use tauri_plugin_vault::VaultExt;
-        return app.vault().open_url(url).map_err(|e| e.to_string());
+        return app.vault().open_url(url.to_string()).map_err(|e| e.to_string());
     }
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&url).spawn();
+    let result = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    let result = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows", target_os = "ios")))]
     let result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,

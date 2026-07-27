@@ -295,6 +295,17 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
             // plugin's clipboardTextSerializer (Milkdown ships one).
             const onCopy = (e: ClipboardEvent) => {
               if (!e.clipboardData) return;
+              // Partial selection inside a SINGLE block (e.g. some words of a
+              // list item or heading): copy exactly the highlighted text, with
+              // no bullet / heading / quote marker. ProseMirror otherwise
+              // serializes the whole enclosing block, so grabbing three words
+              // of a bullet pastes "- three words". Only whole-block / multi-
+              // item selections keep their markdown structure (below).
+              const sel = view.state.selection;
+              if (!sel.empty && sel.$from.sameParent(sel.$to) && sel.$from.parent.isTextblock) {
+                const plain = sel.$from.parent.textBetween(sel.$from.parentOffset, sel.$to.parentOffset, "\n", " ");
+                if (plain) { e.clipboardData.setData("text/plain", plain); return; }
+              }
               const text = e.clipboardData.getData("text/plain");
               if (!text) return;
               // Deflate inflated vaultasset:// media URLs back to the on-disk
@@ -303,7 +314,11 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
               if (cleaned !== text) e.clipboardData.setData("text/plain", cleaned);
             };
             view.dom.addEventListener("copy", onCopy, false);
-            copyCleanup = () => view.dom.removeEventListener("copy", onCopy, false);
+            view.dom.addEventListener("cut", onCopy, false);
+            copyCleanup = () => {
+              view.dom.removeEventListener("copy", onCopy, false);
+              view.dom.removeEventListener("cut", onCopy, false);
+            };
           });
         } catch (err) {
           console.warn("clipboard serializer override failed:", err);

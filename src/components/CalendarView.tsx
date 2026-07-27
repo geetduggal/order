@@ -36,6 +36,10 @@ export interface NoteMeta {
   frontmatter: Frontmatter;
   /** Notable Folder color applied as the event background tint + border. */
   color?: string;
+  /** "High bit for the day": an all-day event in the weekly-hub folder,
+   *  rendered as a prominent card in the all-day band. Set upstream (where
+   *  the hub folder is known); consumed as a class in the all-day strip. */
+  highBit?: boolean;
 }
 
 interface Props {
@@ -105,7 +109,9 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     // Pass the completion flag + folder color through to
     // renderEventContent via extendedProps. FC's event store passes the
     // props straight through to event.extendedProps.
-    const extendedProps = { completed, folderColor: note.color ?? null };
+    // highBit only carries on genuinely all-day events (the hub's "high
+    // bits" live in the all-day band); a timed hub event stays normal.
+    const extendedProps = { completed, folderColor: note.color ?? null, highBit: allDay && note.highBit === true };
 
     if (allDay) {
       events.push({
@@ -577,6 +583,15 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
         displayEventTime={false}
         eventContent={renderEventContent}
+        // Weekly-hub all-day events get the "high bit" card treatment in the
+        // Day / Week all-day band (see .order-event-highbit). Scoped to the
+        // time-grid views — month/year already lead with all-day events.
+        eventClassNames={(arg) =>
+          arg.event.extendedProps?.highBit &&
+          (arg.view.type === "timeGridDay" || arg.view.type === "timeGridWeek")
+            ? ["order-event-highbit"]
+            : []
+        }
         dayHeaderContent={(arg) => {
           const iso = arg.date.toISOString().slice(0, 10);
           const isTimeGrid = arg.view.type === "timeGridDay" || arg.view.type === "timeGridWeek";

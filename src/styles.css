@@ -1693,12 +1693,18 @@ iframe.order-youtube-embed {
    restores the full royal + underline for an unmistakable affordance. */
 .milkdown-host .ProseMirror a {
   color: color-mix(in srgb, var(--royal, #4169e1) var(--link-mix, 55%), var(--ink));
-  text-decoration: none;
+  /* A faint always-on underline is the "subtle but obvious" affordance —
+     a link-dense note still reads as an index, but no link hides. Hover
+     firms up the color + underline into an unmistakable target. */
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--royal, #4169e1) 38%, transparent);
+  text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 .milkdown-host .ProseMirror a:hover {
   color: var(--royal, #4169e1);
   text-decoration: underline;
+  text-decoration-color: var(--royal, #4169e1);
 }
 
 /* Wikilinks: `[[Name]]` decorated inline (same demoted royal as links).
@@ -2605,7 +2611,9 @@ html.week-hub-lock .shell { min-height: 0; }
    grip that brightens on hover. touch-action:none so a touch-drag resizes
    instead of scrolling the page. */
 .week-hub-divider {
-  height: 8px;
+  /* Generous, finger-friendly hit area — the visible rule is thin, but the
+     grabbable band is tall so a resize is easy to start on touch + mouse. */
+  height: 18px;
   flex: 0 0 auto;
   cursor: row-resize;
   touch-action: none;
@@ -2615,14 +2623,15 @@ html.week-hub-lock .shell { min-height: 0; }
   background: transparent;
 }
 .week-hub-divider-grip {
-  width: 30px;
-  height: 2px;
+  width: 44px;
+  height: 4px;
   border-radius: 999px;
   background: var(--ink-faint);
-  opacity: 0.3;
+  opacity: 0.4;
   transition: opacity 120ms var(--ease-out), width 120ms var(--ease-out);
 }
-.week-hub-divider:hover .week-hub-divider-grip { opacity: 0.6; width: 46px; }
+.week-hub-divider:hover .week-hub-divider-grip { opacity: 0.7; width: 64px; }
+.week-hub-divider:active .week-hub-divider-grip { opacity: 0.85; width: 64px; }
 /* Bottom zone: the CalendarView self-measures its own bounded height. */
 .week-hub-grid { display: block; }
 
@@ -2637,12 +2646,16 @@ html.week-hub-lock .shell { min-height: 0; }
   margin: 0 auto;
   font-family: var(--sans);
   position: relative;
-  /* FullCalendar v6 theming via CSS variables. */
-  --fc-border-color: var(--cal-line, var(--rule));
+  /* FullCalendar v6 theming via CSS variables. Grid lines are quiet
+     structure, not chrome — soften the rule so the events read first. */
+  --fc-border-color: color-mix(in srgb, var(--cal-line, var(--rule)) 55%, transparent);
   --fc-page-bg-color: var(--bg);
   --fc-neutral-bg-color: var(--bg-elev);
   --fc-list-event-hover-bg-color: var(--bg-elev);
-  --fc-today-bg-color: var(--coral-soft);
+  /* Today is marked by its DATE TEXT (coral + bold), not a loud column
+     wash — the old coral-soft fill shouted across the whole day. Keep only a
+     whisper of tint so the column is still locatable at a glance. */
+  --fc-today-bg-color: color-mix(in srgb, var(--coral) 7%, transparent);
   --fc-now-indicator-color: var(--coral);
   /* Events wear the card chrome: same lifted surface + hairline border
      as every .order-card, so the calendar reads as a grid of miniature
@@ -2751,7 +2764,7 @@ html.week-hub-lock .shell { min-height: 0; }
   color: var(--ink-faint);
   padding: 6px 4px;
 }
-.fc-shell .fc-day-today .fc-col-header-cell-cushion { color: var(--coral); }
+.fc-shell .fc-day-today .fc-col-header-cell-cushion { color: var(--coral); font-weight: 700; }
 
 /* Time axis labels */
 .fc-shell .fc-timegrid-axis-cushion,
@@ -2790,6 +2803,19 @@ html.week-hub-lock .shell { min-height: 0; }
 }
 .fc-shell .fc-event .fc-event-main { overflow: hidden; min-width: 0; }
 .fc-shell .fc-event:active { cursor: grabbing; }
+/* Hover lift: events read as little cards you can pick up — a firmer shadow +
+   a touch of accent on the border + a 1px rise on hover. Transitioned so it
+   feels responsive, not abrupt. */
+.fc-shell .fc-event {
+  transition: box-shadow 120ms var(--ease-out), transform 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+@media (hover: hover) {
+  .fc-shell .fc-event:hover {
+    border-color: color-mix(in srgb, var(--royal) 42%, var(--card-border, var(--rule)));
+    box-shadow: 0 2px 4px rgba(20, 20, 40, 0.10), 0 8px 18px rgba(20, 20, 40, 0.10);
+    transform: translateY(-1px);
+  }
+}
 .fc-shell .fc-event-title {
   font-weight: 600;
   white-space: normal;
@@ -2857,6 +2883,36 @@ html.week-hub-lock .shell { min-height: 0; }
   line-height: 1.2;
   white-space: nowrap;
 }
+
+/* "High bits" — the weekly-hub folder's all-day events. They mark the
+   day's headline, so they lift off the all-day band as a distinct royal
+   card: a saturated tint, a defined royal border, extra shadow, and a
+   larger, heavier title. Everything else in the band stays quiet so these
+   read first. */
+.fc-shell .fc-event.order-event-highbit {
+  /* Contrast by COLOR, not glow: fill with coral — the theme's opposite
+     accent to its (often royal/blue) page background — so the card pops
+     against the surface instead of blending into it. Mixed into the theme's
+     elevated surface so --ink text stays legible in light and dark alike. */
+  background: color-mix(in srgb, var(--coral) 30%, var(--bg-elev, #fff));
+  border-color: color-mix(in srgb, var(--coral) 55%, var(--card-border, var(--coral)));
+  border-radius: 11px;
+  /* A plain, crisp lift — no colored blur (the old royal glow read as fuzzy). */
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.14);
+}
+.fc-shell .fc-event.order-event-highbit .order-event-row {
+  padding: 6px 11px 7px;
+}
+.fc-shell .fc-event.order-event-highbit .order-event-title {
+  font-size: 1.3em;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+  color: var(--ink);
+}
+.fc-shell .fc-event.order-event-highbit .order-event-dot {
+  width: 9px;
+  height: 9px;
+}
 /* Give 30-minute slots enough vertical room so the row above fits with
    real space below for descenders. (FC default 1.5em ≈ 21px is too tight.) */
 .fc-shell .fc-timegrid-slot { height: 2.4em; }
@@ -2913,7 +2969,7 @@ html.week-hub-lock .shell { min-height: 0; }
   color: var(--ink);
   padding: 4px 6px;
 }
-.fc-shell .fc-day-today .fc-daygrid-day-number { color: var(--coral); }
+.fc-shell .fc-day-today .fc-daygrid-day-number { color: var(--coral); font-weight: 700; }
 .fc-shell .fc-daygrid-more-link {
   font-size: 0.833em;
   color: var(--royal);
@@ -3148,7 +3204,9 @@ html.week-hub-lock .shell { min-height: 0; }
    the day number. Visible at a glance without dominating the
    strip. */
 .year-cell.today {
-  background: var(--coral-soft);
+  /* The coral pill on the day number (below) carries the marker — no loud
+     full-cell wash. */
+  background: transparent;
 }
 .year-cell.today .year-cell-day {
   color: var(--coral);
@@ -5764,6 +5822,32 @@ html.week-hub-lock .shell { min-height: 0; }
   to   { opacity: 1; transform: none; }
 }
 
+/* Input bar: the folder-name field flexes; a subtle full-text-search button
+   sits at its right edge. The divider rule lives on the row so it spans the
+   button too. */
+.cmdk-input-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--rule);
+}
+.cmdk-input-row .cmdk-input {
+  border-bottom: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cmdk-mode-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 15px;
+  border: none;
+  background: transparent;
+  color: var(--ink-ghost);
+  cursor: pointer;
+  transition: color 120ms var(--ease-out);
+}
+.cmdk-mode-btn:hover { color: var(--royal); }
 .cmdk-input {
   width: 100%;
   padding: 14px 16px;

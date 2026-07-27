@@ -5629,6 +5629,11 @@ export function CardGrid() {
   }
 
   const chipMap = new Map<string, { ev: SpacetimeEvent; notePath: string | null }>();
+  // The weekly-hub folder's all-day events render as prominent "high bits"
+  // in the all-day band. Match by normalized folder key so renames of the
+  // number prefix etc. still line up.
+  const hubKey = weekHubFolder ? folderMatchKey(weekHubFolder) : null;
+  const isHubFolder = (folder?: string | null) => !!hubKey && !!folder && folderMatchKey(folder) === hubKey;
   const markdownCalendarNotes: NoteMeta[] = (() => {
     const out: NoteMeta[] = [];
     const seen = new Set<string>();
@@ -5688,6 +5693,7 @@ export function CardGrid() {
         title: ev.title,
         frontmatter: fm,
         color: ev.folder ? folderColor(ev.folder) : undefined,
+        highBit: isHubFolder(ev.folder) && (ev.allDay ?? !ev.time),
       });
     }
     return out;
@@ -5768,6 +5774,7 @@ export function CardGrid() {
             title: cleanTitle || "Untitled",
             frontmatter: fm,
             color: nf ? folderColor(nf) : undefined,
+            highBit: isHubFolder(nf) && i.allDay,
           };
         })
     : [];
@@ -6244,6 +6251,7 @@ export function CardGrid() {
           onClose={() => setPaletteOpen(false)}
           recents={recentFolders}
           placements={folderPlacements}
+          onOpenFullText={() => setFtsOpen(true)}
           onCreateFolder={async (name, area, category) => {
             await handleCreateFolder(name, area, category);
             // Land in the new folder. handleCreateFolder sanitizes the on-disk

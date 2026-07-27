@@ -24,6 +24,53 @@ pub fn run() {
         .plugin(tauri_plugin_vault::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        // Navigation guard: Order's WebView must NEVER navigate to an external
+        // http(s) site — every external link belongs in the user's default app
+        // (Safari, YouTube, …), leaving the note UI exactly where it was. This
+        // matters most on iOS, where wry implements no new-window handler, so a
+        // `target="_blank"` / `window.open` link (e.g. a "Watch on YouTube" /
+        // playlist link inside an embedded player) falls back to loading in the
+        // MAIN frame and replaces Order with the web page. We cancel any such
+        // navigation and hand the URL to the OS instead.
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("nav-guard")
+                .on_navigation(|webview, url| {
+                    let scheme = url.scheme();
+                    // Internal schemes (tauri, vaultasset, data, blob, about,
+                    // the OAuth custom scheme, …) are ours — always allow.
+                    if scheme != "http" && scheme != "https" {
+                        return true;
+                    }
+                    let host = url.host_str().unwrap_or("");
+                    // The app itself: the prod custom-protocol host and the
+                    // Vite dev server both live on *.localhost / 127.0.0.1.
+                    if host == "localhost"
+                        || host == "127.0.0.1"
+                        || host.ends_with(".localhost")
+                    {
+                        return true;
+                    }
+                    // The YouTube embed iframe loading (and switching videos)
+                    // inside a note — its src is youtube(-nocookie).com/embed/ID.
+                    // Allow only the /embed/ path; destination links (watch,
+                    // playlist, channel) fall through and open externally.
+                    let is_youtube = matches!(
+                        host,
+                        "www.youtube.com"
+                            | "youtube.com"
+                            | "www.youtube-nocookie.com"
+                            | "youtube-nocookie.com"
+                    );
+                    if is_youtube && url.path().starts_with("/embed/") {
+                        return true;
+                    }
+                    // Any other http(s) target is a real external destination.
+                    // Open it in the default app and CANCEL the in-app nav.
+                    let _ = crate::vault::open_url_native(webview.app_handle(), url.as_str());
+                    false
+                })
+                .build(),
+        )
         .manage(AppState { vault_path: Mutex::new(None) })
         .manage(gcal::PendingAuth::default())
         .manage(vault_fs::VaultState::default())

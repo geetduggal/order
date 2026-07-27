@@ -60,7 +60,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -323,6 +323,10 @@ export function Card(props: Props) {
   // icon click (persisted in parallel). Only markdown notes can flip —
   // spacetime / yaml / txt surfaces always stay in their raw editor.
   const [viewOverride, setViewOverride] = useState<NoteView | null>(null);
+  // Transient "edit the raw markdown" mode: swaps the Milkdown WYSIWYG for a
+  // CodeMirror surface over the SAME body (not persisted — an escape hatch
+  // for when the rich editor gets in the way). Both save through handleChange.
+  const [sourceOpen, setSourceOpen] = useState(false);
   // Secondary card actions collapse behind a "⋯" popover so the top control
   // row stays uncrowded (and doesn't overlap the date chip or a flipped
   // surface's own toolbar).
@@ -387,6 +391,10 @@ export function Card(props: Props) {
   const view: NoteView = canFlip ? (viewOverride ?? (viewFm ? parseView(viewFm) : "note")) : "note";
   const viewRef = useRef<NoteView>(view);
   viewRef.current = view;
+  // "Edit source" applies only to plain-markdown notes shown in Milkdown —
+  // not raw surfaces (spacetime/yaml/txt), flipped views, or list folders
+  // (whose bullets live outside the editor body).
+  const canEditSource = canFlip && view === "note" && !readOnly && !(viewFm && isListFolder(viewFm));
 
   // Load the active view's sidecar (created on first flip by flipView).
   useEffect(() => {
@@ -424,6 +432,17 @@ export function Card(props: Props) {
       catch (e) { console.error("persist view failed", e); }
     }
   }, [onSetFrontmatter]);
+
+  // Toggle raw-source editing. On the way back to Milkdown, push the latest
+  // body into `state` so the remounting editor picks up source edits (it reads
+  // `initial` only once, at mount).
+  const toggleSource = useCallback(() => {
+    setSourceOpen((prev) => {
+      const next = !prev;
+      if (!next) setState((s) => (s.kind === "ready" ? { ...s, body: editorBodyRef.current } : s));
+      return next;
+    });
+  }, []);
 
   const saveSheet = useCallback((html: string) => {
     void vaultFs.writeText(toVaultRel(sheetSidecarPath(pathRef.current)), html);
@@ -1377,6 +1396,11 @@ export function Card(props: Props) {
               </button>
             </>
           )}
+          {canEditSource && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (sourceOpen ? " is-on" : "")} onClick={() => { toggleSource(); setMoreOpen(false); }}>
+              <CodeIcon size={14} strokeWidth={2} /><span>{sourceOpen ? "Back to note" : "Edit source"}</span>
+            </button>
+          )}
           {isMainDoc && (
             <button type="button" role="menuitem" className={"order-card-more-item" + (flipped ? " is-on" : "")} onClick={() => { setFlipped((f) => !f); setTermOpen(false); setMoreOpen(false); }}>
               <FolderOpenIcon size={14} strokeWidth={2} /><span>{flipped ? "Back to note" : "Folder contents"}</span>
@@ -1556,6 +1580,16 @@ export function Card(props: Props) {
             onChange={handleChange}
             onDone={() => { void flushNow(); }}
             autoFocus={autoFocus && !readOnly}
+            readOnly={readOnly}
+          />
+        ) : sourceOpen ? (
+          // Raw-markdown escape hatch (More → Edit source). Edits the SAME
+          // body via CodeMirror; saves flow through handleChange exactly as
+          // Milkdown's do (deflate on save is identical).
+          <CodeMirrorSurface
+            value={editorBody}
+            onChange={handleChange}
+            lang="markdown"
             readOnly={readOnly}
           />
         ) : (

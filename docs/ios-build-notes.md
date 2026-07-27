@@ -6,6 +6,32 @@ edits below. After any re-init (or fresh clone + init), re-apply these to
 `gen/apple/project.yml`, then run `xcodegen generate` in `gen/apple/` (or just
 `pnpm tauri ios dev`, which runs xcodegen).
 
+## ⚠️ Never overlap `tauri dev` (desktop) with `tauri ios build`
+
+Symptom: the installed iOS app launches to **`asset not found: index.html`** (a
+white/blank error screen) even though `dist/` is fresh and the build/install
+"succeeds".
+
+Cause: on iOS the frontend is compiled *into* the Rust binary by
+`generate_context!`, but only when the `custom-protocol` feature is active
+(`tauri-macros`: `dev = cfg!(not(feature = "custom-protocol"))`). `tauri dev`
+compiles the shared **`tauri-macros` proc-macro WITHOUT `custom-protocol`**
+(dev mode → empty asset map, expects a live dev server). A later `tauri ios
+build` sharing `src-tauri/target/` can **reuse that cached dev-mode proc-macro**,
+so the iOS binary ships an empty asset map → nothing to serve on-device.
+
+Rules:
+- Don't run `cetl 1` (desktop `tauri dev`) and `cetl 2` (`tauri ios build`) in
+  overlapping sessions against the same `src-tauri/target/`.
+- If you did, `cd src-tauri && cargo clean` before the iOS build. `cargo clean
+  -p order` is **not** enough — the poisoned crate is `tauri-macros`.
+- Verify the binary actually embedded the frontend (not just that the build
+  "succeeded"):
+  ```sh
+  unzip -p src-tauri/gen/apple/build/arm64/Order.ipa Payload/Order.app/Order \
+    | strings | grep -cE 'assets/index-[A-Za-z0-9]+\.(js|css)'   # must be > 0
+  ```
+
 ## 1. PATH for the build script
 
 Xcode runs build scripts with a minimal PATH that lacks Homebrew and Cargo, so
@@ -61,6 +87,31 @@ init drops the keys, re-add them (or re-copy from `src-tauri/Info.plist`):
 <string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar. Invitations are sent through Google, not Apple.</string>
 <key>NSCalendarsUsageDescription</key>
 <string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar.</string>
+```
+
+## 5. `gen/apple/assets` must be a symlink to `dist`
+
+The iOS app bundles its web frontend from `gen/apple/assets/` (a `resources`
+folder reference in `project.yml`, copied to `Order.app/assets/`). `tauri ios
+init` seeds this as a **one-time copy** of `dist/` and does **not** re-sync it on
+later `tauri ios build`s. If it stays a stale copy, the app ships an old
+frontend whose `index.html` references chunk hashes that no longer match — the
+webview then fails with **`asset not found: index.html`** on launch.
+
+Fix / keep it: make `assets` a symlink to the live `dist/` so every build
+bundles the current frontend:
+
+```sh
+cd src-tauri/gen/apple
+rm -rf assets && ln -s ../../../dist assets   # assets → <repo>/dist
+```
+
+Re-apply after any `tauri ios init`. Verify a build embedded the fresh frontend:
+
+```sh
+unzip -p src-tauri/gen/apple/build/arm64/Order.ipa \
+  Payload/Order.app/assets/index.html | grep -oE 'index-[A-Za-z0-9]+\.js'
+# → must match `grep … dist/index.html`
 ```
 
 ## Run
