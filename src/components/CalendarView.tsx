@@ -8,7 +8,7 @@
 // them. Year view is deferred — Full Calendar Plus uses a custom
 // LinearView plugin we haven't ported yet.
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Download as DownloadIcon, CalendarClock as CalendarClockIcon } from "lucide-react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -167,6 +167,15 @@ function nowCenteredScrollTime(): string {
   return `${h}:${m}:00`;
 }
 
+/** Scroll target that lands a Date near (not jammed against) the top of the
+ *  grid — the event's time-of-day minus a short lead-in. Clamped to midnight. */
+function leadInScrollTime(d: Date): string {
+  const mins = Math.max(0, d.getHours() * 60 + d.getMinutes() - 20);
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}:00`;
+}
+
 /** Round a Date to the nearest absolute half-hour mark (XX:00 or XX:30).
  *  setMinutes accepts values ≥ 60 and overflows into the next hour, so
  *  we don't need a wrap branch. Mutates a fresh copy, not the input. */
@@ -298,6 +307,9 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   const { notes, initialView, onMoveEvent, onImportDay, onImportAppleDay } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  // One-shot guard so the load-time "scroll to the next event" runs once per
+  // mount (CardGrid remounts this on view change), not on every later edit.
+  const didAutoScrollRef = useRef(false);
   useImperativeHandle(navRef, () => ({
     prev: () => apiRef.current?.getApi()?.prev(),
     next: () => apiRef.current?.getApi()?.next(),
@@ -363,6 +375,42 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     });
   }, [notes, allDayOnly]);
   const events = useMemo(() => notesToEvents(visibleNotes), [visibleNotes]);
+
+  // Auto-scroll (Day / Week) to the NEXT upcoming timed event in the visible
+  // range, so opening the calendar lands you on what's next instead of a fixed
+  // now-centered position. Guarded to fire once per "open" — driven by both the
+  // events effect (notes load async) and FullCalendar's `datesSet` (fires after
+  // the grid is laid out, so the scroll actually sticks when switching pile →
+  // calendar). Refs keep the callback stable. Falls back to now-centered.
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  const autoScrollToNext = useCallback(() => {
+    if (didAutoScrollRef.current) return;
+    const api = apiRef.current?.getApi();
+    if (!api) return;
+    const view = api.view;
+    if (view.type !== "timeGridDay" && view.type !== "timeGridWeek") return;
+    const rangeStart = view.activeStart.getTime();
+    const rangeEnd = view.activeEnd.getTime();
+    const now = Date.now();
+    let next: Date | null = null;
+    for (const ev of eventsRef.current) {
+      if (ev.allDay || typeof ev.start !== "string") continue;
+      const d = new Date(ev.start);
+      const t = d.getTime();
+      if (Number.isNaN(t) || t < rangeStart || t >= rangeEnd || t < now) continue;
+      if (!next || d < next) next = d;
+    }
+    api.scrollToTime(next ? leadInScrollTime(next) : nowCenteredScrollTime());
+    // Only lock once real events exist; an empty first render (notes not loaded
+    // yet) shouldn't freeze the now-centered fallback in place.
+    if (eventsRef.current.length > 0) didAutoScrollRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!isTimeGrid) return;
+    const id = requestAnimationFrame(autoScrollToNext);
+    return () => cancelAnimationFrame(id);
+  }, [events, isTimeGrid, autoScrollToNext]);
 
   // Week-view column visibility lives here so the desktop, iOS, and
   // published viewer all pick it up by mounting the same component.
@@ -575,6 +623,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // same anchor when paging prev/next instead of snapping to 06:00.
         scrollTime={nowCenteredScrollTime()}
         scrollTimeReset={false}
+        // Fires after the view is rendered/laid out — the reliable moment to
+        // land the scroll on the next event (esp. when switching pile → cal,
+        // where a mount-time rAF runs before FC has sized the grid).
+        datesSet={() => { requestAnimationFrame(autoScrollToNext); }}
         // Event content is rendered manually (see renderEventContent) so
         // FC's range formatter can't sneak a trailing separator in.
         // displayEventTime: false fully silences FC's default time

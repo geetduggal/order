@@ -327,6 +327,14 @@ export function Card(props: Props) {
   // CodeMirror surface over the SAME body (not persisted — an escape hatch
   // for when the rich editor gets in the way). Both save through handleChange.
   const [sourceOpen, setSourceOpen] = useState(false);
+  // Raw-source editing edits the on-disk file BODY verbatim (exactly what's on
+  // disk — no Milkdown re-serialization, so no loose blank lines; and it
+  // includes a list folder's bullets/base block, which the WYSIWYG editor
+  // strips out). Its own debounced save writes straight to the file.
+  const [sourceDraft, setSourceDraft] = useState<string>("");
+  const sourceDraftRef = useRef("");
+  sourceDraftRef.current = sourceDraft;
+  const sourceSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Secondary card actions collapse behind a "⋯" popover so the top control
   // row stays uncrowded (and doesn't overlap the date chip or a flipped
   // surface's own toolbar).
@@ -391,10 +399,10 @@ export function Card(props: Props) {
   const view: NoteView = canFlip ? (viewOverride ?? (viewFm ? parseView(viewFm) : "note")) : "note";
   const viewRef = useRef<NoteView>(view);
   viewRef.current = view;
-  // "Edit source" applies only to plain-markdown notes shown in Milkdown —
-  // not raw surfaces (spacetime/yaml/txt), flipped views, or list folders
-  // (whose bullets live outside the editor body).
-  const canEditSource = canFlip && view === "note" && !readOnly && !(viewFm && isListFolder(viewFm));
+  // "Edit source" (raw markdown of the whole body) applies to any markdown note
+  // shown in Milkdown — not raw surfaces (spacetime/yaml/txt) or flipped views.
+  // List folders included: source edits the file directly (bullets and all).
+  const canEditSource = canFlip && view === "note" && !readOnly;
 
   // Load the active view's sidecar (created on first flip by flipView).
   useEffect(() => {
@@ -433,16 +441,86 @@ export function Card(props: Props) {
     }
   }, [onSetFrontmatter]);
 
-  // Toggle raw-source editing. On the way back to Milkdown, push the latest
-  // body into `state` so the remounting editor picks up source edits (it reads
-  // `initial` only once, at mount).
+  // Write the raw source body straight to the file, preserving whatever
+  // frontmatter is on disk (edited via the YAML peek, not here).
+  const saveSourceNow = useCallback(async (draft: string) => {
+    const path = pathRef.current;
+    inflight.current += 1;
+    try {
+      const raw = await vaultFs.readText(toVaultRel(path));
+      const { frontmatter } = splitFrontmatter(raw);
+      const content = joinFrontmatter(frontmatter, draft);
+      markKnownBody(path, draft);
+      await vaultFs.writeText(toVaultRel(path), content);
+      onPersistedRef.current?.(path, frontmatter, draft);
+    } catch (e) { console.error("source save failed", e); }
+    finally { inflight.current -= 1; }
+  }, []);
+  const scheduleSourceSave = useCallback((draft: string) => {
+    if (sourceSaveTimer.current) clearTimeout(sourceSaveTimer.current);
+    sourceSaveTimer.current = setTimeout(() => { void saveSourceNow(draft); }, SAVE_DEBOUNCE_MS);
+  }, [saveSourceNow]);
+
+  // Re-read the file and rebuild the editor/list state from it — used when
+  // leaving source mode so Milkdown (and a list folder's bullets) reflect the
+  // just-edited raw markdown. Mirrors the initial-load transform.
+  const reloadFromDisk = useCallback(async () => {
+    const path = pathRef.current;
+    try {
+      const raw = await vaultFs.readText(toVaultRel(path));
+      const split = splitFrontmatter(raw);
+      const frontmatter = split.frontmatter;
+      const noteDir = vaultDir(toVaultRel(path));
+      const embedInflate = inflateEmbedFencesToImage(split.body);
+      embedRestoreRef.current = embedInflate.restore;
+      const displayBody = inflateImageEmbeds(
+        inflateAttachmentUrls(embedInflate.body, attachmentAssetPrefix(await vaultRoot())),
+        noteDir,
+      );
+      let editorNext = displayBody;
+      if (isListFolder(frontmatter)) {
+        const rawBlock = extractRawBaseBlock(displayBody);
+        if (rawBlock) {
+          baseBlockRawRef.current = rawBlock;
+          setBaseBlockRaw(rawBlock);
+          editorNext = displayBody.replace(rawBlock, "").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+        } else {
+          const bs = splitBodyAndBullets(displayBody);
+          editorNext = bs.prose;
+          listItemsRef.current = bs.items;
+          setListItems(bs.items);
+        }
+      }
+      editorBodyRef.current = editorNext;
+      setEditorBody(editorNext);
+      markKnownBody(path, split.body);
+      const rawFm = split.raw.replace(/^---\r?\n/, "").replace(/\r?\n---\r?\n?$/, "");
+      setState((s) => (s.kind === "ready" ? { ...s, body: editorNext, frontmatter, rawFm } : s));
+    } catch (e) { console.error("reload from disk failed", e); }
+  }, []);
+
+  // Toggle raw-source editing. Entering: cancel any pending WYSIWYG save (so it
+  // can't clobber the file mid-edit) and load the on-disk body. Leaving: flush
+  // the source save, then rebuild the editor from disk.
   const toggleSource = useCallback(() => {
     setSourceOpen((prev) => {
       const next = !prev;
-      if (!next) setState((s) => (s.kind === "ready" ? { ...s, body: editorBodyRef.current } : s));
+      if (next) {
+        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+        dirty.current = false;
+        void (async () => {
+          try {
+            const raw = await vaultFs.readText(toVaultRel(pathRef.current));
+            setSourceDraft(splitFrontmatter(raw).body);
+          } catch (e) { console.error("source load failed", e); }
+        })();
+      } else {
+        if (sourceSaveTimer.current) { clearTimeout(sourceSaveTimer.current); sourceSaveTimer.current = null; }
+        void (async () => { await saveSourceNow(sourceDraftRef.current); await reloadFromDisk(); })();
+      }
       return next;
     });
-  }, []);
+  }, [saveSourceNow, reloadFromDisk]);
 
   const saveSheet = useCallback((html: string) => {
     void vaultFs.writeText(toVaultRel(sheetSidecarPath(pathRef.current)), html);
@@ -1583,12 +1661,12 @@ export function Card(props: Props) {
             readOnly={readOnly}
           />
         ) : sourceOpen ? (
-          // Raw-markdown escape hatch (More → Edit source). Edits the SAME
-          // body via CodeMirror; saves flow through handleChange exactly as
-          // Milkdown's do (deflate on save is identical).
+          // Raw-markdown escape hatch (More → Edit source). Edits the on-disk
+          // file body verbatim with its own debounced save; toggling back
+          // rebuilds the WYSIWYG editor from disk (see toggleSource).
           <CodeMirrorSurface
-            value={editorBody}
-            onChange={handleChange}
+            value={sourceDraft}
+            onChange={(v) => { setSourceDraft(v); scheduleSourceSave(v); }}
             lang="markdown"
             readOnly={readOnly}
           />
@@ -1606,7 +1684,7 @@ export function Card(props: Props) {
             noteDir={vaultDir(toVaultRel(pathRef.current))}
           />
         )}
-        {isListFolder(fmLive) && (
+        {isListFolder(fmLive) && !sourceOpen && (
           <>
             {parsedBase && (
               <div className="order-card-list-controls">
