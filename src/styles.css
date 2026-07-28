@@ -5610,7 +5610,7 @@ html.week-hub-lock .shell { min-height: 0; }
   border: none;
   text-align: left;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--ink);
@@ -5625,7 +5625,7 @@ html.week-hub-lock .shell { min-height: 0; }
   border: none;
   background: transparent;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--ink);
@@ -5639,7 +5639,7 @@ html.week-hub-lock .shell { min-height: 0; }
 }
 .basecard-caption {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   color: var(--ink-soft);
   display: block;
   width: 100%;
@@ -5776,7 +5776,7 @@ html.week-hub-lock .shell { min-height: 0; }
 
 .basecard-meta {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale, 1));
   color: var(--ink-faint);
   margin-top: 3px;
   display: block;
@@ -7694,7 +7694,7 @@ html.week-hub-lock .shell { min-height: 0; }
 .mason-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   line-height: 1.5;
   color: var(--ink);
   cursor: text;
@@ -7705,14 +7705,14 @@ html.week-hub-lock .shell { min-height: 0; }
 .mason-link { color: var(--royal); cursor: pointer; text-decoration: none; }
 .mason-link:hover { text-decoration: underline; }
 .mason-inline-img { display: block; max-width: 100%; height: auto; border-radius: 6px; margin: 6px 0; }
-.mason-meta { margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
+.mason-meta { margin-top: 6px; font-size: calc(11px * var(--text-scale, 1)); color: var(--ink-faint); }
 .mason-edit {
   width: 100%;
   min-height: 3.2em;
   border: none;
   background: transparent;
   font: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   line-height: 1.5;
   color: var(--ink);
   resize: none;
@@ -7743,7 +7743,7 @@ html.week-hub-lock .shell { min-height: 0; }
   border-style: dashed;
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
 }
 .mason-add:hover { color: var(--ink); background: var(--royal-soft); }
 
@@ -7756,7 +7756,7 @@ html.week-hub-lock .shell { min-height: 0; }
   margin: 24px auto 8px;
 }
 .order-card.is-fullscreen .mason-item { padding: 14px 16px; margin-bottom: 16px; }
-.order-card.is-fullscreen .mason-text { font-size: 15px; line-height: 1.55; }
+.order-card.is-fullscreen .mason-text { font-size: calc(15px * var(--text-scale, 1)); line-height: 1.55; }
 
 /* Cell-drag toggle + affordance (sheet dock). */
 .order-sheet-checkbox {
