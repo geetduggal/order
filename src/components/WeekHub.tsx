@@ -103,7 +103,7 @@ export function WeekHub({ doc, grid, docConfigured, mobile }: Props) {
     <div className="week-hub" ref={hubRef}>
       <div
         className={"week-hub-doc" + (docConfigured ? "" : " is-prompt")}
-        style={docConfigured ? { height: `${docPx}px` } : undefined}
+        style={docConfigured ? ({ height: `${docPx}px`, "--wh-doc-h": `${docPx}px` } as React.CSSProperties) : undefined}
       >
         {doc}
       </div>

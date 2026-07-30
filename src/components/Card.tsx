@@ -699,6 +699,12 @@ export function Card(props: Props) {
     let cancelled = false;
     (async () => {
       try {
+        // Dated HTML notes render in an <iframe> straight from disk — there's no
+        // markdown body or frontmatter to read (and the file may be large).
+        if (/\.html?$/i.test(initialPath)) {
+          if (!cancelled) setState({ kind: "ready", body: "", frontmatter: {}, rawFm: "" });
+          return;
+        }
         let body: string;
         let frontmatter: Frontmatter;
         let rawFm = "";
@@ -1277,6 +1283,7 @@ export function Card(props: Props) {
     (showSpine ? " is-spine" : "") +
     (view === "sheet" ? " is-sheet" : "") +
     (view === "drawing" ? " is-drawing" : "") +
+    (/\.html?$/i.test(filename) ? " is-html" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
   // Every card shares the SAME chrome — one theme border, one shadow,
@@ -1614,6 +1621,17 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
+        ) : /\.html?$/i.test(filename) ? (
+          // Dated HTML note: render the page itself in a sandboxed frame, filling
+          // the card (and the whole screen in fullscreen) so you see at a glance
+          // what it shows. Served from disk via the vaultasset:// scheme, so
+          // sibling assets (css/js/images) it references resolve too.
+          <iframe
+            className="order-html-frame"
+            src={assetUrl(toVaultRel(pathRef.current))}
+            title={filename.replace(/\.html?$/i, "")}
+            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads"
+          />
         ) : view === "sheet" ? (
           <Suspense fallback={<div className="order-surface-loading">Loading sheet…</div>}>
             {sheetContent !== null && (

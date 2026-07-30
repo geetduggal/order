@@ -90,11 +90,17 @@ pub fn vault_walk_metadata(state: tauri::State<VaultState>) -> Result<Vec<MetaEn
     let mut out = Vec::with_capacity(entries.len());
     for entry in entries {
         let p = std::path::PathBuf::from(&entry.path);
-        let raw = match fs::read_to_string(&p) {
-            Ok(s) => s,
-            Err(_) => continue, // permission / vanished file — skip silently
+        // HTML report notes have no frontmatter and can be large — don't slurp
+        // them across the bridge; the card renders them straight from disk.
+        let is_html = entry.name.ends_with(".html") || entry.name.ends_with(".htm");
+        let (frontmatter, body_len) = if is_html {
+            ("{}".to_string(), 0)
+        } else {
+            match fs::read_to_string(&p) {
+                Ok(s) => split_frontmatter_lite(&s),
+                Err(_) => continue, // permission / vanished file — skip silently
+            }
         };
-        let (frontmatter, body_len) = split_frontmatter_lite(&raw);
         let mtime_ms = fs::metadata(&p)
             .and_then(|m| m.modified())
             .ok()
@@ -180,11 +186,13 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
             walk_dir(&entry.path(), out);
         } else if name.ends_with(".md") || name.ends_with(".txt")
             || name.ends_with(".yml") || name.ends_with(".yaml")
-            || name.ends_with(".mw") {
+            || name.ends_with(".mw")
+            || name.ends_with(".html") || name.ends_with(".htm") {
             // .txt / .yml / .mw are here so todo.txt, spacetime.yml, and
             // spacetime.mw flow through the same load / reload pipeline as
             // markdown notes. Crepe is replaced with a RawTextSurface for
-            // those cards (see Card.tsx).
+            // those cards (see Card.tsx). .html/.htm are dated report notes
+            // rendered in an <iframe> (see Card.tsx / order-html-frame).
             out.push(WalkEntry {
                 path: entry.path().to_string_lossy().to_string(),
                 name,
@@ -503,6 +511,16 @@ pub fn mime_for(rel: &str) -> &'static str {
         // in practice — Safari / WebKit play either as `video/mp4`.
         Some("mov") | Some("mp4") | Some("m4v") => "video/mp4",
         Some("webm") => "video/webm",
+        // Dated HTML notes render in an <iframe> via the vaultasset:// scheme,
+        // so the file itself and any sibling assets it references must be
+        // served with correct types.
+        Some("html") | Some("htm") => "text/html",
+        Some("css") => "text/css",
+        Some("js") | Some("mjs") => "text/javascript",
+        Some("json") => "application/json",
+        Some("woff2") => "font/woff2",
+        Some("woff") => "font/woff",
+        Some("ttf") => "font/ttf",
         _ => "application/octet-stream",
     }
 }

@@ -2578,6 +2578,8 @@ html.week-hub-lock .shell { min-height: 0; }
 /* Drop the note footer (saving state · breadcrumb · filename) in the hub — the
    Week surface is for reading/processing the doc, not its metadata. */
 .week-hub-doc .order-card:not(.is-fullscreen) .order-card-status { display: none; }
+/* The masonry (ListMasonry) now packs to fill the width everywhere via its own
+   JS layout, so the Week hub needs no special-case here. */
 /* No-folder state: a compact, non-resizable prompt; the grid takes the rest. */
 .week-hub-doc.is-prompt {
   overflow: visible;
@@ -7370,6 +7372,31 @@ html.week-hub-lock .shell { min-height: 0; }
   min-height: 0;
 }
 
+/* Dated HTML notes (see Card.tsx). The card BECOMES the page: strip padding so
+   the frame reaches the edges, show a generous preview in the pile, and fill the
+   screen in fullscreen. #fff canvas so the (usually light) report reads cleanly
+   under any theme. */
+.order-card.is-html { padding: 3px; }
+.order-card.is-html .order-card-content { padding: 0; display: flex; flex-direction: column; min-height: 0; }
+.order-html-frame {
+  width: 100%;
+  height: 58vh;
+  max-height: 72vh;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.order-card.is-html.is-fullscreen { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
+.order-card.is-html.is-fullscreen .order-card-content { height: calc(100vh - 24px); }
+.order-card.is-html.is-fullscreen .order-html-frame {
+  height: auto;
+  max-height: none;
+  border-radius: 0;
+}
+
 /* ---- Spreadsheet ---- */
 .order-sheet-surface {
   position: relative;
@@ -7662,10 +7689,21 @@ html.week-hub-lock .shell { min-height: 0; }
    Each item is a box whose CONTENT is its text (or image). Boxes grow with
    their content and flow into a column masonry — a clean 2D text layout where
    more content gets more space. */
+/* JS masonry (ListMasonry): a row of equal-width flex columns; the component
+   packs each card into the shortest column, so cards stagger AND fill the full
+   width (no wasted right-hand gutter). */
 .mason-grid {
-  columns: 150px;
-  column-gap: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   margin: 3px 0 4px;
+}
+.mason-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 .mason-item {
   /* "Cards on top of a card": the list sits inside a royal-tinted base card,
@@ -7673,9 +7711,8 @@ html.week-hub-lock .shell { min-height: 0; }
      + soft shadow, the same recipe as .basecard-frame. The contrast is what
      makes them read as nested cards rather than flat bullets. */
   position: relative;
-  break-inside: avoid;
   width: 100%;
-  margin: 0 0 10px;
+  margin: 0;
   padding: 11px 12px;
   box-sizing: border-box;
   background: var(--bg-elev, var(--bg));
@@ -7750,12 +7787,12 @@ html.week-hub-lock .shell { min-height: 0; }
 /* Fullscreen: immerse in the masonry — a wider, centered gallery with more
    breathing room and slightly larger cards, so the layout fills the page. */
 .order-card.is-fullscreen .mason-grid {
-  columns: 200px;
-  column-gap: 16px;
+  gap: 16px;
   max-width: 1200px;
   margin: 24px auto 8px;
 }
-.order-card.is-fullscreen .mason-item { padding: 14px 16px; margin-bottom: 16px; }
+.order-card.is-fullscreen .mason-col { gap: 16px; }
+.order-card.is-fullscreen .mason-item { padding: 14px 16px; margin: 0; }
 .order-card.is-fullscreen .mason-text { font-size: calc(15px * var(--text-scale, 1)); line-height: 1.55; }
 
 /* Cell-drag toggle + affordance (sheet dock). */

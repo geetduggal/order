@@ -32,6 +32,16 @@ full-text search from the palette, raw-source note editing, and much more.
 - **Paste an image into a masonry card,** and calendar imports (Google or the
   system calendar) now default to the **Weekly Hub folder**, with a per-event
   notable-folder override in the review.
+- **Dated HTML notes render as cards.** A dated `.html` file (e.g. `2026-07-28
+  Report.html`) dropped into a folder shows up in its pile as a card that renders
+  the page itself in a sandboxed frame — filling the card, and expanding to the
+  whole screen in fullscreen, so you see at a glance what it contains.
+- **Masonry lists fill the width.** A balanced JS layout now packs each card into
+  the shortest column, so cards stagger *and* use the full horizontal space
+  (reflowing as the Week-hub zone or window resizes) instead of piling into a few
+  columns with a blank gutter — and a tall image is never split across columns.
+- **List / masonry card text scales with the app Zoom** (`Cmd +/−` / the rail
+  buttons), matching the rest of the note text.
 
 ### Added
 

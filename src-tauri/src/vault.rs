@@ -101,7 +101,10 @@ fn list_md_files(root: &Path) -> Vec<(PathBuf, u64)> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file()
-            && e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+            && matches!(
+                e.path().extension().and_then(|s| s.to_str()),
+                Some("md") | Some("html") | Some("htm")
+            ))
         .filter_map(|e| {
             let p = e.path().to_path_buf();
             let mtime = e.metadata().ok()
@@ -141,7 +144,8 @@ pub fn scan_vault(path: String) -> Result<Vec<Note>, String> {
                     return Some(cached.clone());
                 }
             }
-            parse_note_meta(p, &root, *mtime).ok()
+            if is_html(p) { parse_html_meta(p, &root, *mtime).ok() }
+            else { parse_note_meta(p, &root, *mtime).ok() }
         })
         .collect();
 
@@ -172,7 +176,9 @@ pub fn refresh_note(path: String) -> Result<Option<Note>, String> {
         .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let note = parse_note_meta(&abs, &root, mtime).map_err(|e| e.to_string())?;
+    let note = if is_html(&abs) { parse_html_meta(&abs, &root, mtime) }
+        else { parse_note_meta(&abs, &root, mtime) }
+        .map_err(|e| e.to_string())?;
     let mut guard = CACHE.lock().unwrap();
     if let Some(cache) = guard.as_mut() {
         cache.entries.insert(note.path.clone(), note.clone());
@@ -245,6 +251,29 @@ pub fn delete_note(path: String) -> Result<(), String> {
 }
 
 // ---------- parse helpers ----------
+
+fn is_html(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|s| s.to_str()).map(|s| s.to_ascii_lowercase()).as_deref(),
+        Some("html") | Some("htm")
+    )
+}
+
+/// Meta for a dated HTML note. Title comes from the filename; there's no
+/// markdown body or frontmatter to parse, and we deliberately don't read the
+/// (possibly large) file — the card renders it in an <iframe> instead.
+fn parse_html_meta(path: &Path, root: &Path, mtime: u64) -> anyhow::Result<Note> {
+    let title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_string();
+    let rel_path = path.strip_prefix(root).unwrap_or(path).to_string_lossy().to_string();
+    Ok(Note {
+        path: path.to_string_lossy().to_string(),
+        rel_path,
+        title,
+        snippet: String::new(),
+        frontmatter: serde_json::json!({}),
+        modified: mtime as i64,
+    })
+}
 
 fn parse_note_meta(path: &Path, root: &Path, mtime: u64) -> anyhow::Result<Note> {
     let raw = fs::read_to_string(path)?;

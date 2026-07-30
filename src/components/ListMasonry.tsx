@@ -10,7 +10,7 @@
 // text stays selectable/editable).
 
 import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Plus, X as XIcon } from "lucide-react";
 import { assetUrl, attachmentName } from "../lib/attachments";
 import { vaultFs } from "../lib/vault-fs";
@@ -102,6 +102,30 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
   const canEdit = !readOnly && !readOnlyMembership;
   const go = useGo(vaultNotes, onNavigate, onAddFilter);
 
+  // --- Balanced JS masonry -------------------------------------------------
+  // CSS `columns` packs cards into the fewest columns and wastes the width; a
+  // stretch grid fills the width but aligns cards into rows (gaps under short
+  // ones). So we lay out ourselves: pick a column count from the container
+  // width, then greedily drop each card into the currently-shortest column —
+  // real staggered masonry that also uses the full width. Refs feed live card
+  // heights back in; a nonce re-runs the pass when images finish loading.
+  const MASON_GAP = 10;
+  const MASON_TARGET_COL = 168;
+  const [colCount, setColCount] = useState(1);
+  const [assign, setAssign] = useState<number[]>([]); // item index -> column
+  const [addCol, setAddCol] = useState(0);
+  const [measureNonce, setMeasureNonce] = useState(0);
+  const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
+  // Re-pack once per image when it first loads (its height jumps). Guarded by a
+  // Set so a re-pack that remounts the <img> (moving it to another column)
+  // doesn't re-fire onLoad → re-pack → … in a loop.
+  const loadedImgs = useRef<Set<string>>(new Set());
+  const onImgLoad = (ref: string) => {
+    if (loadedImgs.current.has(ref)) return;
+    loadedImgs.current.add(ref);
+    setMeasureNonce((n) => n + 1);
+  };
+
   // Paste an image → a new image card. Handled at the document level (a bare
   // div gets no paste events of its own) but gated so only the masonry the
   // user is actually pointing at / typing in reacts: pointer is over the grid,
@@ -188,6 +212,42 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
     { exclude: "a, button, textarea, input, .mason-link, .mason-del, .mason-edit" },
   );
 
+  // Column count from the live container width (min column ≈ target px).
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth || 0;
+      const byWidth = Math.max(1, Math.floor((w + MASON_GAP) / (MASON_TARGET_COL + MASON_GAP)));
+      const cap = Math.max(1, items.length + (canEdit ? 1 : 0));
+      setColCount(Math.min(byWidth, cap));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [items.length, canEdit]);
+
+  // Greedy shortest-column packing, measured from the rendered card heights.
+  // Runs after layout (heights depend on the column width, which is fixed by
+  // colCount) so a re-pack never changes heights — it converges in one step.
+  useLayoutEffect(() => {
+    const n = Math.max(1, colCount);
+    const heights = new Array(n).fill(0);
+    const shortest = () => { let m = 0; for (let c = 1; c < n; c++) if (heights[c] < heights[m]) m = c; return m; };
+    const next: number[] = [];
+    for (const it of items) {
+      const el = itemRefs.current.get(it.ref);
+      const h = el ? el.offsetHeight : MASON_TARGET_COL;
+      const c = shortest();
+      next.push(c);
+      heights[c] += h + MASON_GAP;
+    }
+    setAddCol(shortest());
+    setAssign((prev) => (prev.length === next.length && prev.every((v, i) => v === next[i]) ? prev : next));
+  }, [items, colCount, measureNonce]);
+
   const commitEdit = (i: number) => {
     const t = draft.trim();
     setEditIdx(null);
@@ -202,6 +262,95 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
     if (t) onChange([...items, itemFromText(t)]);
   };
 
+  const renderItem = (item: ListItem, i: number) => {
+    const img = item.image ? assetFor(item.image, noteDir) : undefined;
+    // A wikilink item (ref only, no text/image): show the linked note's
+    // display title and navigate on click.
+    const isWiki = !item.text && !item.image;
+    const note = isWiki ? resolveNoteRef(item.ref, vaultNotes) : undefined;
+    const text = item.text ?? (note ? displayTitleFor(item, note) : item.ref);
+    const dragging = item.ref === dragRef;
+    return (
+      <div
+        key={item.ref + i}
+        ref={(el) => { const m = itemRefs.current; if (el) m.set(item.ref, el); else m.delete(item.ref); }}
+        className={"mason-item" + (img ? " is-image" : "") + (dragging ? " is-dragging" : "") + (canEdit ? " draggable" : "")}
+        data-tile-ref={item.ref}
+        onPointerDown={canEdit ? (e) => onTilePointerDown(e, item.ref) : undefined}
+      >
+        {canEdit && (
+          <button type="button" className="mason-del" onClick={() => del(i)} title="Remove" aria-label="Remove item">
+            <XIcon size={12} strokeWidth={2.4} />
+          </button>
+        )}
+        {img ? (
+          <img className="mason-img" src={img} alt={item.caption ?? ""} loading="lazy" onLoad={() => onImgLoad(item.ref)} />
+        ) : editIdx === i ? (
+          <textarea
+            autoFocus
+            className="mason-edit"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => commitEdit(i)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitEdit(i); }
+              if (e.key === "Escape") { e.preventDefault(); setEditIdx(null); }
+            }}
+          />
+        ) : isWiki ? (
+          <div
+            className="mason-text is-link"
+            onClick={() => go(item.ref)}
+            onDoubleClick={() => { if (canEdit) { setEditIdx(i); setDraft(`[[${item.ref}]]`); } }}
+            title={`Open ${text}`}
+          >
+            {text}
+          </div>
+        ) : (
+          <div
+            className="mason-text"
+            onDoubleClick={() => { if (canEdit) { setEditIdx(i); setDraft(text); } }}
+          >
+            {renderInline(text, noteDir, go)}
+          </div>
+        )}
+        {item.caption && img && <div className="mason-meta">{item.caption}</div>}
+        {item.meta && !img && <div className="mason-meta">{item.meta}</div>}
+      </div>
+    );
+  };
+
+  const renderAdd = () => (adding ? (
+    <div className="mason-item">
+      <textarea
+        autoFocus
+        className="mason-edit"
+        value={addDraft}
+        placeholder="Text, [[Note]] or ![[image]]"
+        onChange={(e) => setAddDraft(e.target.value)}
+        onBlur={commitAdd}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitAdd(); }
+          if (e.key === "Escape") { e.preventDefault(); setAdding(false); setAddDraft(""); }
+        }}
+      />
+    </div>
+  ) : (
+    <button type="button" className="mason-item mason-add" onClick={() => setAdding(true)}>
+      <Plus size={15} strokeWidth={2} /> Add
+    </button>
+  ));
+
+  // Distribute items into the computed columns (fallback round-robin while the
+  // balanced pass catches up or an assignment is stale after a resize).
+  const cols: { item: ListItem; i: number }[][] = Array.from({ length: Math.max(1, colCount) }, () => []);
+  items.forEach((item, i) => {
+    let c = assign[i];
+    if (c == null || c >= cols.length) c = i % cols.length;
+    cols[c].push({ item, i });
+  });
+  const safeAddCol = addCol < cols.length ? addCol : cols.length - 1;
+
   return (
     <div
       className="mason-grid"
@@ -209,81 +358,11 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
       onPointerEnter={() => { hoverRef.current = true; }}
       onPointerLeave={() => { hoverRef.current = false; }}
     >
-      {items.map((item, i) => {
-        const img = item.image ? assetFor(item.image, noteDir) : undefined;
-        // A wikilink item (ref only, no text/image): show the linked note's
-        // display title and navigate on click.
-        const isWiki = !item.text && !item.image;
-        const note = isWiki ? resolveNoteRef(item.ref, vaultNotes) : undefined;
-        const text = item.text ?? (note ? displayTitleFor(item, note) : item.ref);
-        const dragging = item.ref === dragRef;
-        return (
-          <div
-            key={item.ref + i}
-            className={"mason-item" + (img ? " is-image" : "") + (dragging ? " is-dragging" : "") + (canEdit ? " draggable" : "")}
-            data-tile-ref={item.ref}
-            onPointerDown={canEdit ? (e) => onTilePointerDown(e, item.ref) : undefined}
-          >
-            {canEdit && (
-              <button type="button" className="mason-del" onClick={() => del(i)} title="Remove" aria-label="Remove item">
-                <XIcon size={12} strokeWidth={2.4} />
-              </button>
-            )}
-            {img ? (
-              <img className="mason-img" src={img} alt={item.caption ?? ""} loading="lazy" />
-            ) : editIdx === i ? (
-              <textarea
-                autoFocus
-                className="mason-edit"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => commitEdit(i)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitEdit(i); }
-                  if (e.key === "Escape") { e.preventDefault(); setEditIdx(null); }
-                }}
-              />
-            ) : isWiki ? (
-              <div
-                className="mason-text is-link"
-                onClick={() => go(item.ref)}
-                onDoubleClick={() => { if (canEdit) { setEditIdx(i); setDraft(`[[${item.ref}]]`); } }}
-                title={`Open ${text}`}
-              >
-                {text}
-              </div>
-            ) : (
-              <div
-                className="mason-text"
-                onDoubleClick={() => { if (canEdit) { setEditIdx(i); setDraft(text); } }}
-              >
-                {renderInline(text, noteDir, go)}
-              </div>
-            )}
-            {item.caption && img && <div className="mason-meta">{item.caption}</div>}
-            {item.meta && !img && <div className="mason-meta">{item.meta}</div>}
-          </div>
-        );
-      })}
-      {canEdit && (adding ? (
-        <div className="mason-item">
-          <textarea
-            autoFocus
-            className="mason-edit"
-            value={addDraft}
-            placeholder="Text, [[Note]] or ![[image]]"
-            onChange={(e) => setAddDraft(e.target.value)}
-            onBlur={commitAdd}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitAdd(); }
-              if (e.key === "Escape") { e.preventDefault(); setAdding(false); setAddDraft(""); }
-            }}
-          />
+      {cols.map((colItems, c) => (
+        <div className="mason-col" key={c}>
+          {colItems.map(({ item, i }) => renderItem(item, i))}
+          {canEdit && c === safeAddCol && renderAdd()}
         </div>
-      ) : (
-        <button type="button" className="mason-item mason-add" onClick={() => setAdding(true)}>
-          <Plus size={15} strokeWidth={2} /> Add
-        </button>
       ))}
     </div>
   );
