@@ -28,6 +28,9 @@ import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
 import { overListZone, emitEventToList, highlightListZone, clearListZoneHighlight } from "../lib/list-cal-dnd";
 
+// Cancel text selection while dragging an event (module-level = stable ref).
+const preventSelect = (e: Event) => e.preventDefault();
+
 export type CalendarRange = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
 export interface NoteMeta {
@@ -644,6 +647,8 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // While dragging an event, light up the list zone when the pointer is
         // over it, so it's clear the event can be dropped there.
         eventDragStart={() => {
+          document.body.classList.add("is-tile-dragging");
+          document.addEventListener("selectstart", preventSelect);
           const move = (e: PointerEvent) => {
             lastPointerRef.current = { x: e.clientX, y: e.clientY };
             highlightListZone(e.clientX, e.clientY);
@@ -655,6 +660,8 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // emit for the list to append + CardGrid to delete. Dropped outside the
         // grid, FullCalendar reverts the event on its own.
         eventDragStop={(info) => {
+          document.body.classList.remove("is-tile-dragging");
+          document.removeEventListener("selectstart", preventSelect);
           if (eventDragMoveRef.current) {
             window.removeEventListener("pointermove", eventDragMoveRef.current);
             eventDragMoveRef.current = null;

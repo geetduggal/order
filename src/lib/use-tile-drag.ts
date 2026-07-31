@@ -11,6 +11,12 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+// Kill text-selection for the duration of a drag. `user-select: none` set
+// mid-drag doesn't stop a selection already underway, so we also cancel the
+// `selectstart` event outright. Module-level (stable ref) so pointerdown can
+// add it and pointerup can remove it.
+const preventSelect = (e: Event) => e.preventDefault();
+
 interface Options {
   /** Vertical list (compare Y) vs horizontal/grid (compare X). */
   vertical?: boolean;
@@ -190,6 +196,10 @@ export function useTileDrag(
         if (Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) < 12) return;
         d.started = true;
         setDragRef(d.ref);
+        // A pointer drag otherwise selects text along its path — suppress it for
+        // the whole app while dragging (removed in up() / cleanup).
+        document.body.classList.add("is-tile-dragging");
+        try { window.getSelection()?.removeAllRanges(); } catch { /* ignore */ }
         d.el = gridRef.current
           ? (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])
               .find((x) => x.dataset.tileRef === d.ref)
@@ -221,6 +231,8 @@ export function useTileDrag(
       setDragRef(null);
       resetEl(d?.el);
       removeIndicator();
+      document.body.classList.remove("is-tile-dragging");
+      document.removeEventListener("selectstart", preventSelect);
       dropTargetRef.current?.end?.();
       if (!d?.started || !gridRef.current) return;
       const px = d.lastX;
@@ -267,6 +279,8 @@ export function useTileDrag(
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      document.body.classList.remove("is-tile-dragging");
+      document.removeEventListener("selectstart", preventSelect);
       if (rafId) cancelAnimationFrame(rafId);
       removeIndicator();
     };
@@ -283,6 +297,7 @@ export function useTileDrag(
       ref, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY,
       started: false, pointerId: e.pointerId, captureEl: e.currentTarget as HTMLElement,
     };
+    document.addEventListener("selectstart", preventSelect);
   }
 
   return { gridRef, dragRef, onTilePointerDown };
