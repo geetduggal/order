@@ -7425,30 +7425,33 @@ html.week-hub-lock .shell { min-height: 0; }
    the frame reaches the edges, show a generous preview in the pile, and fill the
    screen in fullscreen. #fff canvas so the (usually light) report reads cleanly
    under any theme. */
-.order-card.is-html { padding: 3px; }
+/* The card BECOMES the page: the frame is full-bleed to the card's own rounded
+   border (no inner padding, no inner radius/box — that read as an ugly card
+   inside a card). The card clips the frame to its corners. */
+.order-card.is-html {
+  padding: 0;
+  overflow: clip;
+}
 .order-card.is-html .order-card-content {
   padding: 0;
-  /* A definite height so the frame's height:100% resolves and fills the card.
-     Zoomed content overflows and scrolls here. */
+  /* Definite height so the frame's height:100% resolves and fills the card;
+     zoomed content overflows and scrolls here. */
   height: 62vh;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
-/* Fill the card. The frame is cross-origin, so we can't restyle its content —
-   `zoom` grows the whole page with the app text scale (Cmd +/−) and the card
-   scrolls to it. */
+/* Fill the card, no chrome of its own. (The report is a cross-origin document,
+   so the app text scale can't restyle its content — it renders at its own
+   size; pinch/zoom inside it or open fullscreen to read.) */
 .order-html-frame {
   display: block;
   width: 100%;
   height: 100%;
   border: none;
-  border-radius: 8px;
   background: #fff;
-  zoom: var(--text-scale, 1);
 }
 .order-card.is-html.is-fullscreen { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
 .order-card.is-html.is-fullscreen .order-card-content { height: calc(100dvh - 20px); }
-.order-card.is-html.is-fullscreen .order-html-frame { border-radius: 0; }
 
 /* ---- Spreadsheet ---- */
 .order-sheet-surface {
