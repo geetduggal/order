@@ -34,6 +34,8 @@ pub struct ImportedEvent {
     pub all_day: bool,
     pub description: String,
     pub attendees: Vec<String>,
+    /// EKEvent.location — typically a room / building string (empty if none).
+    pub location: String,
 }
 
 /// Create/update input for a single event on a chosen calendar.
@@ -218,6 +220,7 @@ mod imp {
         for ev in events.iter() {
             let title = unsafe { ev.title() }.to_string();
             let description = unsafe { ev.notes() }.map(|n| n.to_string()).unwrap_or_default();
+            let location = unsafe { ev.location() }.map(|l| l.to_string()).unwrap_or_default();
             let all_day = unsafe { ev.isAllDay() };
             let start_date = unsafe { ev.startDate() };
             let (date_s, time_s) = match from_nsdate(&start_date) {
@@ -249,6 +252,7 @@ mod imp {
                 all_day,
                 description,
                 attendees,
+                location,
             });
         }
         Ok(out)

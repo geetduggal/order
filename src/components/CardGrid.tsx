@@ -96,6 +96,7 @@ import {
 import { planVaultMigration } from "../lib/vault-migrate";
 import { extractBaseBlock } from "../lib/list-base";
 import type { ListItem, ListNoteRef } from "../lib/list-folder";
+import { ITEM_TO_CALENDAR, EVENT_TO_LIST, type ItemToCalendarDetail, type EventToListDetail } from "../lib/list-cal-dnd";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
@@ -3252,6 +3253,7 @@ export function CardGrid() {
             ...(r.time ? { startTime: r.time } : {}),
             ...(r.endTime ? { endTime: r.endTime } : {}),
             ...(r.endDate ? { endDate: r.endDate } : {}),
+            ...(r.location?.trim() ? { location: r.location.trim() } : {}),
             title: r.title,
           };
           const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
@@ -4471,6 +4473,52 @@ export function CardGrid() {
   // sits earlier in this component, can invoke the latest createNote.
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
+
+  // Drag-and-drop between the Week hub list and the calendar (move, not copy).
+  // list card → 30-min event (created here, in the hub folder); calendar event
+  // → list card (deleted here — spacetime + backing note; the hub list appends
+  // the title itself). See lib/list-cal-dnd.ts.
+  useEffect(() => {
+    const onItemToCal = (e: Event) => {
+      const d = (e as CustomEvent<ItemToCalendarDetail>).detail;
+      if (!d?.title || !d.date || !d.startTime) return;
+      void createNote({
+        date: d.date,
+        allDay: false,
+        startTime: d.startTime,
+        endTime: d.endTime,
+        title: d.title,
+        ...(weekHubFolderRef.current ? { folder: `[[${weekHubFolderRef.current}]]` } : {}),
+      });
+    };
+    const onEventToList = (e: Event) => {
+      const d = (e as CustomEvent<EventToListDetail>).detail;
+      if (!d?.path) return;
+      void (async () => {
+        if (!d.hasNote) { await deleteEventNote(d.path); return; }
+        // Backed event → keep its note. Take it off the calendar (remove from
+        // spacetime + strip the date fields) so it survives as a plain note the
+        // list now links to, instead of being deleted.
+        const chip = eventChipRef.current.get(d.path);
+        if (chip) await applyMwEdit((mw) => mwDeleteEvent(mw, chip.ev.date, chip.ev.title));
+        const notePath = chip?.notePath ?? d.path;
+        try {
+          const raw = await readVault(notePath);
+          const { frontmatter, body } = splitFrontmatter(raw);
+          const cleaned = { ...frontmatter };
+          delete cleaned.date; delete cleaned.startTime; delete cleaned.endTime;
+          delete cleaned.endDate; delete cleaned.allDay;
+          await writeVault(notePath, joinFrontmatter(cleaned, body));
+        } catch (err) { console.error("move event → list (preserve note) failed:", err); }
+      })();
+    };
+    window.addEventListener(ITEM_TO_CALENDAR, onItemToCal);
+    window.addEventListener(EVENT_TO_LIST, onEventToList);
+    return () => {
+      window.removeEventListener(ITEM_TO_CALENDAR, onItemToCal);
+      window.removeEventListener(EVENT_TO_LIST, onEventToList);
+    };
+  }, [createNote, deleteEventNote]);
 
   // Reconcile orphan event notes INTO spacetime.mw (the inverse of removing
   // them). The event is rebuilt from the note's own frontmatter — date, time,

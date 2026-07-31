@@ -16,6 +16,7 @@ import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-fo
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { useTileDrag } from "../lib/use-tile-drag";
+import { calendarDropTarget, useEventToListAppend } from "../lib/list-cal-dnd";
 import { assetUrl } from "../lib/attachments";
 import { ImageInspector } from "./ImageInspector";
 export type { ListNoteRef };
@@ -90,8 +91,12 @@ export function ListCards({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   const { gridRef, dragRef: draggingRef, onTilePointerDown } = useTileDrag(
     items.map((i) => i.ref),
     readOnly ? undefined : reorder,
-    { exclude: "input, button, .basecard-meta" },
+    {
+      exclude: "input, button, .basecard-meta",
+      dropTarget: hideControls ? undefined : calendarDropTarget(() => items, onChange),
+    },
   );
+  useEventToListAppend(gridRef, () => items, onChange, !hideControls);
 
   function remove(index: number) {
     const next = items.slice();

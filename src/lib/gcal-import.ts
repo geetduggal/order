@@ -14,6 +14,8 @@ export interface ImportedEvent {
   description: string;
   /** Guest emails from the Google event (resource rooms excluded). */
   attendees: string[];
+  /** Free-text location / room, if the source event had one. */
+  location?: string;
 }
 
 export interface ImportRow extends ImportedEvent {

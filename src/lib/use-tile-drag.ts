@@ -22,6 +22,15 @@ interface Options {
    *  scrollable on touch — touch the handle to drag, anywhere else to
    *  scroll. Takes precedence over `exclude`. */
   handle?: string;
+  /** An external drop zone (e.g. the Week calendar). While the pointer is
+   *  `over` it, the reorder indicator is hidden; releasing there calls `drop`
+   *  with the tile's ref instead of reordering. */
+  dropTarget?: {
+    over: (x: number, y: number) => boolean;
+    drop: (ref: string, x: number, y: number) => void;
+    /** Called on any drag end (cleanup, e.g. remove the target-slot ghost). */
+    end?: () => void;
+  };
 }
 
 interface Cell {
@@ -35,7 +44,9 @@ export function useTileDrag(
   onReorder?: (order: string[]) => void,
   opts: Options = {},
 ) {
-  const { exclude = "", handle = "" } = opts;
+  const { exclude = "", handle = "", dropTarget } = opts;
+  const dropTargetRef = useRef(dropTarget);
+  dropTargetRef.current = dropTarget;
   // Container (a div or ul) — loose element type so either attaches.
   const gridRef = useRef<any>(null);
   const [dragRef, setDragRef] = useState<string | null>(null);
@@ -158,6 +169,9 @@ export function useTileDrag(
           d.el.style.transform = `translate(${d.lastX - d.x}px, ${d.lastY - d.y}px) scale(1.04)`;
           d.el.style.zIndex = "500";
         }
+        // Over an external drop zone (the calendar): hide the reorder bar — the
+        // tile is leaving the list, not moving within it.
+        if (dropTargetRef.current?.over(d.lastX, d.lastY)) { removeIndicator(); return; }
         const cells = cellsNow();
         const multiCol = isMultiCol(cells);
         paintIndicator(d.lastX, d.lastY, insertIndex(d.lastX, d.lastY, cells, multiCol), cells, multiCol);
@@ -207,9 +221,19 @@ export function useTileDrag(
       setDragRef(null);
       resetEl(d?.el);
       removeIndicator();
+      dropTargetRef.current?.end?.();
       if (!d?.started || !gridRef.current) return;
       const px = d.lastX;
       const py = d.lastY;
+      // Released over an external drop zone (the calendar) — hand off instead of
+      // reordering, and swallow the trailing click.
+      if (dropTargetRef.current?.over(px, py)) {
+        const swallow = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener("click", swallow, true), 50);
+        dropTargetRef.current.drop(d.ref, px, py);
+        return;
+      }
       // Rebuild cells with the dragged ref still excluded (drag.current is
       // now null, so reuse the same filter manually).
       const cells = (Array.from(gridRef.current.querySelectorAll("[data-tile-ref]")) as HTMLElement[])

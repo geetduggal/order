@@ -104,7 +104,9 @@ fn list_md_files(root: &Path) -> Vec<(PathBuf, u64)> {
             && matches!(
                 e.path().extension().and_then(|s| s.to_str()),
                 Some("md") | Some("html") | Some("htm")
-            ))
+            )
+            // .sheet.html is a spreadsheet sidecar, not a standalone card.
+            && !e.path().to_string_lossy().ends_with(".sheet.html"))
         .filter_map(|e| {
             let p = e.path().to_path_buf();
             let mtime = e.metadata().ok()

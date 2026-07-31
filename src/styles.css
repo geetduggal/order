@@ -716,6 +716,14 @@ input, textarea, select { outline: none; box-shadow: none; }
   /* A touch of head room so the title doesn't hug the card edge. */
   padding: 13px clamp(18px, 3.5vw, 40px) 12px;
 }
+/* The terminal and the frontmatter panel full-bleed with negative margins; if
+   the card doesn't clip, their square corners poke past its rounded border.
+   `overflow: clip` trims them to the border (no scroll container, so inner
+   autocompletes that open downward within the card still show). */
+.order-card:has(.order-terminal),
+.order-card:has(.fm-inspector) {
+  overflow: clip;
+}
 
 /* Notable Folder Main Document — no special chrome at all: same calm
    surface, border, and shadow as every other card. Its identity comes
@@ -1192,6 +1200,29 @@ input, textarea, select { outline: none; box-shadow: none; }
   opacity: 1;
   color: var(--royal);
   background: var(--royal-soft);
+}
+/* Event location / room chip — same quiet treatment as the URL link, but not
+   interactive (it's just context). */
+.order-card-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink-faint);
+  opacity: 0.85;
+  max-width: 180px;
+  min-width: 0;
+}
+.order-card-location svg { flex: 0 0 auto; }
+.order-card-location-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .order-card-fm-toggle:hover,
 .order-card-fm-toggle:focus-visible,
@@ -2636,6 +2667,24 @@ html.week-hub-lock .shell { min-height: 0; }
 .week-hub-divider:active .week-hub-divider-grip { opacity: 0.85; width: 64px; }
 /* Bottom zone: the CalendarView self-measures its own bounded height. */
 .week-hub-grid { display: block; }
+
+/* Drag-drop between the Week hub list and calendar (see lib/list-cal-dnd.ts).
+   The target-slot ghost shows WHERE a dragged card will land in the grid; the
+   list-zone outline shows the list is a valid drop for a dragged event. */
+.cal-drop-indicator {
+  position: fixed;
+  z-index: 650;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--royal) 22%, transparent);
+  border: 1.5px solid var(--royal);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--bg, #fff), 0 2px 8px color-mix(in srgb, var(--royal) 30%, transparent);
+}
+.week-hub-doc.is-drop-target {
+  outline: 2px dashed var(--royal);
+  outline-offset: -4px;
+  background: color-mix(in srgb, var(--royal) 7%, var(--bg));
+}
 
 .fc-shell {
   /* Tight, immersive margins — the grid should feel edge-to-edge. The bottom
@@ -7377,25 +7426,32 @@ html.week-hub-lock .shell { min-height: 0; }
    screen in fullscreen. #fff canvas so the (usually light) report reads cleanly
    under any theme. */
 .order-card.is-html { padding: 3px; }
-.order-card.is-html .order-card-content { padding: 0; display: flex; flex-direction: column; min-height: 0; }
-.order-html-frame {
-  width: 100%;
+.order-card.is-html .order-card-content {
+  padding: 0;
+  position: relative;
   height: 58vh;
   max-height: 72vh;
+  overflow: hidden;
+}
+/* Zoom the report with the app text scale (Cmd +/−). The frame is cross-origin,
+   so we can't restyle its content — instead lay the frame out at 1/scale of the
+   card box, then `zoom` it back up by scale: the content grows (fewer, bigger
+   pixels), while the frame still exactly fills the card. */
+.order-html-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--text-scale, 1));
+  height: calc(100% / var(--text-scale, 1));
+  zoom: var(--text-scale, 1);
   border: none;
   border-radius: 8px;
   background: #fff;
   display: block;
-  flex: 1 1 auto;
-  min-height: 0;
 }
 .order-card.is-html.is-fullscreen { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0; }
-.order-card.is-html.is-fullscreen .order-card-content { height: calc(100vh - 24px); }
-.order-card.is-html.is-fullscreen .order-html-frame {
-  height: auto;
-  max-height: none;
-  border-radius: 0;
-}
+.order-card.is-html.is-fullscreen .order-card-content { height: calc(100vh - 24px); max-height: none; }
+.order-card.is-html.is-fullscreen .order-html-frame { border-radius: 0; }
 
 /* ---- Spreadsheet ---- */
 .order-sheet-surface {

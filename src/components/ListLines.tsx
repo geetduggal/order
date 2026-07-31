@@ -15,6 +15,7 @@ import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
 import { resolveListItems } from "../lib/list-resolve";
 import { useTileDrag } from "../lib/use-tile-drag";
+import { calendarDropTarget, useEventToListAppend } from "../lib/list-cal-dnd";
 import { ListCards } from "./ListCards";
 export type { ListNoteRef };
 
@@ -96,8 +97,13 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   const { gridRef, dragRef: draggingRef, onTilePointerDown } = useTileDrag(
     items.map((i) => i.ref),
     readOnly ? undefined : reorder,
-    { handle: ".lr-handle" },
+    {
+      handle: ".lr-handle",
+      // Drag a row onto the Week calendar → a 30-min event; drop off the list.
+      dropTarget: hideControls ? undefined : calendarDropTarget(() => items, onChange),
+    },
   );
+  useEventToListAppend(gridRef, () => items, onChange, !hideControls);
 
   function remove(index: number) {
     const next = items.slice();

@@ -19,6 +19,7 @@ import { isMainDocRef } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { openExternalUrl } from "../lib/open-external";
 import { useTileDrag } from "../lib/use-tile-drag";
+import { calendarDropTarget, useEventToListAppend } from "../lib/list-cal-dnd";
 
 interface Props {
   items: ListItem[];
@@ -209,8 +210,16 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
   const { gridRef, dragRef, onTilePointerDown } = useTileDrag(
     items.map((i) => i.ref),
     canEdit ? reorder : undefined,
-    { exclude: "a, button, textarea, input, .mason-link, .mason-del, .mason-edit" },
+    {
+      exclude: "a, button, textarea, input, .mason-link, .mason-del, .mason-edit",
+      // Drop a card onto the Week calendar → create a 30-min event (title = the
+      // card's text) and remove the card. CardGrid makes the event.
+      dropTarget: canEdit ? calendarDropTarget(() => itemsRef.current, (n) => onChangeRef.current(n)) : undefined,
+    },
   );
+
+  // Calendar event dragged onto the Week hub list → append it here.
+  useEventToListAppend(gridRef, () => itemsRef.current, (n) => onChangeRef.current(n), canEdit);
 
   // Column count from the live container width (min column ≈ target px).
   useEffect(() => {

@@ -730,6 +730,8 @@ pub struct ImportedEvent {
     /// Guest emails on the Google event (excludes resource rooms). Imported so
     /// invitees land on the spacetime line and round-trip back on push.
     pub attendees: Vec<String>,
+    /// Free-text location / room (empty if none).
+    pub location: String,
 }
 
 /// Map a Calendar events.list response into normalized ImportedEvents. Takes
@@ -748,6 +750,7 @@ pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
     for it in items {
         let title = it.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string();
         let description = it.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
+        let location = it.get("location").and_then(|l| l.as_str()).unwrap_or("").to_string();
         let start = match it.get("start") { Some(s) => s, None => continue };
         // Guest emails, skipping resource rooms (resource: true) so meeting
         // rooms aren't re-invited on a later push.
@@ -767,7 +770,7 @@ pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
                 .and_then(|e| e.get("date")).and_then(|d| d.as_str())
                 .and_then(prev_day)
                 .filter(|incl| incl.as_str() > date);
-            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, end_date, all_day: true, description, attendees });
+            out.push(ImportedEvent { title, date: date.to_string(), time: None, end_time: None, end_date, all_day: true, description, attendees, location });
         } else if let Some(dt) = start.get("dateTime").and_then(|d| d.as_str()) {
             let date = dt.get(0..10).unwrap_or("").to_string();
             if date.is_empty() { continue; }
@@ -779,7 +782,7 @@ pub fn parse_day_events(list_body: &str) -> Vec<ImportedEvent> {
                 .and_then(|e| e.get("dateTime")).and_then(|d| d.as_str())
                 .and_then(|edt| edt.get(0..10)).map(|s| s.to_string())
                 .filter(|d| *d > date);
-            out.push(ImportedEvent { title, date, time, end_time, end_date, all_day: false, description, attendees });
+            out.push(ImportedEvent { title, date, time, end_time, end_date, all_day: false, description, attendees, location });
         }
     }
     out

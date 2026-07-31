@@ -60,7 +60,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -701,7 +701,8 @@ export function Card(props: Props) {
       try {
         // Dated HTML notes render in an <iframe> straight from disk — there's no
         // markdown body or frontmatter to read (and the file may be large).
-        if (/\.html?$/i.test(initialPath)) {
+        // (.sheet.html sidecars are excluded from the walk, so this is a page.)
+        if (/\.html?$/i.test(initialPath) && !/\.sheet\.html$/i.test(initialPath)) {
           if (!cancelled) setState({ kind: "ready", body: "", frontmatter: {}, rawFm: "" });
           return;
         }
@@ -986,8 +987,12 @@ export function Card(props: Props) {
 
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
+    // Keep only the REF live per keystroke. `editorBody` (state) has no render
+    // consumer, so calling setEditorBody here forced a full Card re-render on
+    // every character (the whole control strip, frontmatter inspector, list
+    // logic) — the main source of typing choppiness. Load / reload still use
+    // setEditorBody (rare) so the state + mirror effect stay coherent.
     editorBodyRef.current = markdown;
-    setEditorBody(markdown);
     scheduleSave();
   }, [scheduleSave]);
 
@@ -1213,6 +1218,9 @@ export function Card(props: Props) {
   // primary surface). Click the top-left `{date}` toggle to open it.
 
   const filename = pathRef.current.split("/").pop() ?? pathRef.current;
+  // A dated HTML page rendered in an <iframe> — but NOT a `.sheet.html`
+  // spreadsheet sidecar (those render via the sheet surface / their parent .md).
+  const isHtmlNote = /\.html?$/i.test(filename) && !/\.sheet\.html$/i.test(filename);
 
   /** Write (or clear) the `folded: true` flag straight into this note's
    *  YAML. Editor-only — the read-only viewer reveals via the spine but
@@ -1283,7 +1291,7 @@ export function Card(props: Props) {
     (showSpine ? " is-spine" : "") +
     (view === "sheet" ? " is-sheet" : "") +
     (view === "drawing" ? " is-drawing" : "") +
-    (/\.html?$/i.test(filename) ? " is-html" : "") +
+    (isHtmlNote ? " is-html" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
   // Every card shares the SAME chrome — one theme border, one shadow,
@@ -1320,6 +1328,9 @@ export function Card(props: Props) {
   const fmUrl = Object.values(fmLive).find(
     (v): v is string => typeof v === "string" && /^https?:\/\/\S+$/.test(v.trim()),
   )?.trim();
+  // Event location / room (imported into frontmatter). Shown as a subtle chip
+  // next to the URL link, not clickable.
+  const fmLocation = typeof fmLive.location === "string" ? fmLive.location.trim() : "";
   const fmUrlHost = (() => {
     if (!fmUrl) return "";
     try { return new URL(fmUrl).hostname.replace(/^www\./, ""); } catch { return "link"; }
@@ -1364,6 +1375,12 @@ export function Card(props: Props) {
               <ArrowUpRight size={11} strokeWidth={2.2} />
               <span className="order-card-linkout-host">{fmUrlHost}</span>
             </button>
+          )}
+          {fmLocation && (
+            <span className="order-card-location" title={fmLocation}>
+              <MapPinIcon size={11} strokeWidth={2.2} />
+              <span className="order-card-location-text">{fmLocation}</span>
+            </span>
           )}
         </div>
       )}
@@ -1621,7 +1638,7 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
-        ) : /\.html?$/i.test(filename) ? (
+        ) : isHtmlNote ? (
           // Dated HTML note: render the page itself in a sandboxed frame, filling
           // the card (and the whole screen in fullscreen) so you see at a glance
           // what it shows. Served from disk via the vaultasset:// scheme, so

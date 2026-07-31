@@ -187,7 +187,10 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
         } else if name.ends_with(".md") || name.ends_with(".txt")
             || name.ends_with(".yml") || name.ends_with(".yaml")
             || name.ends_with(".mw")
-            || name.ends_with(".html") || name.ends_with(".htm") {
+            // .sheet.html is a spreadsheet SIDECAR of a `view: sheet` note, not a
+            // standalone page — it must not surface as its own HTML card (its
+            // parent .md renders the sheet).
+            || ((name.ends_with(".html") || name.ends_with(".htm")) && !name.ends_with(".sheet.html")) {
             // .txt / .yml / .mw are here so todo.txt, spacetime.yml, and
             // spacetime.mw flow through the same load / reload pipeline as
             // markdown notes. Crepe is replaced with a RawTextSurface for

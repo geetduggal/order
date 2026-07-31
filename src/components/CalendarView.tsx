@@ -26,6 +26,7 @@ import type {
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
+import { overListZone, emitEventToList, highlightListZone, clearListZoneHighlight } from "../lib/list-cal-dnd";
 
 export type CalendarRange = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "multiMonthYear";
 
@@ -310,6 +311,12 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   // One-shot guard so the load-time "scroll to the next event" runs once per
   // mount (CardGrid remounts this on view change), not on every later edit.
   const didAutoScrollRef = useRef(false);
+  // While a calendar event is being dragged, this tracks the pointer so we can
+  // highlight the Week hub list zone when the event is over it — and so the drop
+  // uses the real release point (FullCalendar's eventDragStop jsEvent coords are
+  // unreliable), not a stale one.
+  const eventDragMoveRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   useImperativeHandle(navRef, () => ({
     prev: () => apiRef.current?.getApi()?.prev(),
     next: () => apiRef.current?.getApi()?.next(),
@@ -634,6 +641,37 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         // beside our custom one and overflow-clipped to "10 —".
         eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false, omitZeroMinute: true }}
         displayEventTime={false}
+        // While dragging an event, light up the list zone when the pointer is
+        // over it, so it's clear the event can be dropped there.
+        eventDragStart={() => {
+          const move = (e: PointerEvent) => {
+            lastPointerRef.current = { x: e.clientX, y: e.clientY };
+            highlightListZone(e.clientX, e.clientY);
+          };
+          eventDragMoveRef.current = move;
+          window.addEventListener("pointermove", move);
+        }}
+        // Drag a timed event up onto the Week hub's list zone → move it there:
+        // emit for the list to append + CardGrid to delete. Dropped outside the
+        // grid, FullCalendar reverts the event on its own.
+        eventDragStop={(info) => {
+          if (eventDragMoveRef.current) {
+            window.removeEventListener("pointermove", eventDragMoveRef.current);
+            eventDragMoveRef.current = null;
+          }
+          clearListZoneHighlight();
+          const p = lastPointerRef.current;
+          lastPointerRef.current = null;
+          const start = info.event.start;
+          if (!p || !start || !overListZone(p.x, p.y)) return;
+          emitEventToList({
+            title: info.event.title || "Untitled",
+            date: isoDate(start),
+            time: info.event.allDay ? "" : isoTime(start),
+            path: info.event.id,
+            hasNote: !info.event.id.startsWith("mw-event:"),
+          });
+        }}
         eventContent={renderEventContent}
         // Weekly-hub all-day events get the "high bit" card treatment in the
         // Day / Week all-day band (see .order-event-highbit). Scoped to the
