@@ -65,6 +65,7 @@ import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
+import { useTextScale } from "../lib/text-scale";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -327,6 +328,10 @@ export function Card(props: Props) {
   // CodeMirror surface over the SAME body (not persisted — an escape hatch
   // for when the rich editor gets in the way). Both save through handleChange.
   const [sourceOpen, setSourceOpen] = useState(false);
+  // App text scale — for HTML report cards, fed into the frame URL so the
+  // vaultasset protocol can inject a matching page zoom (a cross-origin frame
+  // can't be restyled from outside).
+  const textScale = useTextScale();
   // Raw-source editing edits the on-disk file BODY verbatim (exactly what's on
   // disk — no Milkdown re-serialization, so no loose blank lines; and it
   // includes a list folder's bullets/base block, which the WYSIWYG editor
@@ -1645,7 +1650,7 @@ export function Card(props: Props) {
           // sibling assets (css/js/images) it references resolve too.
           <iframe
             className="order-html-frame"
-            src={assetUrl(toVaultRel(pathRef.current))}
+            src={`${assetUrl(toVaultRel(pathRef.current))}?_zoom=${textScale}`}
             title={filename.replace(/\.html?$/i, "")}
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads"
           />

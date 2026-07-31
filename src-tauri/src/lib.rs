@@ -16,6 +16,42 @@ pub struct AppState {
     pub vault_path: Mutex<Option<String>>,
 }
 
+/// Read `_zoom=X` from a vaultasset query string (clamped to a sane range).
+fn parse_zoom(query: &str) -> Option<f64> {
+    for pair in query.split('&') {
+        if let Some(v) = pair.strip_prefix("_zoom=") {
+            if let Ok(z) = v.parse::<f64>() {
+                if z.is_finite() && z > 0.0 {
+                    return Some(z.clamp(0.4, 4.0));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Inject `html { zoom: X }` into a served HTML report so the app text scale can
+/// grow/shrink it (a cross-origin frame can't be restyled from the outside).
+/// Placed just inside <head> when present, else at the very front.
+fn inject_html_zoom(bytes: Vec<u8>, z: f64) -> Vec<u8> {
+    if (z - 1.0).abs() < 0.001 {
+        return bytes;
+    }
+    let html = String::from_utf8_lossy(&bytes).into_owned();
+    let style = format!("<style>html{{zoom:{z}}}</style>");
+    let lower = html.to_ascii_lowercase();
+    let pos = lower
+        .find("<head>")
+        .map(|i| i + "<head>".len())
+        .or_else(|| lower.find("<head").and_then(|i| lower[i..].find('>').map(|j| i + j + 1)))
+        .unwrap_or(0);
+    let mut out = String::with_capacity(html.len() + style.len());
+    out.push_str(&html[..pos]);
+    out.push_str(&style);
+    out.push_str(&html[pos..]);
+    out.into_bytes()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -144,6 +180,17 @@ pub fn run() {
 
             match vault_fs::read_asset(&state, &rel) {
                 Ok(bytes) => {
+                    // HTML report notes render in a cross-origin <iframe>, so the
+                    // app can't restyle them from outside. Honor a `?_zoom=X` in
+                    // the frame URL by injecting a root zoom into the page here.
+                    let bytes = if mime == "text/html" {
+                        match request.uri().query().and_then(parse_zoom) {
+                            Some(z) => inject_html_zoom(bytes, z),
+                            None => bytes,
+                        }
+                    } else {
+                        bytes
+                    };
                     let len = bytes.len();
                     tauri::http::Response::builder()
                         .status(200)
