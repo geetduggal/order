@@ -100,6 +100,12 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
   const [addDraft, setAddDraft] = useState("");
+  // Enter commits the card but keeps the Add box open + focused for the next
+  // one. When the layout re-packs the Add box into another column it briefly
+  // unmounts (firing blur); this flag tells that blur NOT to close the box —
+  // the remounted box auto-focuses. Cleared next frame so a real click-away
+  // still commits + closes.
+  const keepAddingRef = useRef(false);
   const canEdit = !readOnly && !readOnlyMembership;
   const go = useGo(vaultNotes, onNavigate, onAddFilter);
 
@@ -270,6 +276,15 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
     setAddDraft("");
     if (t) onChange([...items, itemFromText(t)]);
   };
+  // Enter: commit this card and stay in the Add box for the next one.
+  const addAnother = () => {
+    const t = addDraft.trim();
+    if (!t) return;
+    keepAddingRef.current = true;
+    onChange([...items, itemFromText(t)]);
+    setAddDraft("");
+    requestAnimationFrame(() => { keepAddingRef.current = false; });
+  };
 
   const renderItem = (item: ListItem, i: number) => {
     const img = item.image ? assetFor(item.image, noteDir) : undefined;
@@ -337,9 +352,9 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
         value={addDraft}
         placeholder="Text, [[Note]] or ![[image]]"
         onChange={(e) => setAddDraft(e.target.value)}
-        onBlur={commitAdd}
+        onBlur={() => { if (keepAddingRef.current) return; commitAdd(); }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitAdd(); }
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addAnother(); }
           if (e.key === "Escape") { e.preventDefault(); setAdding(false); setAddDraft(""); }
         }}
       />

@@ -42,6 +42,18 @@ full-text search from the palette, raw-source note editing, and much more.
   columns with a blank gutter — and a tall image is never split across columns.
 - **List / masonry card text scales with the app Zoom** (`Cmd +/−` / the rail
   buttons), matching the rest of the note text.
+- **Drag list items ↔ the Week calendar** (move, not copy). Drag a card (masonry
+  / lines / cards) onto a week time slot → a 30-min event there, removed from the
+  list; drag a timed event onto the list → removed from the calendar, added as a
+  card. A target-slot ghost and a list-zone highlight show where the drop lands.
+- **Imported events keep their location/room.** Apple- and Google-calendar
+  imports capture the event location into YAML and show it as a subtle chip in
+  the card, beside the URL link.
+- **HTML report cards zoom with the app text scale** (injected at serve time, so
+  even a cross-origin report grows/shrinks with `Cmd +/−`), and fill the card /
+  fullscreen edge-to-edge.
+- **Rapid add in masonry:** pressing Enter in a card's Add box creates it and
+  keeps the box open + focused for the next one.
 
 ### Added
 
@@ -174,6 +186,13 @@ full-text search from the palette, raw-source note editing, and much more.
 - **Copying part of a list item no longer grabs the bullet.** Selecting a few
   words inside a bullet (or heading / quote) and copying now yields exactly the
   highlighted text, not `- …`; whole-item selections keep their markdown.
+- **Smoother Milkdown typing.** Each keystroke no longer re-renders the whole
+  card (a write-only state update was forcing it); the editor stays responsive
+  in long / control-heavy notes.
+- **`.sheet.html` renders as a spreadsheet,** not the raw HTML sidecar (sheet
+  sidecars are excluded from the HTML card surface).
+- **Terminal / frontmatter panels stay inside the card.** Their full-bleed
+  rectangle no longer pokes past the card's rounded border.
 - **Week view no longer scrolls the whole page.** The Week hub fills the viewport
   and the document scroll is locked while it's open, so only the two zones (the
   doc and the week grid) scroll — no stray page scrollbar stacked on top of them

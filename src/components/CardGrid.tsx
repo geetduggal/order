@@ -4493,24 +4493,10 @@ export function CardGrid() {
     };
     const onEventToList = (e: Event) => {
       const d = (e as CustomEvent<EventToListDetail>).detail;
-      if (!d?.path) return;
-      void (async () => {
-        if (!d.hasNote) { await deleteEventNote(d.path); return; }
-        // Backed event → keep its note. Take it off the calendar (remove from
-        // spacetime + strip the date fields) so it survives as a plain note the
-        // list now links to, instead of being deleted.
-        const chip = eventChipRef.current.get(d.path);
-        if (chip) await applyMwEdit((mw) => mwDeleteEvent(mw, chip.ev.date, chip.ev.title));
-        const notePath = chip?.notePath ?? d.path;
-        try {
-          const raw = await readVault(notePath);
-          const { frontmatter, body } = splitFrontmatter(raw);
-          const cleaned = { ...frontmatter };
-          delete cleaned.date; delete cleaned.startTime; delete cleaned.endTime;
-          delete cleaned.endDate; delete cleaned.allDay;
-          await writeVault(notePath, joinFrontmatter(cleaned, body));
-        } catch (err) { console.error("move event → list (preserve note) failed:", err); }
-      })();
+      // The list appends the title as plain text; here we just remove the event
+      // from the calendar (spacetime + backing note). No note preservation, no
+      // wikilink.
+      if (d?.path) void deleteEventNote(d.path);
     };
     window.addEventListener(ITEM_TO_CALENDAR, onItemToCal);
     window.addEventListener(EVENT_TO_LIST, onEventToList);

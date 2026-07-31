@@ -122,9 +122,8 @@ export function calendarDropTarget(getItems: () => ListItem[], onChange: (next: 
   };
 }
 
-/** Append a calendar event dragged onto the Week hub list. Only the list that
- *  actually lives in the hub's doc zone reacts. A backed event (hasNote) is
- *  linked (`[[title]]`, preserving its note); an mw-only event becomes text. */
+/** Append a calendar event dragged onto the Week hub list as a plain text item.
+ *  Only the list that actually lives in the hub's doc zone reacts. */
 export function useEventToListAppend(
   gridRef: { current: HTMLElement | null },
   getItems: () => ListItem[],
@@ -142,7 +141,7 @@ export function useEventToListAppend(
       const d = (e as CustomEvent<EventToListDetail>).detail;
       const title = d?.title?.trim();
       if (!title) return;
-      oc.current([...gi.current(), d.hasNote ? { ref: title } : { ref: title, text: title }]);
+      oc.current([...gi.current(), { ref: title, text: title }]);
     }
     window.addEventListener(EVENT_TO_LIST, onEvt);
     return () => window.removeEventListener(EVENT_TO_LIST, onEvt);
