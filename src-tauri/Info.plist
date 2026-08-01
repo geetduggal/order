@@ -9,6 +9,13 @@
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar. Invitations are sent through Google, not Apple.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar.</string>
+	<!-- Voice chat with the in-app agent. Microphone captures what you say;
+	     speech recognition is used only when you pick the on-device (Apple)
+	     transcription engine — the default (Whisper) sends audio to OpenAI. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Order uses the microphone so you can talk to the in-app agent by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Order transcribes your voice on this device when you choose Apple's on-device speech recognition for the agent.</string>
 	<!-- Keep read-aloud (TTS) audio playing when Order is backgrounded / the
 	     phone is locked. iOS-only; ignored on macOS. Paired with an active
 	     AVAudioSession(.playback) set before speaking (see src/tts.rs). -->

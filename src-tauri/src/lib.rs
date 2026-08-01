@@ -9,6 +9,8 @@ mod gcal;
 mod applecal;
 mod badge;
 mod tts;
+mod stt;
+mod agent;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -113,6 +115,7 @@ pub fn run() {
         .manage(vault_fs::VaultState::default())
         .manage(fts::FtsState::default())
         .manage(terminal::TerminalState::default())
+        .manage(agent::AgentState::default())
         // Serve attachment images / videos from the vault via
         // vaultasset://localhost/<rel>. Resolves through the same
         // VaultState as the FS bridge so it works for an absolute
@@ -272,6 +275,12 @@ pub fn run() {
             tts::tts_openai,
             tts::tts_eleven,
             tts::tts_eleven_voices,
+            agent::run::agent_turn,
+            agent::run::agent_new_chat,
+            agent::run::agent_approve,
+            stt::stt_listen,
+            stt::stt_cancel,
+            stt::stt_transcribe,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,

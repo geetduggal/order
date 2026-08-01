@@ -920,7 +920,7 @@ mod tests {
             host: "me@gmail.com".into(), date: date.into(),
             time: time.map(Into::into), end_time: end_time.map(Into::into),
             end_date: end_date.map(Into::into), all_day,
-            title: "X".into(), description: String::new(), attendees: vec![],
+            title: "X".into(), description: String::new(), attendees: vec![], notify: None,
         }
     }
 

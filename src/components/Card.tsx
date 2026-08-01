@@ -67,6 +67,7 @@ import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
 import { useTextScale } from "../lib/text-scale";
 import { CardSpeech } from "./CardSpeech";
+import { ChatSurface } from "./ChatSurface";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -400,7 +401,7 @@ export function Card(props: Props) {
   // flip. The active view = optimistic local override, else the persisted
   // `view:` frontmatter, else "note".
   const filenameForView = initialPath.split("/").pop() ?? "";
-  const canFlip = /\.md$/i.test(filenameForView) && !isSpacetimeFile(filenameForView);
+  const canFlip = /\.md$/i.test(filenameForView) && !isSpacetimeFile(filenameForView) && !/\.chat\.md$/i.test(filenameForView);
   const viewFm = state.kind === "ready" ? (liveFrontmatter ?? state.frontmatter) : null;
   const view: NoteView = canFlip ? (viewOverride ?? (viewFm ? parseView(viewFm) : "note")) : "note";
   const viewRef = useRef<NoteView>(view);
@@ -1227,6 +1228,9 @@ export function Card(props: Props) {
   // A dated HTML page rendered in an <iframe> — but NOT a `.sheet.html`
   // spreadsheet sidecar (those render via the sheet surface / their parent .md).
   const isHtmlNote = /\.html?$/i.test(filename) && !/\.sheet\.html$/i.test(filename);
+  // An agent conversation. Its own surface (ChatSurface) owns the whole body —
+  // no Milkdown, no save pipeline; the Rust core writes the transcript.
+  const isChatNote = /\.chat\.md$/i.test(filename);
 
   /** Write (or clear) the `folded: true` flag straight into this note's
    *  YAML. Editor-only — the read-only viewer reveals via the spine but
@@ -1649,6 +1653,11 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
+        ) : isChatNote ? (
+          // Agent conversation. ChatSurface owns the whole body: it renders the
+          // transcript, streams the live turn, and handles write-approval. The
+          // Rust core does every file touch + model call.
+          <ChatSurface path={pathRef.current} autoFocus={autoFocus && !readOnly} />
         ) : isHtmlNote ? (
           // Dated HTML note: render the page itself in a sandboxed frame, filling
           // the card (and the whole screen in fullscreen) so you see at a glance

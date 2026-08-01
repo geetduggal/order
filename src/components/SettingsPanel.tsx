@@ -9,6 +9,8 @@ import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected } from "../lib/tts";
+import { getAgentKey, setAgentKey } from "../lib/agent";
+import { getSttEngine, setSttEngine, type SttEngine } from "../lib/voice";
 // Pure localStorage helper — static-imported so the checkbox toggle is
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
@@ -41,6 +43,8 @@ export function SettingsPanel({
   // Cloud text-to-speech API keys (optional premium voices).
   const [openaiKey, setOpenaiKeyState] = useState<string>(() => getOpenaiKey());
   const [elevenKey, setElevenKeyState] = useState<string>(() => getElevenKey());
+  const [anthropicKey, setAnthropicKeyState] = useState<string>(() => getAgentKey());
+  const [sttEngine, setSttEngineState] = useState<SttEngine>(() => getSttEngine());
   const [elevenVoices, setElevenVoices] = useState<{ id: string; name: string }[]>([]);
   const [elevenSel, setElevenSel] = useState<string[]>(() => getElevenSelected());
   // Load the user's ElevenLabs voices for the picker whenever a key is present.
@@ -349,6 +353,43 @@ export function SettingsPanel({
             premium AI voices in the voice picker. Keys are stored locally on this device
             and the audio is fetched natively (never through the browser). Cloud voices
             use the provider's API and may incur per-use cost.
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Agent</span>
+          <span className="settings-value">
+            <input
+              className="settings-input"
+              type="password"
+              placeholder="Anthropic API key (sk-ant-…)"
+              value={anthropicKey}
+              onChange={(e) => { setAnthropicKeyState(e.target.value); setAgentKey(e.target.value); }}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <div className="settings-stt-engine" style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 8, fontSize: "0.9rem" }}>
+              <span style={{ color: "var(--ink-faint)" }}>Voice input:</span>
+              <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
+                <input type="radio" name="stt-engine" checked={sttEngine === "whisper"}
+                  onChange={() => { setSttEngineState("whisper"); setSttEngine("whisper"); }} />
+                <span>Whisper (OpenAI)</span>
+              </label>
+              <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
+                <input type="radio" name="stt-engine" checked={sttEngine === "native"}
+                  onChange={() => { setSttEngineState("native"); setSttEngine("native"); }} />
+                <span>On-device (Apple)</span>
+              </label>
+            </div>
+          </span>
+          <span className="settings-hint">
+            Powers the in-app agent — the <strong>chat</strong> button in the dock. Tap the
+            mic and speak; it listens, sends on a pause, and reads the reply aloud. The
+            agent reads and edits notes in the current folder, always asking once before
+            it writes. <strong>Voice input</strong> transcribes with OpenAI Whisper by
+            default (reuses your OpenAI key above); switch to <strong>On-device</strong> to
+            use Apple's speech recognition, which stays entirely on this device. Keys are
+            stored locally; note contents and the model call stay in Order's Rust core.
           </span>
         </div>
 

@@ -5,7 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -39,6 +39,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
+import { newChat } from "../lib/agent";
 import { buildPushIntents, descriptionHash, eventDescriptionFromRaw, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
 import { appleIntents, appleSig, appleSyncPlan, loadAppleSyncRecord, saveAppleSyncRecord } from "../lib/apple-sync-plan";
@@ -4469,6 +4470,50 @@ export function CardGrid() {
     // re-render with the new event at its date/time; Pile sorts it
     // into place by date+startTime.
   }, [applyMwEdit]);
+  // Start an agent conversation: Rust mints the `.chat.md` (filename format
+  // lives in the core, so the frontend never constructs a path), we drop it at
+  // the top of the current pile and focus it. The chat is an ordinary note on
+  // disk — the walker picks it up like any other; adding it to `notes` here
+  // just makes it appear without waiting for a rescan. Folder resolution
+  // mirrors createNote (active pile → week hub → home → vault root).
+  const createChat = useCallback(async (): Promise<void> => {
+    const root = await vaultRoot();
+    let folderRef: string | null = null;
+    const activeIncludes = notableIncludesRef.current;
+    if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
+    else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
+    else if (homeFolderRef.current) folderRef = homeFolderRef.current;
+    const absDir = (folderRef && noteDirByRef(folderRef)) || root;
+    const dirRel = toVaultRel(absDir);
+    const rel = await newChat(dirRel, "Chat");
+    const path = await join(root, rel);
+    const filename = path.split("/").pop() ?? rel;
+    setNotes((prev) => [
+      ...(prev ?? []),
+      { id: newNoteId(), path, filename, frontmatter: { type: "chat" }, title: "Chat", body: "", mtime: Date.now() },
+    ]);
+    // If a filter is active and the chat's folder isn't in it, add it so the
+    // new card lands on screen (additive, like createNote's safety net).
+    if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
+      setFilters((prev) => [...prev, { kind: "include", ref: folderRef! }]);
+    }
+    setFocusPath(path);
+    setScrollTargetPath(path);
+    setFocusedPath(path);
+  }, []);
+  const createChatRef = useRef<(() => Promise<void>) | null>(null);
+  useEffect(() => { createChatRef.current = createChat; }, [createChat]);
+
+  const handleNewChat = useCallback(() => {
+    if (pileMode === "folders") setPileMode(() => { writePileMode("all"); return "all"; });
+    if (view !== "pile") {
+      const home = notableIncludesRef.current[0] || weekHubFolderRef.current || homeFolderRef.current;
+      setView("pile");
+      if (home) { setFilters([{ kind: "include", ref: home }]); setFocusedFolder(home); }
+    }
+    void createChatRef.current?.();
+  }, [pileMode, view]);
+
   // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
   // sits earlier in this component, can invoke the latest createNote.
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
@@ -5862,6 +5907,15 @@ export function CardGrid() {
           aria-label="New note"
         >
           +
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn-chat"
+          onClick={handleNewChat}
+          title="New chat with the agent"
+          aria-label="New chat with the agent"
+        >
+          <MessageSquare size={20} strokeWidth={2.1} />
         </button>
         {(() => {
           // Calendar button: tap goes to the Week view. Highlights only

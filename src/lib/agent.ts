@@ -1,0 +1,70 @@
+// Thin bridge to the Rust-owned agent. React never touches the filesystem or
+// the model API: it hands the Rust core a user message plus an opaque chat
+// handle (a vault-relative path that Rust minted), and renders the `agent-stream`
+// events the core emits. The whole tool-use loop — reads, writes, model calls —
+// runs in Rust. See src-tauri/src/agent/.
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+// ---- API key (same localStorage pattern as the TTS voice keys) -------------
+const AGENT_KEY = "order.agent.anthropic_key";
+const lsGet = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
+const lsSet = (k: string, v: string) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* non-fatal */ } };
+export const AGENT_KEY_EVENT = "order:agent-key-changed";
+export function getAgentKey(): string { return lsGet(AGENT_KEY); }
+export function setAgentKey(v: string): void {
+  lsSet(AGENT_KEY, v.trim());
+  try { window.dispatchEvent(new Event(AGENT_KEY_EVENT)); } catch { /* noop */ }
+}
+
+// ---- One preview row in a write-approval batch (mirrors Rust ApprovalItem) --
+export interface ApprovalItem {
+  tool: string;
+  summary: string;
+  path: string;
+  destructive: boolean;
+  old: string | null;
+  new: string | null;
+}
+
+// ---- Streaming events the Rust core emits over `agent-stream` --------------
+export type AgentEvent =
+  | { kind: "created"; chatPath: string }
+  | { kind: "context"; chatPath: string; loadedChats: string[] }
+  | { kind: "text"; chatPath: string; text: string }
+  | { kind: "tool"; chatPath: string; line: string }
+  | { kind: "approval"; chatPath: string; items: ApprovalItem[] }
+  | { kind: "note"; chatPath: string; text: string }
+  | { kind: "final"; chatPath: string; text: string }
+  | { kind: "error"; chatPath: string; message: string };
+
+/** Subscribe to the agent's event stream. Filter by chatPath in the handler. */
+export async function onAgentStream(handler: (e: AgentEvent) => void): Promise<UnlistenFn> {
+  return listen<AgentEvent>("agent-stream", (evt) => handler(evt.payload));
+}
+
+export interface TurnResult { chat_path: string; text: string }
+
+/** Create an empty chat file (Rust owns the filename) and return its
+ *  vault-relative path. `dirRel` is the notable folder's vault-relative dir. */
+export function newChat(dirRel: string, title?: string): Promise<string> {
+  return invoke<string>("agent_new_chat", { dirRel, title: title ?? null });
+}
+
+/** Run one agent turn against an existing chat. Progress arrives via
+ *  `onAgentStream`; the resolved value is the final assistant text. */
+export function runTurn(chatPath: string, userText: string): Promise<TurnResult> {
+  return invoke<TurnResult>("agent_turn", {
+    apiKey: getAgentKey(),
+    chatPath,
+    createDir: null,
+    title: null,
+    userText,
+  });
+}
+
+/** Answer a pending write-approval batch. */
+export function approve(decision: "once" | "all" | "reject"): Promise<void> {
+  return invoke("agent_approve", { decision });
+}
