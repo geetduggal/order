@@ -15,9 +15,11 @@ import {
 interface Props {
   /** Live markdown source for the card (read at press time). */
   getText: () => string;
+  /** Vault-relative note path — enables caching the cloud recording beside it. */
+  notePath?: string;
 }
 
-export function CardSpeech({ getText }: Props) {
+export function CardSpeech({ getText, notePath }: Props) {
   const [speaking, setSpeaking] = useState(false);
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState<string>(getSavedVoice());
@@ -94,14 +96,17 @@ export function CardSpeech({ getText }: Props) {
     // Remember the voice actually used (not just ones picked from the dropdown),
     // so the last-used voice is restored on the next launch.
     if (voiceRef.current) saveVoice(voiceRef.current);
+    const vName = voices.find((v) => v.uri === voiceRef.current)?.name;
     handleRef.current = speak(text, {
       voiceURI: voiceRef.current || undefined,
+      voiceName: vName,
+      notePath,
       rate: rateRef.current,
       onStart: () => { if (live()) { setPending(false); setSpeaking(true); } },
       onEnd: () => { if (live()) { setPending(false); setSpeaking(false); handleRef.current = null; } },
       onError: (m) => { if (live()) showError(m); },
     });
-  }, [getText]);
+  }, [getText, voices, notePath]);
 
   const busy = speaking || pending;
   const toggle = useCallback(() => {

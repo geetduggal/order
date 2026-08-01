@@ -1405,7 +1405,7 @@ export function Card(props: Props) {
         {/* Audio playback — a markdown note card only (not sheet/drawing/html,
             flipped, terminal, or folded). Reads the live body at press time. */}
         {canFlip && view === "note" && !isHtmlNote && !flipped && !termOpen && !showSpine && (
-          <CardSpeech getText={() => editorBodyRef.current} />
+          <CardSpeech getText={() => editorBodyRef.current} notePath={toVaultRel(pathRef.current)} />
         )}
         {/* Primary, always inline: fullscreen, the close/dismiss button, and the
             "⋯" popover. The spreadsheet / drawing flips and everything else live

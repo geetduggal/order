@@ -5,6 +5,8 @@
 // One card speaks at a time. A voice's engine is encoded in its uri prefix.
 
 import { invoke } from "@tauri-apps/api/core";
+import { vaultFs } from "./vault-fs";
+import { assetUrl } from "./attachments";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" &&
@@ -179,7 +181,7 @@ export interface SpeakHandle { stop: () => void }
 
 export function speak(
   text: string,
-  opts: { voiceURI?: string; rate?: number; onStart?: () => void; onEnd?: () => void; onError?: (msg: string) => void },
+  opts: { voiceURI?: string; voiceName?: string; notePath?: string; rate?: number; onStart?: () => void; onEnd?: () => void; onError?: (msg: string) => void },
 ): SpeakHandle {
   if (!isTauri() || !text) { opts.onEnd?.(); return { stop: () => {} }; }
   stopSpeaking();
@@ -211,24 +213,58 @@ function speakNative(text: string, opts: Parameters<typeof speak>[1]): SpeakHand
   return { stop: ctrl.cancel };
 }
 
-function b64ToBlob(b64: string, type: string): Blob {
+function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type });
+  return bytes;
+}
+
+// Fast 53-bit content hash (cyrb53) — enough to tell if a note's speech text
+// changed. No crypto/secure-context dependency.
+function contentHash(str: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+
+/** Vault paths for a note+voice's cached recording: a visible `<base> [Voice].mp3`
+ *  sidecar next to the note + a hidden `.…​.hash` companion for change detection. */
+function cachePaths(noteRel: string, voiceName: string): { mp3: string; hash: string } {
+  const slash = noteRel.lastIndexOf("/");
+  const dir = slash >= 0 ? noteRel.slice(0, slash) : "";
+  const file = slash >= 0 ? noteRel.slice(slash + 1) : noteRel;
+  const base = file.replace(/\.[^.]+$/, "");
+  const label = (voiceName.replace(/\s*\([^)]*\)\s*$/, "").split(/[,–—-]/)[0] || voiceName)
+    .replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 40) || "voice";
+  const p = dir ? `${dir}/` : "";
+  return { mp3: `${p}${base} [${label}].mp3`, hash: `${p}.${base} [${label}].mp3.hash` };
 }
 
 function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandle {
   const engine = engineOf(opts.voiceURI);
   const voice = opts.voiceURI ? voiceOf(opts.voiceURI) : "";
   const rate = opts.rate ?? 1;
-  // OpenAI honors a native `speed`; ElevenLabs has none, so we time-stretch the
-  // audio element instead.
-  const apiSpeed = engine === "openai" ? rate : 1;
-  const playbackRate = engine === "openai" ? 1 : rate;
+  // Always synth at natural speed and time-stretch on playback, so ONE cached
+  // recording works at any speed (speed isn't baked into the file).
+  const apiSpeed = 1;
+  const playbackRate = rate;
   const chunks = chunkText(text, 1800);
   const audio = new Audio();
   audio.playbackRate = playbackRate;
+
+  // Vault cache: one `<note> [Voice].mp3` per voice next to the note, keyed by a
+  // content hash so an edited note regenerates + overwrites. Reuse = no API cost.
+  const cache = opts.notePath && opts.voiceName
+    ? { ...cachePaths(opts.notePath, opts.voiceName), key: contentHash(`${engine}|${voice}|${text}`) }
+    : null;
+  const parts: Uint8Array[] = []; // accumulated mp3 bytes to save after a fresh synth
 
   let done = false;
   let i = 0;
@@ -241,7 +277,7 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
     }
     try { ms.metadata = null; } catch { /* */ }
   };
-  const cleanup = () => { try { audio.pause(); } catch { /* */ } clearMedia(); if (audio.src) { URL.revokeObjectURL(audio.src); audio.removeAttribute("src"); } };
+  const cleanup = () => { try { audio.pause(); } catch { /* */ } clearMedia(); if (audio.src) { if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src); audio.removeAttribute("src"); } };
   const end = () => { if (done) return; done = true; cleanup(); if (current === ctrl) current = null; opts.onEnd?.(); };
   const ctrl = { cancel: end };
   current = ctrl;
@@ -277,25 +313,58 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
       ? invoke<string>("tts_openai", { apiKey: getOpenaiKey(), voice, model: OPENAI_MODEL, speed: apiSpeed, text: chunk })
       : invoke<string>("tts_eleven", { apiKey: getElevenKey(), voiceId: voice, modelId: ELEVEN_MODEL, text: chunk });
 
-  const playNext = async () => {
+  const playSrc = async (src: string, revoke: boolean) => {
+    if (audio.src && audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
+    audio.src = src;
+    audio.playbackRate = playbackRate;
+    await audio.play();
+  };
+
+  // Save the freshly-synthesized recording (concatenated mp3) + its hash.
+  const persist = () => {
+    if (!cache || parts.length === 0) return;
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const merged = new Uint8Array(total);
+    let off = 0; for (const p of parts) { merged.set(p, off); off += p.length; }
+    void vaultFs.writeBinary(cache.mp3, Array.from(merged))
+      .then(() => vaultFs.writeText(cache.hash, cache.key))
+      .catch((e) => console.warn("[tts] cache save failed:", e));
+  };
+
+  const playFromApi = async () => {
     if (done) return;
-    if (i >= chunks.length) { end(); return; }
+    if (i >= chunks.length) { persist(); end(); return; }
     let b64: string;
-    try {
-      b64 = await synth(chunks[i]);
-    } catch (e) { console.error("[tts] cloud synth failed:", e); opts.onError?.(String(e)); end(); return; }
+    try { b64 = await synth(chunks[i]); }
+    catch (e) { console.error("[tts] cloud synth failed:", e); opts.onError?.(String(e)); end(); return; }
     if (done) return;
     try {
-      if (audio.src) URL.revokeObjectURL(audio.src);
-      audio.src = URL.createObjectURL(b64ToBlob(b64, "audio/mpeg"));
-      audio.playbackRate = playbackRate;
-      audio.onended = () => { i++; void playNext(); };
-      audio.onerror = () => { console.error("[tts] audio element error", audio.error); i++; void playNext(); };
-      await audio.play();
+      const bytes = b64ToBytes(b64);
+      if (cache) parts.push(bytes);
+      audio.onended = () => { i++; void playFromApi(); };
+      audio.onerror = () => { console.error("[tts] audio element error", audio.error); i++; void playFromApi(); };
+      await playSrc(URL.createObjectURL(new Blob([bytes as BlobPart], { type: "audio/mpeg" })), true);
       if (i === 0) { opts.onStart?.(); wireMedia(); }
     } catch (e) { console.error("[tts] audio.play() blocked/failed:", e); opts.onError?.(String(e)); end(); }
   };
-  void playNext();
+
+  void (async () => {
+    // Cache hit: the note is unchanged for this voice → play the saved file free.
+    if (cache) {
+      try {
+        const saved = await vaultFs.readText(cache.hash).catch(() => "");
+        if (saved === cache.key && await vaultFs.exists(cache.mp3)) {
+          audio.onended = () => end();
+          audio.onerror = () => { console.error("[tts] cached audio error", audio.error); end(); };
+          await playSrc(assetUrl(cache.mp3), false);
+          opts.onStart?.(); wireMedia();
+          return;
+        }
+      } catch { /* fall through to fresh synth */ }
+    }
+    void playFromApi();
+  })();
+
   return { stop: end };
 }
 

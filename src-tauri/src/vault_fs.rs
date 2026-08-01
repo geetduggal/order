@@ -514,6 +514,10 @@ pub fn mime_for(rel: &str) -> &'static str {
         // in practice — Safari / WebKit play either as `video/mp4`.
         Some("mov") | Some("mp4") | Some("m4v") => "video/mp4",
         Some("webm") => "video/webm",
+        // Cached read-aloud recordings (see src/lib/tts.ts).
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") | Some("aac") => "audio/mp4",
+        Some("wav") => "audio/wav",
         // Dated HTML notes render in an <iframe> via the vaultasset:// scheme,
         // so the file itself and any sibling assets it references must be
         // served with correct types.
