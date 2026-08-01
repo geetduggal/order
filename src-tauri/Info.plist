@@ -9,5 +9,12 @@
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar. Invitations are sent through Google, not Apple.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar.</string>
+	<!-- Keep read-aloud (TTS) audio playing when Order is backgrounded / the
+	     phone is locked. iOS-only; ignored on macOS. Paired with an active
+	     AVAudioSession(.playback) set before speaking (see src/tts.rs). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

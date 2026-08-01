@@ -66,6 +66,7 @@ import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
 import { useTextScale } from "../lib/text-scale";
+import { CardSpeech } from "./CardSpeech";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -1401,6 +1402,11 @@ export function Card(props: Props) {
             8. Fullscreen toggle
             9. × close (dismiss from filtered view) */}
       <div className={"order-card-controls" + (flipped || termOpen ? " is-flipped" : "")} aria-hidden={false}>
+        {/* Audio playback — a markdown note card only (not sheet/drawing/html,
+            flipped, terminal, or folded). Reads the live body at press time. */}
+        {canFlip && view === "note" && !isHtmlNote && !flipped && !termOpen && !showSpine && (
+          <CardSpeech getText={() => editorBodyRef.current} />
+        )}
         {/* Primary, always inline: fullscreen, the close/dismiss button, and the
             "⋯" popover. The spreadsheet / drawing flips and everything else live
             in the popover so the row stays uncrowded. */}

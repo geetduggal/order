@@ -8,6 +8,7 @@ mod terminal;
 mod gcal;
 mod applecal;
 mod badge;
+mod tts;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -264,6 +265,13 @@ pub fn run() {
             applecal::applecal_delete_event,
             badge::badge_request_permission,
             badge::badge_set,
+            tts::tts_voices,
+            tts::tts_speak,
+            tts::tts_stop,
+            tts::tts_is_speaking,
+            tts::tts_openai,
+            tts::tts_eleven,
+            tts::tts_eleven_voices,
             fts::fts_build_index,
             fts::fts_load_index,
             fts::fts_search,

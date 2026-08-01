@@ -1024,6 +1024,99 @@ input, textarea, select { outline: none; box-shadow: none; }
 .order-card:hover .order-card-controls { opacity: 0.7; }
 .order-card-controls:hover,
 .order-card-controls:focus-within { opacity: 1; }
+/* Keep the controls (and the speech popover) present while a card is speaking,
+   even if the pointer leaves — so Stop / voice / speed stay reachable. */
+.order-card:has(.card-speech.is-speaking) .order-card-controls { opacity: 1; }
+
+/* Audio playback control (CardSpeech). The play button reuses .order-card-btn;
+   the voice/speed popover drops below it only while speaking. */
+.card-speech { position: relative; display: inline-flex; }
+.card-speech-btn.is-on { color: var(--royal); background: var(--royal-soft); }
+.card-speech-btn.is-loading { color: var(--royal); background: var(--royal-soft); }
+.card-speech-spin { animation: card-speech-spin 0.8s linear infinite; }
+@keyframes card-speech-spin { to { transform: rotate(360deg); } }
+.card-speech-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--royal);
+  font-family: var(--sans);
+  font-size: 11px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+.card-speech-loading .card-speech-spin { flex: 0 0 auto; }
+.card-speech-err-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--coral);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  line-height: 1.35;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+.card-speech-err-line .card-speech-hint-x { margin-left: auto; }
+.card-speech-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 250;
+  width: 212px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 30%);
+  cursor: default;
+}
+.card-speech-voice {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 4px 6px;
+  outline: none;
+}
+.card-speech-rate { display: flex; align-items: center; gap: 8px; }
+.card-speech-rate input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--royal); }
+.card-speech-rate-label {
+  flex: 0 0 auto;
+  width: 34px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.card-speech-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+  border-top: 1px solid var(--rule);
+  padding-top: 7px;
+}
+.card-speech-hint-x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  background: transparent;
+  border: none;
+  color: var(--ink-ghost);
+  cursor: pointer;
+  padding: 0;
+  margin-top: 1px;
+}
+.card-speech-hint-x:hover { color: var(--coral); }
 /* On the folder backside, the content-oriented controls (home, list
    mode, fold, notable-update, permalink, copy) don't apply and would
    collide with the backside's own folder actions. Hide them; flip,
@@ -3915,6 +4008,46 @@ body.is-tile-dragging * {
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+.settings-tts-keys {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.settings-tts-keys .settings-input { width: 100%; }
+.tts-voice-picker {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tts-voice-picker-head {
+  padding: 5px 9px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--rule);
+}
+.tts-voice-picker-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tts-voice-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tts-voice-pick:hover { background: var(--bg-elev); }
+.tts-voice-pick input { cursor: pointer; margin: 0; flex: 0 0 auto; }
 .settings-value {
   display: flex;
   align-items: center;

@@ -8,6 +8,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
+import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected } from "../lib/tts";
 // Pure localStorage helper — static-imported so the checkbox toggle is
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
@@ -36,6 +37,30 @@ export function SettingsPanel({
   const [fallback, setFallback] = useState<string>("");
   const [overridden, setOverridden] = useState<boolean>(getVaultOverride() !== null);
   const [busy, setBusy] = useState(false);
+
+  // Cloud text-to-speech API keys (optional premium voices).
+  const [openaiKey, setOpenaiKeyState] = useState<string>(() => getOpenaiKey());
+  const [elevenKey, setElevenKeyState] = useState<string>(() => getElevenKey());
+  const [elevenVoices, setElevenVoices] = useState<{ id: string; name: string }[]>([]);
+  const [elevenSel, setElevenSel] = useState<string[]>(() => getElevenSelected());
+  // Load the user's ElevenLabs voices for the picker whenever a key is present.
+  useEffect(() => {
+    if (!elevenKey.trim()) { setElevenVoices([]); return; }
+    let cancelled = false;
+    void listElevenVoices().then((vs) => { if (!cancelled) setElevenVoices(vs); });
+    return () => { cancelled = true; };
+  }, [elevenKey]);
+  const toggleElevenVoice = (id: string) => {
+    const next = elevenSel.includes(id) ? elevenSel.filter((x) => x !== id) : [...elevenSel, id];
+    setElevenSel(next);
+    setElevenSelected(next);
+  };
+  const [openaiSel, setOpenaiSel] = useState<string[]>(() => getOpenaiSelected());
+  const toggleOpenaiVoice = (id: string) => {
+    const next = openaiSel.includes(id) ? openaiSel.filter((x) => x !== id) : [...openaiSel, id];
+    setOpenaiSel(next);
+    setOpenaiSelected(next);
+  };
 
   const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false, client_id: "", client_id_ios: "" });
   const [gcalId, setGcalId] = useState("");
@@ -259,6 +284,71 @@ export function SettingsPanel({
             what makes <em>Order</em> appear under Settings → Notifications); grant it, then
             the badge shows.{!weekHubFolder && <> Set a <strong>Weekly hub</strong> folder
             above so there's something to count (the count is 0 until then).</>}
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <span className="settings-label">Read-aloud voices</span>
+          <span className="settings-value settings-tts-keys">
+            <input
+              className="settings-input"
+              type="password"
+              placeholder="OpenAI API key (sk-…)"
+              value={openaiKey}
+              onChange={(e) => { setOpenaiKeyState(e.target.value); setOpenaiKey(e.target.value); }}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {openaiKey.trim() && (
+              <div className="tts-voice-picker">
+                <div className="tts-voice-picker-head">
+                  {openaiSel.length ? `OpenAI: showing ${openaiSel.length} of ${OPENAI_VOICES.length}` : `OpenAI: showing all ${OPENAI_VOICES.length} — check some to limit`}
+                </div>
+                <div className="tts-voice-picker-list">
+                  {OPENAI_VOICES.map((v) => (
+                    <label key={v} className="tts-voice-pick">
+                      <input type="checkbox" checked={openaiSel.includes(v)} onChange={() => toggleOpenaiVoice(v)} />
+                      <span>{v[0].toUpperCase()}{v.slice(1)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <input
+              className="settings-input"
+              type="password"
+              placeholder="ElevenLabs API key"
+              value={elevenKey}
+              onChange={(e) => { setElevenKeyState(e.target.value); setElevenKey(e.target.value); }}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {elevenKey.trim() && elevenVoices.length > 0 && (
+              <div className="tts-voice-picker">
+                <div className="tts-voice-picker-head">
+                  {elevenSel.length ? `Showing ${elevenSel.length} of ${elevenVoices.length}` : `Showing all ${elevenVoices.length} — check some to limit`}
+                </div>
+                <div className="tts-voice-picker-list">
+                  {elevenVoices.map((v) => (
+                    <label key={v.id} className="tts-voice-pick">
+                      <input
+                        type="checkbox"
+                        checked={elevenSel.includes(v.id)}
+                        onChange={() => toggleElevenVoice(v.id)}
+                      />
+                      <span>{v.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </span>
+          <span className="settings-hint">
+            Optional. The card play button uses your Mac's built-in voices by default;
+            add an <strong>OpenAI</strong> or <strong>ElevenLabs</strong> key to unlock
+            premium AI voices in the voice picker. Keys are stored locally on this device
+            and the audio is fetched natively (never through the browser). Cloud voices
+            use the provider's API and may incur per-use cost.
           </span>
         </div>
 
