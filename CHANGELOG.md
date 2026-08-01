@@ -8,14 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Order is an app, not a library with dependents, so the version communicates
 *when* a release shipped rather than API compatibility: `YYYY.M.0` is that
 month's release; the patch digit increments for fixes within the same month.
-(Earlier `0.1.x` releases predate this switch.)
+(Releases through July 2026 were retroactively relabeled from their original
+`0.1.x` numbers.)
 
 ## [Unreleased]
 
 ## [2026.8.0] - 2026-08-01
 
-First [CalVer](https://calver.org/) release. Headline feature: **read-aloud** —
-play any card as audio with native system voices or premium cloud voices.
+Headline feature: **read-aloud** — play any card as audio with native system
+voices or premium cloud voices.
 
 ### Added
 
@@ -48,7 +49,7 @@ play any card as audio with native system voices or premium cloud voices.
 - **Versioning switched to CalVer** (`YYYY.M.PATCH`). See the note at the top of
   this file; the `cetl` release flow now offers dated / patch bumps.
 
-## [0.1.3] - 2026-07-27
+## [2026.7.1] - 2026-07-27
 
 The **Weekly Hub** turns the Week view into a two-zone "one stop shop" — your
 pinned folder's live document stacked above the week grid. Around it this release
@@ -274,7 +275,7 @@ full-text search from the palette, raw-source note editing, and much more.
 - The card's date / frontmatter chip no longer overlaps the first row of a
   spreadsheet in the minimal card view — the preview grid gets top clearance.
 
-## [0.1.2] - 2026-07-19
+## [2026.7.0] - 2026-07-19
 
 This release turns a note card into a canvas: flip it to a **spreadsheet** or a
 **drawing**, lay a list out as a **masonry** wall, and switch on **Johnny-Decimal
@@ -331,7 +332,7 @@ Mode** to put explicit ids on your whole hierarchy.
   exists in the keychain" when a stale duplicate token lingers from a previous
   build: the store now loop-deletes reachable items and retries.
 
-## [0.1.1] - 2026-06-25
+## [2026.6.1] - 2026-06-25
 
 The headline of this release is **Google Calendar curated sync** — push and import
 individual events between `spacetime.mw` and Google Calendar, keeping the
@@ -401,7 +402,7 @@ folder-tag syntax** for spacetime event lines.
 - `cetl` iPhone detection matches the `available (paired)` device state (and no
   longer mis-matches `unavailable`).
 
-## [0.1.0] - 2026-06-23
+## [2026.6.0] - 2026-06-23
 
 - Initial release: local-first notebook over an Obsidian-compatible vault —
   in-place markdown cards, the Area → Category → Notable Folder hierarchy,
@@ -409,6 +410,6 @@ folder-tag syntax** for spacetime event lines.
   Seasons, File Piles, and `spacetime` (`spacetime.yml` + `spacetime.mw`) as the
   canonical map of space and time. One Tauri codebase ships desktop and iOS.
 
-[Unreleased]: https://github.com/geetduggal/order/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/geetduggal/order/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/geetduggal/order/releases/tag/v0.1.0
+[Unreleased]: https://github.com/geetduggal/order/compare/v2026.6.1...HEAD
+[2026.6.1]: https://github.com/geetduggal/order/compare/v2026.6.0...v2026.6.1
+[2026.6.0]: https://github.com/geetduggal/order/releases/tag/v2026.6.0
