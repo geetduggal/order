@@ -12,6 +12,42 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.0] - 2026-08-01
+
+First [CalVer](https://calver.org/) release. Headline feature: **read-aloud** —
+play any card as audio with native system voices or premium cloud voices.
+
+### Added
+
+- **Read-aloud (text-to-speech).** A compact play button in each card's chrome
+  speaks the note; a progressive-disclosure popover (voice + speed) appears only
+  while playing. Markdown is stripped to readable speech (code blocks dropped,
+  headings become sentences, links/wikilinks read as their label). One card
+  speaks at a time.
+- **Native system voices** via AVSpeechSynthesizer (macOS + iOS) — the real
+  installed voices, reliable playback, filtered to the clean "iOS-like" English
+  set (no Siri — Apple doesn't expose those to apps — no novelty/Eloquence).
+- **Cloud voices: OpenAI + ElevenLabs.** Add a key in Settings → Read-aloud
+  voices to unlock premium AI voices in the picker, with a per-provider checklist
+  to choose which appear. The HTTP calls run in Rust so the key never touches the
+  webview and there's no CORS.
+- **Cached recordings as vault backups.** A cloud recording is saved next to its
+  note (`<note> [Voice].mp3`, one per voice) keyed by a content hash: an unchanged
+  note replays for free, editing it regenerates + overwrites the file. Recordings
+  are natural-speed (speed applied on playback), so one file serves any speed.
+- **System media controls.** Cloud playback integrates with the OS media session
+  (lock screen / Control Center / media keys) including scrubbing; iOS keeps
+  audio playing when backgrounded or locked (`AVAudioSession` + audio background
+  mode).
+- **Remembers your last-used voice and speed**, with clear loading feedback (a
+  spinner + "Loading…") and friendly, per-provider error messages you can retry
+  by picking another voice.
+
+### Changed
+
+- **Versioning switched to CalVer** (`YYYY.M.PATCH`). See the note at the top of
+  this file; the `cetl` release flow now offers dated / patch bumps.
+
 ## [0.1.3] - 2026-07-27
 
 The **Weekly Hub** turns the Week view into a two-zone "one stop shop" — your
