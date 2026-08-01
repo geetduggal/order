@@ -2,8 +2,13 @@
 
 All notable changes to Order are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+**Versioning: [CalVer](https://calver.org/) `YYYY.M.PATCH`** (e.g. `2026.8.0`).
+Order is an app, not a library with dependents, so the version communicates
+*when* a release shipped rather than API compatibility: `YYYY.M.0` is that
+month's release; the patch digit increments for fixes within the same month.
+(Earlier `0.1.x` releases predate this switch.)
 
 ## [Unreleased]
 

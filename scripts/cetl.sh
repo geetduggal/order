@@ -16,9 +16,15 @@ elapsed() { echo "$(( $(date +%s) - $1 ))s"; }
 
 version() { python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])"; }
 
+# CalVer: YYYY.M.PATCH (see docs). `dated` = this month's release (rolls the
+# patch if we already shipped this month); `patch` = a fix within the month.
 bump() {
-  local v="$1"; IFS='.' read -r ma mi pa <<< "$v"
-  case "$2" in patch) echo "$ma.$mi.$((pa+1))" ;; minor) echo "$ma.$((mi+1)).0" ;; major) echo "$((ma+1)).0.0" ;; esac
+  local v="$1"; IFS='.' read -r cy cm cp <<< "$v"
+  local ny nm; ny=$(date +%Y); nm=$(date +%-m)
+  case "$2" in
+    dated) if [[ "$cy.$cm" == "$ny.$nm" ]]; then echo "$ny.$nm.$((cp+1))"; else echo "$ny.$nm.0"; fi ;;
+    patch) echo "$cy.$cm.$((cp+1))" ;;
+  esac
 }
 
 set_version() {
@@ -152,19 +158,17 @@ step_release() {
   if gh release view "$tag" >/dev/null 2>&1; then
     printf "  ${YL}%s already exists${R}\n\n" "$tag"
     printf "  o  overwrite    re-upload to $tag\n"
-    printf "  p  patch        %s → %s\n" "$ver" "$(bump "$ver" patch)"
-    printf "  m  minor        %s → %s\n" "$ver" "$(bump "$ver" minor)"
-    printf "  M  major        %s → %s\n" "$ver" "$(bump "$ver" major)"
+    printf "  d  dated        %s → %s   (this month's release)\n" "$ver" "$(bump "$ver" dated)"
+    printf "  p  patch        %s → %s   (fix within the month)\n" "$ver" "$(bump "$ver" patch)"
     printf "  c  custom\n"
     printf "  q  abort\n\n"
-    ask "[o/p/m/M/c/q]:"; read -r ch
+    ask "[o/d/p/c/q]:"; read -r ch
     case "$ch" in
       o) ;;
+      d) ver=$(bump "$ver" dated); tag="v$ver"; set_version "$ver"; done_ "version → $ver" ;;
       p) ver=$(bump "$ver" patch); tag="v$ver"; set_version "$ver"; done_ "version → $ver" ;;
-      m) ver=$(bump "$ver" minor); tag="v$ver"; set_version "$ver"; done_ "version → $ver" ;;
-      M) ver=$(bump "$ver" major); tag="v$ver"; set_version "$ver"; done_ "version → $ver" ;;
       c) ask "version:"; read -r ver
-         [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "must be semver"
+         [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "must be YYYY.M.PATCH"
          tag="v$ver"; set_version "$ver"; done_ "version → $ver" ;;
       *) fail "aborted" ;;
     esac
