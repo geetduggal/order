@@ -70,6 +70,31 @@ function stripMarkdownEscapes(md: string): string {
   return lines.join("\n");
 }
 
+// Normalize pasted text so it parses as clean Markdown: turn assorted bullet
+// glyphs (from Wispr Flow, Word, etc.) at a line start into `- `, and `1)` into
+// `1.`. Leaves everything else untouched.
+function normalizePastedMarkdown(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/^(\s*)[•‣▪◦·–—*]\s+/gm, "$1- ")
+    .replace(/^(\s*\d+)\)\s+/gm, "$1. ");
+}
+
+// Does the (normalized) text look like Markdown worth parsing? Block markers are
+// the strong signal; a couple of inline patterns catch `**bold**` / `[x](y)`.
+function looksLikeMarkdown(text: string): boolean {
+  return (
+    /^\s{0,3}#{1,6}\s/m.test(text) ||          // heading
+    /^\s*[-*+]\s+\S/m.test(text) ||            // bullet list
+    /^\s*\d+\.\s+\S/m.test(text) ||            // ordered list
+    /^\s*>\s/m.test(text) ||                   // blockquote
+    /^\s*```/m.test(text) ||                   // code fence
+    /^\s*(?:[-*_]\s*){3,}$/m.test(text) ||     // hr
+    /\*\*[^*\n]+\*\*/.test(text) ||            // bold
+    /\[[^\]\n]+\]\([^)\n]+\)/.test(text)       // link
+  );
+}
+
 export interface MilkdownHandle {
   /** Replace the entire document with new markdown content — no remount,
    *  no cursor disruption to an in-progress edit. Returns false when the
@@ -273,16 +298,39 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
               handlePaste: (_view, event) => {
                 const cd = (event as ClipboardEvent).clipboardData;
                 if (!cd) return false;
-                const text = cd.getData("text/plain")?.trim();
-                if (!text || /\s/.test(text)) return false;
-                if (!youtubeId(text)) return false;
-                const md = `![](${text})\n`;
-                const doc = parser(md);
-                if (!doc) return false;
-                _view.dispatch(
-                  _view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView(),
-                );
-                return true;
+                // Image/file paste → let the image upload handler take it.
+                if (cd.files && cd.files.length > 0) return false;
+                const raw = cd.getData("text/plain");
+                if (!raw) return false;
+                const text = raw.trim();
+                // Bare YouTube URL → Obsidian embed syntax (existing behavior).
+                if (text && !/\s/.test(text) && youtubeId(text)) {
+                  const doc = parser(`![](${text})\n`);
+                  if (!doc) return false;
+                  _view.dispatch(_view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView());
+                  return true;
+                }
+                // Markdown-looking text (incl. Wispr Flow bullets) → parse it as
+                // real Markdown so it renders instead of pasting literal `- `,
+                // `**`, `#`. Plain prose / bare URLs fall through to Crepe's
+                // default so autolinking still works.
+                const normalized = normalizePastedMarkdown(raw);
+                if (looksLikeMarkdown(normalized)) {
+                  try {
+                    const doc = parser(normalized);
+                    if (doc) {
+                      // Single paragraph → paste inline (into the current block);
+                      // multi-block → paste as blocks.
+                      const only = doc.content.childCount === 1 ? doc.content.firstChild : null;
+                      const slice = only && only.type.name === "paragraph"
+                        ? new Slice(only.content, 0, 0)
+                        : new Slice(doc.content, 0, 0);
+                      _view.dispatch(_view.state.tr.replaceSelection(slice).scrollIntoView());
+                      return true;
+                    }
+                  } catch { /* fall through to default paste */ }
+                }
+                return false;
               },
             });
             // Copy interceptor: attach to view.dom (the ProseMirror

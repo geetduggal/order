@@ -11,8 +11,10 @@ import { getOpenaiKey, ttsSupported } from "./tts";
 // STT engine selection (Whisper by default; native Apple on request).
 const STT_ENGINE_KEY = "order.stt.engine";
 export type SttEngine = "whisper" | "native";
+// Default to on-device Apple: it streams words live as you speak (Whisper only
+// returns text after you pause) and stays local. Whisper stays selectable.
 export function getSttEngine(): SttEngine {
-  try { return (localStorage.getItem(STT_ENGINE_KEY) as SttEngine) || "whisper"; } catch { return "whisper"; }
+  try { return (localStorage.getItem(STT_ENGINE_KEY) as SttEngine) || "native"; } catch { return "native"; }
 }
 export function setSttEngine(e: SttEngine): void {
   try { localStorage.setItem(STT_ENGINE_KEY, e); } catch { /* noop */ }
@@ -32,6 +34,11 @@ export async function onLevel(handler: (level: number) => void): Promise<Unliste
 /** Subscribe to capture state changes ("heard" = speech detected). */
 export async function onSttState(handler: (state: string) => void): Promise<UnlistenFn> {
   return listen<string>("stt-state", (e) => handler(e.payload));
+}
+
+/** Subscribe to live partial transcripts (on-device engine) as you speak. */
+export async function onPartial(handler: (text: string) => void): Promise<UnlistenFn> {
+  return listen<string>("stt-partial", (e) => handler(e.payload));
 }
 
 /**

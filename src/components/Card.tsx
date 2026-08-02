@@ -95,6 +95,40 @@ async function uniqueRename(dir: string, oldPath: string, basename: string): Pro
   throw new Error(`No unique name found for ${basename}`);
 }
 
+/** A date-prefixed image shown as its own card in a folder's pile: the image
+ *  itself plus an inline, editable filename (Enter or blur to rename). */
+function ImageCard({ path, onRenamed }: { path: string; onRenamed?: (p: string) => void }) {
+  const rel = toVaultRel(path);
+  const filename = path.split("/").pop() ?? path;
+  const [name, setName] = useState(filename);
+  useEffect(() => { setName(filename); }, [filename]);
+  const commit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === filename) { setName(filename); return; }
+    const ext = filename.slice(filename.lastIndexOf("."));
+    const finalName = /\.[a-z0-9]+$/i.test(trimmed) ? trimmed : trimmed + ext;
+    const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+    try {
+      await vaultFs.rename(rel, dir + finalName);
+      onRenamed?.(path.slice(0, path.length - filename.length) + finalName);
+    } catch (e) { console.error("image rename failed", e); setName(filename); }
+  };
+  return (
+    <div className="order-card-image">
+      <img className="order-card-image-img" src={assetUrl(rel)} alt={filename} loading="lazy" />
+      <input
+        className="order-card-image-name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+        onBlur={commit}
+        spellCheck={false}
+        aria-label="Image filename"
+      />
+    </div>
+  );
+}
+
 type LoadState =
   | { kind: "loading" }
   | { kind: "ready"; body: string; frontmatter: Frontmatter; rawFm: string }
@@ -722,6 +756,11 @@ export function Card(props: Props) {
           if (!cancelled) setState({ kind: "ready", body: "", frontmatter: {}, rawFm: "" });
           return;
         }
+        // Dated images render straight from disk — binary, no text body/frontmatter.
+        if (isImagePath(initialPath.split("/").pop() ?? initialPath)) {
+          if (!cancelled) setState({ kind: "ready", body: "", frontmatter: {}, rawFm: "" });
+          return;
+        }
         let body: string;
         let frontmatter: Frontmatter;
         let rawFm = "";
@@ -1240,6 +1279,8 @@ export function Card(props: Props) {
   // An agent conversation. Its own surface (ChatSurface) owns the whole body —
   // no Milkdown, no save pipeline; the Rust core writes the transcript.
   const isChatNote = /\.chat\.md$/i.test(filename);
+  // A date-prefixed image surfaced as its own card in the folder pile.
+  const isImageNote = isImagePath(filename);
 
   /** Write (or clear) the `folded: true` flag straight into this note's
    *  YAML. Editor-only — the read-only viewer reveals via the spine but
@@ -1311,6 +1352,7 @@ export function Card(props: Props) {
     (view === "sheet" ? " is-sheet" : "") +
     (view === "drawing" ? " is-drawing" : "") +
     (isHtmlNote ? " is-html" : "") +
+    (isChatNote ? " is-chat" : "") +
     (capActive && overflowing ? " is-capped" : "");
 
   // Every card shares the SAME chrome — one theme border, one shadow,
@@ -1662,6 +1704,9 @@ export function Card(props: Props) {
             <span className="order-card-spine-title">{spineTitle}</span>
             <span className="order-card-spine-hint">folded</span>
           </button>
+        ) : isImageNote ? (
+          // A date-prefixed image surfaced as its own folder card.
+          <ImageCard path={pathRef.current} onRenamed={(p) => onRenamedRef.current?.(p)} />
         ) : isChatNote ? (
           // Agent conversation. ChatSurface owns the whole body: it renders the
           // transcript, streams the live turn, and handles write-approval. The

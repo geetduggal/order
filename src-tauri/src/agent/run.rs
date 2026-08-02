@@ -111,7 +111,11 @@ fn gather_context(root: &Path, dir_rel: &str, current_chat: &str) -> (String, Ve
     files.sort();
     chats.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
 
-    let mut ctx = format!("You are working in the notable folder `{}`.\n\n", if dir_rel.is_empty() { "(vault root)" } else { dir_rel });
+    let mut ctx = format!(
+        "The current date and time is {}.\nYou are working in the notable folder `{}`.\n\n",
+        chrono::Local::now().format("%A, %B %-d, %Y at %-I:%M %p"),
+        if dir_rel.is_empty() { "(vault root)" } else { dir_rel },
+    );
     if !files.is_empty() {
         ctx.push_str("Files in this folder (names only — read them if useful):\n");
         for f in &files { ctx.push_str(&format!("  - {f}\n")); }

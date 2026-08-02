@@ -117,8 +117,13 @@ impl ModelProvider for Anthropic {
             { "type": "text", "text": req.system, "cache_control": { "type": "ephemeral" } }
         ]);
         let mut tools_json = serde_json::to_value(req.tools).unwrap_or(serde_json::json!([]));
-        if let Some(last) = tools_json.as_array_mut().and_then(|a| a.last_mut()) {
-            last["cache_control"] = serde_json::json!({ "type": "ephemeral" });
+        if let Some(arr) = tools_json.as_array_mut() {
+            // Anthropic's server-side web search — meaningful research handled on
+            // their side; the model calls it and the results come back inline.
+            arr.push(serde_json::json!({ "type": "web_search_20250305", "name": "web_search", "max_uses": 5 }));
+            if let Some(last) = arr.last_mut() {
+                last["cache_control"] = serde_json::json!({ "type": "ephemeral" });
+            }
         }
         let body = serde_json::json!({
             "model": req.model,

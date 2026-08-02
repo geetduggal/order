@@ -15,12 +15,12 @@ import {
   approve, getAgentKey, onAgentStream, runTurn,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { listenOnce, cancelListen, micSupported, onLevel, onSttState, inputName } from "../lib/voice";
+import { listenOnce, cancelListen, micSupported, onLevel, onSttState, onPartial, inputName } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { recordChat, recordDictation, getChatUsage, addChatUsage, chatCostOf, chatUsageDetail, formatUSD, type ChatUsage } from "../lib/usage";
 import { listen } from "@tauri-apps/api/event";
-import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2, X } from "lucide-react";
+import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2, ChevronDown } from "lucide-react";
 
 interface Turn {
   role: "user" | "agent";
@@ -107,11 +107,13 @@ export function ChatSurface({ path, autoFocus }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
+  const [partial, setPartial] = useState("");   // live transcript while speaking
   const [micName, setMicName] = useState<string | null>(null);
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
   const [chatUsage, setChatUsage] = useState<ChatUsage>(() => getChatUsage(rel));
   const [loadedChats, setLoadedChats] = useState<string[]>([]);
+  const [atBottom, setAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -123,22 +125,32 @@ export function ChatSurface({ path, autoFocus }: Props) {
   const modeRef = useRef<Mode>("idle");
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
+  // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
+  // runs, so silence doesn't read as a stall. Cancelled the moment the reply
+  // starts arriving. A stopgap until latency is fully tuned.
+  const fillerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fillerHandleRef = useRef<ReturnType<typeof speak> | null>(null);
+  const clearFiller = useCallback(() => {
+    if (fillerTimerRef.current) { clearTimeout(fillerTimerRef.current); fillerTimerRef.current = null; }
+    fillerHandleRef.current?.stop(); fillerHandleRef.current = null;
+  }, []);
   const setModeBoth = useCallback((m: Mode) => { modeRef.current = m; setMode(m); }, []);
 
   // Live input level for the meter + "heard you" state (native capture streams
   // `stt-level` / `stt-state`).
   useEffect(() => {
-    let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined;
+    let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined;
     let alive = true;
     void onLevel((l) => setLevel(l)).then((fn) => { if (alive) a = fn; else fn(); });
     void onSttState((s) => { if (s === "heard") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
+    void onPartial((t) => setPartial(t)).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
       setChatUsage(addChatUsage(rel, e.payload.engine === "native"
         ? { nativeSeconds: e.payload.seconds }
         : { whisperSeconds: e.payload.seconds }));
     }).then((fn) => { if (alive) c = fn; else fn(); });
-    return () => { alive = false; a?.(); b?.(); c?.(); };
+    return () => { alive = false; a?.(); b?.(); c?.(); d?.(); };
   }, [rel]);
 
   // Load the transcript from disk on mount / when the file changes.
@@ -152,10 +164,22 @@ export function ChatSurface({ path, autoFocus }: Props) {
   // Load this chat's accumulated cost when it opens.
   useEffect(() => { setChatUsage(getChatUsage(rel)); }, [rel]);
 
-  useEffect(() => {
+  // Auto-scroll: keep the newest content pinned to the bottom. Deferred a frame
+  // so it runs AFTER layout (streaming text grows the box async), and re-run on
+  // mode changes so entering listen/speak snaps to the bottom too.
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) { el.scrollTop = el.scrollHeight; setAtBottom(true); }
+    });
+  }, []);
+  useEffect(() => { scrollToBottom(); }, [turns, streamText, streamTools, approval, mode, partial, scrollToBottom]);
+  // Track whether the user has scrolled up, to offer a jump-to-bottom control.
+  const onScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, streamText, streamTools, approval]);
+    if (!el) return;
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+  }, []);
 
   useEffect(() => { if (autoFocus && typing) taRef.current?.focus(); }, [autoFocus, typing]);
 
@@ -194,6 +218,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
     if (!voiceOnRef.current) return;
     setError(null);
     setHeard(false);
+    setPartial("");
     refreshMic();
     setModeBoth("listening");
     setLevel(0);
@@ -227,6 +252,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
   const stopVoice = useCallback(() => {
     voiceOnRef.current = false;
     void cancelListen();
+    clearFiller();
     speakerRef.current?.cancel();
     speakerRef.current = null;
     stopSpeaking();
@@ -281,6 +307,15 @@ export function ChatSurface({ path, autoFocus }: Props) {
         })
       : null;
     setModeBoth("thinking");
+    // If the reply is slow to start (tool-heavy turn), speak a brief filler so
+    // the silence doesn't feel like a stall. Cancelled as soon as text arrives.
+    clearFiller();
+    if (voiceOnRef.current && ttsSupported()) {
+      fillerTimerRef.current = setTimeout(() => {
+        if (!voiceOnRef.current || modeRef.current !== "thinking") return;
+        fillerHandleRef.current = speak("Let me look into that.", { voiceURI: getSavedVoice() || undefined, rate: getSavedRate() });
+      }, 900);
+    }
     void runTurn(rel, text)
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
       .catch((err) => { failLoud(typeof err === "string" ? err : "The agent turn failed."); });
@@ -295,7 +330,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
       if (e.chatPath !== rel) return;
       switch (e.kind) {
         case "context": setLoadedChats(e.loadedChats); break;
-        case "text": setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
+        case "text": clearFiller(); setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
         case "tool": setStreamTools((t) => [...t, e.line]); break;
         case "approval": setModeBoth("approval"); setApproval(e.items); break;
         case "note": setStreamText((s) => (s ? s + "\n\n" : "") + e.text); break;
@@ -371,7 +406,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
           )}
         </div>
       )}
-      <div className="order-chat-scroll" ref={scrollRef}>
+      <div className="order-chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
             <Sparkles size={18} />
@@ -394,6 +429,15 @@ export function ChatSurface({ path, autoFocus }: Props) {
           </div>
         ))}
 
+        {/* Live transcript while you speak (on-device engine). */}
+        {mode === "listening" && partial && (
+          <div className="order-chat-turn order-chat-user">
+            <div className="order-chat-bubble order-chat-partial">
+              <div className="order-chat-text">{partial}</div>
+            </div>
+          </div>
+        )}
+
         {(streamTools.length > 0 || streamText || busy) && !approval && (
           <div className="order-chat-turn order-chat-agent">
             {streamTools.length > 0 && (
@@ -411,6 +455,13 @@ export function ChatSurface({ path, autoFocus }: Props) {
 
         {error && <div className="order-chat-error"><AlertTriangle size={14} /> {error}</div>}
       </div>
+
+      {/* Jump to the latest — always available when scrolled up. */}
+      {!atBottom && (
+        <button type="button" className="order-chat-jump" onClick={scrollToBottom} title="Jump to latest" aria-label="Jump to latest">
+          <ChevronDown size={18} />
+        </button>
+      )}
 
       {loadedChats.length > 0 && (
         <div className="order-chat-context" title="Recent chats in this folder that informed the reply">
@@ -460,34 +511,40 @@ export function ChatSurface({ path, autoFocus }: Props) {
         </div>
       )}
 
-      {/* Voice control bar */}
-      <div className="order-chat-voice">
-        {canVoice && mode === "idle" && !typing && (
-          <button type="button" className="order-chat-mic" onClick={startVoice} disabled={!hasKey}
-            title={hasKey ? "Start talking" : "Add an Anthropic API key in Settings first"}>
-            <Mic size={20} /> <span>Talk</span>
+      {/* Voice control bar — only when NOT typing; keyboard mode gets a subtle
+          inline mic toggle instead of a big hide bar. */}
+      {!typing && (
+        <div className="order-chat-voice">
+          {canVoice && mode === "idle" && (
+            <button type="button" className="order-chat-mic" onClick={startVoice} disabled={!hasKey}
+              title={hasKey ? "Start talking" : "Add an Anthropic API key in Settings first"}>
+              <Mic size={20} /> <span>Talk</span>
+            </button>
+          )}
+          {canVoice && mode !== "idle" && (
+            <button type="button" className={`order-chat-mic active mode-${mode}`} onClick={stopVoice} title="Stop">
+              {mode === "thinking"
+                ? <Loader2 size={18} className="order-spin" />
+                : mode === "speaking" ? <Volume2 size={18} />
+                : mode === "listening" ? <Mic size={18} /> : <Square size={16} />}
+              <span>Stop</span>
+            </button>
+          )}
+          <button type="button" className="order-chat-kbd" onClick={() => { stopVoice(); setTyping(true); }}
+            title="Type instead" aria-label="Type instead">
+            <Keyboard size={18} /><span className="order-chat-kbd-label">Type</span>
           </button>
-        )}
-        {canVoice && mode !== "idle" && (
-          <button type="button" className={`order-chat-mic active mode-${mode}`} onClick={stopVoice} title="Stop">
-            {mode === "thinking"
-              ? <Loader2 size={18} className="order-spin" />
-              : mode === "speaking" ? <Volume2 size={18} />
-              : mode === "listening" ? <Mic size={18} /> : <Square size={16} />}
-            <span>Stop</span>
-          </button>
-        )}
-        <button type="button" className={`order-chat-kbd${typing ? " active" : ""}`}
-          onClick={() => { if (!typing) stopVoice(); setTyping((v) => !v); }}
-          title={typing ? "Hide keyboard" : "Type instead"}
-          aria-label={typing ? "Hide keyboard" : "Type instead"} aria-pressed={typing}>
-          {typing ? <X size={18} /> : <Keyboard size={18} />}
-          <span className="order-chat-kbd-label">{typing ? "Hide" : "Type"}</span>
-        </button>
-      </div>
+        </div>
+      )}
 
       {(typing || !canVoice) && (
         <div className="order-chat-input">
+          {canVoice && (
+            <button type="button" className="order-chat-to-voice" onClick={() => setTyping(false)}
+              title="Back to voice" aria-label="Back to voice">
+              <Mic size={16} />
+            </button>
+          )}
           <textarea
             ref={taRef}
             value={input}

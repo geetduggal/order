@@ -254,10 +254,12 @@ mod apple {
             // A longer end-of-speech pause so a mid-thought breath doesn't cut you
             // off (the #1 complaint). Voiced speech must last at least min_voiced,
             // which drops door-clicks / wind blips before they reach the model.
-            let silence = Duration::from_millis(1500);
+            // A generous end-of-speech pause so long, thoughtful rambles with
+            // mid-thought gaps aren't cut off (a repeated user complaint).
+            let silence = Duration::from_millis(1900);
             let min_voiced = Duration::from_millis(350);
             let max_wait = Duration::from_secs(20);   // nobody spoke
-            let max_utter = Duration::from_secs(30);  // hard cap
+            let max_utter = Duration::from_secs(90);  // hard cap — allow long rambles
 
             loop {
                 std::thread::sleep(Duration::from_millis(40));
@@ -373,6 +375,133 @@ mod apple {
         }
     }
 
+    /// Live on-device recognition: streams partial transcripts (`stt-partial`)
+    /// word-by-word as the user speaks (AVAudioEngine feeding
+    /// SFSpeechAudioBufferRecognitionRequest), and finalizes after a pause.
+    /// Returns the final transcript, or None if nothing was said / cancelled.
+    pub fn listen_live(app: &AppHandle) -> Result<Option<String>, String> {
+        use block2::RcBlock;
+        use std::sync::{Arc, Mutex};
+
+        struct Shared { text: String, last: Instant, got: bool, done: bool, err: Option<String> }
+        let shared = Arc::new(Mutex::new(Shared { text: String::new(), last: Instant::now(), got: false, done: false, err: None }));
+
+        unsafe {
+            prepare_session();
+            let status: isize = msg_send![class!(SFSpeechRecognizer), authorizationStatus];
+            if status == 0 {
+                let (tx, rx) = sync_channel::<isize>(1);
+                let tx2 = tx.clone();
+                let handler = RcBlock::new(move |st: isize| { let _ = tx2.try_send(st); });
+                let _: () = msg_send![class!(SFSpeechRecognizer), requestAuthorization: &*handler];
+                let _ = rx.recv_timeout(Duration::from_secs(60));
+            }
+            let status: isize = msg_send![class!(SFSpeechRecognizer), authorizationStatus];
+            if status != 3 {
+                return Err("Speech recognition isn't authorized. Enable it in Settings, or use Whisper.".into());
+            }
+
+            let alloc: *mut AnyObject = msg_send![class!(SFSpeechRecognizer), alloc];
+            let recognizer: *mut AnyObject = msg_send![alloc, init];
+            if recognizer.is_null() { return Err("Speech recognition unavailable for this locale.".into()); }
+
+            let ralloc: *mut AnyObject = msg_send![class!(SFSpeechAudioBufferRecognitionRequest), alloc];
+            let request: *mut AnyObject = msg_send![ralloc, init];
+            let _: () = msg_send![request, setShouldReportPartialResults: true];
+            let on_device: objc2::runtime::Bool = msg_send![recognizer, supportsOnDeviceRecognition];
+            if on_device.as_bool() { let _: () = msg_send![request, setRequiresOnDeviceRecognition: true]; }
+
+            let ealloc: *mut AnyObject = msg_send![class!(AVAudioEngine), alloc];
+            let engine: *mut AnyObject = msg_send![ealloc, init];
+            let input: *mut AnyObject = msg_send![engine, inputNode];
+            let fmt: *mut AnyObject = msg_send![input, outputFormatForBus: 0usize];
+
+            // Tap: append each buffer to the request + emit a rough input level.
+            let req_addr = request as usize;
+            let app_tap = app.clone();
+            let tap = RcBlock::new(move |buffer: *mut AnyObject, _when: *mut AnyObject| {
+                let req = req_addr as *mut AnyObject;
+                let _: () = msg_send![req, appendAudioPCMBuffer: buffer];
+                let data: *const *const f32 = msg_send![buffer, floatChannelData];
+                let frames: u32 = msg_send![buffer, frameLength];
+                if !data.is_null() && frames > 0 {
+                    let ch0 = *data;
+                    if !ch0.is_null() {
+                        let n = frames as usize;
+                        let mut sum = 0.0f32;
+                        for i in 0..n { let v = *ch0.add(i); sum += v * v; }
+                        let rms = (sum / n as f32).sqrt();
+                        let _ = app_tap.emit("stt-level", (rms * 6.0).min(1.0));
+                    }
+                }
+            });
+            let _: () = msg_send![input, installTapOnBus: 0usize, bufferSize: 1024u32, format: fmt, block: &*tap];
+
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let _: () = msg_send![engine, prepare];
+            let started: objc2::runtime::Bool = msg_send![engine, startAndReturnError: &mut err];
+            if !started.as_bool() {
+                let _: () = msg_send![input, removeTapOnBus: 0usize];
+                return Err("Couldn't start the audio engine for live transcription.".into());
+            }
+
+            // Recognition task: stream partials.
+            let shared_h = shared.clone();
+            let app_h = app.clone();
+            let handler = RcBlock::new(move |result: *mut AnyObject, error: *mut AnyObject| {
+                if !error.is_null() && result.is_null() {
+                    if let Ok(mut s) = shared_h.lock() { if !s.got { s.err = Some("recognition error".into()); } s.done = true; }
+                    return;
+                }
+                if result.is_null() { return; }
+                let best: *mut AnyObject = msg_send![result, bestTranscription];
+                let text = if best.is_null() { String::new() } else {
+                    let s: Retained<NSString> = msg_send![best, formattedString];
+                    s.to_string()
+                };
+                let is_final: objc2::runtime::Bool = msg_send![result, isFinal];
+                if let Ok(mut st) = shared_h.lock() {
+                    if !text.trim().is_empty() { st.text = text.clone(); st.got = true; st.last = Instant::now(); }
+                    if is_final.as_bool() { st.done = true; }
+                }
+                let _ = app_h.emit("stt-partial", &text);
+                let _ = app_h.emit("stt-state", "heard");
+            });
+            let task: *mut AnyObject = msg_send![recognizer, recognitionTaskWithRequest: request, resultHandler: &*handler];
+
+            // Wait for a pause after speech (or a cap / no-speech timeout / cancel).
+            let start = Instant::now();
+            let silence = Duration::from_millis(1600);
+            let max_wait = Duration::from_secs(20);
+            let max_utter = Duration::from_secs(90);
+            let mut cancelled = false;
+            loop {
+                std::thread::sleep(Duration::from_millis(60));
+                if CANCEL.load(Ordering::Relaxed) { cancelled = true; break; }
+                let (got, done, since_last, since_start) = {
+                    let s = shared.lock().unwrap();
+                    (s.got, s.done, s.last.elapsed(), start.elapsed())
+                };
+                if done { break; }
+                if got && since_last > silence { break; }
+                if !got && since_start > max_wait { break; }
+                if since_start > max_utter { break; }
+            }
+
+            // Teardown.
+            let _: () = msg_send![input, removeTapOnBus: 0usize];
+            let _: () = msg_send![engine, stop];
+            let _: () = msg_send![request, endAudio];
+            let _: () = msg_send![task, cancel];
+            let _ = app.emit("stt-level", 0.0f32);
+
+            if cancelled { return Ok(None); }
+            let final_text = { let s = shared.lock().unwrap(); s.text.trim().to_string() };
+            if final_text.is_empty() { return Ok(None); }
+            Ok(Some(final_text))
+        }
+    }
+
     pub fn reset_cancel() { CANCEL.store(false, Ordering::Relaxed); }
 }
 
@@ -406,21 +535,28 @@ pub async fn stt_listen(
         {
             use tauri::Emitter;
             apple::reset_cancel();
+            // Native = live on-device recognition: words stream in as you speak
+            // (via `stt-partial`) and it finalizes after a pause. No upload, so
+            // it's the lowest-latency path.
+            if engine == "native" {
+                let started = std::time::Instant::now();
+                let text = match apple::listen_live(&app)? {
+                    Some(t) => t,
+                    None => return Ok(String::new()),
+                };
+                if looks_like_hallucination(&text) { return Ok(String::new()); }
+                let _ = app.emit("stt-usage", serde_json::json!({ "engine": "native", "seconds": started.elapsed().as_secs_f64() }));
+                return Ok(text);
+            }
+            // Whisper (default): record one utterance, then upload for transcription.
             let (path, secs) = match apple::record_utterance(&app)? {
                 Some(p) => p,
                 None => return Ok(String::new()),
             };
             let _cleanup = RemoveOnDrop(path.clone());
-            let text = match engine.as_str() {
-                "native" => apple::transcribe_file(&path)?,
-                _ => {
-                    let bytes = std::fs::read(&path).map_err(|e| format!("read recording: {e}"))?;
-                    whisper(&openai_key, &bytes, "audio/m4a")?
-                }
-            };
-            // Drop hallucinated boilerplate so ambient noise never speaks for you.
+            let bytes = std::fs::read(&path).map_err(|e| format!("read recording: {e}"))?;
+            let text = whisper(&openai_key, &bytes, "audio/m4a")?;
             if looks_like_hallucination(&text) { return Ok(String::new()); }
-            // Report dictation usage for the cost meter (native = on-device, free).
             let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": secs }));
             Ok(text)
         }

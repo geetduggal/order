@@ -8160,3 +8160,37 @@ body.is-tile-dragging * {
 .settings-content[data-tab="calendar"] .settings-row:not([data-group="calendar"]),
 .settings-content[data-tab="voice"] .settings-row:not([data-group="voice"]),
 .settings-content[data-tab="usage"] .settings-row:not([data-group="usage"]) { display: none; }
+
+/* Jump-to-latest button (shown when scrolled up). */
+.order-chat-jump { position: absolute; right: 12px; bottom: 96px; z-index: 7; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--card-border); background: var(--bg-elev); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 3px 12px rgba(0,0,0,0.14); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.order-chat-jump:hover { color: var(--coral); }
+/* Subtle inline mic toggle in the composer (keyboard mode → back to voice). */
+.order-chat-to-voice { flex: 0 0 auto; width: 34px; height: 34px; align-self: flex-end; margin-bottom: 3px; border-radius: 9px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--ink-faint); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.order-chat-to-voice:hover { color: var(--coral); border-color: var(--coral); }
+
+/* Live partial transcript bubble (on-device, while you speak). */
+.order-chat-bubble.order-chat-partial { opacity: 0.72; border-style: dashed; }
+.order-chat-bubble.order-chat-partial .order-chat-text::after { content: "▍"; opacity: 0.5; animation: order-chat-blink 1s step-end infinite; }
+
+/* Chat cards: the ChatSurface owns its internal scroll (.order-chat-scroll), so
+   the CARD itself must not scroll — otherwise the whole card scrolls, the
+   surface never overflows, and auto-scroll + jump-to-latest silently break. */
+.order-card.is-chat.is-fullscreen {
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 40px) clamp(16px, 5vw, 60px) calc(env(safe-area-inset-bottom) + 76px);
+}
+.order-card.is-chat.is-fullscreen > .order-card-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.order-card.is-chat:not(.is-fullscreen) { max-height: 78vh; overflow: hidden; display: flex; flex-direction: column; }
+.order-card.is-chat:not(.is-fullscreen) > .order-card-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.order-card.is-chat .order-chat { height: 100%; min-height: 0; }
+/* The card now reserves dock clearance, so drop the surface's own bottom pad. */
+.order-card.is-chat .order-chat { padding-bottom: 0; }
+.order-card.is-chat .order-chat-jump { bottom: 12px; }
+
+/* Date-prefixed image cards in a folder's pile. */
+.order-card-image { display: flex; flex-direction: column; gap: 6px; }
+.order-card-image-img { width: 100%; height: auto; max-height: 72vh; object-fit: contain; border-radius: 6px; display: block; background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.order-card-image-name { font: inherit; font-size: 13px; color: var(--ink-faint); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; width: 100%; }
+.order-card-image-name:hover { border-color: var(--card-border); color: var(--ink); }
+.order-card-image-name:focus { outline: none; border-color: var(--coral); color: var(--ink); background: var(--card-bg); }

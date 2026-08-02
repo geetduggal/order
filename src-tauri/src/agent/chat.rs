@@ -40,10 +40,17 @@ pub fn create_chat(root: &Path, dir_rel: &str, title: &str) -> Result<String, St
         rel = mk(&format!("{base} {n}"));
         n += 1;
     }
+    // Chats are first-class spacetime events: a date + start time puts them on
+    // the calendar/timeline like any dated note. The title carries the time so
+    // several chats in one day stay distinct in the (date, title) natural key.
+    let hhmm = now.format("%H:%M").to_string();
+    let ev_title = if clean == "Chat" { format!("Chat {hhmm}") } else { clean.clone() };
     let fm = format!(
-        "---\ntype: chat\ncreated: {}\ntitle: {}\n---\n\n",
+        "---\ntype: chat\ndate: \"{}\"\nstartTime: \"{}\"\nallDay: false\ncreated: {}\ntitle: \"{}\"\n---\n\n",
+        now.format("%Y-%m-%d"),
+        hhmm,
         now.to_rfc3339(),
-        clean,
+        ev_title.replace('"', "'"),
     );
     let abs = resolve_in_vault(root, &rel)?;
     std::fs::write(&abs, fm).map_err(|e| format!("write chat: {e}"))?;

@@ -90,10 +90,12 @@ pub fn vault_walk_metadata(state: tauri::State<VaultState>) -> Result<Vec<MetaEn
     let mut out = Vec::with_capacity(entries.len());
     for entry in entries {
         let p = std::path::PathBuf::from(&entry.path);
-        // HTML report notes have no frontmatter and can be large — don't slurp
-        // them across the bridge; the card renders them straight from disk.
+        // HTML report notes and images have no frontmatter and can be large /
+        // binary — don't slurp them across the bridge; the card renders them
+        // straight from disk.
         let is_html = entry.name.ends_with(".html") || entry.name.ends_with(".htm");
-        let (frontmatter, body_len) = if is_html {
+        let is_binary_asset = is_html || is_image(&entry.name);
+        let (frontmatter, body_len) = if is_binary_asset {
             ("{}".to_string(), 0)
         } else {
             match fs::read_to_string(&p) {
@@ -171,6 +173,52 @@ fn split_frontmatter_lite(raw: &str) -> (String, usize) {
     (String::new(), raw.len())
 }
 
+/// An image file the folder view can surface as its own card.
+fn is_image(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".bmp", ".svg"]
+        .iter().any(|ext| n.ends_with(ext))
+}
+
+fn valid_ymd(y: &str, m: &str, d: &str) -> bool {
+    match (y.parse::<u32>(), m.parse::<u32>(), d.parse::<u32>()) {
+        (Ok(y), Ok(m), Ok(d)) => (1900..=2999).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d),
+        _ => false,
+    }
+}
+
+/// True if the name contains an ISO-8601-ish date ANYWHERE (not just a prefix),
+/// with or without hyphens — `2026-05-30`, `20260530`, `photo 2026-05-30.jpg`,
+/// `IMG_20260530_sunset.png`. Compact 8-digit dates must be bounded by non-digits
+/// and pass a month/day sanity check so ordinary numbers don't match.
+fn contains_iso_date(name: &str) -> bool {
+    let b = name.as_bytes();
+    let is_d = |i: usize| b.get(i).map(u8::is_ascii_digit).unwrap_or(false);
+    let n = b.len();
+    // Hyphenated YYYY-MM-DD anywhere.
+    for i in 0..n {
+        if i + 10 <= n
+            && (0..4).all(|k| is_d(i + k)) && b[i + 4] == b'-' && is_d(i + 5) && is_d(i + 6)
+            && b[i + 7] == b'-' && is_d(i + 8) && is_d(i + 9)
+            && (i == 0 || !b[i - 1].is_ascii_digit())
+            && valid_ymd(&name[i..i + 4], &name[i + 5..i + 7], &name[i + 8..i + 10])
+        {
+            return true;
+        }
+    }
+    // Compact YYYYMMDD anywhere, bounded by non-digits.
+    for i in 0..n {
+        if i + 8 <= n && (0..8).all(|k| is_d(i + k))
+            && (i == 0 || !b[i - 1].is_ascii_digit())
+            && (i + 8 >= n || !b[i + 8].is_ascii_digit())
+            && valid_ymd(&name[i..i + 4], &name[i + 4..i + 6], &name[i + 6..i + 8])
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -190,7 +238,9 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<WalkEntry>) {
             // .sheet.html is a spreadsheet SIDECAR of a `view: sheet` note, not a
             // standalone page — it must not surface as its own HTML card (its
             // parent .md renders the sheet).
-            || ((name.ends_with(".html") || name.ends_with(".htm")) && !name.ends_with(".sheet.html")) {
+            || ((name.ends_with(".html") || name.ends_with(".htm")) && !name.ends_with(".sheet.html"))
+            // Images with an ISO date anywhere in the name surface as folder cards.
+            || (is_image(&name) && contains_iso_date(&name)) {
             // .txt / .yml / .mw are here so todo.txt, spacetime.yml, and
             // spacetime.mw flow through the same load / reload pipeline as
             // markdown notes. Crepe is replaced with a RawTextSurface for

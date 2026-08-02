@@ -10,5 +10,6 @@ pub mod fs_tools;
 pub mod provider;
 pub mod run;
 pub mod tools;
+pub mod web;
 
 pub use run::AgentState;

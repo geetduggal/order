@@ -84,7 +84,7 @@ import { getWeekHubFolder, setWeekHubFolder as persistWeekHubFolder } from "../l
 import { getBadgeEnabled, setBadgeEnabled as persistBadgeEnabled, badgeRequestPermission, badgeSet, upcomingSaturdayIso } from "../lib/badge";
 import { slugify, dedupeSlug } from "../lib/slug";
 import { prerenderPages } from "../lib/prerender";
-import { vaultDir, embeddedImageFiles } from "../lib/attachments";
+import { vaultDir, embeddedImageFiles, isImagePath } from "../lib/attachments";
 import { FilterPillStack } from "./FilterPillStack";
 import { NotebookSection, type SectionCell } from "./NotebookSection";
 import type { Filter } from "../lib/filters";
@@ -720,6 +720,9 @@ export function CardGrid() {
         // (<NF>/YYYY-MM-DD *.md) appear in the folder's pile automatically.
         // Any other file is left alone on disk (not flagged, not auto-shown);
         // it can be surfaced in the pile on demand via File Piles.
+        // Images are already date-gated by the walk (an ISO date anywhere in the
+        // name), so any image note here is a member.
+        if (isImagePath(n.filename)) return canonical;
         const base = n.filename.replace(/\.md$/i, "");
         const isMain = folderMatchKey(base) === folderMatchKey(parts[2]);
         const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
@@ -1425,6 +1428,54 @@ export function CardGrid() {
     return () => { cancelled = true; unlisten?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadNotes]);
+
+  /** Write pasted/added images into a folder with date-prefixed names so they
+   *  surface as their own image cards (see the dated-image walk). */
+  const addImagesToFolder = useCallback(async (folderRef: string, files: File[]) => {
+    const dir = noteDirByRef(folderRef);
+    if (!dir) return;
+    const dirRel = toVaultRel(dir);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    let firstPath: string | null = null;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const extFromName = f.name && f.name.includes(".") ? f.name.slice(f.name.lastIndexOf(".")) : "";
+      const ext = extFromName || `.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`;
+      const name = `${stamp}${files.length > 1 ? ` ${i + 1}` : ""}${ext}`;
+      const rel = dirRel ? `${dirRel}/${name}` : name;
+      try {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        await vaultFs.writeBinary(rel, Array.from(bytes));
+        if (!firstPath) firstPath = await join(dir, name);
+      } catch (e) { console.error("paste image failed", e); }
+    }
+    await reloadNotes();
+    if (firstPath) { setScrollTargetPath(firstPath); setFocusedPath(firstPath); }
+  }, [reloadNotes]);
+
+  // Paste a batch of images straight into the folder you're viewing (single
+  // include filter). Ignored while an editor is focused so it never steals a
+  // Milkdown/text paste.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (notableIncludesRef.current.length !== 1) return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.isContentEditable || ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (const it of items) {
+        if (it.kind === "file" && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) files.push(f); }
+      }
+      if (files.length === 0) return;
+      e.preventDefault();
+      void addImagesToFolder(notableIncludesRef.current[0], files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [addImagesToFolder]);
 
   /** iOS: present the native folder picker; on selection the bookmark is
    *  persisted, so a reload restores + opens it for the session. */
@@ -4504,10 +4555,26 @@ export function CardGrid() {
     const basename = rel.split("/").pop() ?? rel;
     const path = await join(absDir, basename);
     const filename = path.split("/").pop() ?? rel;
+    // Chats are spacetime events. Derive the date + time from the filename so the
+    // optimistic note (and the mw event) match the frontmatter chat.rs wrote,
+    // keeping the (date, title) natural key consistent for the mirror.
+    const m = basename.replace(/\.chat\.md$/i, "").match(/^(\d{4}-\d{2}-\d{2}) (\d{2})(\d{2})/);
+    const evDate = m?.[1];
+    const evTime = m ? `${m[2]}:${m[3]}` : undefined;
+    const evTitle = evTime ? `Chat ${evTime}` : "Chat";
+    const chatFm: Frontmatter = evDate && evTime
+      ? { type: "chat", date: evDate, startTime: evTime, allDay: false, title: evTitle }
+      : { type: "chat", title: evTitle };
     setNotes((prev) => [
       ...(prev ?? []),
-      { id: newNoteId(), path, filename, frontmatter: { type: "chat" }, title: "Chat", body: "", mtime: Date.now() },
+      { id: newNoteId(), path, filename, frontmatter: chatFm, title: evTitle, body: "", mtime: Date.now() },
     ]);
+    // Add the matching spacetime event now (no orphan-drift window before the
+    // mirror catches up) — same as createNote does for dated notes.
+    if (evDate && evTime) {
+      const ev: SpacetimeEvent = { date: evDate, time: evTime, title: evTitle, ...(folderRef ? { folder: folderRef } : {}) };
+      await applyMwEdit((mw) => mwAddEvent(mw, ev));
+    }
     // Navigate into the chat and open it fullscreen. This mirrors the proven
     // calendar→note path (navigateAndFocus + setFullscreenPath) but uses the
     // known folderRef directly: the new note isn't in notesRef yet, so

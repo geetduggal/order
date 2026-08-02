@@ -13,6 +13,31 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.2] - 2026-08-02
+
+Sharpens the voice agent and rounds out the vault. The agent now hears you and
+speaks back more naturally, can reach the web, and chats take their place on the
+timeline like any other note.
+
+- **Live transcription** — with on-device Apple speech (the new default), your
+  words appear as you say them and it waits through longer pauses so a full
+  ramble isn't cut off. Whisper stays selectable.
+- **Snappier replies** — the reply starts speaking almost immediately (it no
+  longer buffers a whole paragraph first), a brief "thinking" cue covers a
+  tool-heavy pause, and prompt caching keeps latency and cost down.
+- **The web** — the agent can `web_search` for real research and `fetch_url` to
+  pull a page's full content and read it.
+- **Chats on the timeline** — a `.chat.md` conversation is now a spacetime event,
+  so it shows on the calendar and moves/renames through the same machinery as any
+  dated note. New chats open straight into fullscreen.
+- **Images in Notable Folders** — any image with an ISO date anywhere in its name
+  surfaces as its own card; rename inline; paste a batch of images into a folder.
+- **Cleaner Markdown paste** — pasted text that looks like Markdown (headings,
+  bullets, bold, links — including dictation-app bullets) renders as real
+  Markdown instead of literal characters.
+- Voice UX: auto-scroll to the latest with a jump-to-latest control, a subtler
+  keyboard toggle, and a Captain's-Log timestamp at the start of each chat.
+
 ## [2026.8.1] - 2026-08-02
 
 Headline feature: **the in-app agent — a hands-free voice chat that lives in your

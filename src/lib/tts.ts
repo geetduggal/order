@@ -493,7 +493,10 @@ function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: Tt
   };
   const done = () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; opts.onEnd?.(); };
   const ctrl = { cancel: () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; } };
-  stopSpeaking(); current = ctrl;
+  // NOTE: don't claim the shared `current` (or call stopSpeaking) at creation —
+  // a "thinking" filler that fires before the first audio would otherwise cancel
+  // us via stopSpeaking and the reply would never play. Claim it lazily once we
+  // actually start playing (see playNext). The caller cancels any prior speaker.
 
   const synth1 = (text: string): Promise<string> => synthCloud(engine, voice, 1, text);
 
@@ -524,16 +527,21 @@ function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: Tt
     const url = readyQueue.shift();
     if (url === undefined) { maybeDone(); return; }
     playing = true;
-    if (!started) { started = true; opts.onStart?.(); }
+    if (!started) { started = true; stopSpeaking(); current = ctrl; opts.onStart?.(); }
     audio.src = url;
     audio.playbackRate = playbackRate;
     audio.onended = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
     audio.onerror = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
     void audio.play().catch((e) => { opts.onError?.(String(e)); playing = false; });
   };
+  let firstSeg = true;
   const drain = (flushAll: boolean) => {
-    const { segments, rest } = segmentText(buffer, 180, flushAll);
+    // Small first segment (one short sentence) so audio starts almost
+    // immediately; larger segments after keep it smooth with fewer requests.
+    const target = firstSeg ? 45 : 200;
+    const { segments, rest } = segmentText(buffer, target, flushAll);
     buffer = rest;
+    if (segments.length) firstSeg = false;
     // Unreal's /stream caps at 1000 chars — hard-split any over-long segment.
     const capped = engine === "unreal"
       ? segments.flatMap((s) => (s.length <= 900 ? [s] : (s.match(/[\s\S]{1,900}/g) ?? [s])))

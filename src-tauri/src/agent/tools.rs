@@ -40,6 +40,9 @@ pub fn tool_defs() -> Vec<Tool> {
         Tool { name: "delete_file".into(),
             description: "Delete a file (or a folder, recursively). Destructive.".into(),
             input_schema: s(json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]})) },
+        Tool { name: "fetch_url".into(),
+            description: "Fetch a web page and return its full readable text content. Use for reading an article or pulling the entire content of a site the user names. Pair with web_search to research a topic.".into(),
+            input_schema: s(json!({"type":"object","properties":{"url":{"type":"string","description":"an http(s) URL"}},"required":["url"]})) },
     ]
 }
 
@@ -64,6 +67,7 @@ pub fn describe(name: &str, input: &Value) -> String {
         "create_directory" => format!("create_directory({})", get(input, "path")),
         "move_file" => format!("move_file({} → {})", get(input, "from"), get(input, "to")),
         "delete_file" => format!("delete_file({})", get(input, "path")),
+        "fetch_url" => format!("fetch_url({})", get(input, "url")),
         other => format!("{other}(?)"),
     }
 }
@@ -82,6 +86,7 @@ pub fn dispatch(root: &Path, name: &str, input: &Value) -> Result<String, String
         "create_directory" => fs_tools::create_directory(root, get(input, "path")),
         "move_file" => fs_tools::move_file(root, get(input, "from"), get(input, "to")),
         "delete_file" => fs_tools::delete_file(root, get(input, "path")),
+        "fetch_url" => super::web::fetch_url(get(input, "url")),
         other => Err(format!("unknown tool: {other}")),
     }
 }
