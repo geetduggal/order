@@ -8,9 +8,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
-import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected } from "../lib/tts";
+import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected, getUnrealKey, setUnrealKey, getUnrealSelected, setUnrealSelected, UNREAL_VOICES } from "../lib/tts";
 import { getAgentKey, setAgentKey } from "../lib/agent";
 import { getSttEngine, setSttEngine, type SttEngine } from "../lib/voice";
+import { costBreakdown, formatUSD, resetUsage, USAGE_EVENT } from "../lib/usage";
 // Pure localStorage helper — static-imported so the checkbox toggle is
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
@@ -45,6 +46,24 @@ export function SettingsPanel({
   const [elevenKey, setElevenKeyState] = useState<string>(() => getElevenKey());
   const [anthropicKey, setAnthropicKeyState] = useState<string>(() => getAgentKey());
   const [sttEngine, setSttEngineState] = useState<SttEngine>(() => getSttEngine());
+  // Re-render the usage meter whenever a chat/dictation/read-aloud is recorded.
+  const [, setUsageTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setUsageTick((n) => n + 1);
+    window.addEventListener(USAGE_EVENT, bump);
+    return () => window.removeEventListener(USAGE_EVENT, bump);
+  }, []);
+  const usage = costBreakdown();
+  // Group the settings into a few tabs so the panel never becomes a long scroll.
+  // Rows carry a data-group; the active tab hides the rest (see settings CSS).
+  type SettingsTab = "vault" | "calendar" | "voice" | "usage";
+  const [tab, setTab] = useState<SettingsTab>("vault");
+  const TABS: { key: SettingsTab; label: string }[] = [
+    { key: "vault", label: "Vault" },
+    { key: "calendar", label: "Calendar" },
+    { key: "voice", label: "Voice & Agent" },
+    { key: "usage", label: "Usage" },
+  ];
   const [elevenVoices, setElevenVoices] = useState<{ id: string; name: string }[]>([]);
   const [elevenSel, setElevenSel] = useState<string[]>(() => getElevenSelected());
   // Load the user's ElevenLabs voices for the picker whenever a key is present.
@@ -64,6 +83,13 @@ export function SettingsPanel({
     const next = openaiSel.includes(id) ? openaiSel.filter((x) => x !== id) : [...openaiSel, id];
     setOpenaiSel(next);
     setOpenaiSelected(next);
+  };
+  const [unrealKey, setUnrealKeyState] = useState<string>(() => getUnrealKey());
+  const [unrealSel, setUnrealSel] = useState<string[]>(() => getUnrealSelected());
+  const toggleUnrealVoice = (id: string) => {
+    const next = unrealSel.includes(id) ? unrealSel.filter((x) => x !== id) : [...unrealSel, id];
+    setUnrealSel(next);
+    setUnrealSelected(next);
   };
 
   const [gcal, setGcal] = useState<import("../lib/gcal-accounts").AccountsView>({ accounts: [], default: null, has_credentials: false, client_id: "", client_id_ios: "" });
@@ -179,7 +205,18 @@ export function SettingsPanel({
           </button>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-tabs" role="tablist">
+          {TABS.map((t) => (
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
+              className={"settings-tab" + (tab === t.key ? " is-active" : "")}
+              onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="settings-content" data-tab={tab}>
+        <div className="settings-row" data-group="vault">
           <span className="settings-label">Vault folder</span>
           <span className="settings-value" title={current}>
             <FolderIcon size={12} strokeWidth={2} />
@@ -203,7 +240,7 @@ export function SettingsPanel({
           </span>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="vault">
           <span className="settings-label">Johnny-Decimal Mode</span>
           <span className="settings-value">
             <label className="settings-toggle">
@@ -237,7 +274,7 @@ export function SettingsPanel({
           </span>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="calendar">
           <span className="settings-label">Weekly hub</span>
           <span className="settings-value">
             <input
@@ -269,7 +306,7 @@ export function SettingsPanel({
           </span>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="calendar">
           <span className="settings-label">Saturday badge</span>
           <span className="settings-value">
             <label className="settings-toggle">
@@ -291,7 +328,7 @@ export function SettingsPanel({
           </span>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="voice">
           <span className="settings-label">Read-aloud voices</span>
           <span className="settings-value settings-tts-keys">
             <input
@@ -346,17 +383,42 @@ export function SettingsPanel({
                 </div>
               </div>
             )}
+            <input
+              className="settings-input"
+              type="password"
+              placeholder="Unreal Speech API key"
+              value={unrealKey}
+              onChange={(e) => { setUnrealKeyState(e.target.value); setUnrealKey(e.target.value); }}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {unrealKey.trim() && (
+              <div className="tts-voice-picker">
+                <div className="tts-voice-picker-head">
+                  {unrealSel.length ? `Unreal: showing ${unrealSel.length} of ${UNREAL_VOICES.length}` : `Unreal: showing all ${UNREAL_VOICES.length} — check some to limit`}
+                </div>
+                <div className="tts-voice-picker-list">
+                  {UNREAL_VOICES.map((v) => (
+                    <label key={v} className="tts-voice-pick">
+                      <input type="checkbox" checked={unrealSel.includes(v)} onChange={() => toggleUnrealVoice(v)} />
+                      <span>{v}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </span>
           <span className="settings-hint">
             Optional. The card play button uses your Mac's built-in voices by default;
-            add an <strong>OpenAI</strong> or <strong>ElevenLabs</strong> key to unlock
-            premium AI voices in the voice picker. Keys are stored locally on this device
-            and the audio is fetched natively (never through the browser). Cloud voices
-            use the provider's API and may incur per-use cost.
+            add an <strong>OpenAI</strong>, <strong>ElevenLabs</strong>, or
+            {" "}<strong>Unreal Speech</strong> key to unlock premium AI voices in the
+            picker. Keys are stored locally on this device and the audio is fetched
+            natively (never through the browser). Cloud voices use the provider's API and
+            may incur per-use cost.
           </span>
         </div>
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="voice">
           <span className="settings-label">Agent</span>
           <span className="settings-value">
             <input
@@ -393,13 +455,44 @@ export function SettingsPanel({
           </span>
         </div>
 
+        <div className="settings-row" data-group="usage">
+          <span className="settings-label">Usage &amp; cost</span>
+          <span className="settings-value">
+            <div className="settings-usage">
+              {usage.rows.map((r) => (
+                <div key={r.key} className={"settings-usage-row" + (r.keyed ? "" : " is-free")}>
+                  <span className="settings-usage-name">{r.label}</span>
+                  <span className="settings-usage-detail">{r.detail}</span>
+                  <span className="settings-usage-cost">{r.keyed ? formatUSD(r.cost) : "free"}</span>
+                </div>
+              ))}
+              <div className="settings-usage-row settings-usage-total">
+                <span className="settings-usage-name">Estimated total</span>
+                <span className="settings-usage-detail" />
+                <span className="settings-usage-cost">{formatUSD(usage.total)}</span>
+              </div>
+            </div>
+            <button type="button" className="settings-reset-usage" onClick={() => { resetUsage(); setUsageTick((n) => n + 1); }}>
+              Reset counters
+            </button>
+          </span>
+          <span className="settings-hint">
+            A local, estimated tally of what the voice agent has cost across the services
+            you've keyed — Anthropic for chat, OpenAI Whisper for dictation, and
+            OpenAI / ElevenLabs for read-aloud. Counted on this device only; nothing is
+            reported anywhere. Costs are estimates from published rates and can drift;
+            on-device Apple speech is free. Check each provider's dashboard for the
+            authoritative bill.
+          </span>
+        </div>
+
         {(() => {
           // Show the calendar list whenever we actually have calendars OR the
           // status reads authorized — decoupled from the exact status string so
           // an unusual macOS state still lets you pick calendars.
           const showCals = appleCals.length > 0 || appleStatus === "authorized";
           return (
-        <div className="settings-row">
+        <div className="settings-row" data-group="calendar">
           <span className="settings-label">Apple Calendar</span>
           {appleErr && <span className="settings-hint" style={{ color: "#d9534f" }}>{appleErr}</span>}
           {appleStatus !== "unsupported" && (
@@ -474,7 +567,7 @@ export function SettingsPanel({
           );
         })()}
 
-        <div className="settings-row">
+        <div className="settings-row" data-group="calendar">
           <span className="settings-label">
             Google Calendar
             <button
@@ -577,6 +670,7 @@ export function SettingsPanel({
             Google Cloud project — a "Desktop app" client on desktop, an "iOS" client on the
             phone. The default account hosts events that don't name one.
           </span>
+        </div>
         </div>
 
       </div>

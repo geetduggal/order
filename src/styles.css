@@ -8081,7 +8081,82 @@ body.is-tile-dragging * {
 .order-chat-voice-status { display: flex; align-items: center; gap: 10px; }
 .order-chat-meter { display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.3); overflow: hidden; }
 .order-chat-meter-fill { display: block; height: 100%; width: 100%; background: #fff; transform-origin: left center; transition: transform 60ms linear; }
-.order-chat-kbd { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--ink-faint); display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.order-chat-kbd:hover { color: var(--ink); }
+.order-chat-kbd { flex: 0 0 auto; height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--ink-faint); display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.order-chat-kbd:hover { color: var(--ink); border-color: var(--ink-faint); }
+.order-chat-kbd.active { background: color-mix(in srgb, var(--ink) 8%, var(--card-bg)); color: var(--ink); border-color: var(--ink-faint); }
+.order-chat-kbd-label { line-height: 1; }
 .order-spin { animation: order-spin-kf 0.9s linear infinite; }
 @keyframes order-spin-kf { to { transform: rotate(360deg); } }
+
+/* ---- Voice chat polish (persistent status, consistent type) ------------- */
+/* Pin text sizing: WebKit in a webview auto-inflates some blocks, which read as
+   "random" font sizes in the transcript. One size, one line-height, everywhere. */
+.order-chat { font-size: 15px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; position: relative; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+.order-chat-text { font-size: 15px; line-height: 1.5; letter-spacing: 0; }
+.order-chat-empty p { font-size: 15px; }
+.order-chat-tool { font-size: 12.5px; }
+.order-chat-context { font-size: 12px; }
+
+/* Persistent state signal — floats at the top of the chat, always visible. */
+.order-chat-status {
+  position: sticky; top: 6px; z-index: 5; align-self: center;
+  display: inline-flex; align-items: center; gap: 8px;
+  margin: 0 auto 6px; padding: 5px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-size: 12.5px; font-weight: 600; color: var(--ink-faint);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+.order-chat-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+.order-chat-status.mode-listening { color: var(--coral); }
+.order-chat-status.mode-listening .order-chat-status-dot { background: var(--coral); animation: order-chat-blink 1.2s ease-in-out infinite; }
+.order-chat-status.mode-speaking { color: var(--royal, #4a6fa5); }
+.order-chat-status.mode-speaking .order-chat-status-dot { background: var(--royal, #4a6fa5); }
+.order-chat-status.mode-thinking .order-chat-status-dot { animation: order-chat-blink 0.9s ease-in-out infinite; }
+@keyframes order-chat-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.order-chat-status .order-chat-meter { width: 48px; height: 5px; background: color-mix(in srgb, var(--coral) 22%, transparent); }
+.order-chat-status .order-chat-meter-fill { background: var(--coral); }
+
+/* Keep the controls anchored + always reachable. */
+.order-chat-voice { background: var(--card-bg); }
+.order-chat-mic.active .order-spin { color: currentColor; }
+
+/* Live-mic indicator (headphones vs built-in). */
+.order-chat-mic-name { display: flex; align-items: center; gap: 5px; justify-content: center; font-size: 11.5px; color: var(--ink-faint); padding: 4px 0 2px; opacity: 0.85; }
+
+/* ---- Settings: usage & cost meter -------------------------------------- */
+.settings-usage { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--card-border); border-radius: 10px; padding: 8px 10px; background: var(--card-bg); }
+.settings-usage-row { display: grid; grid-template-columns: minmax(9em, auto) 1fr auto; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 13px; }
+.settings-usage-row + .settings-usage-row { border-top: 1px solid color-mix(in srgb, var(--card-border) 60%, transparent); }
+.settings-usage-name { font-weight: 600; color: var(--ink); }
+.settings-usage-detail { color: var(--ink-faint); font-size: 12px; overflow-wrap: anywhere; }
+.settings-usage-cost { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.settings-usage-row.is-free .settings-usage-cost { color: var(--ink-faint); font-weight: 500; }
+.settings-usage-total { border-top: 2px solid var(--card-border) !important; margin-top: 2px; }
+.settings-usage-total .settings-usage-name, .settings-usage-total .settings-usage-cost { color: var(--coral); }
+.settings-reset-usage { align-self: flex-start; margin-top: 8px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--ink-faint); font-size: 12.5px; cursor: pointer; }
+.settings-reset-usage:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* Per-chat running cost chip (top-right of the chat surface). */
+.order-chat-cost { position: absolute; top: 4px; right: 6px; z-index: 6; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-faint); background: color-mix(in srgb, var(--bg-elev) 82%, transparent); border: 1px solid var(--card-border); border-radius: 999px; padding: 2px 8px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default; }
+
+/* Chat devices row: mic (input) left, voice (output) right. */
+.order-chat-devices { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 2px 2px; font-size: 11.5px; color: var(--ink-faint); }
+.order-chat-devices .order-chat-mic-name { display: inline-flex; align-items: center; gap: 5px; padding: 0; opacity: 0.9; }
+.order-chat-voice-pick { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.order-chat-voice-pick select { font: inherit; font-size: 11.5px; color: var(--ink); background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 2px 6px; max-width: 46vw; }
+
+/* ---- Settings: tabbed layout (short, navigable, no giant scroll) -------- */
+.settings-panel { display: flex; flex-direction: column; overflow: hidden; }
+.settings-head { flex: 0 0 auto; }
+.settings-tabs { flex: 0 0 auto; display: flex; gap: 2px; margin: 2px 0 14px; border-bottom: 1px solid var(--card-border); overflow-x: auto; scrollbar-width: none; }
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab { appearance: none; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 7px 12px; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-faint); cursor: pointer; white-space: nowrap; }
+.settings-tab:hover { color: var(--ink); }
+.settings-tab.is-active { color: var(--coral); border-bottom-color: var(--coral); }
+.settings-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 22px; padding-right: 2px; }
+.settings-content[data-tab="vault"] .settings-row:not([data-group="vault"]),
+.settings-content[data-tab="calendar"] .settings-row:not([data-group="calendar"]),
+.settings-content[data-tab="voice"] .settings-row:not([data-group="voice"]),
+.settings-content[data-tab="usage"] .settings-row:not([data-group="usage"]) { display: none; }

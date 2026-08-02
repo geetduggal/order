@@ -15,10 +15,12 @@ import {
   approve, getAgentKey, onAgentStream, runTurn,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { listenOnce, cancelListen, micSupported, onLevel, onSttState } from "../lib/voice";
-import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, ttsSupported, getOpenaiKey } from "../lib/tts";
+import { listenOnce, cancelListen, micSupported, onLevel, onSttState, inputName } from "../lib/voice";
+import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
-import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2 } from "lucide-react";
+import { recordChat, recordDictation, getChatUsage, addChatUsage, chatCostOf, chatUsageDetail, formatUSD, type ChatUsage } from "../lib/usage";
+import { listen } from "@tauri-apps/api/event";
+import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2, X } from "lucide-react";
 
 interface Turn {
   role: "user" | "agent";
@@ -105,6 +107,10 @@ export function ChatSurface({ path, autoFocus }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
+  const [micName, setMicName] = useState<string | null>(null);
+  const [voices, setVoices] = useState<TtsVoice[]>([]);
+  const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
+  const [chatUsage, setChatUsage] = useState<ChatUsage>(() => getChatUsage(rel));
   const [loadedChats, setLoadedChats] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -115,17 +121,25 @@ export function ChatSurface({ path, autoFocus }: Props) {
   // Refs the async voice loop reads without re-subscribing.
   const voiceOnRef = useRef(false);          // is the hands-free loop engaged?
   const modeRef = useRef<Mode>("idle");
+  // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
+  const speakerRef = useRef<StreamSpeaker | null>(null);
   const setModeBoth = useCallback((m: Mode) => { modeRef.current = m; setMode(m); }, []);
 
   // Live input level for the meter + "heard you" state (native capture streams
   // `stt-level` / `stt-state`).
   useEffect(() => {
-    let a: (() => void) | undefined, b: (() => void) | undefined;
+    let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined;
     let alive = true;
     void onLevel((l) => setLevel(l)).then((fn) => { if (alive) a = fn; else fn(); });
     void onSttState((s) => { if (s === "heard") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
-    return () => { alive = false; a?.(); b?.(); };
-  }, []);
+    void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
+      recordDictation(e.payload.engine, e.payload.seconds);
+      setChatUsage(addChatUsage(rel, e.payload.engine === "native"
+        ? { nativeSeconds: e.payload.seconds }
+        : { whisperSeconds: e.payload.seconds }));
+    }).then((fn) => { if (alive) c = fn; else fn(); });
+    return () => { alive = false; a?.(); b?.(); c?.(); };
+  }, [rel]);
 
   // Load the transcript from disk on mount / when the file changes.
   useEffect(() => {
@@ -135,12 +149,33 @@ export function ChatSurface({ path, autoFocus }: Props) {
     return () => { cancelled = true; };
   }, [rel]);
 
+  // Load this chat's accumulated cost when it opens.
+  useEffect(() => { setChatUsage(getChatUsage(rel)); }, [rel]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, streamText, streamTools, approval]);
 
   useEffect(() => { if (autoFocus && typing) taRef.current?.focus(); }, [autoFocus, typing]);
+
+  // Which mic is live — refreshed on mount so the user can tell headphones from
+  // the built-in mic before they start (and again each time listening begins).
+  const refreshMic = useCallback(() => { if (micSupported()) void inputName().then(setMicName); }, []);
+  useEffect(() => { refreshMic(); }, [refreshMic]);
+
+  // Load the available read-aloud voices so the user can pick one right here.
+  useEffect(() => {
+    if (!ttsSupported()) return;
+    let alive = true;
+    void getVoices().then((vs) => {
+      if (!alive) return;
+      setVoices(vs);
+      // If nothing is saved yet, reflect whatever the default resolves to.
+      setVoiceURI((cur) => cur || (vs[0]?.uri ?? ""));
+    }).catch(() => { /* keep empty */ });
+    return () => { alive = false; };
+  }, []);
 
   // ---- the hands-free loop ------------------------------------------------
   // Stop the whole loop and show a message. Used for real failures (a silent
@@ -159,6 +194,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
     if (!voiceOnRef.current) return;
     setError(null);
     setHeard(false);
+    refreshMic();
     setModeBoth("listening");
     setLevel(0);
     // Rust records one utterance natively and resolves with the transcript
@@ -191,6 +227,8 @@ export function ChatSurface({ path, autoFocus }: Props) {
   const stopVoice = useCallback(() => {
     voiceOnRef.current = false;
     void cancelListen();
+    speakerRef.current?.cancel();
+    speakerRef.current = null;
     stopSpeaking();
     setLevel(0);
     setHeard(false);
@@ -198,8 +236,9 @@ export function ChatSurface({ path, autoFocus }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Finish a turn: record the agent's reply, speak it, then resume listening
-  // (or go idle). Guarded so the stream `final` event and the runTurn promise
+  // Finish a turn: record the agent's reply, tell the streaming speaker no more
+  // text is coming (it drains and then resumes listening via onEnd), and clear
+  // the live bubble. Guarded so the stream `final` event and the runTurn promise
   // (a safety net if the event is missed) can't double-fire.
   const finalizedRef = useRef(false);
   const finalizeAgent = useCallback((text: string) => {
@@ -209,15 +248,15 @@ export function ChatSurface({ path, autoFocus }: Props) {
     setStreamText("");
     setStreamTools([]);
     if (text.trim()) setTurns((prev) => [...prev, { role: "agent", text, tools: [] }]);
-    const spoken = speakableFromMarkdown(text);
-    if (spoken && ttsSupported()) {
-      setModeBoth("speaking");
-      speak(spoken, {
-        voiceURI: getSavedVoice() || undefined,
-        onEnd: () => { if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
-        onError: () => { if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
-      });
-    } else if (voiceOnRef.current) { beginListening(); } else { setModeBoth("idle"); }
+    if (speakerRef.current) {
+      // Voice mode: the reply has been streaming into the speaker. Close it out;
+      // its onEnd (fired when playback drains) resumes listening. Keep the ref so
+      // Stop can still cancel playback — a new turn or stopVoice replaces it.
+      speakerRef.current.finish();
+    } else {
+      // Typed turn: no auto-speak (the per-message play button is there instead).
+      setModeBoth("idle");
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -228,6 +267,19 @@ export function ChatSurface({ path, autoFocus }: Props) {
     setStreamText("");
     setStreamTools([]);
     finalizedRef.current = false;
+    // In the voice loop, spin up a streaming speaker so the reply is spoken as it
+    // generates (native = per sentence; cloud = pipelined segments). Typed turns
+    // get no speaker — they stay silent.
+    speakerRef.current?.cancel();
+    speakerRef.current = voiceOnRef.current && ttsSupported()
+      ? createStreamSpeaker({
+          voiceURI: getSavedVoice() || undefined,
+          rate: getSavedRate(),
+          onStart: () => setModeBoth("speaking"),
+          onEnd: () => { speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
+          onError: () => { speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
+        })
+      : null;
     setModeBoth("thinking");
     void runTurn(rel, text)
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
@@ -243,11 +295,16 @@ export function ChatSurface({ path, autoFocus }: Props) {
       if (e.chatPath !== rel) return;
       switch (e.kind) {
         case "context": setLoadedChats(e.loadedChats); break;
-        case "text": setStreamText((s) => s + e.text); break;
+        case "text": setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
         case "tool": setStreamTools((t) => [...t, e.line]); break;
         case "approval": setModeBoth("approval"); setApproval(e.items); break;
         case "note": setStreamText((s) => (s ? s + "\n\n" : "") + e.text); break;
         case "final": {
+          if (e.usage) {
+            const cr = e.usage.cacheReadTokens || 0, cw = e.usage.cacheWriteTokens || 0;
+            recordChat(e.usage.inputTokens, e.usage.outputTokens, cr, cw);
+            setChatUsage(addChatUsage(rel, { anthropicIn: e.usage.inputTokens, anthropicOut: e.usage.outputTokens, anthropicCacheRead: cr, anthropicCacheWrite: cw, anthropicTurns: 1 }));
+          }
           finalizeAgent(e.text);
           break;
         }
@@ -265,7 +322,7 @@ export function ChatSurface({ path, autoFocus }: Props) {
   }, [rel]);
 
   // Tear the loop down on unmount.
-  useEffect(() => () => { voiceOnRef.current = false; void cancelListen(); stopSpeaking(); }, []);
+  useEffect(() => () => { voiceOnRef.current = false; void cancelListen(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
 
   const sendTyped = useCallback(() => {
     const text = input.trim();
@@ -285,6 +342,8 @@ export function ChatSurface({ path, autoFocus }: Props) {
     void approve(d);
   }, [setModeBoth]);
 
+  const chatCost = chatCostOf(chatUsage);
+  const hasUsage = chatUsage.anthropicTurns > 0 || chatUsage.whisperSeconds > 0 || chatUsage.nativeSeconds > 0;
   const busy = mode === "thinking" || mode === "transcribing";
   const statusLabel =
     mode === "listening" ? (heard ? "Heard you — pause when done" : "Listening…") :
@@ -295,6 +354,23 @@ export function ChatSurface({ path, autoFocus }: Props) {
 
   return (
     <div className="order-chat">
+      {/* Running cost for THIS chat (agent + dictation). Estimate. */}
+      {hasUsage && (
+        <div className="order-chat-cost" title={`This chat · ${chatUsageDetail(chatUsage)}${chatUsage.nativeSeconds > 0 ? " · on-device is free" : ""} · estimated`}>
+          ~{formatUSD(chatCost)}
+        </div>
+      )}
+      {/* Persistent state signal — always visible at the top, whatever is
+          happening (listening / thinking / speaking / waiting). */}
+      {mode !== "idle" && (
+        <div className={`order-chat-status mode-${mode}`} aria-live="polite">
+          <span className="order-chat-status-dot" />
+          <span className="order-chat-status-label">{statusLabel}</span>
+          {mode === "listening" && (
+            <span className="order-chat-meter"><span className="order-chat-meter-fill" style={{ transform: `scaleX(${level})` }} /></span>
+          )}
+        </div>
+      )}
       <div className="order-chat-scroll" ref={scrollRef}>
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
@@ -365,6 +441,25 @@ export function ChatSurface({ path, autoFocus }: Props) {
         </div>
       )}
 
+      {/* Mic (input) on the left, voice (output) on the right. */}
+      {canVoice && (micName || voices.length > 0) && (
+        <div className="order-chat-devices">
+          {micName && (
+            <span className="order-chat-mic-name" title="On macOS, change this in System Settings → Sound → Input">
+              <Mic size={12} /> {micName}
+            </span>
+          )}
+          {voices.length > 0 && (
+            <label className="order-chat-voice-pick" title="Voice the agent reads replies in">
+              <Volume2 size={12} />
+              <select value={voiceURI} onChange={(e) => { setVoiceURI(e.target.value); saveVoice(e.target.value); }}>
+                {voices.map((v) => <option key={v.uri} value={v.uri}>{v.name}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
       {/* Voice control bar */}
       <div className="order-chat-voice">
         {canVoice && mode === "idle" && !typing && (
@@ -375,20 +470,19 @@ export function ChatSurface({ path, autoFocus }: Props) {
         )}
         {canVoice && mode !== "idle" && (
           <button type="button" className={`order-chat-mic active mode-${mode}`} onClick={stopVoice} title="Stop">
-            {mode === "transcribing" || mode === "thinking"
-              ? <Loader2 size={20} className="order-spin" />
-              : mode === "speaking" ? <Volume2 size={20} /> : <Square size={18} />}
-            <span className="order-chat-voice-status">
-              {statusLabel}
-              {mode === "listening" && (
-                <span className="order-chat-meter"><span className="order-chat-meter-fill" style={{ transform: `scaleX(${level})` }} /></span>
-              )}
-            </span>
+            {mode === "thinking"
+              ? <Loader2 size={18} className="order-spin" />
+              : mode === "speaking" ? <Volume2 size={18} />
+              : mode === "listening" ? <Mic size={18} /> : <Square size={16} />}
+            <span>Stop</span>
           </button>
         )}
-        <button type="button" className="order-chat-kbd" onClick={() => { if (!typing) stopVoice(); setTyping((v) => !v); }}
-          title={typing ? "Hide keyboard" : "Type instead"}>
-          <Keyboard size={18} />
+        <button type="button" className={`order-chat-kbd${typing ? " active" : ""}`}
+          onClick={() => { if (!typing) stopVoice(); setTyping((v) => !v); }}
+          title={typing ? "Hide keyboard" : "Type instead"}
+          aria-label={typing ? "Hide keyboard" : "Type instead"} aria-pressed={typing}>
+          {typing ? <X size={18} /> : <Keyboard size={18} />}
+          <span className="order-chat-kbd-label">{typing ? "Hide" : "Type"}</span>
         </button>
       </div>
 

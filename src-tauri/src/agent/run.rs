@@ -166,11 +166,19 @@ fn run_turn(
     let tool_defs = tools::tool_defs();
     let mut agent_text_parts: Vec<String> = Vec::new();
     let mut tool_lines: Vec<String> = Vec::new();
+    let mut total_in = 0u32;
+    let mut total_out = 0u32;
+    let mut total_cache_read = 0u32;
+    let mut total_cache_write = 0u32;
 
     for iter in 0..MAX_ITERS {
         let req = CompletionRequest { system: &system, messages: &messages, tools: &tool_defs, model: DEFAULT_MODEL, max_tokens: MAX_TOKENS };
         let mut on_text = |t: &str| emit(app, chat_rel, serde_json::json!({ "kind": "text", "text": t }));
-        let blocks = provider.stream(&req, &mut on_text)?;
+        let (blocks, usage) = provider.stream(&req, &mut on_text)?;
+        total_in += usage.input_tokens;
+        total_out += usage.output_tokens;
+        total_cache_read += usage.cache_read_tokens;
+        total_cache_write += usage.cache_write_tokens;
 
         let text: String = blocks.iter().filter_map(|b| if let Block::Text { text } = b { Some(text.as_str()) } else { None })
             .collect::<Vec<_>>().join("\n");
@@ -235,7 +243,14 @@ fn run_turn(
 
     let final_text = agent_text_parts.join("\n\n");
     chat::append_agent(root, chat_rel, &final_text, &tool_lines)?;
-    emit(app, chat_rel, serde_json::json!({ "kind": "final", "text": final_text }));
+    emit(app, chat_rel, serde_json::json!({
+        "kind": "final", "text": final_text,
+        "usage": {
+            "inputTokens": total_in, "outputTokens": total_out,
+            "cacheReadTokens": total_cache_read, "cacheWriteTokens": total_cache_write,
+            "model": DEFAULT_MODEL,
+        },
+    }));
     Ok(final_text)
 }
 

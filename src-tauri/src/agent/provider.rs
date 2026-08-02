@@ -58,14 +58,25 @@ pub struct CompletionRequest<'a> {
     pub max_tokens: u32,
 }
 
+/// Token usage reported by the model for one message, for cost accounting.
+/// Cache reads/writes are split out because they're priced very differently
+/// (a cache read is ~1/10 the price of fresh input; a write ~1.25×).
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_write_tokens: u32,
+}
+
 /// The pluggable seam. `stream` returns the assistant's blocks for this message
-/// (text + any tool_use) after streaming text to `on_text`.
+/// (text + any tool_use) plus the token usage, after streaming text to `on_text`.
 pub trait ModelProvider: Send + Sync {
     fn stream(
         &self,
         req: &CompletionRequest,
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<Vec<Block>, String>;
+    ) -> Result<(Vec<Block>, Usage), String>;
 }
 
 pub struct Anthropic {
@@ -92,16 +103,29 @@ impl ModelProvider for Anthropic {
         &self,
         req: &CompletionRequest,
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<Vec<Block>, String> {
+    ) -> Result<(Vec<Block>, Usage), String> {
         if self.api_key.trim().is_empty() {
             return Err("no Anthropic API key set (add one in Settings)".into());
+        }
+        // Prompt caching: mark the two big *stable* prefixes — the system prompt
+        // (system_prompt.md + the folder context) and the tool definitions — with
+        // a cache breakpoint. On every turn after the first (and every tool-loop
+        // iteration within a turn) Anthropic replays that prefix from cache: much
+        // faster time-to-first-token and ~1/10 the input cost. Requires system +
+        // the last tool to be block-form with `cache_control`.
+        let system_blocks = serde_json::json!([
+            { "type": "text", "text": req.system, "cache_control": { "type": "ephemeral" } }
+        ]);
+        let mut tools_json = serde_json::to_value(req.tools).unwrap_or(serde_json::json!([]));
+        if let Some(last) = tools_json.as_array_mut().and_then(|a| a.last_mut()) {
+            last["cache_control"] = serde_json::json!({ "type": "ephemeral" });
         }
         let body = serde_json::json!({
             "model": req.model,
             "max_tokens": req.max_tokens,
-            "system": req.system,
+            "system": system_blocks,
             "messages": req.messages,
-            "tools": req.tools,
+            "tools": tools_json,
             "stream": true,
         });
         let resp = agent_http()
@@ -128,11 +152,12 @@ impl ModelProvider for Anthropic {
 fn parse_sse(
     reader: impl BufRead,
     on_text: &mut dyn FnMut(&str),
-) -> Result<Vec<Block>, String> {
+) -> Result<(Vec<Block>, Usage), String> {
     // Per-index accumulation: (kind, text_or_id, name, json_buf).
     struct Acc { kind: String, id: String, name: String, text: String, json: String }
     let mut accs: Vec<Acc> = Vec::new();
     let mut err: Option<String> = None;
+    let mut usage = Usage::default();
 
     for line in reader.lines() {
         let line = match line { Ok(l) => l, Err(e) => return Err(format!("stream read: {e}")) };
@@ -173,6 +198,23 @@ fn parse_sse(
                     }
                 }
             }
+            "message_start" => {
+                // Input + cache read/write tokens are known up front; keep them
+                // separate so cost accounting can price the cache correctly.
+                if let Some(u) = v.get("message").and_then(|m| m.get("usage")) {
+                    let g = |k: &str| u.get(k).and_then(|n| n.as_u64()).unwrap_or(0) as u32;
+                    usage.input_tokens = g("input_tokens");
+                    usage.cache_write_tokens = g("cache_creation_input_tokens");
+                    usage.cache_read_tokens = g("cache_read_input_tokens");
+                    usage.output_tokens = g("output_tokens");
+                }
+            }
+            "message_delta" => {
+                // output_tokens on the delta is cumulative for the message.
+                if let Some(o) = v.get("usage").and_then(|u| u.get("output_tokens")).and_then(|n| n.as_u64()) {
+                    usage.output_tokens = o as u32;
+                }
+            }
             "error" => {
                 err = Some(v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or("stream error").to_string());
             }
@@ -200,7 +242,7 @@ fn parse_sse(
             }
         }
     }
-    Ok(blocks)
+    Ok((blocks, usage))
 }
 
 fn extract_error(body: &str) -> String {

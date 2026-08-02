@@ -51,3 +51,8 @@ export function listenOnce(): Promise<string> {
 export function cancelListen(): Promise<void> {
   return invoke("stt_cancel");
 }
+
+/** The microphone that will be used (e.g. "AirPods Pro"), or null if unknown. */
+export function inputName(): Promise<string | null> {
+  return invoke<string | null>("stt_input_name").catch(() => null);
+}

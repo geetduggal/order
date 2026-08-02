@@ -20,6 +20,7 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 - **Spacetime** — a single canonical map of your space (hierarchy) and time (events + seasons) at the vault root, in two companion formats: `spacetime.yml` and `spacetime.mw`. Edit either one and Order syncs the other immediately. See [SPACETIME.md](docs/SPACETIME.md).
 - **Google Calendar curated sync** — push hand-picked events (with invites) to Google Calendar and pull a day's events back in, via the spacetime reconciliation flow. No Google IDs stored; identity is the natural key. See [GCAL-SYNC.md](docs/GCAL-SYNC.md).
 - **Apple / system calendar (EventKit)** — pick which macOS/iOS system calendars to include, import a day's events into spacetime, and create events on a calendar with an `@[Calendar]` token. Native, no accounts. Invitations route through Google (Apple's API can't add guests). See [APPLE-CAL.md](docs/APPLE-CAL.md).
+- **Talk to your vault** — an in-app voice agent that reads and edits notes in the current folder by voice. A chat is an ordinary `.chat.md` note; the whole tool-use loop lives in Rust (React never touches a path, a file body, or the model key). Hands-free: speak, it transcribes (OpenAI or on-device Apple), the reply streams straight to speech, then it listens again — writes wait behind one approval, and a running cost shows per chat. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-agent--voice-chat).
 - **Publish from the same vault** — flip `public: true`, push, done. The site runs the same components read-only.
 
 ## Build & run

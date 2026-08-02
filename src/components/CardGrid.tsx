@@ -13,7 +13,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { open as openDialog, confirm as tauriConfirm, message as tauriMessage } from "@tauri-apps/plugin-dialog";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
-import { vaultFs, consumeSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
+import { vaultFs, consumeSelfWrite, markSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
@@ -40,6 +40,7 @@ import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { newChat } from "../lib/agent";
+import { requestFullscreenPersistent } from "../lib/fullscreen-intent";
 import { buildPushIntents, descriptionHash, eventDescriptionFromRaw, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
 import { appleIntents, appleSig, appleSyncPlan, loadAppleSyncRecord, saveAppleSyncRecord } from "../lib/apple-sync-plan";
@@ -4466,6 +4467,9 @@ export function CardGrid() {
     setFocusPath(path);
     setScrollTargetPath(path);
     setFocusedPath(path);
+    // Open the freshly-created note straight into fullscreen so you land in it.
+    setFullscreenPath(path);
+    requestFullscreenPersistent(path); // durable intent — survives a slow mount
     // Stay in whichever view triggered the create — calendar views
     // re-render with the new event at its date/time; Pile sorts it
     // into place by date+startTime.
@@ -4486,33 +4490,59 @@ export function CardGrid() {
     const absDir = (folderRef && noteDirByRef(folderRef)) || root;
     const dirRel = toVaultRel(absDir);
     const rel = await newChat(dirRel, "Chat");
-    const path = await join(root, rel);
+    // Rust wrote the .chat.md directly (not via vaultFs), so the file watcher
+    // would see it as an EXTERNAL change and reload/remount the card ~500ms
+    // later — collapsing the fullscreen we're about to open and losing the jump.
+    // Register it as a self-write so the watcher ignores the creation event.
+    markSelfWrite(rel);
+    // Build the card path from `absDir` — NOT vaultRoot(). On iOS the app's Data
+    // container UUID differs between what vaultRoot() returns and the container
+    // the loaded notes (and cachedRoot) use, so join(vaultRoot(), rel) yields a
+    // path that matches NO rendered card — breaking focus, scroll, and fullscreen.
+    // `absDir` comes from noteDirByRef (the loaded-notes' container), matching how
+    // createNote builds its paths.
+    const basename = rel.split("/").pop() ?? rel;
+    const path = await join(absDir, basename);
     const filename = path.split("/").pop() ?? rel;
     setNotes((prev) => [
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter: { type: "chat" }, title: "Chat", body: "", mtime: Date.now() },
     ]);
-    // If a filter is active and the chat's folder isn't in it, add it so the
-    // new card lands on screen (additive, like createNote's safety net).
-    if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
-      setFilters((prev) => [...prev, { kind: "include", ref: folderRef! }]);
+    // Navigate into the chat and open it fullscreen. This mirrors the proven
+    // calendar→note path (navigateAndFocus + setFullscreenPath) but uses the
+    // known folderRef directly: the new note isn't in notesRef yet, so
+    // navigateAndFocus's own note lookup would miss it and skip pinning the
+    // section — leaving nothing on screen to jump to. Pinning the folder at the
+    // front of the include set renders its newspaper section at the top with the
+    // chat in it; the collapse-nonce bump means the fresh card takes the new
+    // baseline and stays fullscreen instead of self-collapsing.
+    setFsCollapseNonce((n) => n + 1);
+    setView("pile");
+    if (folderRef) {
+      const fref = folderRef;
+      setFilters((prev) => [
+        { kind: "include", ref: fref },
+        ...prev.filter((f) => !(f.kind === "include" && f.ref === fref)),
+      ]);
+      setFocusedFolder(fref);
+      markFolderRecent(fref);
     }
     setFocusPath(path);
     setScrollTargetPath(path);
     setFocusedPath(path);
+    setFullscreenPath(path);
+    // Durable intent (survives a slow mount past the 800ms fullscreenPath window).
+    requestFullscreenPersistent(path);
   }, []);
   const createChatRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => { createChatRef.current = createChat; }, [createChat]);
 
   const handleNewChat = useCallback(() => {
+    // createChat now owns the navigation (switch to pile, pin the folder,
+    // scroll + fullscreen), so this just clears folder-cover mode first.
     if (pileMode === "folders") setPileMode(() => { writePileMode("all"); return "all"; });
-    if (view !== "pile") {
-      const home = notableIncludesRef.current[0] || weekHubFolderRef.current || homeFolderRef.current;
-      setView("pile");
-      if (home) { setFilters([{ kind: "include", ref: home }]); setFocusedFolder(home); }
-    }
     void createChatRef.current?.();
-  }, [pileMode, view]);
+  }, [pileMode]);
 
   // Keep the forward-ref in sync so the keyboard handler (Cmd+N), which
   // sits earlier in this component, can invoke the latest createNote.

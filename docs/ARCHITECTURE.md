@@ -50,6 +50,7 @@ CardGrid ── owns notes[], view, filters; routes every mutation
 │   ├── SheetSurface / DrawingSurface   flip a note to a spreadsheet / drawing (sidecar files)
 │   ├── ListCards / ListLines / ListMasonry   list: cards/lines/masonry rendering
 │   ├── NotableFolderBackside   flip side: folder browser + OS drag-drop
+│   ├── ChatSurface     a `.chat.md` note → hands-free voice chat with the agent
 │   └── OrderTerminal    in-card PTY (xterm.js), ⌘4 / button toggle
 ├── CalendarView      Day / Week / Month (FullCalendar)
 ├── YearLinearView    Year — 12×37 strip
@@ -199,6 +200,151 @@ wins when both exist.
 4. **Masonry without layout thrash.** CSS Grid with per-card ResizeObserver.
 5. **Derived state, no caches.** Taxonomy tree, calendar events, season grids — all
    `useMemo` derivations over `notes[]`. No secondary store to drift.
+
+## The agent + voice chat
+
+An in-app agent that reads and edits the vault by voice. A chat is just a
+`.chat.md` note in a Notable Folder — same plain-text principle as everything
+else: delete the app and every conversation is still a readable transcript.
+
+**The one conviction:** the entire agent loop lives in Rust. The model is a
+*planner* that emits tool intentions; **Rust executes every tool, touches every
+file, and makes every network call.** React never constructs a filesystem path,
+never sees a file's contents on the way to the model, and never calls the model
+API. This is what lets the same code run on macOS and iOS through Order's vault
+abstraction. See `src-tauri/src/agent/` and `src-tauri/src/stt.rs`.
+
+```
+src-tauri/src/agent/
+├── run.rs        the loop + Tauri commands (agent_turn / agent_new_chat / agent_approve)
+├── provider.rs   ModelProvider trait → Anthropic (ureq + native-tls, SSE streaming, prompt caching)
+├── tools.rs      tool schemas, dispatch, write-approval previews (with diffs)
+├── fs_tools.rs   vault-relative, escape-rejecting file ops (list/read/search/write/edit/…)
+├── chat.rs       the `.chat.md` format + incremental transcript writing
+└── system_prompt.md
+src-tauri/src/stt.rs   native mic capture (AVAudioRecorder) + STT (OpenAI / Apple)
+src/lib/agent.ts       bridge: newChat / runTurn / approve + agent-stream events
+src/lib/voice.ts       bridge: stt_listen / stt_cancel / stt_input_name + engine choice
+src/lib/tts.ts         read-aloud engines + createStreamSpeaker (streamed playback)
+src/lib/usage.ts       local token/second/char tallies → estimated cost, global + per-chat
+```
+
+### One turn, end to end
+
+```mermaid
+sequenceDiagram
+    participant U as You (voice)
+    participant CS as ChatSurface (React)
+    participant STT as stt_listen (Rust)
+    participant LOOP as agent loop (Rust)
+    participant API as Anthropic API
+    participant FS as Vault (Rust FS)
+
+    U->>STT: speak
+    Note over STT: AVAudioRecorder + VAD<br/>(stops on a pause)
+    STT->>API: audio → OpenAI transcribe (or on-device Apple)
+    API-->>STT: transcript
+    STT-->>CS: text
+    CS->>LOOP: agent_turn(chatPath, text)
+    loop until no tool calls (cap: MAX_ITERS)
+        LOOP->>API: messages + tools (SSE, cached system+tools prefix)
+        API-->>LOOP: text deltas + tool_use blocks
+        LOOP-->>CS: agent-stream (text / tool)
+        alt read tool
+            LOOP->>FS: execute, feed result back
+        else write tool(s)
+            LOOP-->>CS: agent-stream (approval + diffs)
+            CS-->>LOOP: agent_approve(once/all/reject)
+            LOOP->>FS: execute the batch
+        end
+    end
+    LOOP->>FS: append reply to the .chat.md transcript
+    LOOP-->>CS: agent-stream (final + token usage)
+    CS->>U: stream reply to TTS as it arrives, then listen again
+```
+
+Text deltas are piped into the TTS speaker *as they stream*, so the reply starts
+playing before the model has finished writing it (see Voice pipeline below).
+
+**Trust boundaries** — who is allowed to do what:
+
+```mermaid
+flowchart LR
+    subgraph React[React · the webview]
+        UI[ChatSurface<br/>text in · events out]
+    end
+    subgraph Rust[Rust core · the only privileged layer]
+        L[agent loop]
+        T[fs_tools]
+        P[provider]
+        S[stt]
+    end
+    Vault[(Vault files)]
+    Model[[Anthropic]]
+    STT[[OpenAI / Apple STT]]
+
+    UI -- "user text · approvals" --> L
+    L -- "agent-stream events" --> UI
+    L --> T --> Vault
+    L --> P --> Model
+    S --> STT
+    UI -. "never a path, file body, or model key" .-x Vault
+```
+
+### Design rules baked in
+
+- **Reads flow freely; writes batch behind one approval.** The loop runs every
+  read tool without asking and narrates it; all writes in a step are previewed
+  together (with diffs, destructive ops flagged) and gated on a single
+  once/all/reject. "Approve all" is per-chat and resets on the next chat.
+- **Iteration ceiling.** A turn caps at `MAX_ITERS` model↔tool round-trips and
+  says so if it hits the wall — no runaway loops.
+- **Incremental transcript.** Each turn is appended to the `.chat.md` as it
+  happens, so a crash never loses the session.
+- **Folder-scoped context.** A turn is seeded with the folder's file index and
+  its recent sibling chats (within a window), so continuity comes from the vault
+  itself, not a hidden store.
+- **Prompt caching.** The stable prefix — system prompt + folder context + tool
+  definitions — carries an Anthropic cache breakpoint, so every turn after the
+  first (and every tool-loop iteration) replays it from cache: faster
+  time-to-first-token, ~1/10 the input cost. Cache read/write tokens come back on
+  the stream and are counted separately.
+
+### Voice pipeline
+
+The hands-free loop is: **listen → transcribe → agent turn → stream reply to
+speech → listen.**
+
+**Capture + transcription.** WKWebView exposes no `getUserMedia`, so the mic is
+captured **natively** (like TTS), never in the browser. `stt_listen` records one
+utterance with `AVAudioRecorder`, watches the input level with an
+adaptive-noise-floor VAD (calibrated per-room, peak-power based), and stops on a
+pause — streaming `stt-level` to the meter and rejecting sub-350ms blips.
+Transcription sits behind an engine choice: **OpenAI** (`gpt-4o-mini-transcribe`,
+default — fast + cheap) or **Apple Speech** (`SFSpeechRecognizer`, on-device).
+Whisper-style hallucinations ("thank you for watching" on quiet audio) are
+filtered out. `stt_input_name` reports the live mic so the UI can show
+headphones-vs-built-in.
+
+**Streamed read-aloud** (`createStreamSpeaker` in `lib/tts.ts`). The reply is fed
+to the speaker as its text deltas arrive, so playback begins before the model has
+finished. Native voices speak sentence-by-sentence locally. Cloud voices (OpenAI
+and ElevenLabs, handled identically) split the reply into ~180-char sentence
+segments and **synthesize the next segment while the current one plays** — so
+only ever *one* synth request is in flight. That single-request invariant is what
+sidesteps ElevenLabs' concurrency limit and keeps OpenAI from wasting
+parallelism, while still overlapping synthesis with playback for a short
+time-to-first-audio. Playback is back-to-back through one `<audio>` element —
+deliberately no MediaSource Extensions, which WKWebView doesn't support.
+
+### Cost tracking
+
+Everything metered locally in `lib/usage.ts`, never reported anywhere: Anthropic
+tokens (split into input / output / cache-read / cache-write), OpenAI dictation
+seconds, and read-aloud characters billed at the real synth call (so the mp3
+cache never double-counts). Estimated dollars come from an editable rate table;
+Settings shows a global per-service breakdown and each `.chat.md` shows its own
+running cost.
 
 ## Invariants
 

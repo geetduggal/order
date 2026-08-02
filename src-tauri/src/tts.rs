@@ -291,6 +291,41 @@ pub async fn tts_eleven(
     .map_err(|e| e.to_string())?
 }
 
+/// Unreal Speech text-to-speech → base64 mp3. The `/stream` endpoint accepts up
+/// to 1000 characters; the frontend chunks below that.
+#[tauri::command]
+pub async fn tts_unreal(
+    api_key: String,
+    voice_id: String,
+    text: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Synthesize at natural speed/pitch; playback rate handles speed so one
+        // cached recording works at any speed (mirrors the OpenAI/Eleven path).
+        let body = serde_json::json!({
+            "Text": text,
+            "VoiceId": voice_id,
+            "Bitrate": "192k",
+            "Speed": 0,
+            "Pitch": 1.0,
+            "Codec": "libmp3lame",
+        });
+        match http_agent()
+            .post("https://api.v8.unrealspeech.com/stream")
+            .set("Authorization", &format!("Bearer {api_key}"))
+            .send_json(body)
+        {
+            Ok(r) => read_audio_b64(r),
+            Err(ureq::Error::Status(code, r)) => {
+                Err(format!("Unreal Speech TTS {code}: {}", r.into_string().unwrap_or_default()))
+            }
+            Err(e) => Err(format!("Unreal Speech TTS: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize)]
 pub struct CloudVoice {
     pub id: String,

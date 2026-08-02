@@ -1,6 +1,6 @@
 [package]
 name = "order"
-version = "2026.8.0"
+version = "2026.8.1"
 description = "Order — your notes, at home at last."
 edition = "2021"
 rust-version = "1.77"

@@ -22,7 +22,11 @@ fn sanitize(title: &str) -> String {
 pub fn create_chat(root: &Path, dir_rel: &str, title: &str) -> Result<String, String> {
     let now = Local::now();
     let clean = sanitize(title);
-    let base = format!("{} {}", now.format("%Y-%m-%d %H%M"), clean);
+    let stamp = now.format("%Y-%m-%d %H%M").to_string();
+    // The `.chat.md` extension already marks it a chat, so a default "Chat" title
+    // would just read as "… Chat.chat.md". Drop it — timestamp only — unless the
+    // caller gave a real title.
+    let base = if clean.is_empty() || clean == "Chat" { stamp } else { format!("{stamp} {clean}") };
     let dir = dir_rel.trim().trim_matches('/');
     let mk = |name: &str| if dir.is_empty() { format!("{name}.chat.md") } else { format!("{dir}/{name}.chat.md") };
     // Ensure the directory exists.

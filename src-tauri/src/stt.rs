@@ -58,8 +58,11 @@ fn whisper(key: &str, audio: &[u8], mime: &str) -> Result<String, String> {
     let mut field = |name: &str, val: &str| {
         body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{val}\r\n").as_bytes());
     };
-    field("model", "whisper-1");
+    // gpt-4o-mini-transcribe is faster and cheaper than whisper-1 on the same
+    // endpoint, and hallucinates less. (It doesn't accept `temperature`.)
+    field("model", "gpt-4o-mini-transcribe");
     field("response_format", "text");
+    field("language", "en");
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     match agent()
@@ -72,6 +75,31 @@ fn whisper(key: &str, audio: &[u8], mime: &str) -> Result<String, String> {
         Err(ureq::Error::Status(s, r)) => Err(format!("Whisper error {s}: {}", r.into_string().unwrap_or_default())),
         Err(e) => Err(format!("transport: {e}")),
     }
+}
+
+/// Whisper (and, less often, Apple) emit boilerplate phrases when handed near-
+/// silent or noisy audio — the "thank you for watching" family. Treat a short
+/// transcript that is entirely one of these as nothing said.
+fn looks_like_hallucination(text: &str) -> bool {
+    let norm: String = text
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if norm.is_empty() { return true; }
+    if norm.len() > 60 { return false; } // long enough to be real speech
+    const PHANTOMS: &[&str] = &[
+        "you", "so", "bye", "thank you", "thanks", "thank you very much",
+        "thank you for watching", "thanks for watching", "thank you for watching the video",
+        "thank you so much for watching", "thank you for watching this video",
+        "please subscribe", "please like and subscribe", "subscribe",
+        "see you next time", "ill see you next time", "see you in the next video",
+        "subtitles by the amaraorg community", "the end",
+    ];
+    PHANTOMS.contains(&norm.as_str())
 }
 
 /// Delete a temp file when the guard drops (best-effort).
@@ -102,9 +130,45 @@ mod apple {
     }
     #[link(name = "Speech", kind = "framework")]
     extern "C" {}
+    // AVCaptureDevice (default audio input name) lives in AVFoundation on macOS.
+    #[cfg(target_os = "macos")]
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {
+        static AVMediaTypeAudio: *const AnyObject;
+    }
 
     // kAudioFormatMPEG4AAC ('aac ')
     const AAC: i32 = 1_633_772_320;
+
+    /// Name of the microphone that will actually be used, e.g. "AirPods Pro" or
+    /// "MacBook Pro Microphone". macOS reads the default AVCaptureDevice; iOS the
+    /// active audio-session route. None if it can't be determined.
+    pub fn current_input_name() -> Option<String> {
+        unsafe {
+            #[cfg(target_os = "ios")]
+            {
+                let session: *mut AnyObject = msg_send![class!(AVAudioSession), sharedInstance];
+                if session.is_null() { return None; }
+                let route: *mut AnyObject = msg_send![session, currentRoute];
+                if route.is_null() { return None; }
+                let inputs: *mut AnyObject = msg_send![route, inputs];
+                if inputs.is_null() { return None; }
+                let count: usize = msg_send![inputs, count];
+                if count == 0 { return None; }
+                let port: *mut AnyObject = msg_send![inputs, objectAtIndex: 0usize];
+                if port.is_null() { return None; }
+                let name: Retained<NSString> = msg_send![port, portName];
+                Some(name.to_string())
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let dev: *mut AnyObject = msg_send![class!(AVCaptureDevice), defaultDeviceWithMediaType: AVMediaTypeAudio];
+                if dev.is_null() { return None; }
+                let name: Retained<NSString> = msg_send![dev, localizedName];
+                Some(name.to_string())
+            }
+        }
+    }
 
     #[cfg(target_os = "ios")]
     extern "C" {
@@ -115,7 +179,11 @@ mod apple {
         let session: *mut AnyObject = msg_send![class!(AVAudioSession), sharedInstance];
         if session.is_null() { return; }
         let mut err: *mut AnyObject = std::ptr::null_mut();
-        let _: objc2::runtime::Bool = msg_send![session, setCategory: AVAudioSessionCategoryPlayAndRecord, error: &mut err];
+        // Options: AllowBluetooth (0x4) routes the mic to a Bluetooth headset
+        // (AirPods) instead of forcing the built-in mic; DefaultToSpeaker (0x8)
+        // keeps playback loud when no headset is present.
+        let options: usize = 0x4 | 0x8;
+        let _: objc2::runtime::Bool = msg_send![session, setCategory: AVAudioSessionCategoryPlayAndRecord, withOptions: options, error: &mut err];
         let mut err2: *mut AnyObject = std::ptr::null_mut();
         let _: objc2::runtime::Bool = msg_send![session, setActive: true, error: &mut err2];
         // Ask for mic permission and wait (block until the user has decided once).
@@ -129,11 +197,12 @@ mod apple {
     unsafe fn prepare_session() {}
 
     /// Record one hands-free utterance to an m4a temp file, emitting `stt-level`.
-    /// Returns the file path, or None if the user cancelled / never spoke.
-    pub fn record_utterance(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    /// Returns (file path, audio seconds) or None if cancelled / nothing spoken.
+    pub fn record_utterance(app: &AppHandle) -> Result<Option<(PathBuf, f64)>, String> {
         let dir = std::env::temp_dir();
         let path = dir.join(format!("order-stt-{}.m4a", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)));
         let path_str = path.to_string_lossy().to_string();
+        let mut duration_secs = 0.0f64;
 
         unsafe {
             prepare_session();
@@ -179,9 +248,14 @@ mod apple {
             let mut calibrated = false;
             let mut speech_started = false;
             let mut spoke = false;
+            let mut first_voice = Instant::now();
             let mut last_voice = Instant::now();
             let mut peak_seen = -160.0f32;
-            let silence = Duration::from_millis(1100);
+            // A longer end-of-speech pause so a mid-thought breath doesn't cut you
+            // off (the #1 complaint). Voiced speech must last at least min_voiced,
+            // which drops door-clicks / wind blips before they reach the model.
+            let silence = Duration::from_millis(1500);
+            let min_voiced = Duration::from_millis(350);
             let max_wait = Duration::from_secs(20);   // nobody spoke
             let max_utter = Duration::from_secs(30);  // hard cap
 
@@ -207,7 +281,9 @@ mod apple {
                     calibrated = true;
                 }
                 // Speech = clearly above the floor (and above an absolute minimum).
-                let speak_thresh = (floor_db + 12.0).max(-40.0);
+                // A wider start margin makes onset more deliberate, so ambient
+                // noise on a walk is less likely to trip it.
+                let speak_thresh = (floor_db + 14.0).max(-38.0);
                 let keep_thresh = (floor_db + 6.0).max(-48.0);
 
                 if !speech_started {
@@ -218,7 +294,7 @@ mod apple {
                         return Err("No sound is reaching the microphone. Check Order's mic permission in System Settings → Privacy → Microphone.".into());
                     }
                     if db > speak_thresh {
-                        speech_started = true; spoke = true; last_voice = now;
+                        speech_started = true; spoke = true; first_voice = now; last_voice = now;
                         let _ = app.emit("stt-state", "heard");
                     } else if now - start > max_wait {
                         let _: () = msg_send![recorder, stop];
@@ -238,9 +314,14 @@ mod apple {
             }
             let _: () = msg_send![recorder, stop];
             let _ = app.emit("stt-level", 0.0f32);
-            if !spoke { return Ok(None); }
+            // Reject too-brief blips (a single tick of noise that crossed the
+            // threshold) — they're the main source of phantom transcriptions.
+            if !spoke || last_voice.saturating_duration_since(first_voice) < min_voiced {
+                return Ok(None);
+            }
+            duration_secs = start.elapsed().as_secs_f64();
         }
-        Ok(Some(path))
+        Ok(Some((path, duration_secs)))
     }
 
     /// On-device transcription of a recorded file via SFSpeechRecognizer.
@@ -301,6 +382,16 @@ pub fn stt_cancel() {
     CANCEL.store(true, Ordering::Relaxed);
 }
 
+/// The microphone that voice input will use (e.g. "AirPods Pro"), so the UI can
+/// show it and the user can tell whether headphones or the built-in mic is live.
+#[tauri::command]
+pub fn stt_input_name() -> Option<String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    { apple::current_input_name() }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    { None }
+}
+
 /// Record one hands-free utterance and transcribe it. Returns the recognized
 /// text (empty string if the user cancelled or never spoke). `engine` is
 /// "whisper" (default) or "native".
@@ -313,19 +404,25 @@ pub async fn stt_listen(
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
+            use tauri::Emitter;
             apple::reset_cancel();
-            let path = match apple::record_utterance(&app)? {
+            let (path, secs) = match apple::record_utterance(&app)? {
                 Some(p) => p,
                 None => return Ok(String::new()),
             };
             let _cleanup = RemoveOnDrop(path.clone());
-            match engine.as_str() {
-                "native" => apple::transcribe_file(&path),
+            let text = match engine.as_str() {
+                "native" => apple::transcribe_file(&path)?,
                 _ => {
                     let bytes = std::fs::read(&path).map_err(|e| format!("read recording: {e}"))?;
-                    whisper(&openai_key, &bytes, "audio/m4a")
+                    whisper(&openai_key, &bytes, "audio/m4a")?
                 }
-            }
+            };
+            // Drop hallucinated boilerplate so ambient noise never speaks for you.
+            if looks_like_hallucination(&text) { return Ok(String::new()); }
+            // Report dictation usage for the cost meter (native = on-device, free).
+            let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": secs }));
+            Ok(text)
         }
         #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {

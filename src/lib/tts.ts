@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { vaultFs } from "./vault-fs";
 import { assetUrl } from "./attachments";
+import { recordTts } from "./usage";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" &&
@@ -15,10 +16,10 @@ function isTauri(): boolean {
 
 export function ttsSupported(): boolean { return isTauri(); }
 
-export type TtsEngine = "native" | "openai" | "eleven";
+export type TtsEngine = "native" | "openai" | "eleven" | "unreal";
 
 export interface TtsVoice {
-  uri: string;   // "native:<id>" | "openai:<voice>" | "eleven:<voiceId>"
+  uri: string;   // "native:<id>" | "openai:<voice>" | "eleven:<id>" | "unreal:<id>"
   name: string;
   lang: string;
   engine: TtsEngine;
@@ -32,14 +33,21 @@ interface CloudVoice { id: string; name: string }
 function engineOf(uri: string | undefined): TtsEngine {
   if (uri?.startsWith("openai:")) return "openai";
   if (uri?.startsWith("eleven:")) return "eleven";
+  if (uri?.startsWith("unreal:")) return "unreal";
   return "native";
 }
+
+/** Which engine a voice URI uses. Exposed so callers (e.g. the voice chat's
+ *  streaming playback) can tell whether a voice is local/native — native TTS is
+ *  free + instant, so it's safe to stream sentence-by-sentence. */
+export function voiceEngine(uri: string | undefined): TtsEngine { return engineOf(uri); }
 const voiceOf = (uri: string) => uri.slice(uri.indexOf(":") + 1);
 
 // ---- keys -----------------------------------------------------------------
 
 const OPENAI_KEY = "order.tts.openai_key";
 const ELEVEN_KEY = "order.tts.eleven_key";
+const UNREAL_KEY = "order.tts.unreal_key";
 const lsGet = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
 const lsSet = (k: string, v: string) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* non-fatal */ } };
 export const TTS_KEYS_EVENT = "order:tts-keys-changed";
@@ -48,6 +56,8 @@ export function getOpenaiKey(): string { return lsGet(OPENAI_KEY); }
 export function setOpenaiKey(v: string): void { lsSet(OPENAI_KEY, v.trim()); keysChanged(); }
 export function getElevenKey(): string { return lsGet(ELEVEN_KEY); }
 export function setElevenKey(v: string): void { lsSet(ELEVEN_KEY, v.trim()); keysChanged(); }
+export function getUnrealKey(): string { return lsGet(UNREAL_KEY); }
+export function setUnrealKey(v: string): void { lsSet(UNREAL_KEY, v.trim()); keysChanged(); }
 
 // Which ElevenLabs voices appear in the card picker. Empty = show all.
 const ELEVEN_SEL = "order.tts.eleven_selected";
@@ -67,6 +77,16 @@ export function getOpenaiSelected(): string[] { try { return JSON.parse(lsGet(OP
 export function setOpenaiSelected(ids: string[]): void { lsSet(OPENAI_SEL, JSON.stringify(ids)); keysChanged(); }
 const OPENAI_MODEL = "tts-1-hd";
 const ELEVEN_MODEL = "eleven_multilingual_v2";
+
+// Unreal Speech's English voice set (VoiceId values). Sierra is their default.
+export const UNREAL_VOICES = [
+  "Sierra", "Melody", "Autumn", "Emily", "Luna", "Lauren", "Willow", "Hannah", "Ivy",
+  "Daniel", "Noah", "Jasper", "Ethan", "Caleb", "Ronan",
+  "Eleanor", "Amelia", "Charlotte", "Chloe", "Arthur", "Oliver", "Edward", "Benjamin",
+];
+const UNREAL_SEL = "order.tts.unreal_selected";
+export function getUnrealSelected(): string[] { try { return JSON.parse(lsGet(UNREAL_SEL) || "[]"); } catch { return []; } }
+export function setUnrealSelected(ids: string[]): void { lsSet(UNREAL_SEL, JSON.stringify(ids)); keysChanged(); }
 
 // ---- voices ---------------------------------------------------------------
 
@@ -106,6 +126,13 @@ export async function getVoices(): Promise<TtsVoice[]> {
       const chosen = sel.length ? evs.filter((v) => sel.includes(v.id)) : evs;
       for (const v of chosen) cloud.push({ uri: `eleven:${v.id}`, name: `${v.name} (ElevenLabs)`, lang: "en-US", engine: "eleven", enhanced: true, quality: 4 });
     } catch (e) { console.warn("[tts] ElevenLabs voices fetch failed:", e); }
+  }
+  if (getUnrealKey()) {
+    const sel = getUnrealSelected();
+    const chosen = sel.length ? UNREAL_VOICES.filter((v) => sel.includes(v)) : UNREAL_VOICES;
+    for (const v of chosen) {
+      cloud.push({ uri: `unreal:${v}`, name: `${v} (Unreal)`, lang: "en-US", engine: "unreal", enhanced: true, quality: 4 });
+    }
   }
 
   voicesCache = [...cloud, ...nativeOut];
@@ -247,6 +274,13 @@ function cachePaths(noteRel: string, voiceName: string): { mp3: string; hash: st
   return { mp3: `${p}${base} [${label}].mp3`, hash: `${p}.${base} [${label}].mp3.hash` };
 }
 
+/** One cloud-TTS call → base64 mp3, dispatched to the right provider. */
+function synthCloud(engine: TtsEngine, voice: string, speed: number, text: string): Promise<string> {
+  if (engine === "openai") return invoke<string>("tts_openai", { apiKey: getOpenaiKey(), voice, model: OPENAI_MODEL, speed, text });
+  if (engine === "unreal") return invoke<string>("tts_unreal", { apiKey: getUnrealKey(), voiceId: voice, text });
+  return invoke<string>("tts_eleven", { apiKey: getElevenKey(), voiceId: voice, modelId: ELEVEN_MODEL, text });
+}
+
 function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandle {
   const engine = engineOf(opts.voiceURI);
   const voice = opts.voiceURI ? voiceOf(opts.voiceURI) : "";
@@ -255,7 +289,8 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
   // recording works at any speed (speed isn't baked into the file).
   const apiSpeed = 1;
   const playbackRate = rate;
-  const chunks = chunkText(text, 1800);
+  // Unreal Speech's /stream endpoint caps at 1000 chars per call; others are fine larger.
+  const chunks = chunkText(text, engine === "unreal" ? 900 : 1800);
   const audio = new Audio();
   audio.playbackRate = playbackRate;
 
@@ -308,10 +343,11 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
     }
   });
 
-  const synth = (chunk: string): Promise<string> =>
-    engine === "openai"
-      ? invoke<string>("tts_openai", { apiKey: getOpenaiKey(), voice, model: OPENAI_MODEL, speed: apiSpeed, text: chunk })
-      : invoke<string>("tts_eleven", { apiKey: getElevenKey(), voiceId: voice, modelId: ELEVEN_MODEL, text: chunk });
+  const synth = (chunk: string): Promise<string> => {
+    // Bill characters here, at the real API call — cache hits never reach this.
+    recordTts(engine, chunk.length);
+    return synthCloud(engine, voice, apiSpeed, chunk);
+  };
 
   const playSrc = async (src: string, revoke: boolean) => {
     if (audio.src && audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
@@ -366,6 +402,150 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
   })();
 
   return { stop: end };
+}
+
+// ---- streaming speaker: speak a reply as it is generated ------------------
+// Fed text incrementally with push() and told when the reply is complete with
+// finish(). It speaks in order with a short time-to-first-audio:
+//   - native voices: sentence by sentence, locally (free, instant).
+//   - cloud voices (OpenAI AND ElevenLabs, handled identically): small segments,
+//     synthesizing the NEXT segment while the current one plays. Only ONE synth
+//     request is ever in flight, so there's no concurrency limit to trip
+//     (ElevenLabs) and no wasted parallelism (OpenAI), and the first audio
+//     arrives after just one short segment instead of the whole reply.
+export interface StreamSpeaker {
+  push(text: string): void;
+  finish(): void;
+  cancel(): void;
+}
+
+/** Group complete sentences into segments of ~`target` chars. Returns ready
+ *  segments plus the leftover to carry forward (an incomplete sentence, or —
+ *  unless flushing — a sub-target remainder). */
+function segmentText(buf: string, target: number, flushAll: boolean): { segments: string[]; rest: string } {
+  const re = /[^.!?…\n]*[.!?…\n]+["'”’)\]]*\s*/g;
+  const segments: string[] = [];
+  let cur = "";
+  let consumed = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(buf)) !== null) {
+    cur += m[0];
+    consumed = re.lastIndex;
+    if (cur.trim().length >= target) { segments.push(cur.trim()); cur = ""; }
+  }
+  let rest = cur + buf.slice(consumed);
+  if (flushAll) { const tail = rest.trim(); if (tail) segments.push(tail); rest = ""; }
+  return { segments: segments.map((s) => s.trim()).filter(Boolean), rest };
+}
+
+export function createStreamSpeaker(opts: {
+  voiceURI?: string; voiceName?: string; rate?: number;
+  onStart?: () => void; onEnd?: () => void; onError?: (m: string) => void;
+}): StreamSpeaker {
+  if (!isTauri()) { opts.onEnd?.(); return { push() {}, finish() {}, cancel() {} }; }
+  return engineOf(opts.voiceURI) === "native" ? nativeStream(opts) : cloudStream(opts, engineOf(opts.voiceURI));
+}
+
+function nativeStream(opts: Parameters<typeof createStreamSpeaker>[0]): StreamSpeaker {
+  let buffer = ""; let finished = false; let cancelled = false; let playing = false; let started = false;
+  const queue: string[] = [];
+  const done = () => { if (cancelled) return; cancelled = true; opts.onEnd?.(); };
+  const playNext = () => {
+    if (playing || cancelled) return;
+    const s = queue.shift();
+    if (s === undefined) { if (finished) done(); return; }
+    playing = true;
+    if (!started) { started = true; opts.onStart?.(); }
+    speak(speakableFromMarkdown(s) || s, {
+      voiceURI: opts.voiceURI, rate: opts.rate,
+      onEnd: () => { playing = false; playNext(); },
+      onError: () => { playing = false; playNext(); },
+    });
+  };
+  const drain = (flushAll: boolean) => {
+    const { segments, rest } = segmentText(buffer, 1, flushAll);
+    buffer = rest;
+    if (segments.length) { queue.push(...segments); playNext(); }
+    else if (flushAll) playNext();
+  };
+  return {
+    push(t) { if (cancelled) return; buffer += t; drain(false); },
+    finish() { if (cancelled) return; finished = true; drain(true); },
+    cancel() { cancelled = true; stopSpeaking(); },
+  };
+}
+
+function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: TtsEngine): StreamSpeaker {
+  const voice = opts.voiceURI ? voiceOf(opts.voiceURI) : "";
+  const playbackRate = opts.rate ?? 1;
+  const audio = new Audio();
+  audio.playbackRate = playbackRate;
+  let buffer = ""; let finished = false; let cancelled = false;
+  let synthing = false; let playing = false; let started = false;
+  const segQueue: string[] = [];
+  const readyQueue: string[] = [];
+
+  const cleanup = () => {
+    try { audio.pause(); } catch { /* */ }
+    if (audio.src?.startsWith("blob:")) URL.revokeObjectURL(audio.src);
+    audio.removeAttribute("src");
+    readyQueue.splice(0).forEach((u) => URL.revokeObjectURL(u));
+  };
+  const done = () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; opts.onEnd?.(); };
+  const ctrl = { cancel: () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; } };
+  stopSpeaking(); current = ctrl;
+
+  const synth1 = (text: string): Promise<string> => synthCloud(engine, voice, 1, text);
+
+  const maybeDone = () => {
+    if (finished && !synthing && !playing && segQueue.length === 0 && readyQueue.length === 0) done();
+  };
+  const pumpSynth = () => {
+    if (synthing || cancelled) return;
+    const seg = segQueue.shift();
+    if (seg === undefined) { maybeDone(); return; }
+    synthing = true;
+    recordTts(engine, seg.length);
+    void synth1(seg)
+      .then((b64) => {
+        if (cancelled) return;
+        readyQueue.push(URL.createObjectURL(new Blob([b64ToBytes(b64) as BlobPart], { type: "audio/mpeg" })));
+        playNext();
+      })
+      .catch((e) => {
+        // Surface the failure and stop — don't half-play the rest. The caller's
+        // onError resumes the listening loop.
+        if (!cancelled) { cancelled = true; cleanup(); if (current === ctrl) current = null; opts.onError?.(String(e)); }
+      })
+      .finally(() => { synthing = false; if (!cancelled) pumpSynth(); });
+  };
+  const playNext = () => {
+    if (playing || cancelled) return;
+    const url = readyQueue.shift();
+    if (url === undefined) { maybeDone(); return; }
+    playing = true;
+    if (!started) { started = true; opts.onStart?.(); }
+    audio.src = url;
+    audio.playbackRate = playbackRate;
+    audio.onended = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
+    audio.onerror = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
+    void audio.play().catch((e) => { opts.onError?.(String(e)); playing = false; });
+  };
+  const drain = (flushAll: boolean) => {
+    const { segments, rest } = segmentText(buffer, 180, flushAll);
+    buffer = rest;
+    // Unreal's /stream caps at 1000 chars — hard-split any over-long segment.
+    const capped = engine === "unreal"
+      ? segments.flatMap((s) => (s.length <= 900 ? [s] : (s.match(/[\s\S]{1,900}/g) ?? [s])))
+      : segments;
+    if (capped.length) { segQueue.push(...capped); pumpSynth(); }
+    else if (flushAll) maybeDone();
+  };
+  return {
+    push(t) { if (cancelled) return; buffer += t; drain(false); },
+    finish() { if (cancelled) return; finished = true; drain(true); },
+    cancel() { ctrl.cancel(); },
+  };
 }
 
 // ---- persisted defaults ---------------------------------------------------

@@ -36,7 +36,7 @@ export type AgentEvent =
   | { kind: "tool"; chatPath: string; line: string }
   | { kind: "approval"; chatPath: string; items: ApprovalItem[] }
   | { kind: "note"; chatPath: string; text: string }
-  | { kind: "final"; chatPath: string; text: string }
+  | { kind: "final"; chatPath: string; text: string; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; model: string } }
   | { kind: "error"; chatPath: string; message: string };
 
 /** Subscribe to the agent's event stream. Filter by chatPath in the handler. */

@@ -68,6 +68,7 @@ import { isIosSync } from "../lib/vault";
 import { useTextScale } from "../lib/text-scale";
 import { CardSpeech } from "./CardSpeech";
 import { ChatSurface } from "./ChatSurface";
+import { consumeFullscreenIntent, onFullscreenRequest } from "../lib/fullscreen-intent";
 
 const SAVE_DEBOUNCE_MS = 600;
 
@@ -298,6 +299,14 @@ export function Card(props: Props) {
   // Open fullscreen when the parent signals it (calendar → note). Only acts on
   // the false→true transition, so it never fights a manual exit.
   useEffect(() => { if (wantFullscreen) setFullscreen(true); }, [wantFullscreen]);
+  // Durable open-fullscreen intent (new note / chat): consumed on mount — no
+  // 800ms window to race — and also caught live if the request lands while
+  // mounted. See lib/fullscreen-intent.ts.
+  useEffect(() => {
+    if (consumeFullscreenIntent(initialPath)) setFullscreen(true);
+    return onFullscreenRequest(initialPath, () => setFullscreen(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Exit fullscreen when the parent navigates away (wikilink / palette / etc.).
   // Ignore the mount run so a card opened straight into fullscreen — which
   // mounts with the just-bumped signal as its baseline — isn't collapsed.

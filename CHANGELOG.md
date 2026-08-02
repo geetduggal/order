@@ -13,6 +13,35 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.1] - 2026-08-02
+
+Headline feature: **the in-app agent — a hands-free voice chat that lives in your
+vault.** A chat is an ordinary `.chat.md` note in a Notable Folder, so every
+conversation stays a plain-text file you can read, edit, sync, or grep like any
+other note. The entire agent loop lives in Order's Rust core: it plans with the
+model, executes every tool, and touches every file — the UI never constructs a
+path or calls a model API. That unified harness is what lets the model, the
+speech-to-text, and the text-to-speech each be **local or cloud, your choice**,
+without changing anything else.
+
+- **Talk to your vault.** Tap the chat button, speak, and it transcribes, reads
+  and edits notes in the current folder, then reads its reply back — then
+  listens again. Writes are batched behind a single approval with diffs.
+- **Speech-to-text:** OpenAI (`gpt-4o-mini-transcribe`) or on-device Apple
+  Speech — captured natively, with adaptive noise-floor voice detection and
+  hallucination filtering.
+- **Read-aloud:** native system voices, OpenAI, ElevenLabs, and now **Unreal
+  Speech** — with *streaming* playback that starts speaking the reply before the
+  model finishes writing it.
+- **Fast + cheap:** Anthropic prompt caching cuts latency and cost on every turn
+  after the first; a local **usage & cost meter** (global and per-chat) estimates
+  spend across every service you've keyed.
+- **Settings**, reorganized into tabs (Vault · Calendar · Voice & Agent · Usage);
+  new notes and chats open straight into fullscreen.
+
+Everything stays local except the API calls you opt into, and works the same on
+macOS and iOS through Order's vault abstraction.
+
 ## [2026.8.0] - 2026-08-01
 
 Headline feature: **read-aloud** — play any card as audio with native system
