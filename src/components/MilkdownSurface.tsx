@@ -27,6 +27,7 @@ import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown
 import { linkKeymapPlugin } from "../lib/milkdown-link-keymap";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
 import { videoEmbedPlugin } from "../lib/milkdown-video";
+import { mermaidPlugin } from "../lib/milkdown-mermaid";
 import { youtubeId } from "../lib/youtube";
 import { normalizeWikilinkBrackets, unescapeLinkUrls, type WikiRef } from "../lib/wikilink";
 
@@ -232,6 +233,11 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
       crepe.editor.use(videoEmbedPlugin());
     } catch (err) {
       console.warn("video embed plugin registration failed:", err);
+    }
+    try {
+      crepe.editor.use(mermaidPlugin());
+    } catch (err) {
+      console.warn("mermaid plugin registration failed:", err);
     }
 
     crepe

@@ -9,11 +9,35 @@ use super::fs_tools::resolve_in_vault;
 use chrono::Local;
 use std::path::Path;
 
-fn sanitize(title: &str) -> String {
+pub fn sanitize(title: &str) -> String {
     let t = title.replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "-");
     let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
     let t = t.trim();
     if t.is_empty() { "Chat".into() } else { t.chars().take(60).collect() }
+}
+
+/// Extract just the human/agent prose from a `.chat.md` transcript — drop the
+/// YAML front matter and the compact tool-call lines (`> 🔧 …`) / blockquote
+/// notes, keeping the `## You` / `## Agent` turns. Used to summarise a chat into
+/// a meaningful filename title.
+pub fn conversation_text(raw: &str) -> String {
+    // Skip the leading `---\n … \n---\n` front matter block if present.
+    let body = match raw.strip_prefix("---\n") {
+        Some(rest) => match rest.find("\n---\n") {
+            Some(end) => &rest[end + 5..],
+            None => rest.find("\n---").map(|e| &rest[e + 4..]).unwrap_or(rest),
+        },
+        None => raw,
+    };
+    let mut out = String::new();
+    for line in body.lines() {
+        // Tool-call one-liners and note blockquotes carry no topic signal.
+        let t = line.trim_start();
+        if t.starts_with('>') { continue; }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.trim().to_string()
 }
 
 /// Create a new chat file in `dir_rel` (vault-relative), returning its vault-

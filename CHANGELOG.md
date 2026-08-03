@@ -13,6 +13,19 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+- **Chats name themselves** — a chat that's still called by its timestamp gets a
+  short, meaningful filename derived from what you talked about, generated on a
+  quiet visit (never mid-conversation). It renames the file, updates the timeline
+  event, and leaves any title you set yourself untouched — and only re-titles its
+  own auto-names as a chat meaningfully grows, so names settle rather than churn.
+- **Mermaid diagrams in notes** — any ` ```mermaid ` code block now renders as a
+  live diagram beneath its (still-editable) source in the editor. The `mermaid`
+  library is lazy-loaded, so notes without diagrams pay nothing for it.
+- **Docs** — fixed a broken architecture diagram in `docs/ARCHITECTURE.md` (a
+  `LOOP` participant collided with Mermaid's `loop` keyword, so the sequence
+  diagram never rendered) and added an in-vault architecture & network-flows
+  reference note with the full set of diagrams.
+
 ## [2026.8.2] - 2026-08-02
 
 Sharpens the voice agent and rounds out the vault. The agent now hears you and

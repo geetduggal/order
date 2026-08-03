@@ -236,7 +236,7 @@ sequenceDiagram
     participant U as You (voice)
     participant CS as ChatSurface (React)
     participant STT as stt_listen (Rust)
-    participant LOOP as agent loop (Rust)
+    participant AL as agent loop (Rust)
     participant API as Anthropic API
     participant FS as Vault (Rust FS)
 
@@ -245,21 +245,21 @@ sequenceDiagram
     STT->>API: audio → OpenAI transcribe (or on-device Apple)
     API-->>STT: transcript
     STT-->>CS: text
-    CS->>LOOP: agent_turn(chatPath, text)
-    loop until no tool calls (cap: MAX_ITERS)
-        LOOP->>API: messages + tools (SSE, cached system+tools prefix)
-        API-->>LOOP: text deltas + tool_use blocks
-        LOOP-->>CS: agent-stream (text / tool)
+    CS->>AL: agent_turn(chatPath, text)
+    loop until no tool calls (cap MAX_ITERS)
+        AL->>API: messages + tools (SSE, cached system+tools prefix)
+        API-->>AL: text deltas + tool_use blocks
+        AL-->>CS: agent-stream (text / tool)
         alt read tool
-            LOOP->>FS: execute, feed result back
+            AL->>FS: execute, feed result back
         else write tool(s)
-            LOOP-->>CS: agent-stream (approval + diffs)
-            CS-->>LOOP: agent_approve(once/all/reject)
-            LOOP->>FS: execute the batch
+            AL-->>CS: agent-stream (approval + diffs)
+            CS-->>AL: agent_approve(once/all/reject)
+            AL->>FS: execute the batch
         end
     end
-    LOOP->>FS: append reply to the .chat.md transcript
-    LOOP-->>CS: agent-stream (final + token usage)
+    AL->>FS: append reply to the .chat.md transcript
+    AL-->>CS: agent-stream (final + token usage)
     CS->>U: stream reply to TTS as it arrives, then listen again
 ```
 
@@ -270,25 +270,25 @@ playing before the model has finished writing it (see Voice pipeline below).
 
 ```mermaid
 flowchart LR
-    subgraph React[React · the webview]
-        UI[ChatSurface<br/>text in · events out]
+    subgraph React["React · the webview"]
+        UI["ChatSurface — text in, events out"]
     end
-    subgraph Rust[Rust core · the only privileged layer]
-        L[agent loop]
-        T[fs_tools]
-        P[provider]
-        S[stt]
+    subgraph Rust["Rust core · the only privileged layer"]
+        L["agent loop"]
+        T["fs_tools"]
+        P["provider"]
+        S["stt"]
     end
-    Vault[(Vault files)]
-    Model[[Anthropic]]
-    STT[[OpenAI / Apple STT]]
+    Vault[("Vault files")]
+    Model[["Anthropic"]]
+    STT[["OpenAI / Apple STT"]]
 
-    UI -- "user text · approvals" --> L
+    UI -- "user text, approvals" --> L
     L -- "agent-stream events" --> UI
     L --> T --> Vault
     L --> P --> Model
     S --> STT
-    UI -. "never a path, file body, or model key" .-x Vault
+    UI -- "never a path, body, or model key" --x Vault
 ```
 
 ### Design rules baked in

@@ -278,6 +278,7 @@ pub fn run() {
             tts::tts_eleven_voices,
             agent::run::agent_turn,
             agent::run::agent_new_chat,
+            agent::run::agent_chat_title,
             agent::run::agent_approve,
             stt::stt_listen,
             stt::stt_cancel,

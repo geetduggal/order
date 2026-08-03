@@ -311,6 +311,71 @@ pub fn agent_new_chat(app: AppHandle, dir_rel: Option<String>, title: Option<Str
     chat::create_chat(&root, dir_rel.as_deref().unwrap_or(""), title.as_deref().unwrap_or("Chat"))
 }
 
+/// Suggest a short, filesystem-friendly title summarising a chat, via one cheap
+/// model call. Returns `Ok(None)` when there isn't enough conversation to name,
+/// or the model declines. Never renames anything itself — the caller decides
+/// whether the chat is eligible (a user-set title is never touched) and does the
+/// rename + spacetime update. `api_key` comes from the frontend, same as
+/// `agent_turn`, so no keychain plumbing lives here.
+#[tauri::command]
+pub async fn agent_chat_title(
+    app: AppHandle,
+    api_key: String,
+    chat_path: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if api_key.trim().is_empty() {
+            return Ok(None);
+        }
+        let root = vault_root(&app)?;
+        let abs = super::fs_tools::resolve_in_vault(&root, &chat_path)?;
+        let raw = std::fs::read_to_string(&abs).map_err(|e| format!("read chat: {e}"))?;
+        let convo = chat::conversation_text(&raw);
+        // Need a real exchange before a title means anything.
+        if convo.chars().filter(|c| !c.is_whitespace()).count() < 120 {
+            return Ok(None);
+        }
+        let provider = Anthropic::new(api_key);
+        suggest_title(&provider, &convo)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// One-shot title generation. The topic is almost always set early, so we cap
+/// the transcript to bound cost; `max_tokens` is tiny.
+fn suggest_title(provider: &Anthropic, convo: &str) -> Result<Option<String>, String> {
+    let snippet: String = convo.chars().take(8000).collect();
+    let system = "You name a saved conversation with a short file title. \
+Reply with ONLY the title: 2 to 6 words, Title Case, no quotes, no punctuation, \
+no emoji, no trailing period. Name the concrete topic, task, or decision. \
+If there is no clear topic, reply with the single word NONE.";
+    let messages = [Msg::user_text(format!("Conversation transcript:\n\n{snippet}"))];
+    let req = CompletionRequest {
+        system,
+        messages: &messages,
+        tools: &[],
+        model: DEFAULT_MODEL,
+        max_tokens: 24,
+    };
+    let (blocks, _usage) = provider.stream(&req, &mut |_| {})?;
+    let mut text = String::new();
+    for b in &blocks {
+        if let Block::Text { text: t } = b {
+            text.push_str(t);
+        }
+    }
+    let raw = text.trim();
+    if raw.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    let cleaned = chat::sanitize(raw);
+    if cleaned.is_empty() || cleaned.eq_ignore_ascii_case("chat") || cleaned.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    Ok(Some(cleaned))
+}
+
 /// Answer a pending write-approval: "once" | "all" | "reject".
 #[tauri::command]
 pub fn agent_approve(app: AppHandle, decision: String) -> Result<(), String> {

@@ -138,6 +138,10 @@ interface Props {
   path: string;
   onRenamed?: (newPath: string) => void;
   onTitleChanged?: (newTitle: string) => void;
+  /** For chat cards: called (with the chat's vault-relative path) when the
+   *  surface is visited and idle, so the parent can occasionally give a
+   *  still-timestamp-named chat a meaningful, content-derived filename. */
+  onMaybeChatTitle?: (rel: string) => void;
   /** Called when the user confirms deletion of this card. Card flushes
    *  pending saves first so we don't recreate the file after delete. */
   onDelete?: (path: string) => Promise<void>;
@@ -285,6 +289,7 @@ export function Card(props: Props) {
   const {
     path: initialPath,
     onRenamed,
+    onMaybeChatTitle,
     onTitleChanged,
     onDelete,
     onPersisted,
@@ -1711,7 +1716,7 @@ export function Card(props: Props) {
           // Agent conversation. ChatSurface owns the whole body: it renders the
           // transcript, streams the live turn, and handles write-approval. The
           // Rust core does every file touch + model call.
-          <ChatSurface path={pathRef.current} autoFocus={autoFocus && !readOnly} />
+          <ChatSurface path={pathRef.current} autoFocus={autoFocus && !readOnly} onMaybeTitle={onMaybeChatTitle} />
         ) : isHtmlNote ? (
           // Dated HTML note: render the page itself in a sandboxed frame, filling
           // the card (and the whole screen in fullscreen) so you see at a glance

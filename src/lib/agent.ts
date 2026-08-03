@@ -64,6 +64,16 @@ export function runTurn(chatPath: string, userText: string): Promise<TurnResult>
   });
 }
 
+/** Ask the model for a short, filesystem-friendly title summarising a chat's
+ *  content. Returns null when there isn't enough conversation to name (or the
+ *  model declines). Purely advisory — the caller decides whether to rename. */
+export function suggestChatTitle(chatPath: string): Promise<string | null> {
+  return invoke<string | null>("agent_chat_title", {
+    apiKey: getAgentKey(),
+    chatPath,
+  });
+}
+
 /** Answer a pending write-approval batch. */
 export function approve(decision: "once" | "all" | "reject"): Promise<void> {
   return invoke("agent_approve", { decision });

@@ -93,9 +93,12 @@ function PlayButton({ text }: { text: string }) {
 interface Props {
   path: string;
   autoFocus?: boolean;
+  /** Called on a quiet visit (mount, when idle) so the parent can occasionally
+   *  rename a still-timestamp-named chat to something meaningful. */
+  onMaybeTitle?: (rel: string) => void;
 }
 
-export function ChatSurface({ path, autoFocus }: Props) {
+export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const rel = useMemo(() => toVaultRel(path), [path]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -163,6 +166,20 @@ export function ChatSurface({ path, autoFocus }: Props) {
 
   // Load this chat's accumulated cost when it opens.
   useEffect(() => { setChatUsage(getChatUsage(rel)); }, [rel]);
+
+  // Occasionally give a still-timestamp-named chat a meaningful filename from
+  // its content — but only on a quiet visit (idle, no active voice loop or turn)
+  // so an in-progress conversation is never disturbed. The parent decides
+  // eligibility (a user-set title is never touched) and does the rename.
+  const onMaybeTitleRef = useRef(onMaybeTitle);
+  useEffect(() => { onMaybeTitleRef.current = onMaybeTitle; }, [onMaybeTitle]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (voiceOnRef.current || modeRef.current !== "idle") return;
+      onMaybeTitleRef.current?.(rel);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [rel]);
 
   // Auto-scroll: keep the newest content pinned to the bottom. Deferred a frame
   // so it runs AFTER layout (streaming text grows the box async), and re-run on

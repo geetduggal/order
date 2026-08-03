@@ -39,7 +39,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
 import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
-import { newChat } from "../lib/agent";
+import { newChat, suggestChatTitle } from "../lib/agent";
 import { requestFullscreenPersistent } from "../lib/fullscreen-intent";
 import { buildPushIntents, descriptionHash, eventDescriptionFromRaw, type PushIntent } from "../lib/gcal-push";
 import { gcalSyncPlan, naturalKey, loadSyncRecord, saveSyncRecord, type SyncRecord } from "../lib/gcal-sync-plan";
@@ -4834,6 +4834,98 @@ export function CardGrid() {
     if (oldName && oldName !== newName) void rewriteInboundWikilinks(oldName, newName);
   }, [rewriteInboundWikilinks]);
 
+  // --- Chats: occasionally give a still-timestamp-named chat a meaningful
+  //     filename, derived from its content. Triggered when you *visit* a chat
+  //     (ChatSurface calls this on mount, only while idle — never mid-session).
+  //     Rules: a user-set title in the front matter is never touched; only the
+  //     auto placeholder (`Chat HH:MM`) or a previous auto-title is eligible,
+  //     and we re-title an auto one only as the chat meaningfully grows, so the
+  //     name settles rather than churns.
+  const autoTitleAttemptRef = useRef<Map<string, number>>(new Map());
+  const autoTitleInflightRef = useRef<Set<string>>(new Set());
+  const maybeAutoTitleChat = useCallback(async (rel: string) => {
+    if (!/\.chat\.md$/i.test(rel)) return;
+    if (autoTitleInflightRef.current.has(rel)) return;
+    const last = autoTitleAttemptRef.current.get(rel) ?? 0;
+    if (Date.now() - last < 5 * 60_000) return; // at most once per 5 min per chat
+
+    let raw: string;
+    try { raw = await readVault(rel); } catch { return; }
+    const { frontmatter, body } = splitFrontmatter(raw);
+    const title = typeof frontmatter.title === "string" ? frontmatter.title.trim() : "";
+    const isPlaceholder = title === "" || /^Chat( \d{1,2}:\d{2})?$/.test(title);
+    const auto = frontmatter.titleAuto === true;
+    // A title the user chose is sacred — never rename it.
+    if (!isPlaceholder && !auto) return;
+    // Enough real conversation to name, and (if already auto-titled) meaningfully
+    // more than when we last named it.
+    const contentLen = body
+      .replace(/^>.*$/gm, "").replace(/^#.*$/gm, "").replace(/\s+/g, " ").trim().length;
+    if (contentLen < 160) return;
+    const prevLen = typeof frontmatter.titleAutoLen === "number" ? frontmatter.titleAutoLen : 0;
+    if (auto && contentLen < Math.max(prevLen * 2, prevLen + 600)) return;
+
+    autoTitleAttemptRef.current.set(rel, Date.now());
+    autoTitleInflightRef.current.add(rel);
+    try {
+      const suggested = await suggestChatTitle(rel);
+      if (!suggested) return;
+      const note = notesRef.current?.find((n) => toVaultRel(n.path) === rel);
+      if (!note) return;
+
+      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+      const oldFilename = rel.split("/").pop() ?? rel;
+      const oldBase = oldFilename.replace(/\.chat\.md$/i, "");
+      // Preserve the `YYYY-MM-DD HHMM` timestamp prefix so chats still sort by
+      // time and the date/time stay legible in the filename.
+      const prefixMatch = oldBase.match(/^(\d{4}-\d{2}-\d{2} \d{4})/);
+      const prefix = prefixMatch ? prefixMatch[1] : oldBase;
+      const existingRels = new Set((notesRef.current ?? []).map((n) => toVaultRel(n.path)));
+      let newBase = `${prefix} ${suggested}`;
+      let newRel = `${dir}${newBase}.chat.md`;
+      let n = 2;
+      while (existingRels.has(newRel) && newRel !== rel) {
+        newBase = `${prefix} ${suggested} ${n++}`;
+        newRel = `${dir}${newBase}.chat.md`;
+      }
+      if (newRel === rel) return; // nothing to do
+
+      const newFilename = `${newBase}.chat.md`;
+      // Rename the file, then rewrite its front matter (new title + auto markers).
+      // Suppress the watcher echo for every path we touch.
+      markSelfWrite(rel); markSelfWrite(newRel);
+      await vaultFs.rename(rel, newRel);
+      const nextFm: Frontmatter = { ...frontmatter, title: suggested, titleAuto: true, titleAutoLen: contentLen };
+      markSelfWrite(newRel);
+      await writeVault(newRel, joinFrontmatter(nextFm, body));
+
+      // spacetime.mw is the source of truth for the calendar/timeline — keep the
+      // event's title in sync so the (date, title) natural key still matches.
+      const evDate = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
+      if (evDate && title) {
+        await applyMwEdit((mw) => mwUpdateEvent(mw, evDate, title, { title: suggested }));
+      }
+
+      // Point the open card + focus/fullscreen refs at the new path. The card is
+      // keyed by stable note id, so this updates the path prop WITHOUT remounting
+      // ChatSurface — the transcript reloads from the new file and the voice
+      // refs survive.
+      const newAbsPath = note.path.slice(0, note.path.length - oldFilename.length) + newFilename;
+      setFullscreenPath((p) => (p === note.path ? newAbsPath : p));
+      handleCardRenamed(note.id, newAbsPath);
+      // handleCardRenamed derives a filename-based title; restore the clean one
+      // and the updated front matter for this note.
+      setNotes((prev) => prev?.map((nn) =>
+        nn.id === note.id ? { ...nn, frontmatter: nextFm, title: suggested } : nn) ?? null);
+    } catch (e) {
+      console.warn("auto-title chat failed", e);
+    } finally {
+      autoTitleInflightRef.current.delete(rel);
+    }
+  }, [applyMwEdit, handleCardRenamed]);
+  const maybeAutoTitleChatRef = useRef(maybeAutoTitleChat);
+  useEffect(() => { maybeAutoTitleChatRef.current = maybeAutoTitleChat; }, [maybeAutoTitleChat]);
+
   const handleCardTitleChanged = useCallback((id: string, newTitle: string) => {
     setNotes((prev) =>
       prev?.map((n) => (n.id === id ? { ...n, title: newTitle } : n)) ?? null,
@@ -5592,6 +5684,7 @@ export function CardGrid() {
         capHeight={capHeight}
         visited={isMain ? includeSet.has(ref) : undefined}
         onRenamed={(newPath) => handleCardRenamed(n.id, newPath)}
+        onMaybeChatTitle={(rel) => maybeAutoTitleChatRef.current(rel)}
         onTitleChanged={(t) => handleCardTitleChanged(n.id, t)}
         onDelete={(path) => handleCardDelete(n.id, path)}
         onPersisted={handleCardPersisted}

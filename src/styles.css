@@ -1644,6 +1644,44 @@ video.order-vault-video {
   border-radius: 6px;
   background: black;
 }
+/* Rendered Mermaid diagram, mounted after a ```mermaid source block
+   (see milkdown-mermaid.ts). Source stays editable above; this is the
+   read-only render. */
+.milkdown-host .ProseMirror .order-mermaid,
+.order-mermaid {
+  margin: 0.4em 0 1.2em;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: #fff;
+  overflow-x: auto;
+  text-align: center;
+  line-height: 1;
+}
+.order-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.order-mermaid.is-loading {
+  min-height: 40px;
+  border-style: dashed;
+  text-align: left;
+}
+.order-mermaid.is-loading::before {
+  content: "Rendering diagram…";
+  font-size: 0.85em;
+  color: var(--ink-faint, #6a665a);
+  font-family: "Inter", -apple-system, system-ui, sans-serif;
+}
+.order-mermaid.is-error {
+  text-align: left;
+  border-color: var(--coral, #ff6b5b);
+  color: var(--coral, #ff6b5b);
+  background: color-mix(in srgb, var(--coral, #ff6b5b) 8%, #fff);
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
 /* Universal YouTube embed card: thumbnail + title + host. Replaces
    the inline iframe everywhere — taps route through the OS shell
    (UIApplication.open on iOS, `open` on macOS, native browser nav in
