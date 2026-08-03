@@ -51,12 +51,19 @@ No paid Apple Developer account needed. Add the Apple ID in Xcode → Settings �
 Accounts. In `project.yml` under the target `settings.base`:
 
 ```yaml
-        DEVELOPMENT_TEAM: 59TJ84BVPY
+        DEVELOPMENT_TEAM: 93AB46Q3G7
         CODE_SIGN_STYLE: Automatic
 ```
 
-(`59TJ84BVPY` is the team id from the "Apple Development: geetduggal@gmail.com"
-codesigning identity — `security find-identity -v -p codesigning`.)
+`93AB46Q3G7` is the **account/team id** of "Geet Duggal (Personal Team)" — the
+team Xcode → Settings → Accounts is signed into, and the one that matches
+`tauri.conf.json` `iOS.developmentTeam`. It must be this, NOT the team code
+embedded in the codesigning identity's name. The keychain cert reads
+`Apple Development: geetduggal@gmail.com (59TJ84BVPY)`, but `59TJ84BVPY` is a
+stale cert-team with no signed-in account: setting `DEVELOPMENT_TEAM` to it makes
+Xcode show a red "Unknown Name (59TJ84BVPY)" / "No Account for Team" and every
+build fails signing. Confirm the live id under the account, don't infer it from
+the cert name.
 
 Free-team caveats: app expires ~7 days (re-run to refresh); trust the cert on
 the phone (Settings → General → VPN & Device Management); device + Mac on the
