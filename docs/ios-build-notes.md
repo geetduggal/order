@@ -57,17 +57,46 @@ Accounts. In `project.yml` under the target `settings.base`:
 
 `93AB46Q3G7` is the **account/team id** of "Geet Duggal (Personal Team)" — the
 team Xcode → Settings → Accounts is signed into, and the one that matches
-`tauri.conf.json` `iOS.developmentTeam`. It must be this, NOT the team code
-embedded in the codesigning identity's name. The keychain cert reads
-`Apple Development: geetduggal@gmail.com (59TJ84BVPY)`, but `59TJ84BVPY` is a
-stale cert-team with no signed-in account: setting `DEVELOPMENT_TEAM` to it makes
-Xcode show a red "Unknown Name (59TJ84BVPY)" / "No Account for Team" and every
-build fails signing. Confirm the live id under the account, don't infer it from
-the cert name.
+`tauri.conf.json` `iOS.developmentTeam`. Get it from the certificate's **OU**,
+not its name: `security find-certificate -c "Apple Development: geetduggal@gmail.com" -p | openssl x509 -noout -subject`
+shows `OU=93AB46Q3G7`. The `(59TJ84BVPY)` inside the cert's Common Name is NOT
+the team — setting `DEVELOPMENT_TEAM` to it makes Xcode show a red
+"Unknown Name (59TJ84BVPY)" / "No Account for Team" and every build fails.
 
 Free-team caveats: app expires ~7 days (re-run to refresh); trust the cert on
 the phone (Settings → General → VPN & Device Management); device + Mac on the
 same Wi-Fi for `tauri ios dev`.
+
+### Headless signing — `scripts/sideload-ios.sh` (IMPORTANT)
+
+**Command-line `xcodebuild` cannot do automatic signing with a free personal
+team.** `scripts/build-ios.sh` / `tauri ios build` pass `-allowProvisioningUpdates`,
+which phones home to the account to mint a profile — but free-team accounts live
+only in the Xcode GUI's TCC-protected container (`group.com.apple.dt.Xcode.SecureSettingsContainer`),
+so any headless build fails with `error: No Accounts` / `No profiles found`,
+even when you're fully signed in and running as yourself. This is an Apple
+limitation, not a project bug. Paid Developer Program accounts can sign from the
+CLI; personal teams can't.
+
+Two ways to get a build onto the phone:
+
+1. **Xcode GUI:** select the `order_iOS` scheme + your iPhone, press ⌘R. The GUI
+   has the account access the CLI lacks. Simplest; it also (re)generates the
+   provisioning profile on disk.
+
+2. **`scripts/sideload-ios.sh`** (fully headless, no account needed): builds the
+   app UNSIGNED with `tauri ios build --no-sign` (Tauri still hosts the RPC the
+   Rust build phase needs, but the "No Accounts" signing step is skipped), then
+   **codesigns the `.app` offline** with the Xcode-managed provisioning profile
+   already on disk + the Apple Development cert, packages the IPA, and installs
+   via `devicectl`. Offline signing needs no live account, so it works from any
+   shell — including CI/automation. It needs a profile to already exist on disk,
+   which option 1 creates (and refreshes every ~7 days).
+
+Do NOT try to "fix" a headless `build-ios.sh` signing failure by fiddling with
+`DEVELOPMENT_TEAM`, manual profiles, or `CODE_SIGN_IDENTITY` — the managed
+profile can't be used with manual signing, and the team is already correct. Use
+`sideload-ios.sh`.
 
 ## 3. Bundle identifier
 
