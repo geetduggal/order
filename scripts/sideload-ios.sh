@@ -73,10 +73,12 @@ echo "==> Signed IPA: $IPA"
 
 DEVICE="${1:-}"
 if [ -z "$DEVICE" ]; then
+  # Any paired iPhone (state may read "connected" OR "available (paired)").
+  # `|| true` so a no-match doesn't trip `set -e` before the guard below.
   DEVICE=$(xcrun devicectl list devices 2>/dev/null \
-    | grep -iE 'iphone' | grep -i 'connected' \
-    | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' \
-    | head -1)
+    | grep -iE 'iphone' \
+    | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
+    | head -1 || true)
 fi
 [ -n "$DEVICE" ] || { echo "!! No connected iPhone found. Pass a device id, or connect the phone."; exit 1; }
 echo "==> Installing to device $DEVICE…"
