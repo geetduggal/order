@@ -1564,6 +1564,11 @@ export function Card(props: Props) {
               <ArrowUpRight size={14} strokeWidth={2} /><span>Reveal in Finder</span>
             </button>
           )}
+          {isImageNote && !isIosSync() && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { void invoke("clipboard_copy_image", { path: pathRef.current }).catch((e) => console.error("copy image failed:", e)); setMoreOpen(false); }}>
+              <CopyIcon size={14} strokeWidth={2} /><span>Copy image</span>
+            </button>
+          )}
           {canFlip && (
             <>
               <button type="button" role="menuitem" className={"order-card-more-item" + (view === "sheet" ? " is-on" : "")} onClick={() => { void flipView("sheet"); setMoreOpen(false); }}>

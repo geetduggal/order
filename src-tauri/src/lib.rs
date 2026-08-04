@@ -247,6 +247,7 @@ pub fn run() {
             vault::delete_file,
             vault::open_path,
             vault::reveal_path,
+            vault::clipboard_copy_image,
             vault::open_terminal,
             vault::open_url,
             watcher::start_watcher,

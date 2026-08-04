@@ -567,6 +567,44 @@ pub fn reveal_path(path: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Copy an image file to the system clipboard (macOS). NSImage reads any common
+/// format (png/jpg/gif/heic/tiff); NSPasteboard.writeObjects puts it on the
+/// clipboard AS AN IMAGE, so pasting into Messages / Slack / a doc yields the
+/// picture — not a file path. Desktop-only (the WKWebView has no image-clipboard
+/// path, hence this native command).
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn clipboard_copy_image(path: String) -> Result<(), String> {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    if !std::path::Path::new(&path).exists() {
+        return Err(format!("not found: {path}"));
+    }
+    unsafe {
+        let nspath = NSString::from_str(&path);
+        let alloc: *mut AnyObject = msg_send![class!(NSImage), alloc];
+        let img: *mut AnyObject = msg_send![alloc, initWithContentsOfFile: &*nspath];
+        if img.is_null() {
+            return Err("could not read image".into());
+        }
+        let pb: *mut AnyObject = msg_send![class!(NSPasteboard), generalPasteboard];
+        let _: isize = msg_send![pb, clearContents];
+        let arr: *mut AnyObject = msg_send![class!(NSArray), arrayWithObject: img];
+        let ok: bool = msg_send![pb, writeObjects: arr];
+        if !ok {
+            return Err("clipboard rejected the image".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn clipboard_copy_image(_path: String) -> Result<(), String> {
+    Err("copy image is only supported on macOS".into())
+}
+
 /// Open a directory in the user's default terminal at that working
 /// directory. macOS uses Terminal.app via `open -a Terminal`; Windows
 /// launches `wt` (Windows Terminal) and falls back to `cmd`; Linux tries

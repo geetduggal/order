@@ -8,6 +8,13 @@ import type { PublishedSite } from "./publish";
 import { resolveWikilink, type WikiRef } from "./wikilink";
 import { ATTACHMENTS_DIRNAME, EMBED_REF_WIDTH } from "./attachments";
 import { youtubeId } from "./youtube";
+import { firstMajorHeader } from "./frontmatter";
+import { stripJdPrefix } from "./johnny-decimal";
+
+// Minimal HTML-escape for text we inject into anchors / spans.
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export interface PrerenderedPage {
   path: string;
@@ -25,12 +32,20 @@ function rewriteWikilinks(
 ): string {
   const replaceWiki = (text: string): string =>
     text.replace(WIKI_RE, (_full, _open, inner: string) => {
-      const label = inner.split("|").pop()!.split("/").pop()!.trim();
+      const explicitAlias = inner.includes("|");
+      const rawLabel = inner.split("|").pop()!.split("/").pop()!.trim();
       const res = resolveWikilink(`[[${inner}]]`, vault);
-      if (res.kind === "broken") return `<span class="wikilink-broken">${label}</span>`;
+      if (res.kind === "broken") return `<span class="wikilink-broken">${escHtml(rawLabel)}</span>`;
       const slug = slugOf(res.ref.filename.replace(/\.md$/i, ""));
-      if (!slug) return `<span class="wikilink-broken">${label}</span>`;
-      return `<a class="wikilink" href="/${slug}/">${label}</a>`;
+      if (!slug) return `<span class="wikilink-broken">${escHtml(rawLabel)}</span>`;
+      // Match the in-app link display (Johnny Decimal convention): unless the
+      // user gave an explicit `|alias`, label by the target's first `# Header`,
+      // falling back to its JD-stripped name — so a published link reads
+      // "Order — A Calendar-First Notebook", never "52.05 Order …".
+      const label = explicitAlias
+        ? rawLabel
+        : (firstMajorHeader(res.ref.body) || stripJdPrefix(res.ref.filename.replace(/\.md$/i, "")));
+      return `<a class="wikilink" href="/${slug}/">${escHtml(label)}</a>`;
     });
   // Skip ``` fenced blocks (so a code-block screenshot of the markdown
   // source survives as literal `[[Name]]`) and inline `…` code spans.
