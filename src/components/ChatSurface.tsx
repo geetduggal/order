@@ -8,7 +8,7 @@
 // the mic, paints the transcript, plays replies, and surfaces the single
 // batched write-approval. See lib/agent.ts, lib/voice.ts, src-tauri/src/agent/.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
@@ -18,6 +18,7 @@ import {
 import { listenOnce, cancelListen, micSupported, onLevel, onSttState, onPartial, inputName } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
+import { useTextScale } from "../lib/text-scale";
 import { recordChat, recordDictation, getChatUsage, addChatUsage, chatCostOf, chatUsageDetail, formatUSD, type ChatUsage } from "../lib/usage";
 import { listen } from "@tauri-apps/api/event";
 import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2, ChevronDown } from "lucide-react";
@@ -100,6 +101,11 @@ interface Props {
 
 export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const rel = useMemo(() => toVaultRel(path), [path]);
+  // Re-apply the global zoom as an INLINE --text-scale on the chat root. On iOS
+  // WebKit a :root custom-property change doesn't always repaint the chat's
+  // composited scroll layer, so the transcript ignored the rail zoom; setting it
+  // inline (React re-renders when useTextScale changes) forces the repaint.
+  const textScale = useTextScale();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false); // keyboard fallback visible
@@ -405,7 +411,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     mode === "approval" ? "Waiting for you…" : "";
 
   return (
-    <div className="order-chat">
+    <div className="order-chat" style={{ "--text-scale": textScale } as CSSProperties}>
       {/* Running cost for THIS chat (agent + dictation). Estimate. */}
       {hasUsage && (
         <div className="order-chat-cost" title={`This chat · ${chatUsageDetail(chatUsage)}${chatUsage.nativeSeconds > 0 ? " · on-device is free" : ""} · estimated`}>
