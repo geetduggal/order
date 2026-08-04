@@ -24,12 +24,13 @@ cd "$(dirname "$0")/.."
 BUNDLE_ID="com.geetduggal.order"
 
 echo "==> Building unsigned app (tauri ios build --no-sign)…"
-# Tauri embeds the web frontend into the Rust binary at COMPILE time (via
-# generate_context!() in lib.rs). Cargo doesn't recompile when only frontend
-# (TS/CSS) changes, so the binary keeps a STALE frontend — the app then ignores
-# every frontend-only change. Touch lib.rs to force a recompile that re-embeds
-# the freshly-built dist.
-touch src-tauri/src/lib.rs
+# Tauri embeds the web frontend into the Rust binary at COMPILE time — its
+# build script (tauri_build::build) processes `dist` into
+# target/…/build/order-*/out and the binary bakes THAT in. On a frontend-only
+# change the build script's rerun-if-changed doesn't reliably fire, so the
+# binary keeps a STALE frontend and the app ignores every TS/CSS fix. Nuke the
+# order build-script output so it re-processes the freshly-built dist.
+rm -rf src-tauri/target/aarch64-apple-ios/*/build/order-*
 pnpm tauri ios build --no-sign --ci
 
 APP=$(ls -td "$HOME"/Library/Developer/Xcode/DerivedData/order-*/Build/Products/release-iphoneos/Order.app 2>/dev/null | head -1)
