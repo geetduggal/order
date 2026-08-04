@@ -147,15 +147,25 @@ function buildTaxonomy(
     foldersByCategory.set(key, list);
   }
 
-  // Folder order from the chain (order prop): catRef → folderRef → index.
+  // Folder order from the chain (order prop): catRef → folderKey → index.
   // Used to render folders in their on-disk bullet order; anything not in
   // the chain falls back to alphabetical after the ordered ones.
+  //
+  // Match by the Johnny Decimal id ("52.62") when present, NOT the full name:
+  // the `order` refs carry FULL titles (from spacetime) while `folders` carry
+  // TRUNCATED on-disk names, so full-name matching misses every long-titled
+  // folder and scatters them into the alphabetical fallback — breaking the
+  // spacetime (JD) ordering. The id is shared by both and unique per category.
+  const folderKey = (n: string): string => {
+    const m = n.match(/^(\d{1,3}(?:\.\d{1,3})?)\s/);
+    return m ? m[1] : n.toLowerCase();
+  };
   const folderRank = new Map<string, Map<string, number>>();
   if (order) {
     for (const a of order) {
       for (const c of a.categories) {
         const m = new Map<string, number>();
-        c.folders.forEach((f, i) => m.set(f.toLowerCase(), i));
+        c.folders.forEach((f, i) => m.set(folderKey(f), i));
         folderRank.set(c.ref.toLowerCase(), m);
       }
     }
@@ -173,8 +183,8 @@ function buildTaxonomy(
         const catRef = (k.split("::")[1] ?? "").toLowerCase();
         const rank = folderRank.get(catRef);
         const sorted = [...list].sort((x, y) => {
-          const rx = rank?.get(x.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
-          const ry = rank?.get(y.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+          const rx = rank?.get(folderKey(x.name)) ?? Number.MAX_SAFE_INTEGER;
+          const ry = rank?.get(folderKey(y.name)) ?? Number.MAX_SAFE_INTEGER;
           return rx !== ry ? rx - ry : x.name.localeCompare(y.name);
         });
         return [k, sorted];
