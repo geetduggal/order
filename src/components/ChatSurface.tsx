@@ -106,6 +106,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // composited scroll layer, so the transcript ignored the rail zoom; setting it
   // inline (React re-renders when useTextScale changes) forces the repaint.
   const textScale = useTextScale();
+  const [dbgComputed, setDbgComputed] = useState("");
+  useEffect(() => {
+    const el = document.querySelector(".order-chat-scroll .order-chat-text") as HTMLElement | null;
+    setDbgComputed(el ? getComputedStyle(el).fontSize : "n/a");
+  });
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false); // keyboard fallback visible
@@ -430,6 +435,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         </div>
       )}
       <div className="order-chat-scroll" ref={scrollRef} onScroll={onScroll}>
+        {/* TEMP DEBUG — remove after diagnosing iOS chat zoom */}
+        <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#ffe000", color: "#000", fontSize: "12px", fontWeight: 700, padding: "3px 6px", borderRadius: "4px", fontFamily: "monospace" }}>
+          zoom {textScale.toFixed(2)} · want {(15 * textScale).toFixed(1)}px · rendered {dbgComputed || "?"}
+        </div>
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
             <Sparkles size={18} />
