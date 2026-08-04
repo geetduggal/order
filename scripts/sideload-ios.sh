@@ -24,6 +24,12 @@ cd "$(dirname "$0")/.."
 BUNDLE_ID="com.geetduggal.order"
 
 echo "==> Building unsigned app (tauri ios build --no-sign)…"
+# Tauri embeds the web frontend into the Rust binary at COMPILE time (via
+# generate_context!() in lib.rs). Cargo doesn't recompile when only frontend
+# (TS/CSS) changes, so the binary keeps a STALE frontend — the app then ignores
+# every frontend-only change. Touch lib.rs to force a recompile that re-embeds
+# the freshly-built dist.
+touch src-tauri/src/lib.rs
 pnpm tauri ios build --no-sign --ci
 
 APP=$(ls -td "$HOME"/Library/Developer/Xcode/DerivedData/order-*/Build/Products/release-iphoneos/Order.app 2>/dev/null | head -1)
@@ -83,4 +89,8 @@ fi
 [ -n "$DEVICE" ] || { echo "!! No connected iPhone found. Pass a device id, or connect the phone."; exit 1; }
 echo "==> Installing to device ${DEVICE}…"
 xcrun devicectl device install app --device "$DEVICE" "$IPA"
+# Installing over a RUNNING app doesn't restart it, so the phone keeps executing
+# the old instance. Force a fresh launch so the new build actually runs.
+echo "==> Relaunching…"
+xcrun devicectl device process launch --terminate-existing --device "$DEVICE" com.geetduggal.order >/dev/null 2>&1 || true
 echo "==> Done — Order is on your phone."
