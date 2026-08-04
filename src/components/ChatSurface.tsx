@@ -445,7 +445,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
             )}
             {t.text && (
               <div className="order-chat-bubble">
-                <div className="order-chat-text">{t.text}</div>
+                <div className="order-chat-text" style={{ fontSize: `${15 * textScale}px` }}>{t.text}</div>
                 {t.role === "agent" && <PlayButton text={t.text} />}
               </div>
             )}
@@ -456,7 +456,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         {mode === "listening" && partial && (
           <div className="order-chat-turn order-chat-user">
             <div className="order-chat-bubble order-chat-partial">
-              <div className="order-chat-text">{partial}</div>
+              <div className="order-chat-text" style={{ fontSize: `${15 * textScale}px` }}>{partial}</div>
             </div>
           </div>
         )}
@@ -469,7 +469,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
               </div>
             )}
             <div className="order-chat-bubble">
-              <div className="order-chat-text">
+              <div className="order-chat-text" style={{ fontSize: `${15 * textScale}px` }}>
                 {streamText || <span className="order-chat-thinking">{statusLabel || "Thinking…"}</span>}
               </div>
             </div>
