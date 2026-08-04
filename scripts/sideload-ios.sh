@@ -31,6 +31,12 @@ echo "==> Building unsigned app (tauri ios build --no-sign)…"
 # binary keeps a STALE frontend and the app ignores every TS/CSS fix. Nuke the
 # order build-script output so it re-processes the freshly-built dist.
 rm -rf src-tauri/target/aarch64-apple-ios/*/build/order-*
+# …AND force xcodebuild to relink the Order binary. It doesn't treat the
+# script-phase-produced libapp.a as a link input, so once the first binary is
+# built it's never relinked — the app freezes on that build no matter how many
+# times libapp.a is rebuilt. Nuke DerivedData so the executable is rebuilt from
+# the current libapp.a every time.
+rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/order-*
 pnpm tauri ios build --no-sign --ci
 
 APP=$(ls -td "$HOME"/Library/Developer/Xcode/DerivedData/order-*/Build/Products/release-iphoneos/Order.app 2>/dev/null | head -1)
