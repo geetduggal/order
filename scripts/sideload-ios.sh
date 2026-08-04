@@ -81,6 +81,6 @@ if [ -z "$DEVICE" ]; then
     | head -1 || true)
 fi
 [ -n "$DEVICE" ] || { echo "!! No connected iPhone found. Pass a device id, or connect the phone."; exit 1; }
-echo "==> Installing to device $DEVICE…"
+echo "==> Installing to device ${DEVICE}…"
 xcrun devicectl device install app --device "$DEVICE" "$IPA"
 echo "==> Done — Order is on your phone."
