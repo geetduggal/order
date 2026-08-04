@@ -8142,9 +8142,12 @@ body.is-tile-dragging * {
 @keyframes order-spin-kf { to { transform: rotate(360deg); } }
 
 /* ---- Voice chat polish (persistent status, consistent type) ------------- */
-/* Pin text sizing: WebKit in a webview auto-inflates some blocks, which read as
-   "random" font sizes in the transcript. One size, one line-height, everywhere. */
-.order-chat { font-size: calc(15px * var(--text-scale, 1)); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; position: relative; overflow-x: hidden; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* Consistent transcript type: every chat text element sets an explicit
+   calc(px * --text-scale) size, so the sizes stay uniform AND respond to the
+   rail zoom. (We used to pin -webkit-text-size-adjust:100% here to stop WebKit's
+   auto-inflation, but on iOS that also froze the text against --text-scale
+   changes — the explicit sizes below already do the un-inflating job.) */
+.order-chat { font-size: calc(15px * var(--text-scale, 1)); position: relative; overflow-x: hidden; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 .order-chat-text { font-size: calc(15px * var(--text-scale, 1)); line-height: 1.5; letter-spacing: 0; overflow-wrap: anywhere; }
 .order-chat-empty p { font-size: 15px; }
 .order-chat-tool { font-size: calc(12.5px * var(--text-scale, 1)); }
