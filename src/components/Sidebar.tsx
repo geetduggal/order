@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X, FileCog, Check as CheckDone } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
+import { stripJdPrefix } from "../lib/johnny-decimal";
 import { useTileDrag } from "../lib/use-tile-drag";
 import { CodeMirrorSurface } from "./CodeMirrorSurface";
 import type { Frontmatter } from "../lib/frontmatter";
@@ -735,7 +736,13 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
   const Icon: LucideIcon = folderIcon(folder.name, folder.frontmatter.icon);
   const color = folderColor(folder.name, folder.frontmatter.color);
   const titleFm = folder.frontmatter.title;
-  const label = typeof titleFm === "string" && titleFm.trim() ? titleFm : folder.name;
+  const prettyName = typeof titleFm === "string" && titleFm.trim() ? titleFm.trim() : folder.name;
+  // Always surface the Johnny Decimal id. The ref (folder.name) is the source
+  // of truth for it; if a Main Doc's `title:` dropped the prefix (or carries a
+  // stale one), re-derive the canonical id and prepend it to the JD-stripped
+  // pretty name so every row reads "32.05 Salmon…", never a bare title.
+  const jd = folder.name.match(/^(\d{1,3}(?:\.\d{1,3})?)\s/)?.[1];
+  const label = jd ? `${jd} ${stripJdPrefix(prettyName)}` : prettyName;
   const hasControls = !!(onMoveUp || onMoveDown || onRemove);
   // Inline rename — armed by double-click on the folder name; commit
   // on Enter / blur, cancel on Escape. The committed value is the
