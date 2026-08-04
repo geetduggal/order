@@ -39,9 +39,16 @@ rm -rf src-tauri/target/aarch64-apple-ios/*/build/order-*
 rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/order-*
 pnpm tauri ios build --no-sign --ci
 
-APP=$(ls -td "$HOME"/Library/Developer/Xcode/DerivedData/order-*/Build/Products/release-iphoneos/Order.app 2>/dev/null | head -1)
-[ -d "$APP" ] || { echo "!! Order.app not found in DerivedData"; exit 1; }
-echo "==> Built: $APP"
+# Sign Tauri's canonical unsigned export (Order.ipa), NOT the DerivedData
+# product — the DerivedData path isn't reliable (and we nuke it above), whereas
+# Tauri's Order.ipa is always the freshly-relinked app.
+TAURI_IPA="$PWD/src-tauri/gen/apple/build/arm64/Order.ipa"
+[ -f "$TAURI_IPA" ] || { echo "!! $TAURI_IPA not found (build failed?)"; exit 1; }
+EXTRACT=$(mktemp -d)
+( cd "$EXTRACT" && unzip -q "$TAURI_IPA" )
+APP="$EXTRACT/Payload/Order.app"
+[ -d "$APP" ] || { echo "!! Order.app not found inside Tauri's Order.ipa"; exit 1; }
+echo "==> Built (Tauri export): $APP"
 
 # Find a valid provisioning profile whose application-identifier ends in the
 # bundle id. Newest file wins.

@@ -106,11 +106,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // composited scroll layer, so the transcript ignored the rail zoom; setting it
   // inline (React re-renders when useTextScale changes) forces the repaint.
   const textScale = useTextScale();
-  const [dbgComputed, setDbgComputed] = useState("");
-  useEffect(() => {
-    const el = document.querySelector(".order-chat-scroll .order-chat-text") as HTMLElement | null;
-    setDbgComputed(el ? getComputedStyle(el).fontSize : "n/a");
-  });
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false); // keyboard fallback visible
@@ -435,10 +430,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         </div>
       )}
       <div className="order-chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        {/* TEMP DEBUG — remove after diagnosing iOS chat zoom */}
-        <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#ffe000", color: "#000", fontSize: "12px", fontWeight: 700, padding: "3px 6px", borderRadius: "4px", fontFamily: "monospace" }}>
-          zoom {textScale.toFixed(2)} · want {(15 * textScale).toFixed(1)}px · rendered {dbgComputed || "?"}
-        </div>
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
             <Sparkles size={18} />
@@ -548,13 +539,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       {!typing && (
         <div className="order-chat-voice">
           {canVoice && mode === "idle" && (
-            <button type="button" className="order-chat-mic" onClick={startVoice} disabled={!hasKey}
+            // Act on pointerdown, not click: tapping an unfocused card focuses +
+            // expands it, shifting this button mid-touch, which makes iOS cancel
+            // the click (the old "needs a double-tap" bug). pointerdown fires
+            // first, so a single tap works.
+            <button type="button" className="order-chat-mic" onPointerDown={(e) => { e.preventDefault(); startVoice(); }} disabled={!hasKey}
               title={hasKey ? "Start talking" : "Add an Anthropic API key in Settings first"}>
               <Mic size={20} /> <span>Talk</span>
             </button>
           )}
           {canVoice && mode !== "idle" && (
-            <button type="button" className={`order-chat-mic active mode-${mode}`} onClick={stopVoice} title="Stop">
+            <button type="button" className={`order-chat-mic active mode-${mode}`} onPointerDown={(e) => { e.preventDefault(); stopVoice(); }} title="Stop">
               {mode === "thinking"
                 ? <Loader2 size={18} className="order-spin" />
                 : mode === "speaking" ? <Volume2 size={18} />
@@ -562,7 +557,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
               <span>Stop</span>
             </button>
           )}
-          <button type="button" className="order-chat-kbd" onClick={() => { stopVoice(); setTyping(true); }}
+          <button type="button" className="order-chat-kbd" onPointerDown={(e) => { e.preventDefault(); stopVoice(); setTyping(true); }}
             title="Type instead" aria-label="Type instead">
             <Keyboard size={18} /><span className="order-chat-kbd-label">Type</span>
           </button>
@@ -572,7 +567,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       {(typing || !canVoice) && (
         <div className="order-chat-input">
           {canVoice && (
-            <button type="button" className="order-chat-to-voice" onClick={() => setTyping(false)}
+            <button type="button" className="order-chat-to-voice" onPointerDown={(e) => { e.preventDefault(); setTyping(false); }}
               title="Back to voice" aria-label="Back to voice">
               <Mic size={16} />
             </button>

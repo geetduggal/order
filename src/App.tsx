@@ -68,13 +68,5 @@ function useTextZoomShortcuts(): void {
 export default function App() {
   useTextZoomShortcuts();
   useExternalLinks();
-  return (
-    <>
-      {/* TEMP build marker — confirms the device is running fresh code. */}
-      <div style={{ position: "fixed", top: 0, left: 0, zIndex: 999999, background: "red", color: "#fff", font: "700 10px monospace", padding: "2px 5px", pointerEvents: "none" }}>
-        BUILD zoomdbg-A
-      </div>
-      <CardGrid />
-    </>
-  );
+  return <CardGrid />;
 }
