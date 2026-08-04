@@ -1559,6 +1559,11 @@ export function Card(props: Props) {
           <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { copyBodyText(); setMoreOpen(false); }}>
             {copiedText ? <Check size={14} strokeWidth={2.4} /> : <CopyIcon size={14} strokeWidth={2} />}<span>{copiedText ? "Text copied" : "Copy text"}</span>
           </button>
+          {!isIosSync() && (
+            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { void invoke("reveal_path", { path: pathRef.current }).catch((e) => console.error("reveal_path failed:", e)); setMoreOpen(false); }}>
+              <ArrowUpRight size={14} strokeWidth={2} /><span>Reveal in Finder</span>
+            </button>
+          )}
           {canFlip && (
             <>
               <button type="button" role="menuitem" className={"order-card-more-item" + (view === "sheet" ? " is-on" : "")} onClick={() => { void flipView("sheet"); setMoreOpen(false); }}>
@@ -1724,7 +1729,10 @@ export function Card(props: Props) {
           // sibling assets (css/js/images) it references resolve too.
           <iframe
             className="order-html-frame"
-            src={`${assetUrl(toVaultRel(pathRef.current))}?_zoom=${textScale}`}
+            // `_v` cache-busts on external file changes (the watcher bumps
+            // externalBodyVersion) so the page reloads live when the file is
+            // edited — in fullscreen or not — without remounting the card.
+            src={`${assetUrl(toVaultRel(pathRef.current))}?_zoom=${textScale}&_v=${externalBodyVersion ?? 0}`}
             title={filename.replace(/\.html?$/i, "")}
             sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads"
           />

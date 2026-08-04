@@ -10,6 +10,7 @@ import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import { editorViewCtx, parserCtx, serializerCtx } from "@milkdown/kit/core";
 import { Slice } from "@milkdown/kit/prose/model";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import { invoke } from "@tauri-apps/api/core";
 import { vaultRoot } from "../lib/vault";
 import { ATTACHMENTS_DIRNAME, attachmentAssetPrefix, deflateImageEmbeds, isImagePath } from "../lib/attachments";
@@ -25,6 +26,7 @@ import { join } from "@tauri-apps/api/path";
 import { tightenListSpacing } from "../lib/list-folder";
 import { wikilinkProsePlugin, wikilinkAutocompletePlugin } from "../lib/milkdown-wikilink";
 import { linkKeymapPlugin } from "../lib/milkdown-link-keymap";
+import { listKeymapPlugin } from "../lib/milkdown-list-keymap";
 import { youtubeEmbedPlugin } from "../lib/milkdown-youtube";
 import { videoEmbedPlugin } from "../lib/milkdown-video";
 import { mermaidPlugin } from "../lib/milkdown-mermaid";
@@ -157,12 +159,23 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
           const view = ctx.get(editorViewCtx);
           const doc = ctx.get(parserCtx)(markdown);
           if (!doc) return;
-          // Replace the whole document without touching the selection or
-          // scroll position if possible — the user may be mid-edit elsewhere
-          // on the same card and we don't want to jump their cursor.
+          // No-op refresh: the incoming markdown parses to the SAME document we
+          // already show (the common case — the watcher echoing our own save).
+          // Skipping avoids a needless replace that would fling the caret.
+          if (doc.content.eq(view.state.doc.content)) return;
+          // Replace the whole document, but preserve the caret: clamp the old
+          // selection into the new doc so an external refresh doesn't jump the
+          // cursor to the bottom while the user is mid-edit on this card.
+          const prevFrom = view.state.selection.from;
           const { tr } = view.state;
           tr.replaceWith(0, view.state.doc.content.size, doc.content);
           tr.setMeta("externalUpdate", true);
+          tr.setMeta("addToHistory", false);
+          try {
+            const size = tr.doc.content.size;
+            const pos = Math.max(1, Math.min(prevFrom, size - 1));
+            tr.setSelection(TextSelection.near(tr.doc.resolve(pos)));
+          } catch { /* fall back to default mapped selection */ }
           view.dispatch(tr);
         });
       } finally {
@@ -221,6 +234,8 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
     try {
       // Cmd+K with a selection → wrap in markdown link mark.
       if (!readOnly) crepe.editor.use(linkKeymapPlugin());
+      // Tab / Shift-Tab → indent / outdent the current list item.
+      if (!readOnly) crepe.editor.use(listKeymapPlugin());
     } catch (err) {
       console.warn("link keymap registration failed:", err);
     }
@@ -328,9 +343,12 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
                       // Single paragraph → paste inline (into the current block);
                       // multi-block → paste as blocks.
                       const only = doc.content.childCount === 1 ? doc.content.firstChild : null;
+                      // maxOpen opens the slice at both ends so pasted list items
+                      // MERGE into the surrounding list at the same depth instead
+                      // of nesting as a closed block underneath the current item.
                       const slice = only && only.type.name === "paragraph"
                         ? new Slice(only.content, 0, 0)
-                        : new Slice(doc.content, 0, 0);
+                        : Slice.maxOpen(doc.content);
                       _view.dispatch(_view.state.tr.replaceSelection(slice).scrollIntoView());
                       return true;
                     }

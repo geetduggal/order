@@ -115,7 +115,8 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     // props straight through to event.extendedProps.
     // highBit only carries on genuinely all-day events (the hub's "high
     // bits" live in the all-day band); a timed hub event stays normal.
-    const extendedProps = { completed, folderColor: note.color ?? null, highBit: allDay && note.highBit === true };
+    const location = typeof note.frontmatter.location === "string" ? note.frontmatter.location.trim() : "";
+    const extendedProps = { completed, folderColor: note.color ?? null, highBit: allDay && note.highBit === true, location };
 
     if (allDay) {
       events.push({
@@ -215,10 +216,14 @@ function renderEventContent(arg: EventContentArg) {
   // The folder color rides as a small dot (same language as the sidebar
   // swatches) — the event box itself wears the neutral card chrome.
   const folderColor = arg.event.extendedProps?.folderColor as string | null | undefined;
+  // Room / location shown subtly after the title (timed events only — the
+  // all-day band is too short). Truncated by CSS so it never widens the block.
+  const location = arg.event.allDay ? "" : String(arg.event.extendedProps?.location ?? "");
   return (
     <div className={"order-event-row" + (completed ? " is-completed" : "")}>
       {folderColor && <span className="order-event-dot" style={{ background: folderColor }} />}
       <span className="order-event-title">{title}</span>
+      {location && <span className="order-event-loc">{location}</span>}
       {start && <span className="order-event-time">{start}</span>}
     </div>
   );
@@ -619,10 +624,9 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           center: "title",
           right: "",
         }}
-        // 30-min slots and drags snap to 30-min — events always fall on
-        // a half-hour boundary.
+        // 30-min visual slots, but drags snap to 15-min for finer placement.
         slotDuration="00:30:00"
-        snapDuration="00:30:00"
+        snapDuration="00:15:00"
         // Events without an explicit endTime render as a half hour (not
         // FullCalendar's built-in one-hour default) — matches the duration
         // we write for click/Cmd+N-created events and the 30-min slot grid.

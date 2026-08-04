@@ -170,7 +170,9 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
   // Autocomplete candidates: Notable Folder names from the vault
   // index, filtered to those that aren't already in this list.
   const notableFolderCandidates = vaultNotes
-    .filter((n) => isMainDocRef(n))
+    // Notable folders are Markdown main docs — an HTML page is never a folder,
+    // so keep `.html`/`.htm` files out of the folder autocomplete.
+    .filter((n) => isMainDocRef(n) && !/\.html?$/i.test(n.filename))
     .map((n) => n.filename.replace(/\.md$/i, ""))
     .sort((a, b) => a.localeCompare(b));
   const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
