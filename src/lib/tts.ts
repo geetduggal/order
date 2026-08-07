@@ -438,6 +438,41 @@ function segmentText(buf: string, target: number, flushAll: boolean): { segments
   return { segments: segments.map((s) => s.trim()).filter(Boolean), rest };
 }
 
+/** Time-to-first-audio helper (#26). For the VERY FIRST spoken segment we don't
+ *  want to wait for a whole sentence — that's the biggest chunk of perceived
+ *  latency on cloud voices. Break at the earliest natural boundary once there's
+ *  at least `minChars` of text: a sentence terminator anywhere, else a clause
+ *  boundary (comma / semicolon / colon / dash) past the floor, else a hard word
+ *  break once we've buffered ~2× the floor. Returns null when there isn't yet
+ *  enough to speak, so the caller keeps buffering. Exported for tests. */
+export function firstAudioSegment(buf: string, minChars: number): { seg: string; rest: string } | null {
+  // A sentence terminator anywhere ends the first segment immediately.
+  const sent = /[.!?…\n]["'”’)\]]*\s?/.exec(buf);
+  if (sent) {
+    const end = sent.index + sent[0].length;
+    const seg = buf.slice(0, end).trim();
+    if (seg) return { seg, rest: buf.slice(end) };
+  }
+  if (buf.trim().length < minChars) return null;
+  // Earliest clause boundary at/after the floor.
+  const clause = /[,;:—–-]\s/g;
+  let m: RegExpExecArray | null;
+  while ((m = clause.exec(buf)) !== null) {
+    if (m.index + 1 >= minChars) {
+      const end = m.index + m[0].length;
+      const seg = buf.slice(0, end).trim();
+      if (seg) return { seg, rest: buf.slice(end) };
+    }
+  }
+  // No punctuation but a lot of text already — hard-break on a word boundary so
+  // a long clause-free opener still starts promptly.
+  if (buf.trim().length >= minChars * 2) {
+    const ws = buf.lastIndexOf(" ");
+    if (ws > minChars) return { seg: buf.slice(0, ws).trim(), rest: buf.slice(ws) };
+  }
+  return null;
+}
+
 export function createStreamSpeaker(opts: {
   voiceURI?: string; voiceName?: string; rate?: number;
   onStart?: () => void; onEnd?: () => void; onError?: (m: string) => void;
@@ -536,6 +571,21 @@ function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: Tt
   };
   let firstSeg = true;
   const drain = (flushAll: boolean) => {
+    // First audio: break at the earliest clause boundary (not a full sentence)
+    // so the voice starts talking sooner (#26). Only while still buffering — on
+    // flush the normal path below emits whatever's left.
+    if (firstSeg && !flushAll) {
+      const first = firstAudioSegment(buffer, 20);
+      if (!first) return; // not enough yet — wait for the next push
+      buffer = first.rest;
+      firstSeg = false;
+      const seg = engine === "unreal" && first.seg.length > 900
+        ? (first.seg.match(/[\s\S]{1,900}/g) ?? [first.seg])
+        : [first.seg];
+      segQueue.push(...seg);
+      pumpSynth();
+      return;
+    }
     // Small first segment (one short sentence) so audio starts almost
     // immediately; larger segments after keep it smooth with fewer requests.
     const target = firstSeg ? 45 : 200;
