@@ -1631,24 +1631,9 @@ export function Card(props: Props) {
         </div>,
         document.body,
       )}
-      {folderPickOpen && onAssignFolder && (
-        <div className="order-card-folderpick">
-          <FolderPicker
-            current={currentFolder ?? null}
-            available={availableFolders ?? []}
-            open
-            query={folderPickQuery}
-            onOpen={() => {}}
-            onClose={() => setFolderPickOpen(false)}
-            onQueryChange={setFolderPickQuery}
-            onAssign={async (name) => {
-              setFolderPickOpen(false);
-              if (name) await onAssignFolder(name);
-            }}
-            recents={recentFolders}
-          />
-        </div>
-      )}
+      {/* The folder picker now lives inline in the footer (order-card-folder-slot)
+          and is opened either by tapping its chip or via the ⋯ menu — both drive
+          the same folderPickOpen state, so no separate popup mount is needed. */}
       {isMainDoc && !readOnly && !flipped && onCreateUpdate && updateOpen && (
         <NotableUpdateBar
           onSubmit={async (description) => {
@@ -1899,10 +1884,26 @@ export function Card(props: Props) {
             {category && <span>{category}</span>}
           </span>
         )}
-        {/* Folder assignment lives behind the controls' folder icon
-            (order-card-refolder): picking a Notable Folder MOVES the
-            file into that folder's directory — placement is structural,
-            there is no folder frontmatter. */}
+        {/* Notable Folder chip — a clear-but-subtle way to change a card's
+            folder right from the card. Shows the current folder; tapping it
+            opens the picker (moving the file into that folder's directory —
+            placement is structural, there is no folder frontmatter). The ⋯
+            menu's "Move to a folder…" drives the same folderPickOpen state. */}
+        {!isMainDoc && onAssignFolder && (availableFolders?.length ?? 0) > 0 && !readOnly && (
+          <span className="order-card-folder-slot">
+            <FolderPicker
+              current={currentFolder ?? null}
+              available={availableFolders ?? []}
+              open={folderPickOpen}
+              query={folderPickQuery}
+              onOpen={() => { setFolderPickQuery(""); setFolderPickOpen(true); }}
+              onClose={() => setFolderPickOpen(false)}
+              onQueryChange={setFolderPickQuery}
+              onAssign={async (name) => { setFolderPickOpen(false); if (name) await onAssignFolder(name); }}
+              recents={recentFolders}
+            />
+          </span>
+        )}
         <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (

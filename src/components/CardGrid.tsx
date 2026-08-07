@@ -102,9 +102,9 @@ import { ITEM_TO_CALENDAR, EVENT_TO_LIST, type ItemToCalendarDetail, type EventT
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 function readSidebarOpen(): boolean {
-  // The sidebar always starts CLOSED — it's never open by default. The
-  // toggle (›/‹ or Cmd+;) controls it per session.
-  return false;
+  // Shown by default; the toggle (›/‹ or Cmd+;) sets it and the choice sticks
+  // across reloads. Only an explicit "0" keeps it closed.
+  try { return localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0"; } catch { return true; }
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
@@ -5821,7 +5821,9 @@ export function CardGrid() {
   // centerpiece, its notes orbiting below, newest first. An empty or
   // exclude-only filter falls through to the flat temporal pile.
   const MAIN_CAP = 1400;
-  const NOTE_CAP = 440;
+  // Keep the collapsed preview short — a few lines, then "Read more". A taller
+  // cap made most cards show their whole body and the fold felt pointless.
+  const NOTE_CAP = 200;
   const newspaperMode = includeRefs.length >= 1;
   // A single section (the home page, or one folder filtered in) shows
   // its Main Document uncapped so the page reads uninterrupted. With

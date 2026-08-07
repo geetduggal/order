@@ -865,6 +865,8 @@ input, textarea, select { outline: none; box-shadow: none; }
   transition: color 0.12s var(--ease-out), background-color 0.12s var(--ease-out);
 }
 .order-card-folder-add:hover { color: var(--coral); background: var(--coral-soft); }
+/* Footer slot that holds the inline Notable-Folder picker chip. */
+.order-card-folder-slot { display: inline-flex; align-items: center; min-width: 0; }
 
 .order-card-folder-chip {
   display: inline-flex;
@@ -2076,6 +2078,15 @@ iframe.order-youtube-embed {
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 
+.pane-right:not(.is-editing-spacetime) {
+  /* Scale ALL sidebar chrome with the app zoom (#48) — folder list, titles,
+     counts, and the filter pill stack. These are plain px, so a `--text-scale`
+     var alone did nothing; `zoom` actually scales them, and there's no
+     ProseMirror here so the caret-hit-testing caveat doesn't apply. The
+     spacetime-editing variant is excluded so its CodeMirror isn't zoomed
+     (it scales via --note-font-size below instead). */
+  zoom: var(--text-scale, 1);
+}
 .pane-right {
   /* Stick to the top of the viewport while the pile scrolls — sidebar
      content stays in place; its own overflow scrolls independently when
@@ -4236,6 +4247,14 @@ body.is-tile-dragging * {
   height: 100%;
   background: var(--bg);
   color: var(--ink);
+}
+/* Scale the spacetime / yaml / txt editor text with the app zoom (#48).
+   CodeMirror reads `var(--note-font-size, 14px)` for its font size, so scaling
+   the var reflows the text and keeps the caret aligned — the safe way to zoom
+   a code editor (no CSS `zoom`/`transform`, which throw off click-to-caret). */
+.cm-surface .cm-editor,
+.sb-spacetime-editor .cm-editor {
+  --note-font-size: calc(14px * var(--text-scale, 1));
 }
 .cm-surface .cm-editor.cm-focused { outline: none; }
 /* Selection */
@@ -8260,7 +8279,10 @@ body.is-tile-dragging * {
   padding: calc(env(safe-area-inset-top) + 40px) clamp(16px, 5vw, 60px) calc(env(safe-area-inset-bottom) + 76px);
 }
 .order-card.is-chat.is-fullscreen > .order-card-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.order-card.is-chat:not(.is-fullscreen) { max-height: 78vh; overflow: hidden; display: flex; flex-direction: column; }
+/* Collapsed in the pile: a compact preview, not a full-height panel. The
+   ChatSurface owns its own scroll and auto-scrolls to the newest message, so a
+   short box naturally shows the latest exchange; tap in (fullscreen) to expand. */
+.order-card.is-chat:not(.is-fullscreen) { max-height: 260px; overflow: hidden; display: flex; flex-direction: column; }
 .order-card.is-chat:not(.is-fullscreen) > .order-card-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .order-card.is-chat .order-chat { height: 100%; min-height: 0; }
 /* The card now reserves dock clearance, so drop the surface's own bottom pad. */

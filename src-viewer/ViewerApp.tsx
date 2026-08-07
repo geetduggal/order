@@ -877,7 +877,8 @@ export function ViewerApp(
 // ---------- Pile view ----------
 
 const MAIN_CAP = 1400;
-const NOTE_CAP = 440;
+// Short collapsed preview — a few lines, then "Read more" (mirrors the app).
+const NOTE_CAP = 200;
 
 function PileView({
   notes, data, basePath, includeRefs, includeSet, collapseSignal, onNavigate, onRemoveInclude, soloRef, scrollTarget,
