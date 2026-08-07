@@ -119,6 +119,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
   const [partial, setPartial] = useState("");   // live transcript while speaking
+  // True from when a turn is sent until its reply finishes speaking (or is
+  // interrupted). Drives the "interrupt" affordance independently of `mode`,
+  // which can lag/misreport — so tapping to interrupt always works.
+  const [agentActive, setAgentActive] = useState(false);
   const [micName, setMicName] = useState<string | null>(null);
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
@@ -253,6 +257,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     turnInFlightRef.current = false;
     pendingUtteranceRef.current = null;
     bargeInRef.current = false;
+    setAgentActive(false);
     stopSpeaking();
     setLevel(0);
     setHeard(false);
@@ -290,6 +295,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     turnInFlightRef.current = false;
     pendingUtteranceRef.current = null;
     bargeInRef.current = false;
+    setAgentActive(false);
     clearFiller();
     speakerRef.current?.cancel();
     speakerRef.current = null;
@@ -319,7 +325,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       // returns to "listening" (the native loop never stopped capturing).
       speakerRef.current.finish();
     } else {
-      // Typed turn: no auto-speak (the per-message play button is there instead).
+      // Typed turn (or voice reply with nothing to speak): no auto-speak.
+      setAgentActive(false);
       setModeBoth("idle");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +338,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     bargeInRef.current = false;
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
+    setAgentActive(true);
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
@@ -349,8 +357,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
           onStart: () => setModeBoth("speaking"),
-          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
-          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -414,14 +422,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // next utterance as a fresh turn.
   const interruptNow = useCallback(() => {
     if (!voiceOnRef.current) return;
-    const m = modeRef.current;
-    if (m !== "speaking" && m !== "thinking" && m !== "approval") return;
+    // Gate on the actual runtime state (a speaker is playing OR a turn is
+    // generating), NOT on `mode` — mode can be wrong, which left tapping doing
+    // nothing.
+    if (!speakerRef.current && !turnInFlightRef.current) return;
     bargeInRef.current = turnInFlightRef.current;
     void cancelTurn();
     clearFiller();
     speakerRef.current?.cancel();
     speakerRef.current = null;
     setStreamText("");
+    setAgentActive(false);
     setModeBoth("listening");
   }, [clearFiller, setModeBoth]);
 
@@ -500,11 +511,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [mode]);
   const hasUsage = chatUsage.anthropicTurns > 0 || chatUsage.whisperSeconds > 0 || chatUsage.nativeSeconds > 0;
   const busy = mode === "thinking" || mode === "transcribing";
+  const hint = agentActive ? " · tap or Interrupt to cut in" : "";
   const statusLabel =
     mode === "listening" ? (heard ? "Heard you — pause when done" : "Listening…") :
     mode === "transcribing" ? "Transcribing…" :
-    mode === "thinking" ? `${thinkingPhrase} · tap to interrupt` :
-    mode === "speaking" ? "Speaking… · tap to interrupt" :
+    mode === "thinking" ? `${thinkingPhrase}${hint}` :
+    mode === "speaking" ? `Speaking…${hint}` :
     mode === "approval" ? "Waiting for you…" : "";
 
   return (
@@ -530,10 +542,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         className="order-chat-scroll"
         ref={scrollRef}
         onScroll={onScroll}
-        // Tap the transcript to interrupt while the agent is talking/thinking
-        // (no-op otherwise). A guaranteed way to cut in even if the mic can't
-        // hear you over the agent.
-        onClick={(mode === "speaking" || mode === "thinking" || mode === "approval") ? interruptNow : undefined}
+        // Tap the transcript to interrupt while a reply is active (no-op
+        // otherwise — interruptNow self-guards on the runtime state).
+        onClick={agentActive ? interruptNow : undefined}
       >
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
@@ -655,12 +666,20 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
             </button>
           )}
           {canVoice && mode !== "idle" && (
-            <button type="button" className={`order-chat-mic active mode-${mode}`} onPointerDown={(e) => { e.preventDefault(); stopVoice(); }} title="Stop">
-              {mode === "thinking"
-                ? <Loader2 size={18} className="order-spin" />
-                : mode === "speaking" ? <Volume2 size={18} />
+            // While a reply is active (thinking/speaking) this button INTERRUPTS
+            // that turn and hands the floor back — a guaranteed interrupt that
+            // doesn't depend on the mic hearing you. When just listening it stops
+            // voice mode. (The Type button always fully exits voice.)
+            <button
+              type="button"
+              className={`order-chat-mic active mode-${mode}${agentActive ? " is-interrupt" : ""}`}
+              onPointerDown={(e) => { e.preventDefault(); if (agentActive) interruptNow(); else stopVoice(); }}
+              title={agentActive ? "Interrupt" : "Stop"}
+            >
+              {agentActive
+                ? <Square size={16} />
                 : mode === "listening" ? <Mic size={18} /> : <Square size={16} />}
-              <span>Stop</span>
+              <span>{agentActive ? "Interrupt" : "Stop"}</span>
             </button>
           )}
           <button type="button" className="order-chat-kbd" onPointerDown={(e) => { e.preventDefault(); stopVoice(); setTyping(true); }}
