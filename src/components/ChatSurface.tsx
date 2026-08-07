@@ -165,18 +165,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined;
     let alive = true;
     void onLevel((l) => setLevel(l)).then((fn) => { if (alive) a = fn; else fn(); });
-    void onSttState((s) => {
-      if (s !== "heard") return;
-      setHeard(true);
-      // Snappy barge-in: the moment you start talking over the agent, cut its
-      // speech. The finalized utterance (onUtterance) then drives the next turn.
-      if (modeRef.current === "speaking" && speakerRef.current) {
-        speakerRef.current.cancel();
-        speakerRef.current = null;
-        clearFiller();
-        setModeBoth("listening");
-      }
-    }).then((fn) => { if (alive) b = fn; else fn(); });
+    // "heard" fires on every partial — including the recognizer picking up the
+    // agent's OWN TTS (echo). We deliberately do NOT auto-interrupt on it: without
+    // rock-solid echo cancellation that made the agent cut itself off. Interrupt
+    // is the reliable tap, or a full utterance once we're back to listening.
+    void onSttState((s) => { if (s === "heard") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
     void onPartial((t) => setPartial(t)).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
@@ -361,15 +354,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         })
       : null;
     setModeBoth("thinking");
-    // If the reply is slow to start (tool-heavy turn), speak a brief filler so
-    // the silence doesn't feel like a stall. Cancelled as soon as text arrives.
+    // No spoken "thinking" filler in the always-on-mic loop: it's TTS that the
+    // open mic would hear as echo (and we now allow a genuine barge-in while
+    // thinking). The visual "thinking" indicator carries the wait instead.
     clearFiller();
-    if (voiceOnRef.current && ttsSupported()) {
-      fillerTimerRef.current = setTimeout(() => {
-        if (!voiceOnRef.current || modeRef.current !== "thinking") return;
-        fillerHandleRef.current = speak("Let me look into that.", { voiceURI: getSavedVoice() || undefined, rate: getSavedRate() });
-      }, 900);
-    }
     void runTurn(rel, text)
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
       .catch((err) => { if (!bargeInRef.current) failLoud(typeof err === "string" ? err : "The agent turn failed."); })
@@ -394,10 +382,18 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     if (!voiceOnRef.current) return;
     const t = text.trim();
     if (!t) return;
+    // While the agent is SPEAKING, the always-on mic mostly hears the agent
+    // itself (echo), so a "finalized utterance" here is unreliable — ignore it
+    // and let the user interrupt with a tap instead. A turn is only started from
+    // the clean states: listening (normal hands-free next turn) or thinking
+    // (a genuine barge-in before any audio is playing).
+    const m = modeRef.current;
+    if (m !== "listening" && m !== "thinking") return;
     clearFiller();
     if (turnInFlightRef.current) {
-      // Still generating → abandon it and queue this as the next turn (two model
-      // turns can't run at once); the runTurn .finally sends it once wound down.
+      // Still generating (thinking) → abandon it and queue this as the next turn
+      // (two model turns can't run at once); the runTurn .finally sends it once
+      // wound down.
       bargeInRef.current = true;
       void cancelTurn();
       speakerRef.current?.cancel();
@@ -407,9 +403,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       setModeBoth("listening");
       return;
     }
-    // Idle, or mid-playback: stop any speech and send immediately.
-    speakerRef.current?.cancel();
-    speakerRef.current = null;
     sendTurn(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendTurn]);
