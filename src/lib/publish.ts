@@ -125,7 +125,21 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
     };
   });
 
-  const publics = vaultNotes.filter((n) => n.frontmatter.public === true);
+  // Dedup public notes by ref (#43). A note's ref (and therefore its permalink)
+  // is derived purely from the filename, so two public files that share a
+  // basename in different folders — e.g. a Readwise article that exists in the
+  // Readwise Johnny-Decimal folder AND in another synced location — would each
+  // publish under the SAME ref and render as a duplicate card on the site. The
+  // vault is left untouched (the constraint); we just emit each ref once here,
+  // keeping the most-recently-modified copy (ties keep the first seen).
+  const publicsRaw = vaultNotes.filter((n) => n.frontmatter.public === true);
+  const byRefPublic = new Map<string, (typeof publicsRaw)[number]>();
+  for (const n of publicsRaw) {
+    const r = refOf(n.filename);
+    const prev = byRefPublic.get(r);
+    if (!prev || (n.mtime ?? 0) > (prev.mtime ?? 0)) byRefPublic.set(r, n);
+  }
+  const publics = publicsRaw.filter((n) => byRefPublic.get(refOf(n.filename)) === n);
   const assets: AssetCopy[] = [];
   const notes: PublishedNote[] = publics.map((n) => {
     const lr = listRenderOf(n.frontmatter);
