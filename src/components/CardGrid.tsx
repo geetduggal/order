@@ -6356,6 +6356,7 @@ export function CardGrid() {
             initialView="timeGridDay"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
+            onRenameEvent={renameEventTitle}
             onCreate={promptCreate}
             currentView="day"
             onSelectView={setView}
@@ -6380,6 +6381,7 @@ export function CardGrid() {
               initialView="timeGridWeek"
               onMoveEvent={updateNoteFrontmatter}
               onEventClick={handleEventClick}
+            onRenameEvent={renameEventTitle}
               onCreate={promptCreate}
               currentView="week"
               onSelectView={setView}
@@ -6418,6 +6420,7 @@ export function CardGrid() {
             initialView="dayGridMonth"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
+            onRenameEvent={renameEventTitle}
             onCreate={promptCreate}
             currentView="month"
             onSelectView={setView}

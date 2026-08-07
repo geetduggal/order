@@ -22,6 +22,7 @@ import type {
   EventContentArg,
   EventDropArg,
   EventInput,
+  EventMountArg,
 } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
@@ -53,6 +54,8 @@ interface Props {
   /** Pointer x/y are forwarded so the parent can anchor an action menu
    *  next to the click instead of jumping straight into the note. */
   onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
+  /** Double-click an event's title to rename it inline. */
+  onRenameEvent?: (path: string, title: string) => void;
   onCreate?: (patch: Frontmatter) => Promise<void>;
   /** Currently-active high-level view ("day" | "week" | "month" | "year"
    *  | "season"). The in-shell picker uses this for the active-state
@@ -487,6 +490,46 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     props.onEventClick?.(arg.event.id, { x: e.clientX, y: e.clientY });
   }
 
+  // Double-click an event's title → edit it inline (rename in place).
+  function handleEventDidMount(info: EventMountArg) {
+    if (!props.onRenameEvent || !info.event.id) return;
+    const titleEl = info.el.querySelector(".order-event-title") as HTMLElement | null;
+    if (!titleEl) return;
+    titleEl.addEventListener("dblclick", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const orig = info.event.title;
+      titleEl.contentEditable = "true";
+      titleEl.spellcheck = false;
+      titleEl.style.whiteSpace = "normal";
+      titleEl.style.overflow = "visible";
+      titleEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      const cleanup = () => {
+        titleEl.contentEditable = "false";
+        titleEl.style.whiteSpace = "";
+        titleEl.style.overflow = "";
+        titleEl.removeEventListener("keydown", onKey);
+      };
+      const commit = () => {
+        const next = (titleEl.textContent ?? "").trim();
+        cleanup();
+        if (next && next !== orig) props.onRenameEvent?.(info.event.id, next);
+        else titleEl.textContent = orig;
+      };
+      const onKey = (ke: KeyboardEvent) => {
+        if (ke.key === "Enter") { ke.preventDefault(); titleEl.blur(); }
+        if (ke.key === "Escape") { ke.preventDefault(); titleEl.textContent = orig; titleEl.blur(); }
+      };
+      titleEl.addEventListener("blur", commit, { once: true });
+      titleEl.addEventListener("keydown", onKey);
+    });
+  }
+
   async function handleSelect(arg: DateSelectArg) {
     if (!props.onCreate) return;
     // FullCalendar gives an exclusive end. For all-day we convert to
@@ -694,6 +737,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           });
         }}
         eventContent={renderEventContent}
+        eventDidMount={handleEventDidMount}
         // Weekly-hub all-day events get the "high bit" card treatment in the
         // Day / Week all-day band (see .order-event-highbit). Scoped to the
         // time-grid views — month/year already lead with all-day events.
