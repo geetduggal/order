@@ -2267,9 +2267,10 @@ iframe.order-youtube-embed {
 /* 10-box grid (Johnny Decimal) for Areas + Categories. */
 .box-grid {
   display: grid;
-  /* Responsive: a wider (resized) sidebar gets MORE columns of the same-size
-     tiles, instead of two tiles ballooning to fill the width. */
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  /* Responsive: a wider sidebar gets MORE columns; a narrow (min-width) one
+     still keeps at least two columns so tiles don't balloon into one silly
+     square. min(104px,100%) guards tiny containers from overflowing. */
+  grid-template-columns: repeat(auto-fill, minmax(min(104px, 100%), 1fr));
   gap: 7px;
   margin-bottom: 14px;
 }
@@ -2506,9 +2507,8 @@ iframe.order-youtube-embed {
 /* 10-box Johnny Decimal grid */
 .box-grid {
   display: grid;
-  /* Responsive tiles so a resized sidebar reflows into more columns rather
-     than stretching two tiles to fill (and clip) the extra width. */
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  /* Responsive tiles: more columns when wide, still ≥2 at minimum width. */
+  grid-template-columns: repeat(auto-fill, minmax(min(104px, 100%), 1fr));
   gap: 6px;
 }
 .box {
