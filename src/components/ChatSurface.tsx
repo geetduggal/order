@@ -414,6 +414,24 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendTurn]);
 
+  // Reliable manual interrupt: tap the transcript while the agent is talking /
+  // thinking to cut it off and hand the floor back to you. Works regardless of
+  // whether the mic could hear you over the agent (the voice barge-in path),
+  // so there's always a way to interrupt. The always-on loop then takes your
+  // next utterance as a fresh turn.
+  const interruptNow = useCallback(() => {
+    if (!voiceOnRef.current) return;
+    const m = modeRef.current;
+    if (m !== "speaking" && m !== "thinking" && m !== "approval") return;
+    bargeInRef.current = turnInFlightRef.current;
+    void cancelTurn();
+    clearFiller();
+    speakerRef.current?.cancel();
+    speakerRef.current = null;
+    setStreamText("");
+    setModeBoth("listening");
+  }, [clearFiller, setModeBoth]);
+
   // Finalized utterances from the native listen loop feed the barge-in handler.
   const handleUtteranceRef = useRef(handleUtterance);
   handleUtteranceRef.current = handleUtterance;
@@ -492,8 +510,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const statusLabel =
     mode === "listening" ? (heard ? "Heard you — pause when done" : "Listening…") :
     mode === "transcribing" ? "Transcribing…" :
-    mode === "thinking" ? thinkingPhrase :
-    mode === "speaking" ? "Speaking…" :
+    mode === "thinking" ? `${thinkingPhrase} · tap to interrupt` :
+    mode === "speaking" ? "Speaking… · tap to interrupt" :
     mode === "approval" ? "Waiting for you…" : "";
 
   return (
@@ -515,7 +533,15 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           )}
         </div>
       )}
-      <div className="order-chat-scroll" ref={scrollRef} onScroll={onScroll}>
+      <div
+        className="order-chat-scroll"
+        ref={scrollRef}
+        onScroll={onScroll}
+        // Tap the transcript to interrupt while the agent is talking/thinking
+        // (no-op otherwise). A guaranteed way to cut in even if the mic can't
+        // hear you over the agent.
+        onClick={(mode === "speaking" || mode === "thinking" || mode === "approval") ? interruptNow : undefined}
+      >
         {turns.length === 0 && mode === "idle" && (
           <div className="order-chat-empty">
             <Sparkles size={18} />

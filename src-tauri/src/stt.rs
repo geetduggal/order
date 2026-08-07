@@ -657,6 +657,7 @@ pub async fn stt_start_loop(
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             use tauri::Emitter;
+            let mut consecutive_errs = 0u32;
             while LOOP_RUNNING.load(Ordering::Relaxed) {
                 apple::reset_cancel();
                 let started = std::time::Instant::now();
@@ -677,13 +678,23 @@ pub async fn stt_start_loop(
                 };
                 match result {
                     Ok(Some(text)) if !text.trim().is_empty() && !looks_like_hallucination(&text) => {
+                        consecutive_errs = 0;
                         let _ = app.emit("stt-utterance", &text);
                         let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": started.elapsed().as_secs_f64() }));
                     }
-                    Ok(_) => { /* silence / cancelled — just re-arm */ }
+                    Ok(_) => { consecutive_errs = 0; /* silence / cancelled — just re-arm */ }
                     Err(e) => {
-                        let _ = app.emit("stt-error", &e);
-                        break;
+                        // A transient failure — e.g. the audio engine couldn't
+                        // (re)start because TTS is currently using the session.
+                        // Don't kill the loop: back off briefly and retry so the
+                        // mic comes back (during playback for barge-in, and after
+                        // it for the next turn). Only give up after many in a row.
+                        consecutive_errs += 1;
+                        if consecutive_errs >= 15 {
+                            let _ = app.emit("stt-error", &e);
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(350));
                     }
                 }
             }
