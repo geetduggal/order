@@ -5972,6 +5972,13 @@ export function CardGrid() {
         ...(ev.endTime ? { endTime: ev.endTime }    : {}),
         ...(ev.endDate ? { endDate: ev.endDate }    : {}),
         ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
+        // Room / location lives on the BACKING note's YAML (that's where gcal
+        // import writes it). The calendar fm is synthesized from the mw event,
+        // so carry the note's location through or the "subtle room after the
+        // title" (#40) never has anything to render.
+        ...(backing && typeof backing.frontmatter.location === "string" && backing.frontmatter.location.trim()
+          ? { location: backing.frontmatter.location.trim() }
+          : {}),
         title: ev.title,
       };
       // Synthetic path for a note-less event. It MUST include the time: two
