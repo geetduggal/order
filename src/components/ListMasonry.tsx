@@ -11,13 +11,16 @@
 
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Plus, X as XIcon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { Plus, X as XIcon, Copy as CopyIcon, ArrowUpRight } from "lucide-react";
 import { assetUrl, attachmentName } from "../lib/attachments";
 import { vaultFs } from "../lib/vault-fs";
 import { resolveNoteRef } from "../lib/wikilink";
 import { isMainDocRef } from "../lib/folders";
 import { displayTitleFor, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { openExternalUrl } from "../lib/open-external";
+import { isIosSync, vaultRoot } from "../lib/vault";
 import { useTileDrag } from "../lib/use-tile-drag";
 import { calendarDropTarget, useEventToListAppend } from "../lib/list-cal-dnd";
 
@@ -98,6 +101,16 @@ function renderInline(
 export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMembership, onNavigate, onAddFilter, noteDir }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  // Click-to-expand lightbox for image tiles, plus a right-click (long-press)
+  // context menu to open / copy the image (#49).
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [imgMenu, setImgMenu] = useState<{ x: number; y: number; url: string; vaultPath: string | null } | null>(null);
+  useEffect(() => {
+    if (!lightbox && !imgMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLightbox(null); setImgMenu(null); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox, imgMenu]);
   const [adding, setAdding] = useState(false);
   const [addDraft, setAddDraft] = useState("");
   // Enter commits the card but keeps the Add box open + focused for the next
@@ -308,7 +321,29 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
           </button>
         )}
         {img ? (
-          <img className="mason-img" src={img} alt={item.caption ?? ""} loading="lazy" onLoad={() => onImgLoad(item.ref)} />
+          <img
+            className="mason-img"
+            src={img}
+            alt={item.caption ?? ""}
+            loading="lazy"
+            style={{ cursor: "zoom-in" }}
+            onLoad={() => onImgLoad(item.ref)}
+            // Tap/click opens the lightbox. stopPropagation so it doesn't count
+            // as a tile-navigate; the drag hook only reorders past a move
+            // threshold, so a plain click still reaches here.
+            onClick={(e) => { e.stopPropagation(); setLightbox(img); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const local = item.image && !/^[a-z]+:\/\//i.test(item.image);
+              setImgMenu({
+                x: e.clientX,
+                y: e.clientY,
+                url: img,
+                vaultPath: local ? (noteDir ? `${noteDir}/${item.image}` : item.image!) : null,
+              });
+            }}
+          />
         ) : editIdx === i ? (
           <textarea
             autoFocus
@@ -388,6 +423,39 @@ export function ListMasonry({ items, vaultNotes, onChange, readOnly, readOnlyMem
           {canEdit && c === safeAddCol && renderAdd()}
         </div>
       ))}
+      {lightbox && createPortal(
+        <div className="mason-lightbox" onClick={() => setLightbox(null)} role="dialog" aria-label="Image preview">
+          <img className="mason-lightbox-img" src={lightbox} alt="" onClick={(e) => e.stopPropagation()} />
+          <button type="button" className="mason-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close">
+            <XIcon size={22} strokeWidth={2.2} />
+          </button>
+        </div>,
+        document.body,
+      )}
+      {imgMenu && createPortal(
+        <div className="mason-imgmenu-overlay" onMouseDown={() => setImgMenu(null)} onContextMenu={(e) => { e.preventDefault(); setImgMenu(null); }}>
+          <div
+            className="mason-imgmenu"
+            style={{ left: Math.min(imgMenu.x, window.innerWidth - 200), top: Math.min(imgMenu.y, window.innerHeight - 120) }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button type="button" className="mason-imgmenu-item" onClick={() => { setLightbox(imgMenu.url); setImgMenu(null); }}>
+              <ArrowUpRight size={14} strokeWidth={2} /><span>Open image</span>
+            </button>
+            {imgMenu.vaultPath && !isIosSync() && (
+              <button type="button" className="mason-imgmenu-item" onClick={() => { const vp = imgMenu.vaultPath!; setImgMenu(null); void (async () => { try { const root = await vaultRoot(); await invoke("clipboard_copy_image", { path: `${root}/${vp}` }); } catch (err) { console.error("copy image failed:", err); } })(); }}>
+                <CopyIcon size={14} strokeWidth={2} /><span>Copy image</span>
+              </button>
+            )}
+            {imgMenu.vaultPath && !isIosSync() && (
+              <button type="button" className="mason-imgmenu-item" onClick={() => { const vp = imgMenu.vaultPath!; setImgMenu(null); void (async () => { try { const root = await vaultRoot(); await invoke("reveal_path", { path: `${root}/${vp}` }); } catch (err) { console.error("reveal_path failed:", err); } })(); }}>
+                <ArrowUpRight size={14} strokeWidth={2} /><span>Reveal in Finder</span>
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

@@ -8020,6 +8020,42 @@ body.is-tile-dragging * {
 .mason-item.is-dragging { opacity: 0.5; z-index: 10; }
 .mason-item.is-image { padding: 4px; }
 .mason-img { display: block; width: 100%; height: auto; border-radius: 7px; }
+
+/* Image lightbox (#49): full-screen preview on tap; click backdrop or Esc to close. */
+.mason-lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: rgba(8, 8, 10, 0.86); backdrop-filter: blur(4px);
+  cursor: zoom-out;
+}
+.mason-lightbox-img {
+  max-width: 96vw; max-height: 94vh; object-fit: contain;
+  border-radius: 8px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); cursor: default;
+}
+.mason-lightbox-close {
+  position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: calc(env(safe-area-inset-right) + 12px);
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 999px; border: none;
+  background: rgba(255, 255, 255, 0.12); color: #fff; cursor: pointer;
+}
+.mason-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* Right-click / long-press image menu. */
+.mason-imgmenu-overlay { position: fixed; inset: 0; z-index: 1001; }
+.mason-imgmenu {
+  position: fixed; min-width: 172px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--bg-elev, var(--bg)); border: 1px solid var(--rule);
+  border-radius: 8px; box-shadow: 0 8px 28px rgba(20, 20, 20, 0.22);
+  font-family: var(--sans); font-size: calc(13px * var(--text-scale, 1));
+}
+.mason-imgmenu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border: none; border-radius: 5px;
+  background: transparent; color: var(--ink); text-align: left; cursor: pointer;
+}
+.mason-imgmenu-item:hover { background: var(--bg-elev-2, color-mix(in srgb, var(--ink) 7%, transparent)); }
 .mason-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
