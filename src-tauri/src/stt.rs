@@ -21,6 +21,25 @@ static CANCEL: AtomicBool = AtomicBool::new(false);
 /// The loop re-arms the native recognizer after each utterance so the mic stays
 /// open across turns AND during TTS playback — the basis for barge-in.
 static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Last time (ms since UNIX epoch) an `stt-level` event was emitted. The audio
+/// tap fires ~40×/s; throttling the emit keeps the JS bridge from being flooded
+/// (which, during TTS, was starving the agent-text rendering).
+static LEVEL_LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// True iff at least ~55ms have passed since the last `stt-level` emit (≈18Hz).
+fn level_should_emit() -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last = LEVEL_LAST_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) >= 55 {
+        LEVEL_LAST_MS.store(now, Ordering::Relaxed);
+        true
+    } else {
+        false
+    }
+}
 
 fn ext_for(mime: &str) -> &'static str {
     let m = mime.to_ascii_lowercase();
@@ -466,7 +485,9 @@ mod apple {
                         let mut sum = 0.0f32;
                         for i in 0..n { let v = *ch0.add(i); sum += v * v; }
                         let rms = (sum / n as f32).sqrt();
-                        let _ = app_tap.emit("stt-level", (rms * 6.0).min(1.0));
+                        if super::level_should_emit() {
+                            let _ = app_tap.emit("stt-level", (rms * 6.0).min(1.0));
+                        }
                     }
                 }
             });

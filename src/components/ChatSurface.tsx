@@ -168,13 +168,21 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   useEffect(() => {
     let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined;
     let alive = true;
-    void onLevel((l) => setLevel(l)).then((fn) => { if (alive) a = fn; else fn(); });
+    // CRITICAL: the native mic loop stays open across turns, so it streams
+    // stt-level (per audio buffer, ~40/s) and stt-partial the WHOLE time —
+    // including while the agent is speaking (it hears the TTS echo). Applying
+    // those as React state on every event re-renders this whole component dozens
+    // of times a second and STARVES the agent-text rendering, so replies didn't
+    // appear on screen while audio played. Only apply them while we're actually
+    // listening (when the meter/partial are even shown); ignore the flood
+    // otherwise. The meter/partial aren't rendered in other modes anyway.
+    void onLevel((l) => { if (modeRef.current === "listening") setLevel(l); }).then((fn) => { if (alive) a = fn; else fn(); });
     // "heard" fires on every partial — including the recognizer picking up the
     // agent's OWN TTS (echo). We deliberately do NOT auto-interrupt on it: without
     // rock-solid echo cancellation that made the agent cut itself off. Interrupt
-    // is the reliable tap, or a full utterance once we're back to listening.
-    void onSttState((s) => { if (s === "heard") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
-    void onPartial((t) => setPartial(t)).then((fn) => { if (alive) d = fn; else fn(); });
+    // is the reliable button/tap, or a full utterance once we're back to listening.
+    void onSttState((s) => { if (s === "heard" && modeRef.current === "listening") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
+    void onPartial((t) => { if (modeRef.current === "listening") setPartial(t); }).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
       setChatUsage(addChatUsage(rel, e.payload.engine === "native"
