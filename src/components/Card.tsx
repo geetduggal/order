@@ -1856,13 +1856,28 @@ export function Card(props: Props) {
         )}
         {capActive && overflowing && <div className="order-card-fade" aria-hidden />}
       </div>
-      {capActive && overflowing && (
+      {/* One reversible truncation control (#23): capped-and-overflowing shows
+          "Read more" to lift the cap; once expanded the same control becomes
+          "Show less" to re-cap. Collapsing scrolls the card top back into view
+          so you're never stranded partway down the (now-hidden) tail. */}
+      {capHeight !== undefined && !fullscreen && (overflowing || expanded) && (
         <button
           type="button"
-          className="order-card-readmore"
-          onClick={() => setExpanded(true)}
+          className={"order-card-readmore" + (expanded ? " is-expanded" : "")}
+          onClick={() => {
+            setExpanded((v) => {
+              const next = !v;
+              if (!next) {
+                // Re-folding: bring the card head back into view.
+                requestAnimationFrame(() => {
+                  articleRef.current?.scrollIntoView({ block: "nearest" });
+                });
+              }
+              return next;
+            });
+          }}
         >
-          Read more
+          {expanded ? "Show less" : "Read more"}
         </button>
       )}
       <div className="order-card-status">

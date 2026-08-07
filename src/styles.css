@@ -6338,6 +6338,8 @@ body.is-tile-dragging * {
   transition: color 0.12s var(--ease-out);
 }
 .order-card-readmore:hover { color: var(--ink); }
+/* Collapse ("Show less") reads quieter than the inviting "Read more". */
+.order-card-readmore.is-expanded { color: var(--muted, #8a8a8a); }
 
 /* ---------- Mobile / narrow viewports ---------- */
 /* Long unbroken tokens (URLs, code, slugs) shouldn't force a card
