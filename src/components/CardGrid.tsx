@@ -4,7 +4,7 @@
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
@@ -108,6 +108,24 @@ function readSidebarOpen(): boolean {
 }
 function writeSidebarOpen(open: boolean): void {
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
+}
+
+// User-resizable sidebar width (the >640px grid column). Clamped so it can
+// never eat the whole screen or shrink to nothing — the disappearing-content
+// failure mode the fixed 360px + zoom used to cause.
+const SIDEBAR_W_KEY = "order.sidebar.width";
+const SIDEBAR_W_MIN = 260;
+const SIDEBAR_W_MAX = 720;
+const SIDEBAR_W_DEFAULT = 360;
+function clampSidebarW(w: number): number {
+  const cap = typeof window !== "undefined" ? Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.6)) : SIDEBAR_W_MAX;
+  return Math.max(SIDEBAR_W_MIN, Math.min(cap, Math.round(w)));
+}
+function readSidebarWidth(): number {
+  try { const v = parseInt(localStorage.getItem(SIDEBAR_W_KEY) ?? "", 10); return Number.isFinite(v) ? clampSidebarW(v) : SIDEBAR_W_DEFAULT; } catch { return SIDEBAR_W_DEFAULT; }
+}
+function writeSidebarWidth(w: number): void {
+  try { localStorage.setItem(SIDEBAR_W_KEY, String(w)); } catch { /* non-fatal */ }
 }
 
 // Bottom dock visibility — toggled with Cmd+Shift+H, persisted so a hidden
@@ -534,6 +552,21 @@ export function CardGrid() {
   // (chipMap build); never cleared (validity is checked against the live mw).
   const noteEventLinkRef = useRef<Map<string, { date: string; title: string }>>(new Map());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(readSidebarOpen);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(readSidebarWidth);
+  // Drag the sidebar's left edge to resize; persist on release.
+  const startSidebarResize = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => setSidebarWidth(clampSidebarW(window.innerWidth - ev.clientX));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setSidebarWidth((w) => { writeSidebarWidth(w); return w; });
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
   const [dockHidden, setDockHidden] = useState<boolean>(readDockHidden);
   const toggleDock = useCallback(() => {
     setDockHidden((h) => { const next = !h; writeDockHidden(next); return next; });
@@ -2206,9 +2239,8 @@ export function CardGrid() {
         else goHomeRef.current?.();
         return;
       }
-      // Cmd/Ctrl+W closes the card at the top of the pile (session-hide, like
-      // the card's own close-from-pile control) instead of the browser's
-      // close-tab default.
+      // Cmd/Ctrl+W drops the top Notable Folder from the pile (its section),
+      // instead of the browser's close-tab default.
       if (e.key === "w" || e.key === "W") {
         e.preventDefault();
         closeTopOfPileRef.current?.();
@@ -5889,12 +5921,12 @@ export function CardGrid() {
       })
     : [];
 
-  // Cmd+W target: the first note card of the first section that has one (the
-  // top of the pile). Set each render so the shortcut acts on what's on screen.
+  // Cmd+W target: drop the top Notable Folder from the pile (remove its include
+  // filter / section), NOT hide a note. Set each render so it acts on what's on
+  // screen. The home folder is the sticky anchor and removeFilter no-ops it.
   closeTopOfPileRef.current = () => {
-    for (const s of sections) {
-      if (s.noteCells.length > 0) { closeFromPile(s.ref, s.noteCells[0].dataPath); return; }
-    }
+    const top = sections[0];
+    if (top) removeFilter({ kind: "include", ref: top.ref });
   };
 
   // Calendar events carry their folder's color so Week/Month/Year
@@ -6137,7 +6169,10 @@ export function CardGrid() {
   };
 
   return (
-    <div className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+    <div
+      className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}
+      style={{ "--sidebar-w": `${sidebarWidth}px` } as CSSProperties}
+    >
       {/* Bottom hovering dock — the five most-used controls grouped as
           a single cluster, equal-sized, sized for thumb taps. Sits
           above the bottom safe-area inset. */}
@@ -6506,6 +6541,17 @@ export function CardGrid() {
         )}
       </main>
 
+      {sidebarOpen && (
+        <div
+          className="sidebar-resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={startSidebarResize}
+          onDoubleClick={() => { const w = SIDEBAR_W_DEFAULT; setSidebarWidth(w); writeSidebarWidth(w); }}
+          title="Drag to resize · double-click to reset"
+        />
+      )}
       {sidebarOpen && (
         <Sidebar
           view={view}

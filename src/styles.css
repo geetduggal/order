@@ -2050,7 +2050,29 @@ iframe.order-youtube-embed {
   width: 100%;
   min-height: 100vh;
 }
-.shell.sidebar-open { grid-template-columns: 1fr 360px; }
+.shell.sidebar-open { grid-template-columns: 1fr var(--sidebar-w, 360px); }
+/* Drag handle sitting on the sidebar's left edge. Fixed so it tracks the
+   column boundary regardless of scroll; sits just left of the sidebar. */
+.sidebar-resize {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: var(--sidebar-w, 360px);
+  width: 10px;
+  margin-right: -5px;
+  z-index: 130;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sidebar-resize::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  width: 1px; transform: translateX(-50%);
+  background: var(--card-border, var(--rule));
+  transition: background 0.12s var(--ease-out), width 0.12s var(--ease-out);
+}
+.sidebar-resize:hover::after { width: 3px; background: var(--coral, #4169e1); }
 /* When the sidebar opens it should BECOME the rightmost column, not squeeze
    the pile. Freezing the FLAT temporal pile's columns to a fixed width (drop
    the `1fr` stretch) makes it drop its rightmost column and reflow cards left
@@ -2078,15 +2100,6 @@ iframe.order-youtube-embed {
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 
-.pane-right:not(.is-editing-spacetime) {
-  /* Scale ALL sidebar chrome with the app zoom (#48) — folder list, titles,
-     counts, and the filter pill stack. These are plain px, so a `--text-scale`
-     var alone did nothing; `zoom` actually scales them, and there's no
-     ProseMirror here so the caret-hit-testing caveat doesn't apply. The
-     spacetime-editing variant is excluded so its CodeMirror isn't zoomed
-     (it scales via --note-font-size below instead). */
-  zoom: var(--text-scale, 1);
-}
 .pane-right {
   /* Stick to the top of the viewport while the pile scrolls — sidebar
      content stays in place; its own overflow scrolls independently when
@@ -3095,7 +3108,6 @@ body.is-tile-dragging * {
   flex: 0 1 auto;
   min-width: 0;
   font-size: 0.78em;
-  font-style: italic;
   color: var(--ink-faint);
   opacity: 0.8;
   line-height: 1.2;
@@ -4267,6 +4279,9 @@ body.is-tile-dragging * {
    palette) at the top, then the active-filter pills. Sits below the +
    and Publish buttons. */
 .filter-pills {
+  /* Scale the filter pills with the app zoom (#48). Self-contained fixed
+     overlay, so zoom scales the pills without disturbing any other layout. */
+  zoom: var(--text-scale, 1);
   /* left: 8px centers the 26px circles on the same x-axis as the 22px
      + / publish / notes-only / public-only FABs above (left: 10px →
      center 21px). top clears those four stacked FABs (last ends ~116px). */
@@ -6378,6 +6393,8 @@ body.is-tile-dragging * {
   /* Right sidebar overlays the content instead of squeezing it — on
      a phone there's no room for a 280px split. */
   .shell.sidebar-open { grid-template-columns: 1fr 0; }
+  /* No resizing the overlay sidebar on phones. */
+  .sidebar-resize { display: none; }
   .pane-right {
     position: fixed;
     top: 0;
