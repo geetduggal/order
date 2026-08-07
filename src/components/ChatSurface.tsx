@@ -16,7 +16,7 @@ import {
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
 import { listenOnce, cancelListen, micSupported, onLevel, onSttState, onPartial, inputName } from "../lib/voice";
-import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, type StreamSpeaker, type TtsVoice } from "../lib/tts";
+import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
 import { recordChat, recordDictation, getChatUsage, addChatUsage, chatCostOf, chatUsageDetail, formatUSD, type ChatUsage } from "../lib/usage";
@@ -235,6 +235,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // re-arm would hide them behind "Listening…").
   const failLoud = useCallback((msg: string) => {
     voiceOnRef.current = false;
+    voiceKeepaliveEnd();
     void cancelListen();
     stopSpeaking();
     setLevel(0);
@@ -280,6 +281,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
 
   const stopVoice = useCallback(() => {
     voiceOnRef.current = false;
+    voiceKeepaliveEnd();
     void cancelListen();
     clearFiller();
     speakerRef.current?.cancel();
@@ -326,13 +328,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // generates (native = per sentence; cloud = pipelined segments). Typed turns
     // get no speaker — they stay silent.
     speakerRef.current?.cancel();
+    // Voice turn: hold a background-execution assertion across the thinking gap
+    // so a locked/backgrounded phone doesn't suspend before the reply speaks
+    // (#27). Released in the speaker's onEnd/onError, or on stop/failure.
+    if (voiceOnRef.current && ttsSupported()) voiceKeepaliveBegin();
     speakerRef.current = voiceOnRef.current && ttsSupported()
       ? createStreamSpeaker({
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
           onStart: () => setModeBoth("speaking"),
-          onEnd: () => { speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
-          onError: () => { speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -386,7 +392,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [rel]);
 
   // Tear the loop down on unmount.
-  useEffect(() => () => { voiceOnRef.current = false; void cancelListen(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
+  useEffect(() => () => { voiceOnRef.current = false; voiceKeepaliveEnd(); void cancelListen(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
 
   const sendTyped = useCallback(() => {
     const text = input.trim();

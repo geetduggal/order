@@ -16,6 +16,19 @@ function isTauri(): boolean {
 
 export function ttsSupported(): boolean { return isTauri(); }
 
+// Background-execution assertion for a voice turn (#27). Keeps the app running
+// through the "thinking" gap (mic off, nothing playing) so a locked/backgrounded
+// phone doesn't suspend mid-turn and drop the reply. begin/end are idempotent in
+// Rust (only one assertion is ever held); always pair them. No-op off iOS.
+export function voiceKeepaliveBegin(): void {
+  if (!isTauri()) return;
+  void invoke("voice_keepalive_begin").catch(() => {});
+}
+export function voiceKeepaliveEnd(): void {
+  if (!isTauri()) return;
+  void invoke("voice_keepalive_end").catch(() => {});
+}
+
 export type TtsEngine = "native" | "openai" | "eleven" | "unreal";
 
 export interface TtsVoice {

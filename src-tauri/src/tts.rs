@@ -102,6 +102,76 @@ mod imp {
     #[cfg(not(target_os = "ios"))]
     fn activate_audio_session() {}
 
+    // ---- background-execution assertion (#27) ---------------------------------
+    // UIBackgroundModes=audio only keeps the app alive while audio is actually
+    // flowing. During a voice turn's "thinking" gap — mic stopped, nothing
+    // playing yet, waiting on the model/tools — a locked phone would suspend the
+    // app and the reply would never arrive or speak. A UIApplication background
+    // task assertion buys ~30s of guaranteed execution to bridge that gap. The
+    // JS voice loop takes it when a turn starts and releases it once the reply
+    // finishes playing (or on cancel/error). Idempotent: only one is ever held.
+    #[cfg(target_os = "ios")]
+    mod bg {
+        use objc2::{class, msg_send, runtime::AnyObject};
+        use std::sync::Mutex;
+
+        #[link(name = "UIKit", kind = "framework")]
+        extern "C" {}
+
+        // UIBackgroundTaskInvalid == NSUIntegerMax.
+        const INVALID: usize = usize::MAX;
+        static TASK: Mutex<usize> = Mutex::new(INVALID);
+
+        pub fn begin() {
+            unsafe {
+                let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+                if app.is_null() {
+                    return;
+                }
+                let mut g = TASK.lock().unwrap();
+                if *g != INVALID {
+                    return; // already holding one — don't stack
+                }
+                // nil expiration handler: we end the task ourselves when the turn
+                // completes. If it ever expires first the system just reclaims it
+                // (same outcome as today — the turn is lost), so this is safe.
+                let id: usize = msg_send![
+                    app,
+                    beginBackgroundTaskWithExpirationHandler: std::ptr::null::<AnyObject>()
+                ];
+                *g = id;
+            }
+        }
+
+        pub fn end() {
+            unsafe {
+                let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+                if app.is_null() {
+                    return;
+                }
+                let mut g = TASK.lock().unwrap();
+                if *g == INVALID {
+                    return;
+                }
+                let _: () = msg_send![app, endBackgroundTask: *g];
+                *g = INVALID;
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub fn keepalive_begin() {
+        bg::begin();
+    }
+    #[cfg(target_os = "ios")]
+    pub fn keepalive_end() {
+        bg::end();
+    }
+    #[cfg(not(target_os = "ios"))]
+    pub fn keepalive_begin() {}
+    #[cfg(not(target_os = "ios"))]
+    pub fn keepalive_end() {}
+
     /// Speak `text`, stopping anything already playing (one at a time). Runs on
     /// the main thread (call via run_on_main_thread).
     pub fn speak(text: &str, voice_id: Option<&str>, rate_ux: f32) {
@@ -206,6 +276,36 @@ pub fn tts_is_speaking() -> bool {
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     {
         false
+    }
+}
+
+/// Take a background-execution assertion so a voice turn keeps running while the
+/// phone is locked / the app is backgrounded (#27). No-op off iOS. Paired with
+/// `voice_keepalive_end` — always release it when the turn finishes.
+#[tauri::command]
+pub fn voice_keepalive_begin(#[allow(unused_variables)] app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        app.run_on_main_thread(|| imp::keepalive_begin())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        Ok(())
+    }
+}
+
+/// Release the background-execution assertion taken by `voice_keepalive_begin`.
+#[tauri::command]
+pub fn voice_keepalive_end(#[allow(unused_variables)] app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        app.run_on_main_thread(|| imp::keepalive_end())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        Ok(())
     }
 }
 
