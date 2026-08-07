@@ -97,7 +97,7 @@ async function uniqueRename(dir: string, oldPath: string, basename: string): Pro
 
 /** A date-prefixed image shown as its own card in a folder's pile: the image
  *  itself plus an inline, editable filename (Enter or blur to rename). */
-function ImageCard({ path, onRenamed }: { path: string; onRenamed?: (p: string) => void }) {
+function ImageCard({ path, onRenamed, onExpand }: { path: string; onRenamed?: (p: string) => void; onExpand?: () => void }) {
   const rel = toVaultRel(path);
   const filename = path.split("/").pop() ?? path;
   const [name, setName] = useState(filename);
@@ -115,7 +115,8 @@ function ImageCard({ path, onRenamed }: { path: string; onRenamed?: (p: string) 
   };
   return (
     <div className="order-card-image">
-      <img className="order-card-image-img" src={assetUrl(rel)} alt={filename} loading="lazy" />
+      <img className="order-card-image-img" src={assetUrl(rel)} alt={filename} loading="lazy"
+        onClick={onExpand} style={onExpand ? { cursor: "zoom-in" } : undefined} />
       <input
         className="order-card-image-name"
         value={name}
@@ -1721,7 +1722,7 @@ export function Card(props: Props) {
           </button>
         ) : isImageNote ? (
           // A date-prefixed image surfaced as its own folder card.
-          <ImageCard path={pathRef.current} onRenamed={(p) => onRenamedRef.current?.(p)} />
+          <ImageCard path={pathRef.current} onRenamed={(p) => onRenamedRef.current?.(p)} onExpand={fullscreen ? undefined : () => setFullscreen(true)} />
         ) : isChatNote ? (
           // Agent conversation. ChatSurface owns the whole body: it renders the
           // transcript, streams the live turn, and handles write-approval. The

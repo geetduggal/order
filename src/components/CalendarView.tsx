@@ -600,6 +600,16 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         }}
         plugins={[dayGridPlugin, timeGridPlugin, multiMonthPlugin, interactionPlugin]}
         initialView={initialView}
+        // Multi-month opens on the CURRENT month (aligned to it, not January) and
+        // runs 12 months forward as a single scrollable column, so "now" is first
+        // and the future scrolls below — instead of a fixed Jan–Dec year grid.
+        views={{
+          multiMonthYear: {
+            duration: { months: 12 },
+            dateAlignment: "month",
+            multiMonthMaxColumns: 1,
+          },
+        }}
         events={events}
         editable
         droppable

@@ -375,6 +375,31 @@ mod apple {
         }
     }
 
+    /// Cheap semantic end-of-turn heuristic: does the transcript trail off
+    /// mid-thought? If it ends on a conjunction/filler/dangling function word (and
+    /// has no terminal punctuation — Apple adds `.`/`?`/`!` when it thinks a
+    /// sentence completed), the speaker is probably pausing, not finished, so the
+    /// caller grants a longer silence window before finalizing.
+    fn looks_incomplete(text: &str) -> bool {
+        let t = text.trim();
+        if t.is_empty() { return true; }
+        if t.ends_with('.') || t.ends_with('?') || t.ends_with('!') { return false; }
+        let last = t
+            .rsplit(|c: char| c.is_whitespace())
+            .next()
+            .unwrap_or("")
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        const TRAILING: &[&str] = &[
+            "and", "but", "so", "or", "because", "if", "when", "while", "then", "that",
+            "which", "who", "um", "uh", "er", "like", "well", "the", "a", "an", "to", "of",
+            "for", "with", "in", "on", "at", "my", "your", "our", "is", "are", "was", "were",
+            "as", "also", "plus", "actually", "basically", "maybe", "just", "gonna", "wanna",
+            "i'm", "we're", "it's", "there's",
+        ];
+        TRAILING.contains(&last.as_str())
+    }
+
     /// Live on-device recognition: streams partial transcripts (`stt-partial`)
     /// word-by-word as the user speaks (AVAudioEngine feeding
     /// SFSpeechAudioBufferRecognitionRequest), and finalizes after a pause.
@@ -470,20 +495,26 @@ mod apple {
             let task: *mut AnyObject = msg_send![recognizer, recognitionTaskWithRequest: request, resultHandler: &*handler];
 
             // Wait for a pause after speech (or a cap / no-speech timeout / cancel).
+            // End-of-turn = silence, but a SEMANTIC check tolerates rambling: if
+            // the transcript trails off mid-thought (a conjunction/filler/dangling
+            // function word, no terminal punctuation), grant a longer window so a
+            // natural pause isn't mistaken for "done".
             let start = Instant::now();
             let silence = Duration::from_millis(1600);
+            let silence_incomplete = Duration::from_millis(3400);
             let max_wait = Duration::from_secs(20);
             let max_utter = Duration::from_secs(90);
             let mut cancelled = false;
             loop {
                 std::thread::sleep(Duration::from_millis(60));
                 if CANCEL.load(Ordering::Relaxed) { cancelled = true; break; }
-                let (got, done, since_last, since_start) = {
+                let (got, done, since_last, since_start, txt) = {
                     let s = shared.lock().unwrap();
-                    (s.got, s.done, s.last.elapsed(), start.elapsed())
+                    (s.got, s.done, s.last.elapsed(), start.elapsed(), s.text.clone())
                 };
                 if done { break; }
-                if got && since_last > silence { break; }
+                let eff_silence = if looks_incomplete(&txt) { silence_incomplete } else { silence };
+                if got && since_last > eff_silence { break; }
                 if !got && since_start > max_wait { break; }
                 if since_start > max_utter { break; }
             }
