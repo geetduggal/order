@@ -59,6 +59,30 @@ export function cancelListen(): Promise<void> {
   return invoke("stt_cancel");
 }
 
+/**
+ * Start the continuous hands-free listen loop (native). The mic stays open
+ * across turns and during TTS playback; each finalized utterance arrives via the
+ * `stt-utterance` event (subscribe with `onUtterance`). This is what enables
+ * barge-in — the frontend cancels the agent's speech the moment you start
+ * talking. Idempotent; pair with `stopListenLoop`.
+ */
+export function startListenLoop(): Promise<void> {
+  return invoke("stt_start_loop", {
+    engine: getSttEngine(),
+    openaiKey: getOpenaiKey(),
+  });
+}
+
+/** Stop the continuous listen loop. */
+export function stopListenLoop(): Promise<void> {
+  return invoke("stt_stop_loop");
+}
+
+/** Subscribe to finalized utterances from the continuous listen loop. */
+export async function onUtterance(handler: (text: string) => void): Promise<UnlistenFn> {
+  return listen<string>("stt-utterance", (e) => handler(e.payload));
+}
+
 /** The microphone that will be used (e.g. "AirPods Pro"), or null if unknown. */
 export function inputName(): Promise<string | null> {
   return invoke<string | null>("stt_input_name").catch(() => null);

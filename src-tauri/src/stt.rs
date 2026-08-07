@@ -17,6 +17,10 @@ use std::sync::{Arc, OnceLock};
 
 /// Set by `stt_cancel` to break the recording loop early.
 static CANCEL: AtomicBool = AtomicBool::new(false);
+/// True while the continuous hands-free listen loop (`stt_start_loop`) is active.
+/// The loop re-arms the native recognizer after each utterance so the mic stays
+/// open across turns AND during TTS playback — the basis for barge-in.
+static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn ext_for(mime: &str) -> &'static str {
     let m = mime.to_ascii_lowercase();
@@ -173,6 +177,7 @@ mod apple {
     #[cfg(target_os = "ios")]
     extern "C" {
         static AVAudioSessionCategoryPlayAndRecord: *const AnyObject;
+        static AVAudioSessionModeVoiceChat: *const AnyObject;
     }
     #[cfg(target_os = "ios")]
     unsafe fn prepare_session() {
@@ -184,6 +189,11 @@ mod apple {
         // keeps playback loud when no headset is present.
         let options: usize = 0x4 | 0x8;
         let _: objc2::runtime::Bool = msg_send![session, setCategory: AVAudioSessionCategoryPlayAndRecord, withOptions: options, error: &mut err];
+        // VoiceChat mode enables the system's acoustic echo cancellation, so the
+        // continuously-open mic doesn't transcribe the agent's own TTS during
+        // barge-in. Best-effort — ignore any error (keeps the plain category).
+        let mut merr: *mut AnyObject = std::ptr::null_mut();
+        let _: objc2::runtime::Bool = msg_send![session, setMode: AVAudioSessionModeVoiceChat, error: &mut merr];
         let mut err2: *mut AnyObject = std::ptr::null_mut();
         let _: objc2::runtime::Bool = msg_send![session, setActive: true, error: &mut err2];
         // Ask for mic permission and wait (block until the user has decided once).
@@ -627,4 +637,71 @@ pub async fn stt_transcribe(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Start the continuous hands-free listen loop. Re-arms the recognizer after
+/// every utterance so the mic stays open across turns and during TTS playback,
+/// emitting `stt-utterance` (final text) for each. This is what enables barge-in
+/// (the frontend cancels the agent's speech the moment a new utterance lands).
+/// Idempotent: a second call while running is a no-op. `stt_stop_loop` ends it.
+#[tauri::command]
+pub async fn stt_start_loop(
+    app: tauri::AppHandle,
+    engine: String,
+    #[allow(unused_variables)] openai_key: String,
+) -> Result<(), String> {
+    if LOOP_RUNNING.swap(true, Ordering::SeqCst) {
+        return Ok(()); // already running
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            use tauri::Emitter;
+            while LOOP_RUNNING.load(Ordering::Relaxed) {
+                apple::reset_cancel();
+                let started = std::time::Instant::now();
+                let result = if engine == "native" {
+                    apple::listen_live(&app)
+                } else {
+                    match apple::record_utterance(&app) {
+                        Ok(Some((path, _secs))) => {
+                            let _cleanup = RemoveOnDrop(path.clone());
+                            std::fs::read(&path)
+                                .map_err(|e| format!("read recording: {e}"))
+                                .and_then(|bytes| whisper(&openai_key, &bytes, "audio/m4a"))
+                                .map(Some)
+                        }
+                        Ok(None) => Ok(None),
+                        Err(e) => Err(e),
+                    }
+                };
+                match result {
+                    Ok(Some(text)) if !text.trim().is_empty() && !looks_like_hallucination(&text) => {
+                        let _ = app.emit("stt-utterance", &text);
+                        let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": started.elapsed().as_secs_f64() }));
+                    }
+                    Ok(_) => { /* silence / cancelled — just re-arm */ }
+                    Err(e) => {
+                        let _ = app.emit("stt-error", &e);
+                        break;
+                    }
+                }
+            }
+            LOOP_RUNNING.store(false, Ordering::SeqCst);
+            let _ = app.emit("stt-loop-ended", ());
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        {
+            let _ = (&app, &engine, &openai_key);
+            LOOP_RUNNING.store(false, Ordering::SeqCst);
+        }
+    });
+    Ok(())
+}
+
+/// Stop the continuous listen loop and break any in-flight utterance capture.
+#[tauri::command]
+pub fn stt_stop_loop() {
+    LOOP_RUNNING.store(false, Ordering::SeqCst);
+    CANCEL.store(true, Ordering::Relaxed);
 }

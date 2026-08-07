@@ -31,6 +31,9 @@ enum Decision { Once, All, Reject }
 pub struct AgentState {
     approval: Mutex<Option<SyncSender<Decision>>>,
     auto_approve: AtomicBool,
+    /// Set by `agent_cancel` (voice barge-in) to stop the turn between
+    /// model↔tool round-trips. Reset at the start of every new turn.
+    cancel: AtomicBool,
 }
 
 fn vault_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -176,6 +179,12 @@ fn run_turn(
     let mut total_cache_write = 0u32;
 
     for iter in 0..MAX_ITERS {
+        // Barge-in: the user started a new utterance, so abandon this turn between
+        // round-trips rather than keep spending tool calls on a superseded reply.
+        if app.state::<AgentState>().cancel.load(Ordering::Relaxed) {
+            emit(app, chat_rel, serde_json::json!({ "kind": "cancelled" }));
+            break;
+        }
         let req = CompletionRequest { system: &system, messages: &messages, tools: &tool_defs, model: DEFAULT_MODEL, max_tokens: MAX_TOKENS };
         let mut on_text = |t: &str| emit(app, chat_rel, serde_json::json!({ "kind": "text", "text": t }));
         let (blocks, usage) = provider.stream(&req, &mut on_text)?;
@@ -276,6 +285,8 @@ pub async fn agent_turn(
     user_text: String,
 ) -> Result<TurnResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // Fresh turn: clear any stale barge-in cancel from a previous turn.
+        app.state::<AgentState>().cancel.store(false, Ordering::Relaxed);
         let root = vault_root(&app)?;
         // New chat → create the file and reset "approve all" for the fresh chat.
         let chat_rel = match chat_path {
@@ -382,6 +393,18 @@ pub fn agent_approve(app: AppHandle, decision: String) -> Result<(), String> {
     let d = match decision.as_str() { "all" => Decision::All, "reject" => Decision::Reject, _ => Decision::Once };
     if let Some(tx) = app.state::<AgentState>().approval.lock().unwrap().take() {
         let _ = tx.send(d);
+    }
+    Ok(())
+}
+
+/// Ask the current turn to stop (voice barge-in). Sets the cancel flag the run
+/// loop checks between round-trips, and unblocks a pending approval by rejecting
+/// it so the turn can wind down instead of waiting out the approval timeout.
+#[tauri::command]
+pub fn agent_cancel(app: AppHandle) -> Result<(), String> {
+    app.state::<AgentState>().cancel.store(true, Ordering::Relaxed);
+    if let Some(tx) = app.state::<AgentState>().approval.lock().unwrap().take() {
+        let _ = tx.send(Decision::Reject);
     }
     Ok(())
 }

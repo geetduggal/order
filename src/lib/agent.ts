@@ -78,3 +78,10 @@ export function suggestChatTitle(chatPath: string): Promise<string | null> {
 export function approve(decision: "once" | "all" | "reject"): Promise<void> {
   return invoke("agent_approve", { decision });
 }
+
+/** Ask the in-flight turn to stop (voice barge-in). The turn winds down between
+ *  round-trips; its promise still resolves, so the caller must also guard
+ *  against acting on a superseded result. */
+export function cancelTurn(): Promise<void> {
+  return invoke<void>("agent_cancel").catch(() => undefined);
+}

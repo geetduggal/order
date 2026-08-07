@@ -12,10 +12,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
-  approve, getAgentKey, onAgentStream, runTurn,
+  approve, cancelTurn, getAgentKey, onAgentStream, runTurn,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { listenOnce, cancelListen, micSupported, onLevel, onSttState, onPartial, inputName } from "../lib/voice";
+import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
@@ -138,6 +138,14 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // Refs the async voice loop reads without re-subscribing.
   const voiceOnRef = useRef(false);          // is the hands-free loop engaged?
   const modeRef = useRef<Mode>("idle");
+  // Barge-in bookkeeping. The native listen loop stays open across turns, so a
+  // new utterance can arrive mid-turn. `turnInFlightRef` is true while a model
+  // turn is generating (can't start a second concurrently — queue it in
+  // `pendingUtteranceRef`); `bargeInRef` suppresses the superseded turn's
+  // streamed text + speech once we've decided to interrupt it.
+  const turnInFlightRef = useRef(false);
+  const pendingUtteranceRef = useRef<string | null>(null);
+  const bargeInRef = useRef(false);
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -157,7 +165,18 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined;
     let alive = true;
     void onLevel((l) => setLevel(l)).then((fn) => { if (alive) a = fn; else fn(); });
-    void onSttState((s) => { if (s === "heard") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
+    void onSttState((s) => {
+      if (s !== "heard") return;
+      setHeard(true);
+      // Snappy barge-in: the moment you start talking over the agent, cut its
+      // speech. The finalized utterance (onUtterance) then drives the next turn.
+      if (modeRef.current === "speaking" && speakerRef.current) {
+        speakerRef.current.cancel();
+        speakerRef.current = null;
+        clearFiller();
+        setModeBoth("listening");
+      }
+    }).then((fn) => { if (alive) b = fn; else fn(); });
     void onPartial((t) => setPartial(t)).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
@@ -236,36 +255,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const failLoud = useCallback((msg: string) => {
     voiceOnRef.current = false;
     voiceKeepaliveEnd();
-    void cancelListen();
+    void stopListenLoop();
+    void cancelTurn();
+    turnInFlightRef.current = false;
+    pendingUtteranceRef.current = null;
+    bargeInRef.current = false;
     stopSpeaking();
     setLevel(0);
     setHeard(false);
     setModeBoth("idle");
     setError(msg);
   }, [setModeBoth]);
-
-  const beginListening = useCallback(() => {
-    if (!voiceOnRef.current) return;
-    setError(null);
-    setHeard(false);
-    setPartial("");
-    refreshMic();
-    setModeBoth("listening");
-    setLevel(0);
-    // Rust records one utterance natively and resolves with the transcript
-    // (""=cancelled or nothing said). The mic is only open for this call.
-    void listenOnce().then((text) => {
-      const t = text.trim();
-      if (!voiceOnRef.current) return;
-      if (!t) { beginListening(); return; }   // cancelled / silence → re-arm
-      sendTurn(t);
-    }).catch((e) => {
-      // A real recording/transcription error — surface it and stop, don't loop
-      // over it silently.
-      failLoud(typeof e === "string" ? e : "Voice input failed.");
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [failLoud]);
 
   const startVoice = useCallback(() => {
     if (!hasKey) { setError("Add your Anthropic API key in Settings to use the agent."); return; }
@@ -275,14 +275,28 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     }
     setError(null);
     setTyping(false);
+    setHeard(false);
+    setPartial("");
+    refreshMic();
     voiceOnRef.current = true;
-    beginListening();
-  }, [hasKey, beginListening]);
+    setModeBoth("listening");
+    // Native continuous listen loop: the mic stays open across turns and during
+    // TTS playback, streaming each finalized utterance via `stt-utterance`
+    // (handled in the onUtterance effect below). This is what makes barge-in
+    // possible — the old per-turn "open the mic only between turns" flow couldn't
+    // hear you interrupt.
+    void startListenLoop().catch((e) => failLoud(typeof e === "string" ? e : "Voice input failed."));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasKey, failLoud]);
 
   const stopVoice = useCallback(() => {
     voiceOnRef.current = false;
     voiceKeepaliveEnd();
-    void cancelListen();
+    void stopListenLoop();
+    void cancelTurn();
+    turnInFlightRef.current = false;
+    pendingUtteranceRef.current = null;
+    bargeInRef.current = false;
     clearFiller();
     speakerRef.current?.cancel();
     speakerRef.current = null;
@@ -293,22 +307,23 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Finish a turn: record the agent's reply, tell the streaming speaker no more
-  // text is coming (it drains and then resumes listening via onEnd), and clear
-  // the live bubble. Guarded so the stream `final` event and the runTurn promise
-  // (a safety net if the event is missed) can't double-fire.
+  // Finish a turn: record the agent's reply and close out the streaming speaker.
+  // Guarded so the stream `final` event and the runTurn promise (a safety net)
+  // can't double-fire — and so a barge-in (superseding turn) is silently dropped.
   const finalizedRef = useRef(false);
   const finalizeAgent = useCallback((text: string) => {
     if (finalizedRef.current) return;
+    // Barged in: this reply is superseded — don't append or speak it. The queued
+    // utterance (see handleUtterance) becomes the next turn.
+    if (bargeInRef.current) { finalizedRef.current = true; return; }
     finalizedRef.current = true;
     setApproval(null);
     setStreamText("");
     setStreamTools([]);
     if (text.trim()) setTurns((prev) => [...prev, { role: "agent", text, tools: [] }]);
     if (speakerRef.current) {
-      // Voice mode: the reply has been streaming into the speaker. Close it out;
-      // its onEnd (fired when playback drains) resumes listening. Keep the ref so
-      // Stop can still cancel playback — a new turn or stopVoice replaces it.
+      // Voice mode: the reply streamed into the speaker; close it out. Its onEnd
+      // returns to "listening" (the native loop never stopped capturing).
       speakerRef.current.finish();
     } else {
       // Typed turn: no auto-speak (the per-message play button is there instead).
@@ -320,9 +335,13 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // Send a user turn (from voice or keyboard).
   const sendTurn = useCallback((text: string) => {
     setError(null);
+    bargeInRef.current = false;
+    pendingUtteranceRef.current = null;
+    turnInFlightRef.current = true;
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
+    setPartial("");
     finalizedRef.current = false;
     // In the voice loop, spin up a streaming speaker so the reply is spoken as it
     // generates (native = per sentence; cloud = pipelined segments). Typed turns
@@ -337,8 +356,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
           onStart: () => setModeBoth("speaking"),
-          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
-          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) beginListening(); else setModeBoth("idle"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -353,9 +372,57 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     }
     void runTurn(rel, text)
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
-      .catch((err) => { failLoud(typeof err === "string" ? err : "The agent turn failed."); });
+      .catch((err) => { if (!bargeInRef.current) failLoud(typeof err === "string" ? err : "The agent turn failed."); })
+      .finally(() => {
+        turnInFlightRef.current = false;
+        // A barge-in queued the next utterance while this turn was still
+        // generating; now that it's wound down, send it.
+        const pending = pendingUtteranceRef.current;
+        if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending); }
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rel, failLoud, finalizeAgent]);
+
+  // Latest sendTurn, so the runTurn .finally and the utterance handler can call
+  // it without capturing a stale closure.
+  const sendTurnRef = useRef(sendTurn);
+  sendTurnRef.current = sendTurn;
+
+  // A finalized user utterance from the native listen loop (voice mode). Drives
+  // barge-in: interrupt whatever the agent is doing and take the new input.
+  const handleUtterance = useCallback((text: string) => {
+    if (!voiceOnRef.current) return;
+    const t = text.trim();
+    if (!t) return;
+    clearFiller();
+    if (turnInFlightRef.current) {
+      // Still generating → abandon it and queue this as the next turn (two model
+      // turns can't run at once); the runTurn .finally sends it once wound down.
+      bargeInRef.current = true;
+      void cancelTurn();
+      speakerRef.current?.cancel();
+      speakerRef.current = null;
+      pendingUtteranceRef.current = t;
+      setStreamText("");
+      setModeBoth("listening");
+      return;
+    }
+    // Idle, or mid-playback: stop any speech and send immediately.
+    speakerRef.current?.cancel();
+    speakerRef.current = null;
+    sendTurn(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendTurn]);
+
+  // Finalized utterances from the native listen loop feed the barge-in handler.
+  const handleUtteranceRef = useRef(handleUtterance);
+  handleUtteranceRef.current = handleUtterance;
+  useEffect(() => {
+    let alive = true;
+    let un: (() => void) | undefined;
+    void onUtterance((text) => handleUtteranceRef.current(text)).then((fn) => { if (alive) un = fn; else fn(); });
+    return () => { alive = false; un?.(); };
+  }, []);
 
   // Subscribe to the agent's stream; act only on events for THIS chat.
   useEffect(() => {
@@ -363,6 +430,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     let alive = true;
     void onAgentStream((e: AgentEvent) => {
       if (e.chatPath !== rel) return;
+      // Barge-in: the user interrupted, so ignore the superseded turn's stream
+      // (text/tools/approval). We still let "final"/"error" through so the turn
+      // settles cleanly (finalizeAgent no-ops under bargeInRef).
+      if (bargeInRef.current && e.kind !== "final" && e.kind !== "error") return;
       switch (e.kind) {
         case "context": setLoadedChats(e.loadedChats); break;
         case "text": clearFiller(); setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
@@ -392,7 +463,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [rel]);
 
   // Tear the loop down on unmount.
-  useEffect(() => () => { voiceOnRef.current = false; voiceKeepaliveEnd(); void cancelListen(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
+  useEffect(() => () => { voiceOnRef.current = false; voiceKeepaliveEnd(); void stopListenLoop(); void cancelTurn(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
 
   const sendTyped = useCallback(() => {
     const text = input.trim();
