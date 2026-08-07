@@ -32,6 +32,22 @@ interface Turn {
 /** listening → transcribing → thinking → (approval) → speaking → listening. */
 type Mode = "idle" | "listening" | "transcribing" | "thinking" | "approval" | "speaking";
 
+/** Barge-in echo rejection: is `utterance` mostly a repeat of what the agent is
+ *  currently speaking (`agentText`)? While the mic is open during TTS it picks
+ *  up the agent's own voice; we treat a high word-overlap as echo and ignore it,
+ *  so only NOVEL speech (your actual interruption — "stop", "wait", a new
+ *  question) cuts the agent off. Short, distinct interrupts rarely overlap the
+ *  reply, so they get through; a near-verbatim echo doesn't. */
+function isLikelyEcho(utterance: string, agentText: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const u = norm(utterance);
+  if (u.length === 0) return true;
+  const a = new Set(norm(agentText));
+  if (a.size === 0) return false; // agent hasn't said anything yet → not echo
+  const matched = u.filter((w) => a.has(w)).length;
+  return matched / u.length >= 0.6;
+}
+
 /** Parse a `.chat.md` transcript into turns. Mirrors the writer in
  *  src-tauri/src/agent/chat.rs. */
 function parseTranscript(raw: string): Turn[] {
@@ -150,6 +166,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const turnInFlightRef = useRef(false);
   const pendingUtteranceRef = useRef<string | null>(null);
   const bargeInRef = useRef(false);
+  // The agent's reply text as it streams — used to reject echo: while the mic is
+  // open during TTS it hears the agent too, so an "utterance" that mostly repeats
+  // what the agent is currently saying is echo (ignore it), whereas novel speech
+  // is a genuine hands-free interruption.
+  const agentSpokenRef = useRef("");
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -347,11 +368,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
     setAgentActive(true);
-    // Close the mic for the duration of the reply. Recording WHILE the TTS plays
-    // put the audio subsystem under enough contention to freeze the UI thread
-    // (no streaming text, unresponsive Interrupt). The loop reopens on the
-    // speaker's onEnd, so it's still hands-free; interrupt is the button/tap.
-    if (voiceOnRef.current) void stopListenLoop();
+    agentSpokenRef.current = "";   // fresh reply — reset the echo-match text
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
@@ -370,8 +387,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
           onStart: () => setModeBoth("speaking"),
-          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) { void startListenLoop(); setModeBoth("listening"); } else setModeBoth("idle"); },
-          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) { void startListenLoop(); setModeBoth("listening"); } else setModeBoth("idle"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -403,13 +420,23 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     if (!voiceOnRef.current) return;
     const t = text.trim();
     if (!t) return;
-    // While the agent is SPEAKING, the always-on mic mostly hears the agent
-    // itself (echo), so a "finalized utterance" here is unreliable — ignore it
-    // and let the user interrupt with a tap instead. A turn is only started from
-    // the clean states: listening (normal hands-free next turn) or thinking
-    // (a genuine barge-in before any audio is playing).
     const m = modeRef.current;
-    if (m !== "listening" && m !== "thinking") return;
+    // approval / transcribing / idle: not a moment to take a new turn by voice.
+    if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
+    // HANDS-FREE BARGE-IN while the agent is speaking: the open mic also hears
+    // the agent, so reject echo (an utterance that just repeats what it's
+    // saying). Novel speech is a real interruption — cut the TTS and take it.
+    if (m === "speaking") {
+      // Match against the recently-spoken tail (roughly what's audible now), not
+      // the whole reply, so a long answer doesn't over-reject a real barge-in.
+      if (isLikelyEcho(t, agentSpokenRef.current.slice(-300))) return; // echo → ignore
+      clearFiller();
+      speakerRef.current?.cancel();
+      speakerRef.current = null;
+      setAgentActive(false);
+      sendTurn(t);
+      return;
+    }
     clearFiller();
     if (turnInFlightRef.current) {
       // Still generating (thinking) → abandon it and queue this as the next turn
@@ -446,8 +473,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     speakerRef.current = null;
     setStreamText("");
     setAgentActive(false);
-    // Reopen the mic to hear your next input (it was closed for the reply).
-    if (voiceOnRef.current) void startListenLoop();
     setModeBoth("listening");
   }, [clearFiller, setModeBoth]);
 
@@ -473,7 +498,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       if (bargeInRef.current && e.kind !== "final" && e.kind !== "error") return;
       switch (e.kind) {
         case "context": setLoadedChats(e.loadedChats); break;
-        case "text": clearFiller(); setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
+        case "text": clearFiller(); agentSpokenRef.current += e.text; setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
         case "tool": setStreamTools((t) => [...t, e.line]); break;
         case "approval": setModeBoth("approval"); setApproval(e.items); break;
         case "note": setStreamText((s) => (s ? s + "\n\n" : "") + e.text); break;
