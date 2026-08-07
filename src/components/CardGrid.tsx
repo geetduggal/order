@@ -4,7 +4,7 @@
 // the Week view reads; individual Cards re-read their files for body
 // edits so the two views can mutate safely in parallel.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
@@ -4449,6 +4449,14 @@ export function CardGrid() {
     // Defaults match the auto-inject path: notes get allDay=false unless
     // the caller explicitly says otherwise (Year + Month all-day clicks).
     const frontmatter: Frontmatter = { allDay: false, ...patch };
+    // Recipient emails (Google-sync invitees) are a spacetime.mw property, not
+    // note YAML — same as the event action menu's handleSetEmails. Pull them out
+    // of the patch here so they land on the event line (below) and never in the
+    // written .md frontmatter (#42: set invitees at creation time).
+    const createEmails = Array.isArray(frontmatter.emails)
+      ? (frontmatter.emails as unknown[]).filter((x): x is string => typeof x === "string")
+      : undefined;
+    delete frontmatter.emails;
     // The folder choice decides WHERE the file is written — it is never
     // stored in YAML (placement is structural). Resolution priority:
     //   1. caller supplied `folder` (calendar quick-create from a
@@ -4501,6 +4509,7 @@ export function CardGrid() {
         ...(typeof frontmatter.endTime === "string"   ? { endTime: frontmatter.endTime } : {}),
         ...(typeof frontmatter.endDate === "string"   ? { endDate: frontmatter.endDate } : {}),
         ...(frontmatter.allDay === true ? { allDay: true } : {}),
+        ...(createEmails && createEmails.length ? { emails: createEmails } : {}),
       };
       await applyMwEdit((mw) => mwAddEvent(mw, ev));
     }
@@ -6884,12 +6893,17 @@ export function CardGrid() {
           <CreateEventPrompt
             availableFolders={availableFolderRefs}
             defaultFolder={defaultFolder}
-            onSubmit={async (title, folder) => {
+            knownEmails={knownEmails}
+            // Only a dated create is a calendar event; only then does the
+            // recipients row make sense.
+            allowEmails={typeof titlePrompt.patch.date === "string"}
+            onSubmit={async (title, folder, emails) => {
               const patch = { ...titlePrompt.patch };
               setTitlePrompt(null);
               if (title) patch.title = title;
               if (folder) patch.folder = `[[${folder}]]`;
               else delete patch.folder;
+              if (emails.length) patch.emails = emails;
               await createNote(patch);
             }}
             onCancel={() => setTitlePrompt(null)}
@@ -7347,17 +7361,23 @@ function EventActionMenu({
  *  visually matches the FolderPicker chip used in card footers / the
  *  event action menu — a small colored chip with the NF name; click to
  *  change. Tap × to drop the folder (root note). */
-function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder }: {
-  onSubmit: (title: string, folder: string | null) => void | Promise<void>;
+function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder, knownEmails, allowEmails }: {
+  onSubmit: (title: string, folder: string | null, emails: string[]) => void | Promise<void>;
   onCancel: () => void;
   availableFolders: { name: string; color: string }[];
   defaultFolder: string | null;
+  /** Distinct emails already used across events — autocomplete suggestions. */
+  knownEmails?: string[];
+  /** Show the recipients row (dated creates = calendar events only). */
+  allowEmails?: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [folder, setFolder] = useState<string | null>(defaultFolder);
+  const [emailsRaw, setEmailsRaw] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const emailListId = useId();
   // Focus AFTER the first paint so the overlay's dvh-based sizing
   // has a chance to land its real height before iOS opens the soft
   // keyboard. Without the rAF gap the focus + keyboard show can
@@ -7368,7 +7388,9 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, []);
-  const submit = () => onSubmit(title.trim(), folder);
+  const parseEmails = (raw: string): string[] =>
+    raw.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.includes("@"));
+  const submit = () => onSubmit(title.trim(), folder, allowEmails ? parseEmails(emailsRaw) : []);
   return (
     <div
       className="event-prompt-overlay"
@@ -7422,6 +7444,32 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
                 ×
               </button>
             )}
+          </div>
+        )}
+        {allowEmails && (
+          // Recipients (Google-sync invitees) set right at creation (#42), so a
+          // new meeting can go out with its guest list instead of needing a
+          // second pass through the event action menu. Space/comma separated.
+          <div className="event-prompt-folder">
+            <span className="event-prompt-folder-label">invite</span>
+            <input
+              type="text"
+              className="event-prompt-input event-prompt-emails"
+              value={emailsRaw}
+              placeholder="emails (optional, space-separated)"
+              list={emailListId}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(e) => setEmailsRaw(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !pickerOpen) { e.preventDefault(); void submit(); }
+                if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+              }}
+            />
+            <datalist id={emailListId}>
+              {(knownEmails ?? []).map((m) => <option key={m} value={m} />)}
+            </datalist>
           </div>
         )}
       </div>
