@@ -526,18 +526,16 @@ function nativeStream(opts: Parameters<typeof createStreamSpeaker>[0]): StreamSp
 function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: TtsEngine): StreamSpeaker {
   const voice = opts.voiceURI ? voiceOf(opts.voiceURI) : "";
   const playbackRate = opts.rate ?? 1;
-  const audio = new Audio();
-  audio.playbackRate = playbackRate;
   let buffer = ""; let finished = false; let cancelled = false;
   let synthing = false; let playing = false; let started = false;
+  let playTimer: ReturnType<typeof setTimeout> | null = null;
   const segQueue: string[] = [];
-  const readyQueue: string[] = [];
+  const readyQueue: string[] = [];   // base64 mp3 clips, ready to play
 
   const cleanup = () => {
-    try { audio.pause(); } catch { /* */ }
-    if (audio.src?.startsWith("blob:")) URL.revokeObjectURL(audio.src);
-    audio.removeAttribute("src");
-    readyQueue.splice(0).forEach((u) => URL.revokeObjectURL(u));
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+    void invoke("tts_stop_audio").catch(() => {});
+    readyQueue.splice(0);
   };
   const done = () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; opts.onEnd?.(); };
   const ctrl = { cancel: () => { if (cancelled) return; cancelled = true; cleanup(); if (current === ctrl) current = null; } };
@@ -560,7 +558,7 @@ function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: Tt
     void synth1(seg)
       .then((b64) => {
         if (cancelled) return;
-        readyQueue.push(URL.createObjectURL(new Blob([b64ToBytes(b64) as BlobPart], { type: "audio/mpeg" })));
+        readyQueue.push(b64);   // keep the base64; native player takes it directly
         playNext();
       })
       .catch((e) => {
@@ -570,17 +568,23 @@ function cloudStream(opts: Parameters<typeof createStreamSpeaker>[0], engine: Tt
       })
       .finally(() => { synthing = false; if (!cancelled) pumpSynth(); });
   };
+  const advance = () => { playTimer = null; playing = false; playNext(); };
   const playNext = () => {
     if (playing || cancelled) return;
-    const url = readyQueue.shift();
-    if (url === undefined) { maybeDone(); return; }
+    const b64 = readyQueue.shift();
+    if (b64 === undefined) { maybeDone(); return; }
     playing = true;
     if (!started) { started = true; stopSpeaking(); current = ctrl; opts.onStart?.(); }
-    audio.src = url;
-    audio.playbackRate = playbackRate;
-    audio.onended = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); playing = false; playNext(); };
-    void audio.play().catch((e) => { opts.onError?.(String(e)); playing = false; });
+    // Play NATIVELY (AVAudioPlayer, Rust) so playback shares the audio session
+    // with the recording mic instead of interrupting it via the WebView's
+    // <audio> — the whole reason hands-free barge-in couldn't hear you. The
+    // command returns the clip's duration; advance the queue when it ends.
+    void invoke<number>("tts_play_audio", { audioBase64: b64, rate: playbackRate })
+      .then((durSec) => {
+        if (cancelled) return;
+        playTimer = setTimeout(advance, Math.max(0, durSec * 1000) + 60);
+      })
+      .catch((e) => { if (!cancelled) { opts.onError?.(String(e)); playing = false; } });
   };
   let firstSeg = true;
   const drain = (flushAll: boolean) => {

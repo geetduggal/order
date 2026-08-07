@@ -33,6 +33,60 @@ mod imp {
     #[link(name = "AVFAudio", kind = "framework")]
     extern "C" {}
 
+    // Native playback of cloud-TTS audio (AVAudioPlayer). Cloud voices used to
+    // play through the WebView's <audio>, whose playback INTERRUPTS the native
+    // mic engine on iOS — so the hands-free loop went deaf during speech and you
+    // couldn't be heard to interrupt. Playing on the same AVAudioSession as the
+    // recorder lets record + playback coexist, which is what barge-in needs.
+    static AUDIO_PLAYER: Mutex<usize> = Mutex::new(0);
+
+    /// Play mp3/audio bytes on the shared audio session. Returns the wall-clock
+    /// duration (seconds, adjusted for `rate`) so the caller can advance its
+    /// queue. Stops any previous clip first (one at a time).
+    pub fn play_audio(bytes: &[u8], rate: f32) -> Result<f64, String> {
+        unsafe {
+            stop_audio();
+            let data: *mut AnyObject = msg_send![
+                class!(NSData),
+                dataWithBytes: bytes.as_ptr() as *const std::ffi::c_void,
+                length: bytes.len()
+            ];
+            if data.is_null() {
+                return Err("audio: NSData failed".into());
+            }
+            let alloc: *mut AnyObject = msg_send![class!(AVAudioPlayer), alloc];
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let player: *mut AnyObject = msg_send![alloc, initWithData: data, error: &mut err];
+            if player.is_null() {
+                return Err("audio: player init failed".into());
+            }
+            let _: () = msg_send![player, setEnableRate: true];
+            let r = if rate > 0.1 { rate } else { 1.0 };
+            let _: () = msg_send![player, setRate: r];
+            let _: objc2::runtime::Bool = msg_send![player, prepareToPlay];
+            let dur: f64 = msg_send![player, duration];
+            let ok: objc2::runtime::Bool = msg_send![player, play];
+            if !ok.as_bool() {
+                return Err("audio: play failed".into());
+            }
+            let _: *mut AnyObject = msg_send![player, retain];
+            *AUDIO_PLAYER.lock().unwrap() = player as usize;
+            Ok((dur / r as f64).max(0.0))
+        }
+    }
+
+    pub fn stop_audio() {
+        unsafe {
+            let mut g = AUDIO_PLAYER.lock().unwrap();
+            if *g != 0 {
+                let p = *g as *mut AnyObject;
+                let _: () = msg_send![p, stop];
+                let _: () = msg_send![p, release];
+                *g = 0;
+            }
+        }
+    }
+
     // One shared synthesizer, created + driven on the main thread. Stored as a
     // retained raw pointer (Send) behind a Mutex.
     static SYNTH: Mutex<usize> = Mutex::new(0);
@@ -301,6 +355,42 @@ pub fn tts_is_speaking() -> bool {
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     {
         false
+    }
+}
+
+/// Play a base64 audio clip (cloud TTS mp3) through the NATIVE audio session so
+/// it coexists with the recording mic (WebView `<audio>` interrupts recording).
+/// Returns the clip's playback duration in seconds. No-op off macOS/iOS.
+#[tauri::command]
+pub async fn tts_play_audio(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    audio_base64: String,
+    rate: f32,
+) -> Result<f64, String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(audio_base64.as_bytes())
+                .map_err(|e| format!("decode audio: {e}"))?;
+            imp::play_audio(&bytes, rate)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        let _ = (audio_base64, rate);
+        Err("native audio playback is macOS/iOS only".into())
+    }
+}
+
+/// Stop the native audio clip started by `tts_play_audio`.
+#[tauri::command]
+pub fn tts_stop_audio() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::stop_audio();
     }
 }
 
