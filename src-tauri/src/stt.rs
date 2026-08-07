@@ -468,6 +468,14 @@ mod apple {
             let ealloc: *mut AnyObject = msg_send![class!(AVAudioEngine), alloc];
             let engine: *mut AnyObject = msg_send![ealloc, init];
             let input: *mut AnyObject = msg_send![engine, inputNode];
+            // ACOUSTIC ECHO CANCELLATION. Setting the session mode to voiceChat is
+            // NOT enough — the AVAudioEngine input node only runs the voice-
+            // processing audio unit (which cancels the played audio from the mic)
+            // when explicitly enabled. Without this the mic transcribed the agent's
+            // own TTS as "user" speech (false barge-ins / self-conversation). Must
+            // be set before reading the format / installing the tap. Best-effort.
+            let mut vp_err: *mut AnyObject = std::ptr::null_mut();
+            let _: objc2::runtime::Bool = msg_send![input, setVoiceProcessingEnabled: true, error: &mut vp_err];
             let fmt: *mut AnyObject = msg_send![input, outputFormatForBus: 0usize];
 
             // Tap: append each buffer to the request + emit a rough input level.
