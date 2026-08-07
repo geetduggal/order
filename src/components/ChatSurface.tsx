@@ -347,6 +347,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
     setAgentActive(true);
+    // Close the mic for the duration of the reply. Recording WHILE the TTS plays
+    // put the audio subsystem under enough contention to freeze the UI thread
+    // (no streaming text, unresponsive Interrupt). The loop reopens on the
+    // speaker's onEnd, so it's still hands-free; interrupt is the button/tap.
+    if (voiceOnRef.current) void stopListenLoop();
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
@@ -365,8 +370,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
           onStart: () => setModeBoth("speaking"),
-          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
-          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) { void startListenLoop(); setModeBoth("listening"); } else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) { void startListenLoop(); setModeBoth("listening"); } else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -441,6 +446,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     speakerRef.current = null;
     setStreamText("");
     setAgentActive(false);
+    // Reopen the mic to hear your next input (it was closed for the reply).
+    if (voiceOnRef.current) void startListenLoop();
     setModeBoth("listening");
   }, [clearFiller, setModeBoth]);
 

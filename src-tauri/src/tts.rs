@@ -88,6 +88,20 @@ mod imp {
     }
     #[cfg(target_os = "ios")]
     fn activate_audio_session() {
+        // The streaming speaker calls speak() once per sentence, so this ran
+        // per-sentence on the MAIN thread — setCategory/setActive can be slow and
+        // janks the UI. Throttle: reconfigure at most every ~2s (the config is
+        // sticky, so a mid-reply skip is harmless).
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static LAST_MS: AtomicU64 = AtomicU64::new(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if now.saturating_sub(LAST_MS.load(Ordering::Relaxed)) < 2000 {
+            return;
+        }
+        LAST_MS.store(now, Ordering::Relaxed);
         unsafe {
             let session: *mut AnyObject = msg_send![class!(AVAudioSession), sharedInstance];
             if session.is_null() {
