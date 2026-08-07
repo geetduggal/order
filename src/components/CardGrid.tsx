@@ -4092,9 +4092,12 @@ export function CardGrid() {
   const openEventNote = useCallback((path: string) => {
     if (path.startsWith("mw-event:")) {
       // No backing note exists yet. Materialise it by creating the note
-      // directly from the mw event data, then navigate to it.
-      const key = path.slice("mw-event:".length);
-      const mwEv = mwEventIndexRef.current.get(key);
+      // directly from the mw event data, then navigate to it. Resolve via the
+      // chip map first: it's keyed by the exact (unique, time-qualified) path,
+      // so it returns the specific event clicked even when several share a
+      // date+title (#38). Fall back to the date|title index for a stale path.
+      const chipEv = eventChipRef.current.get(path)?.ev;
+      const mwEv = chipEv ?? mwEventIndexRef.current.get(path.slice("mw-event:".length));
       if (!mwEv) return;
       void (async () => {
         const root = await vaultRoot();
@@ -5969,7 +5972,14 @@ export function CardGrid() {
         ...(ev.folder  ? { folder: `[[${ev.folder}]]` } : {}),
         title: ev.title,
       };
-      const path = backing ? backing.path : `mw-event:${ev.date}|${t}`;
+      // Synthetic path for a note-less event. It MUST include the time: two
+      // same-day, same-title events at different times are distinct events, and
+      // a date|title-only path would collide — the chipMap would keep only the
+      // last, so clicking either opened the wrong one (#38). eventKey (the dedup
+      // key above) already distinguishes them by time, so the path must too.
+      const path = backing
+        ? backing.path
+        : `mw-event:${ev.date}|${ev.time ?? ""}|${t}`;
       chipMap.set(path, { ev, notePath: backing ? backing.path : null });
       out.push({
         path,
