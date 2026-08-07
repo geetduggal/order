@@ -7138,9 +7138,30 @@ function EventActionMenu({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
+  // Re-clamp against the *measured* menu size. `menuH`/`menuW` above are only
+  // estimates; when the folder picker (or time/recipient rows) expand, the real
+  // height diverges and the menu drifts off-screen — most visibly on mobile,
+  // where it appeared to "hover in the wrong location" (#34). Measuring after
+  // layout and nudging the box fully into the viewport fixes it for any size.
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const pad = 8;
+    const r = el.getBoundingClientRect();
+    let nl = r.left;
+    let nt = r.top;
+    if (r.right > window.innerWidth - pad) nl = window.innerWidth - r.width - pad;
+    if (r.bottom > window.innerHeight - pad) nt = window.innerHeight - r.height - pad;
+    nl = Math.max(pad, nl);
+    nt = Math.max(pad, nt);
+    if (Math.round(nl) !== Math.round(r.left)) el.style.left = `${nl}px`;
+    if (Math.round(nt) !== Math.round(r.top)) el.style.top = `${nt}px`;
+  }, [folderOpen, draftAllDay, weekDays.length, emails?.length, left, top]);
   return (
     <div className="event-action-overlay" onMouseDown={onCancel}>
       <div
+        ref={menuRef}
         className="event-action-menu"
         style={{ left: `${left}px`, top: `${top}px` }}
         onMouseDown={(e) => e.stopPropagation()}
