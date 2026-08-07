@@ -87,6 +87,46 @@ mod imp {
         }
     }
 
+    // A SEPARATE player for short UI earcons (thinking / interrupt cues) so they
+    // don't stop the reply's audio or fight the main player. Overlap is fine.
+    static EARCON_PLAYER: Mutex<usize> = Mutex::new(0);
+
+    pub fn play_earcon(bytes: &[u8]) -> Result<(), String> {
+        unsafe {
+            {
+                let mut g = EARCON_PLAYER.lock().unwrap();
+                if *g != 0 {
+                    let p = *g as *mut AnyObject;
+                    let _: () = msg_send![p, stop];
+                    let _: () = msg_send![p, release];
+                    *g = 0;
+                }
+            }
+            let data: *mut AnyObject = msg_send![
+                class!(NSData),
+                dataWithBytes: bytes.as_ptr() as *const std::ffi::c_void,
+                length: bytes.len()
+            ];
+            if data.is_null() {
+                return Err("earcon: NSData failed".into());
+            }
+            let alloc: *mut AnyObject = msg_send![class!(AVAudioPlayer), alloc];
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let player: *mut AnyObject = msg_send![alloc, initWithData: data, error: &mut err];
+            if player.is_null() {
+                return Err("earcon: player init failed".into());
+            }
+            let _: objc2::runtime::Bool = msg_send![player, prepareToPlay];
+            let ok: objc2::runtime::Bool = msg_send![player, play];
+            if !ok.as_bool() {
+                return Err("earcon: play failed".into());
+            }
+            let _: *mut AnyObject = msg_send![player, retain];
+            *EARCON_PLAYER.lock().unwrap() = player as usize;
+            Ok(())
+        }
+    }
+
     // One shared synthesizer, created + driven on the main thread. Stored as a
     // retained raw pointer (Send) behind a Mutex.
     static SYNTH: Mutex<usize> = Mutex::new(0);
@@ -391,6 +431,28 @@ pub fn tts_stop_audio() {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         imp::stop_audio();
+    }
+}
+
+/// Play a short UI earcon (base64 WAV) on a dedicated player, so it layers over
+/// the reply/mic without stopping them. Used for the thinking / interrupt cues.
+#[tauri::command]
+pub async fn tts_play_earcon(audio_base64: String) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(audio_base64.as_bytes())
+                .map_err(|e| format!("decode earcon: {e}"))?;
+            imp::play_earcon(&bytes)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        let _ = audio_base64;
+        Ok(())
     }
 }
 

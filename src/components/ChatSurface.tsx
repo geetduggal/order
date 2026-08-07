@@ -8,7 +8,7 @@
 // the mic, paints the transcript, plays replies, and surfaces the single
 // batched write-approval. See lib/agent.ts, lib/voice.ts, src-tauri/src/agent/.
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
@@ -19,6 +19,7 @@ import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoo
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
+import { playEarcon } from "../lib/earcon";
 import { recordChat, recordDictation, getChatUsage, addChatUsage, chatCostOf, chatUsageDetail, formatUSD, type ChatUsage } from "../lib/usage";
 import { listen } from "@tauri-apps/api/event";
 import { Send, Volume2, Square, Wrench, AlertTriangle, Sparkles, Mic, Keyboard, Loader2, ChevronDown } from "lucide-react";
@@ -139,17 +140,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // interrupted). Drives the "interrupt" affordance independently of `mode`,
   // which can lag/misreport — so tapping to interrupt always works.
   const [agentActive, setAgentActive] = useState(false);
-  // --- TEMP voice diagnostics (visible line while voice is on) --------------
-  // tick: a heartbeat; if it FREEZES while the agent speaks, the UI thread is
-  // blocked (audio contention). uttCount/last: utterances the loop delivered
-  // and how they were classified — tells us if the mic hears you during TTS.
-  const [dbgTick, setDbgTick] = useState(0);
-  const dbgRef = useRef({ utt: 0, last: "", cls: "", loop: false });
-  const [, forceDbg] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    const id = setInterval(() => setDbgTick((n) => (n + 1) % 1000), 250);
-    return () => clearInterval(id);
-  }, []);
   const [micName, setMicName] = useState<string | null>(null);
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
@@ -182,6 +172,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // what the agent is currently saying is echo (ignore it), whereas novel speech
   // is a genuine hands-free interruption.
   const agentSpokenRef = useRef("");
+  // When a barge-in plays the "interrupt" earcon, skip the "thinking" earcon on
+  // the turn it kicks off (they share one earcon player; back-to-back would cut
+  // the first off, and the interrupt cue already signals "got it").
+  const skipThinkEarconRef = useRef(false);
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -323,7 +317,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // (handled in the onUtterance effect below). This is what makes barge-in
     // possible — the old per-turn "open the mic only between turns" flow couldn't
     // hear you interrupt.
-    dbgRef.current.loop = true; forceDbg();
     void startListenLoop().catch((e) => failLoud(typeof e === "string" ? e : "Voice input failed."));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKey, failLoud]);
@@ -380,6 +373,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
     setAgentActive(true);
+    // Soft "thinking" cue when a voice turn starts (skipped right after a barge-in
+    // interrupt cue, which already acknowledged you).
+    if (voiceOnRef.current) {
+      if (skipThinkEarconRef.current) skipThinkEarconRef.current = false;
+      else playEarcon("thinking");
+    }
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
@@ -432,11 +431,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     const t = text.trim();
     if (!t) return;
     const m = modeRef.current;
-    // diagnostics: record every utterance the loop delivered + the mode it hit
-    dbgRef.current.utt += 1;
-    dbgRef.current.last = t.slice(0, 24);
-    dbgRef.current.cls = `@${m}`;
-    forceDbg();
     // approval / transcribing / idle: not a moment to take a new turn by voice.
     if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
     // HANDS-FREE BARGE-IN while the agent is speaking: the open mic also hears
@@ -446,8 +440,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       // Match against a rolling window of RECENT agent speech (this reply plus the
       // tail of the prior one) — the mic can echo audio from a moment ago, so a
       // current-reply-only match missed it.
-      if (isLikelyEcho(t, agentSpokenRef.current)) { dbgRef.current.cls = "echo✗"; forceDbg(); return; } // echo → ignore
-      dbgRef.current.cls = "BARGE!"; forceDbg();
+      if (isLikelyEcho(t, agentSpokenRef.current)) return; // echo of the agent → ignore
+      playEarcon("interrupt");
+      skipThinkEarconRef.current = true;
       clearFiller();
       speakerRef.current?.cancel();
       speakerRef.current = null;
@@ -461,6 +456,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       // (two model turns can't run at once); the runTurn .finally sends it once
       // wound down.
       bargeInRef.current = true;
+      playEarcon("interrupt");
+      skipThinkEarconRef.current = true;
       void cancelTurn();
       speakerRef.current?.cancel();
       speakerRef.current = null;
@@ -484,6 +481,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // generating), NOT on `mode` — mode can be wrong, which left tapping doing
     // nothing.
     if (!speakerRef.current && !turnInFlightRef.current) return;
+    playEarcon("interrupt");
+    skipThinkEarconRef.current = true;
     bargeInRef.current = turnInFlightRef.current;
     void cancelTurn();
     clearFiller();
@@ -594,14 +593,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           {mode === "listening" && (
             <span className="order-chat-meter"><span className="order-chat-meter-fill" style={{ transform: `scaleX(${level})` }} /></span>
           )}
-        </div>
-      )}
-      {/* TEMP diagnostics: watch `t` — if it stops counting while the agent
-          speaks, the UI thread is frozen. utt = utterances heard; last shows the
-          text + where it landed (echo✗ / BARGE! / @mode). */}
-      {mode !== "idle" && (
-        <div style={{ fontFamily: "monospace", fontSize: 11, opacity: 0.75, padding: "2px 8px", wordBreak: "break-all" }}>
-          t{dbgTick} · {mode} · loop:{dbgRef.current.loop ? "on" : "off"} · utt:{dbgRef.current.utt} · {dbgRef.current.cls} “{dbgRef.current.last}”
         </div>
       )}
       <div
