@@ -4,7 +4,7 @@
 // react to `initial` prop changes after mount: this surface is a
 // single-edit-session component.
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
@@ -135,7 +135,7 @@ type Props = {
   noteDir?: string;
 };
 
-export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function MilkdownSurface(
+const MilkdownSurfaceInner = forwardRef<MilkdownHandle, Props>(function MilkdownSurface(
   { initial, onChange, onDone, onImageUpload, wikiNotes, onWikiNavigate, autoFocus, readOnly, noteDir }: Props,
   ref,
 ) {
@@ -680,3 +680,10 @@ export const MilkdownSurface = forwardRef<MilkdownHandle, Props>(function Milkdo
 
   return <div className="milkdown-host" ref={host} onKeyDown={onKeyDown} />;
 });
+
+// The editor DOM is managed imperatively (Crepe/ProseMirror), so re-rendering
+// the React shell does no useful work. Memoize it so Card state churn — most
+// notably the save-status "saving…/saved" toggle (#33) — can't re-render the
+// editor at all. Effective only because Card passes stable (useCallback) props,
+// including onDone.
+export const MilkdownSurface = memo(MilkdownSurfaceInner);

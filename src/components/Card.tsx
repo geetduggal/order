@@ -1046,6 +1046,10 @@ export function Card(props: Props) {
     saveTimer.current = setTimeout(() => { void flushNow(); }, SAVE_DEBOUNCE_MS);
   }, [flushNow, readOnly]);
 
+  // Stable so the memoized MilkdownSurface isn't re-rendered by every Card
+  // state change (e.g. the save-status toggle) — see #33.
+  const handleEditorDone = useCallback(() => { void flushNow(); }, [flushNow]);
+
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
     // Keep only the REF live per keystroke. `editorBody` (state) has no render
@@ -1803,7 +1807,7 @@ export function Card(props: Props) {
             ref={milkdownRef}
             initial={state.body}
             onChange={handleChange}
-            onDone={() => { void flushNow(); }}
+            onDone={handleEditorDone}
             onImageUpload={readOnly ? undefined : handleImageUpload}
             wikiNotes={vaultNotes}
             onWikiNavigate={handleWikiNavigate}
