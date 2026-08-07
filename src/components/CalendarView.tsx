@@ -383,7 +383,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   // a busy timed-event load doesn't crowd the cell grid. Day / Week
   // default off — those scales have room for timed bars. Toggle is
   // available in every view for symmetry.
-  const isMonth = initialView === "dayGridMonth";
+  const isMonth = initialView === "dayGridMonth" || initialView === "multiMonthYear";
   const [allDayOnly, setAllDayOnly] = useState<boolean>(isMonth);
   const visibleNotes = useMemo(() => {
     if (!allDayOnly) return notes;

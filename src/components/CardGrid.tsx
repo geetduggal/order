@@ -2206,6 +2206,14 @@ export function CardGrid() {
         else goHomeRef.current?.();
         return;
       }
+      // Cmd/Ctrl+W closes the card at the top of the pile (session-hide, like
+      // the card's own close-from-pile control) instead of the browser's
+      // close-tab default.
+      if (e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        closeTopOfPileRef.current?.();
+        return;
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -3416,6 +3424,9 @@ export function CardGrid() {
   // top in order; pileHidden = cards closed this session. Reset on restart.
   const [pileFront, setPileFront] = useState<Map<string, string[]>>(new Map());
   const [pileHidden, setPileHidden] = useState<Map<string, Set<string>>>(new Map());
+  // Cmd+W closes the top card of the pile. Populated during render (once the
+  // sections are built) so the keydown handler can call the latest closure.
+  const closeTopOfPileRef = useRef<(() => void) | null>(null);
 
   const addToPile = useCallback((folder: string, path: string) => {
     setPileFront((prev) => {
@@ -5878,6 +5889,14 @@ export function CardGrid() {
       })
     : [];
 
+  // Cmd+W target: the first note card of the first section that has one (the
+  // top of the pile). Set each render so the shortcut acts on what's on screen.
+  closeTopOfPileRef.current = () => {
+    for (const s of sections) {
+      if (s.noteCells.length > 0) { closeFromPile(s.ref, s.noteCells[0].dataPath); return; }
+    }
+  };
+
   // Calendar events carry their folder's color so Week/Month/Year
   // events read at a glance.
   // Calendar / Year feed: apply the include/exclude folder pile, the
@@ -6445,7 +6464,9 @@ export function CardGrid() {
             ref={calendarHandleRef}
             key="month"
             notes={calendarNotes}
-            initialView="dayGridMonth"
+            // Month view = the current month first, then future months scrolling
+            // below (single-column multi-month), not a static single grid.
+            initialView="multiMonthYear"
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
             onRenameEvent={renameEventTitle}
