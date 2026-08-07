@@ -99,6 +99,8 @@ interface Props {
   onMaybeTitle?: (rel: string) => void;
 }
 
+const THINKING_PHRASES = ["Thinking…", "One sec…", "Let me think…", "Working on it…", "Mulling it over…", "On it…", "Hmm, let me see…", "Digging in…"];
+
 export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const rel = useMemo(() => toVaultRel(path), [path]);
   // Re-apply the global zoom as an INLINE --text-scale on the chat root. On iOS
@@ -123,6 +125,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const [chatUsage, setChatUsage] = useState<ChatUsage>(() => getChatUsage(rel));
   const [loadedChats, setLoadedChats] = useState<string[]>([]);
   const [contextOpen, setContextOpen] = useState(false);
+  // A few 'thinking' phrasings, randomly sampled each turn so the wait doesn't
+  // always read the same.
+  const [thinkingPhrase, setThinkingPhrase] = useState(THINKING_PHRASES[0]);
   const [atBottom, setAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -402,12 +407,15 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [setModeBoth]);
 
   const chatCost = chatCostOf(chatUsage);
+  useEffect(() => {
+    if (mode === "thinking") setThinkingPhrase(THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]);
+  }, [mode]);
   const hasUsage = chatUsage.anthropicTurns > 0 || chatUsage.whisperSeconds > 0 || chatUsage.nativeSeconds > 0;
   const busy = mode === "thinking" || mode === "transcribing";
   const statusLabel =
     mode === "listening" ? (heard ? "Heard you — pause when done" : "Listening…") :
     mode === "transcribing" ? "Transcribing…" :
-    mode === "thinking" ? "Thinking…" :
+    mode === "thinking" ? thinkingPhrase :
     mode === "speaking" ? "Speaking…" :
     mode === "approval" ? "Waiting for you…" : "";
 
