@@ -17,10 +17,20 @@ const pending = new Set<string>();
 const EVENT = "order:want-fullscreen";
 const norm = (p: string) => { try { return toVaultRel(p); } catch { return p; } };
 
+// How long an unconsumed intent lives. Long enough to cover a slow-phone mount
+// of a freshly created note/chat (the persistent re-arms run out to ~1.2s, then
+// the card still has to mount), but short enough that an intent whose target
+// never mounts in the current view can't fire much later — e.g. when the user
+// switches to the Pile and that card finally mounts, reopening an event
+// unexpectedly (#39).
+const INTENT_TTL_MS = 6000;
+
 /** Ask for `path` to open fullscreen — now if it's mounted, else on its mount. */
 export function requestFullscreen(path: string): void {
   const key = norm(path);
   pending.add(key);
+  // Auto-expire so a never-consumed intent doesn't leak into a later view.
+  setTimeout(() => pending.delete(key), INTENT_TTL_MS);
   try { window.dispatchEvent(new CustomEvent(EVENT, { detail: key })); } catch { /* noop */ }
 }
 
