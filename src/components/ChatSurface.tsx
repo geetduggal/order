@@ -380,7 +380,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
     setAgentActive(true);
-    agentSpokenRef.current = "";   // fresh reply — reset the echo-match text
     setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
@@ -444,9 +443,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // the agent, so reject echo (an utterance that just repeats what it's
     // saying). Novel speech is a real interruption — cut the TTS and take it.
     if (m === "speaking") {
-      // Match against the recently-spoken tail (roughly what's audible now), not
-      // the whole reply, so a long answer doesn't over-reject a real barge-in.
-      if (isLikelyEcho(t, agentSpokenRef.current.slice(-300))) { dbgRef.current.cls = "echo✗"; forceDbg(); return; } // echo → ignore
+      // Match against a rolling window of RECENT agent speech (this reply plus the
+      // tail of the prior one) — the mic can echo audio from a moment ago, so a
+      // current-reply-only match missed it.
+      if (isLikelyEcho(t, agentSpokenRef.current)) { dbgRef.current.cls = "echo✗"; forceDbg(); return; } // echo → ignore
       dbgRef.current.cls = "BARGE!"; forceDbg();
       clearFiller();
       speakerRef.current?.cancel();
@@ -516,7 +516,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       if (bargeInRef.current && e.kind !== "final" && e.kind !== "error") return;
       switch (e.kind) {
         case "context": setLoadedChats(e.loadedChats); break;
-        case "text": clearFiller(); agentSpokenRef.current += e.text; setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
+        case "text": clearFiller(); agentSpokenRef.current = (agentSpokenRef.current + e.text).slice(-2000); setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
         case "tool": setStreamTools((t) => [...t, e.line]); break;
         case "approval": setModeBoth("approval"); setApproval(e.items); break;
         case "note": setStreamText((s) => (s ? s + "\n\n" : "") + e.text); break;

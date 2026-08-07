@@ -26,6 +26,12 @@ static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 /// (which, during TTS, was starving the agent-text rendering).
 static LEVEL_LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Whether to enable input echo-cancellation (voice processing). Off by default
+/// (it crashed on-device); flip via the OS env var STT_AEC=1 once it's safe.
+fn aec_enabled() -> bool {
+    std::env::var("STT_AEC").map(|v| v == "1").unwrap_or(false)
+}
+
 /// True iff at least ~55ms have passed since the last `stt-level` emit (≈18Hz).
 fn level_should_emit() -> bool {
     let now = std::time::SystemTime::now()
@@ -468,14 +474,13 @@ mod apple {
             let ealloc: *mut AnyObject = msg_send![class!(AVAudioEngine), alloc];
             let engine: *mut AnyObject = msg_send![ealloc, init];
             let input: *mut AnyObject = msg_send![engine, inputNode];
-            // ACOUSTIC ECHO CANCELLATION. Setting the session mode to voiceChat is
-            // NOT enough — the AVAudioEngine input node only runs the voice-
-            // processing audio unit (which cancels the played audio from the mic)
-            // when explicitly enabled. Without this the mic transcribed the agent's
-            // own TTS as "user" speech (false barge-ins / self-conversation). Must
-            // be set before reading the format / installing the tap. Best-effort.
-            let mut vp_err: *mut AnyObject = std::ptr::null_mut();
-            let _: objc2::runtime::Bool = msg_send![input, setVoiceProcessingEnabled: true, error: &mut vp_err];
+            // Acoustic echo cancellation via the input node's voice-processing unit
+            // is gated behind STT_AEC: enabling it crashed on-device (format churn
+            // after enabling VP), so it's OFF by default until done safely.
+            if super::aec_enabled() {
+                let mut vp_err: *mut AnyObject = std::ptr::null_mut();
+                let _: objc2::runtime::Bool = msg_send![input, setVoiceProcessingEnabled: true, error: &mut vp_err];
+            }
             let fmt: *mut AnyObject = msg_send![input, outputFormatForBus: 0usize];
 
             // Tap: append each buffer to the request + emit a rough input level.
