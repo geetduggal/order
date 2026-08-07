@@ -8,7 +8,7 @@
 // the mic, paints the transcript, plays replies, and surfaces the single
 // batched write-approval. See lib/agent.ts, lib/voice.ts, src-tauri/src/agent/.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
@@ -139,6 +139,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // interrupted). Drives the "interrupt" affordance independently of `mode`,
   // which can lag/misreport — so tapping to interrupt always works.
   const [agentActive, setAgentActive] = useState(false);
+  // --- TEMP voice diagnostics (visible line while voice is on) --------------
+  // tick: a heartbeat; if it FREEZES while the agent speaks, the UI thread is
+  // blocked (audio contention). uttCount/last: utterances the loop delivered
+  // and how they were classified — tells us if the mic hears you during TTS.
+  const [dbgTick, setDbgTick] = useState(0);
+  const dbgRef = useRef({ utt: 0, last: "", cls: "", loop: false });
+  const [, forceDbg] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const id = setInterval(() => setDbgTick((n) => (n + 1) % 1000), 250);
+    return () => clearInterval(id);
+  }, []);
   const [micName, setMicName] = useState<string | null>(null);
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
@@ -312,6 +323,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // (handled in the onUtterance effect below). This is what makes barge-in
     // possible — the old per-turn "open the mic only between turns" flow couldn't
     // hear you interrupt.
+    dbgRef.current.loop = true; forceDbg();
     void startListenLoop().catch((e) => failLoud(typeof e === "string" ? e : "Voice input failed."));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKey, failLoud]);
@@ -421,6 +433,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     const t = text.trim();
     if (!t) return;
     const m = modeRef.current;
+    // diagnostics: record every utterance the loop delivered + the mode it hit
+    dbgRef.current.utt += 1;
+    dbgRef.current.last = t.slice(0, 24);
+    dbgRef.current.cls = `@${m}`;
+    forceDbg();
     // approval / transcribing / idle: not a moment to take a new turn by voice.
     if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
     // HANDS-FREE BARGE-IN while the agent is speaking: the open mic also hears
@@ -429,7 +446,8 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     if (m === "speaking") {
       // Match against the recently-spoken tail (roughly what's audible now), not
       // the whole reply, so a long answer doesn't over-reject a real barge-in.
-      if (isLikelyEcho(t, agentSpokenRef.current.slice(-300))) return; // echo → ignore
+      if (isLikelyEcho(t, agentSpokenRef.current.slice(-300))) { dbgRef.current.cls = "echo✗"; forceDbg(); return; } // echo → ignore
+      dbgRef.current.cls = "BARGE!"; forceDbg();
       clearFiller();
       speakerRef.current?.cancel();
       speakerRef.current = null;
@@ -576,6 +594,14 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           {mode === "listening" && (
             <span className="order-chat-meter"><span className="order-chat-meter-fill" style={{ transform: `scaleX(${level})` }} /></span>
           )}
+        </div>
+      )}
+      {/* TEMP diagnostics: watch `t` — if it stops counting while the agent
+          speaks, the UI thread is frozen. utt = utterances heard; last shows the
+          text + where it landed (echo✗ / BARGE! / @mode). */}
+      {mode !== "idle" && (
+        <div style={{ fontFamily: "monospace", fontSize: 11, opacity: 0.75, padding: "2px 8px", wordBreak: "break-all" }}>
+          t{dbgTick} · {mode} · loop:{dbgRef.current.loop ? "on" : "off"} · utt:{dbgRef.current.utt} · {dbgRef.current.cls} “{dbgRef.current.last}”
         </div>
       )}
       <div
