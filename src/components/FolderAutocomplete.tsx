@@ -97,13 +97,18 @@ export function FolderAutocomplete({
       }
       return out;
     }
-    // With a query the user has committed to a search — substring
-    // filter the full list, prefix-matches first.
+    // With a query: substring filter, prefix-matches first, then by RECENCY
+    // (recent folders surface before older ones), then alphabetical.
+    const recIdx = new Map<string, number>();
+    (recents ?? []).forEach((r, i) => { const k = r.toLowerCase(); if (!recIdx.has(k)) recIdx.set(k, i); });
+    const rec = (c: string) => recIdx.get(c.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
     const matched = candidates.filter((c) => want(c) && c.toLowerCase().includes(q));
     matched.sort((a, b) => {
       const ap = a.toLowerCase().startsWith(q) ? 0 : 1;
       const bp = b.toLowerCase().startsWith(q) ? 0 : 1;
       if (ap !== bp) return ap - bp;
+      const ar = rec(a), br = rec(b);
+      if (ar !== br) return ar - br;
       return a.localeCompare(b);
     });
     return matched.slice(0, max);

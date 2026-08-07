@@ -2,6 +2,12 @@
    CSS Grid with measured row-spans gives masonry-like flow while
    preserving source order (left-to-right, top-to-bottom). */
 
+/* Disable iOS WebKit's automatic text inflation app-wide. It boosts font sizes
+   by block width, so text "randomly" grows on device rotation and in modals.
+   Every size in the app is explicit (calc * --text-scale), so the zoom still
+   works — this only kills the uncontrolled auto-boost. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 /* Default light theme: lifted directly from the Glass / Original
    icon palette — cream paper, royal blue ink-card, coral accent.
    Same three tokens that compose the app icon compose the chrome,
@@ -3105,13 +3111,19 @@ body.is-tile-dragging * {
   /* A plain, crisp lift — no colored blur (the old royal glow read as fuzzy). */
   box-shadow: 0 1px 3px rgba(20, 20, 40, 0.14);
 }
-.fc-shell .fc-event.order-event-highbit .order-event-row {
+/* The bigger high-bit sizing is scoped to day/week (timegrid) via
+   .fc-shell-timegrid — in month / multi-month it renders at normal size. */
+.fc-shell-timegrid .fc-event.order-event-highbit .order-event-row {
   padding: 6px 11px 7px;
 }
-.fc-shell .fc-event.order-event-highbit .order-event-title {
+.fc-shell-timegrid .fc-event.order-event-highbit .order-event-title {
   font-size: 1.3em;
   font-weight: 700;
   letter-spacing: 0.1px;
+  color: var(--ink);
+}
+.fc-shell .fc-event.order-event-highbit .order-event-title {
+  font-weight: 700;
   color: var(--ink);
 }
 .fc-shell .fc-event.order-event-highbit .order-event-dot {
@@ -8147,7 +8159,7 @@ body.is-tile-dragging * {
    rail zoom. (We used to pin -webkit-text-size-adjust:100% here to stop WebKit's
    auto-inflation, but on iOS that also froze the text against --text-scale
    changes — the explicit sizes below already do the un-inflating job.) */
-.order-chat { font-size: calc(15px * var(--text-scale, 1)); position: relative; overflow-x: hidden; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+.order-chat { font-size: calc(15px * var(--text-scale, 1)); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; position: relative; overflow-x: hidden; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 .order-chat-text { font-size: calc(15px * var(--text-scale, 1)); line-height: 1.5; letter-spacing: 0; overflow-wrap: anywhere; }
 .order-chat-empty p { font-size: 15px; }
 .order-chat-tool { font-size: calc(12.5px * var(--text-scale, 1)); }

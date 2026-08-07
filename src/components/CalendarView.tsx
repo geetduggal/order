@@ -534,7 +534,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   const { currentView, onSelectView } = props;
 
   return (
-    <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}`} ref={shellRef}>
+    <div className={`fc-shell${isWeek ? " fc-shell-week" : ""}${isTimeGrid ? " fc-shell-timegrid" : ""}`} ref={shellRef}>
       <div className="fc-top-controls">
         {isWeek && (
           <div className="fc-week-day-picker" role="group" aria-label="Visible days of the week">

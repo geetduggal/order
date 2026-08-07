@@ -12,7 +12,8 @@
 // appears in the grids. No separate storage — the YAML is the source
 // of truth.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useTextScale } from "../lib/text-scale";
 import type { LucideIcon } from "lucide-react";
 import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X, FileCog, Check as CheckDone } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
@@ -247,9 +248,15 @@ export function Sidebar({
     }
   }
 
+  // Re-apply the global zoom inline on the sidebar root so its calc(--text-scale)
+  // font sizes actually repaint when zoom changes (iOS WebKit doesn't always
+  // repaint a subtree on a :root custom-property change — same fix as the chat).
+  const textScale = useTextScale();
+  const scaleStyle = { "--text-scale": textScale } as CSSProperties;
+
   if (editingSpacetime && canEditSpacetime) {
     return (
-      <aside className="pane-right is-editing-spacetime">
+      <aside className="pane-right is-editing-spacetime" style={scaleStyle}>
         {header && <section className="sb-section sb-header-slot">{header}</section>}
         <section className="sb-section sb-spacetime-edit">
           <div className="sb-spacetime-head">
@@ -276,7 +283,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="pane-right">
+    <aside className="pane-right" style={scaleStyle}>
       {header && <section className="sb-section sb-header-slot">{header}</section>}
       {/* View picker is in the calendar surface itself now; Sidebar
           stays focused on the taxonomy + filter pile. The view prop

@@ -122,6 +122,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const [voiceURI, setVoiceURI] = useState<string>(() => getSavedVoice());
   const [chatUsage, setChatUsage] = useState<ChatUsage>(() => getChatUsage(rel));
   const [loadedChats, setLoadedChats] = useState<string[]>([]);
+  const [contextOpen, setContextOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -487,8 +488,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       )}
 
       {loadedChats.length > 0 && (
-        <div className="order-chat-context" title="Recent chats in this folder that informed the reply">
-          context: {loadedChats.join(", ")}
+        <div className="order-chat-context" onClick={() => setContextOpen((v) => !v)} style={{ cursor: "pointer" }}
+          title="Recent chats in this folder that informed the reply — tap to expand/collapse">
+          {contextOpen ? `context: ${loadedChats.join(", ")}` : `context (${loadedChats.length}) ▸`}
         </div>
       )}
 

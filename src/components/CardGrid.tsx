@@ -5613,7 +5613,10 @@ export function CardGrid() {
     if (aNF && bNF) {
       return a.filename.localeCompare(b.filename);
     }
-    return sortKeyOf(b).localeCompare(sortKeyOf(a));
+    const sk = sortKeyOf(b).localeCompare(sortKeyOf(a));
+    if (sk !== 0) return sk;
+    // Same date (+time): break the tie by modified time, most-recent first.
+    return (b.mtime ?? 0) - (a.mtime ?? 0);
   });
   // Pagination for the Pile's flat grid: with no folder filter active
   // we'd otherwise mount one Card per note in the vault — at 10^4 notes
@@ -5827,7 +5830,10 @@ export function CardGrid() {
           ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
         const sectionNotes = filteredNotes
           .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
-          .sort((a, b) => sortKeyOf(b).localeCompare(sortKeyOf(a)));
+          .sort((a, b) => {
+            const sk = sortKeyOf(b).localeCompare(sortKeyOf(a));
+            return sk !== 0 ? sk : (b.mtime ?? 0) - (a.mtime ?? 0);
+          });
         // Key is just the stable note id — external body edits are now
         // delivered in-place via the externalBodyVersion prop, so we
         // never need to remount a card just because the file changed.
