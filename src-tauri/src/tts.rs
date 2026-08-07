@@ -83,7 +83,8 @@ mod imp {
     // with UIBackgroundModes=audio in Info.plist.
     #[cfg(target_os = "ios")]
     extern "C" {
-        static AVAudioSessionCategoryPlayback: *const AnyObject;
+        static AVAudioSessionCategoryPlayAndRecord: *const AnyObject;
+        static AVAudioSessionModeVoiceChat: *const AnyObject;
     }
     #[cfg(target_os = "ios")]
     fn activate_audio_session() {
@@ -92,9 +93,19 @@ mod imp {
             if session.is_null() {
                 return;
             }
-            let category = AVAudioSessionCategoryPlayback;
+            // PlayAndRecord (NOT Playback): a playback-only category disables the
+            // input, which killed the continuously-open STT mic the instant the
+            // agent spoke — so the user could never be heard to interrupt. Keeping
+            // the record-capable category (matching stt.rs prepare_session) lets
+            // the mic stay live during TTS, which is what barge-in needs.
+            // AllowBluetooth (0x4) keeps AirPods as the route; DefaultToSpeaker
+            // (0x8) keeps playback loud with no headset; VoiceChat mode enables the
+            // system echo cancellation so the mic doesn't transcribe the TTS.
+            let options: usize = 0x4 | 0x8;
             let mut err: *mut AnyObject = std::ptr::null_mut();
-            let _: objc2::runtime::Bool = msg_send![session, setCategory: category, error: &mut err];
+            let _: objc2::runtime::Bool = msg_send![session, setCategory: AVAudioSessionCategoryPlayAndRecord, withOptions: options, error: &mut err];
+            let mut merr: *mut AnyObject = std::ptr::null_mut();
+            let _: objc2::runtime::Bool = msg_send![session, setMode: AVAudioSessionModeVoiceChat, error: &mut merr];
             let mut err2: *mut AnyObject = std::ptr::null_mut();
             let _: objc2::runtime::Bool = msg_send![session, setActive: true, error: &mut err2];
         }
