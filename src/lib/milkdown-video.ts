@@ -79,14 +79,18 @@ function scanVideoBlocks(doc: ProseNode): { hides: Hide[]; widgets: Widget[] } {
 }
 
 export function videoEmbedPlugin() {
-  return $prose(
-    () =>
-      new Plugin({
+  return $prose(() => {
+    // Memoize by doc identity so cursor moves don't rescan the whole doc.
+    let lastDoc: unknown = null;
+    let lastSet: DecorationSet = DecorationSet.empty;
+    return new Plugin({
         key: KEY,
         props: {
           decorations(state) {
+            if (state.doc === lastDoc) return lastSet;
+            lastDoc = state.doc;
             const { hides, widgets } = scanVideoBlocks(state.doc);
-            if (widgets.length === 0 && hides.length === 0) return DecorationSet.empty;
+            if (widgets.length === 0 && hides.length === 0) { lastSet = DecorationSet.empty; return lastSet; }
             const decos: Decoration[] = [];
             for (const { pos, end } of hides) {
               decos.push(
@@ -105,9 +109,10 @@ export function videoEmbedPlugin() {
                 }),
               );
             }
-            return DecorationSet.create(state.doc, decos);
+            lastSet = DecorationSet.create(state.doc, decos);
+            return lastSet;
           },
         },
-      }),
-  );
+      });
+  });
 }

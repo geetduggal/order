@@ -285,14 +285,19 @@ function findEmbedTargets(doc: ProseNode): { pos: number; end: number; id: strin
 }
 
 export function youtubeEmbedPlugin() {
-  return $prose(
-    () =>
-      new Plugin({
+  return $prose(() => {
+    // Memoize by doc identity so cursor moves / selection changes don't rescan
+    // the whole doc — keeps typing cheap in large notes.
+    let lastDoc: unknown = null;
+    let lastSet: DecorationSet = DecorationSet.empty;
+    return new Plugin({
         key: KEY,
         props: {
           decorations(state) {
+            if (state.doc === lastDoc) return lastSet;
+            lastDoc = state.doc;
             const targets = findEmbedTargets(state.doc);
-            if (targets.length === 0) return DecorationSet.empty;
+            if (targets.length === 0) { lastSet = DecorationSet.empty; return lastSet; }
             const decos: Decoration[] = [];
             for (const { pos, end, id } of targets) {
               // Hide the broken-image / source widget.
@@ -313,9 +318,10 @@ export function youtubeEmbedPlugin() {
                 }),
               );
             }
-            return DecorationSet.create(state.doc, decos);
+            lastSet = DecorationSet.create(state.doc, decos);
+            return lastSet;
           },
         },
-      }),
-  );
+      });
+  });
 }

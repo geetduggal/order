@@ -117,14 +117,20 @@ function hashCode(s: string): string {
 }
 
 export function mermaidPlugin() {
-  return $prose(
-    () =>
-      new Plugin({
+  return $prose(() => {
+    // Memoize by doc identity: decorations() runs on EVERY view update
+    // (including cursor moves / selection changes). Skipping the full-doc
+    // rescan when the document is unchanged keeps typing cheap in big notes.
+    let lastDoc: unknown = null;
+    let lastSet: DecorationSet = DecorationSet.empty;
+    return new Plugin({
         key: KEY,
         props: {
           decorations(state) {
+            if (state.doc === lastDoc) return lastSet;
+            lastDoc = state.doc;
             const targets = findMermaidTargets(state.doc);
-            if (targets.length === 0) return DecorationSet.empty;
+            if (targets.length === 0) { lastSet = DecorationSet.empty; return lastSet; }
             const decos: Decoration[] = [];
             targets.forEach(({ end, code }, i) => {
               // Mount the rendered diagram right after the source block.
@@ -139,9 +145,10 @@ export function mermaidPlugin() {
                 }),
               );
             });
-            return DecorationSet.create(state.doc, decos);
+            lastSet = DecorationSet.create(state.doc, decos);
+            return lastSet;
           },
         },
-      }),
-  );
+      });
+  });
 }
