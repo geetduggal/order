@@ -1904,7 +1904,6 @@ export function Card(props: Props) {
             />
           </span>
         )}
-        <span className="order-card-path" title={pathRef.current}>{filename}</span>
       </div>
       {deleteError && (
         <div className="order-card-error" role="alert">

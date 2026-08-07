@@ -806,10 +806,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  row-gap: 4px;
-  margin-top: 10px;
-  padding-top: 6px;
+  gap: 10px;
+  row-gap: 3px;
+  margin-top: 6px;
+  padding-top: 4px;
   border-top: 1px solid var(--card-border, var(--rule));
   /* Single consistent size across every footer chip — saved/saving,
      breadcrumb, filename. 11px is the midpoint between the prior
@@ -2267,7 +2267,9 @@ iframe.order-youtube-embed {
 /* 10-box grid (Johnny Decimal) for Areas + Categories. */
 .box-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* Responsive: a wider (resized) sidebar gets MORE columns of the same-size
+     tiles, instead of two tiles ballooning to fill the width. */
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 7px;
   margin-bottom: 14px;
 }
@@ -2504,7 +2506,9 @@ iframe.order-youtube-embed {
 /* 10-box Johnny Decimal grid */
 .box-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* Responsive tiles so a resized sidebar reflows into more columns rather
+     than stretching two tiles to fill (and clip) the extra width. */
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 6px;
 }
 .box {
