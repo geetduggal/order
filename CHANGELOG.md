@@ -13,18 +13,64 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
-- **Chats name themselves** — a chat that's still called by its timestamp gets a
-  short, meaningful filename derived from what you talked about, generated on a
-  quiet visit (never mid-conversation). It renames the file, updates the timeline
-  event, and leaves any title you set yourself untouched — and only re-titles its
-  own auto-names as a chat meaningfully grows, so names settle rather than churn.
-- **Mermaid diagrams in notes** — any ` ```mermaid ` code block now renders as a
-  live diagram beneath its (still-editable) source in the editor. The `mermaid`
-  library is lazy-loaded, so notes without diagrams pay nothing for it.
-- **Docs** — fixed a broken architecture diagram in `docs/ARCHITECTURE.md` (a
-  `LOOP` participant collided with Mermaid's `loop` keyword, so the sequence
-  diagram never rendered) and added an in-vault architecture & network-flows
-  reference note with the full set of diagrams.
+## [2026.8.3] - 2026-08-07
+
+A big pass on the hands-free voice agent, the calendar, and everyday polish
+across the pile and sidebar.
+
+### Voice
+
+- **Talk over the agent to interrupt it** — the microphone now stays open while
+  the agent speaks, so you can barge in hands-free: start a new thought and it
+  cuts off and takes what you said. Cloud voices play through a native audio path
+  that shares the mic's audio session (so recording survives playback), and the
+  agent's own voice is filtered out so it doesn't interrupt itself. You can also
+  tap the transcript or the **Interrupt** button any time.
+- **Subtle audio cues** — a soft tone when it starts thinking, and a quick "got
+  it" blip the moment your interruption is registered.
+- **Snappier and steadier** — cloud speech starts on the first clause instead of
+  waiting for a whole sentence; the reply text streams smoothly while it talks;
+  and a background-execution assertion keeps a turn alive if the phone
+  backgrounds mid-reply.
+- **Chats name themselves** — a chat still called by its timestamp gets a short,
+  meaningful filename derived from what you talked about, generated on a quiet
+  visit (never mid-conversation). Titles you set yourself are left untouched.
+
+### Calendar
+
+- **Room / location** shows subtly after the title on day and week events.
+- **Rename inline** — double-click an event's title in day/week/month to edit it
+  in place.
+- **Month view** now opens on the current month and scrolls forward through the
+  coming months, instead of a fixed single grid.
+- **Add guests while creating an event** — the create prompt takes recipient
+  emails (with autocomplete) so a meeting can go out with its invite list.
+- Fixed opening the wrong event when two share a day and title, and the pile
+  occasionally reopening an event on its own.
+
+### Pile, sidebar & editor
+
+- **Resizable sidebar** — drag its left edge (double-click to reset); shown by
+  default now.
+- **Change a card's Notable Folder right from the card** via a subtle folder chip
+  in its footer.
+- **Reversible "Read more"** — a folded card expands, then folds back with "Show
+  less"; the collapsed preview is shorter, and chat cards collapse to a compact
+  preview.
+- **Tap a masonry image to expand it** in a lightbox; right-click/long-press to
+  open, copy, or reveal it.
+- **Fonts scale with zoom** across the sidebar, filter pills, the spacetime
+  editor, and modal panels.
+- `Cmd+W` drops the top Notable Folder from the pile; cards and calendar events
+  have gentler, less-rounded corners; notes sort by creation date (tie-broken by
+  last-modified); several "thinking" phrasings are sampled per turn.
+- Faster, smoother markdown editing (the editor no longer re-renders on the
+  save-status flicker) and live in-editor Mermaid diagrams.
+
+### Publishing
+
+- **No more doubled Readwise articles** on the published site — pages are
+  de-duplicated by reference (your vault is left untouched).
 
 ## [2026.8.2] - 2026-08-02
 
