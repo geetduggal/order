@@ -22,7 +22,6 @@ import type {
   EventContentArg,
   EventDropArg,
   EventInput,
-  EventMountArg,
 } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
@@ -322,6 +321,12 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   // One-shot guard so the load-time "scroll to the next event" runs once per
   // mount (CardGrid remounts this on view change), not on every later edit.
   const didAutoScrollRef = useRef(false);
+  // Pending single-click action-menu open, held briefly so a double-click (rename
+  // inline) can pre-empt it before the menu overlay covers the title.
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last event click (id + time), so a second quick click on the same event
+  // counts as a double even on touch, where `jsEvent.detail` stays 1.
+  const lastClickRef = useRef<{ id: string; t: number } | null>(null);
   // While a calendar event is being dragged, this tracks the pointer so we can
   // highlight the Week hub list zone when the event is over it — and so the drop
   // uses the real release point (FullCalendar's eventDragStop jsEvent coords are
@@ -487,47 +492,66 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     // Click without drag (FullCalendar fires eventDrop instead for drags).
     if (!arg.event.id) return;
     const e = arg.jsEvent as MouseEvent;
-    props.onEventClick?.(arg.event.id, { x: e.clientX, y: e.clientY });
+    const coords = { x: e.clientX, y: e.clientY };
+    const id = arg.event.id;
+    const now = Date.now();
+    // Double = detail>=2 (mouse) OR a second quick tap on the same event (touch,
+    // where detail stays 1). Must beat the 300ms menu delay below.
+    const prev = lastClickRef.current;
+    const isDouble = e.detail >= 2 || (!!prev && prev.id === id && now - prev.t < 280);
+    lastClickRef.current = { id, t: now };
+    // Double-click a titled event → rename it inline. Cancel the pending
+    // single-click menu so its overlay doesn't cover the title.
+    if (props.onRenameEvent && isDouble) {
+      if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; }
+      lastClickRef.current = null;
+      startInlineTitleEdit(arg.el, id, arg.event.title);
+      return;
+    }
+    // Single click → open the action menu. When rename is supported, wait a beat
+    // so a following double-click/tap can pre-empt it (the menu's fixed overlay
+    // would otherwise swallow the second click). Without rename, open at once.
+    if (!props.onRenameEvent) { props.onEventClick?.(id, coords); return; }
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      props.onEventClick?.(id, coords);
+    }, 300);
   }
 
-  // Double-click an event's title → edit it inline (rename in place).
-  function handleEventDidMount(info: EventMountArg) {
-    if (!props.onRenameEvent || !info.event.id) return;
-    const titleEl = info.el.querySelector(".order-event-title") as HTMLElement | null;
+  // Turn an event's `.order-event-title` into an inline-editable field.
+  function startInlineTitleEdit(eventEl: HTMLElement, eventId: string, origTitle: string) {
+    if (!props.onRenameEvent) return;
+    const titleEl = eventEl.querySelector(".order-event-title") as HTMLElement | null;
     if (!titleEl) return;
-    titleEl.addEventListener("dblclick", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const orig = info.event.title;
-      titleEl.contentEditable = "true";
-      titleEl.spellcheck = false;
-      titleEl.style.whiteSpace = "normal";
-      titleEl.style.overflow = "visible";
-      titleEl.focus();
-      const range = document.createRange();
-      range.selectNodeContents(titleEl);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-      const cleanup = () => {
-        titleEl.contentEditable = "false";
-        titleEl.style.whiteSpace = "";
-        titleEl.style.overflow = "";
-        titleEl.removeEventListener("keydown", onKey);
-      };
-      const commit = () => {
-        const next = (titleEl.textContent ?? "").trim();
-        cleanup();
-        if (next && next !== orig) props.onRenameEvent?.(info.event.id, next);
-        else titleEl.textContent = orig;
-      };
-      const onKey = (ke: KeyboardEvent) => {
-        if (ke.key === "Enter") { ke.preventDefault(); titleEl.blur(); }
-        if (ke.key === "Escape") { ke.preventDefault(); titleEl.textContent = orig; titleEl.blur(); }
-      };
-      titleEl.addEventListener("blur", commit, { once: true });
-      titleEl.addEventListener("keydown", onKey);
-    });
+    titleEl.contentEditable = "true";
+    titleEl.spellcheck = false;
+    titleEl.style.whiteSpace = "normal";
+    titleEl.style.overflow = "visible";
+    titleEl.focus();
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    const onKey = (ke: KeyboardEvent) => {
+      if (ke.key === "Enter") { ke.preventDefault(); titleEl.blur(); }
+      if (ke.key === "Escape") { ke.preventDefault(); titleEl.textContent = origTitle; titleEl.blur(); }
+    };
+    const cleanup = () => {
+      titleEl.contentEditable = "false";
+      titleEl.style.whiteSpace = "";
+      titleEl.style.overflow = "";
+      titleEl.removeEventListener("keydown", onKey);
+    };
+    const commit = () => {
+      const next = (titleEl.textContent ?? "").trim();
+      cleanup();
+      if (next && next !== origTitle) props.onRenameEvent?.(eventId, next);
+      else titleEl.textContent = origTitle;
+    };
+    titleEl.addEventListener("blur", commit, { once: true });
+    titleEl.addEventListener("keydown", onKey);
   }
 
   async function handleSelect(arg: DateSelectArg) {
@@ -737,7 +761,6 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           });
         }}
         eventContent={renderEventContent}
-        eventDidMount={handleEventDidMount}
         // Weekly-hub all-day events get the "high bit" card treatment in the
         // Day / Week all-day band (see .order-event-highbit). Scoped to the
         // time-grid views — month/year already lead with all-day events.
