@@ -15,7 +15,7 @@ import {
   approve, cancelTurn, getAgentKey, onAgentStream, runTurn,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop } from "../lib/voice";
+import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop, outputIsSpeaker } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
@@ -182,6 +182,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // turn instead of throwing the earlier part away.
   const lastUserTextRef = useRef("");
   const pendingReplaceRef = useRef(false);
+  // Built-in speaker has no echo cancellation, so we go half-duplex there: don't
+  // act on the mic while (or just after) the agent speaks, or it hears itself.
+  // Headsets/AirPods keep full-duplex barge-in. Refreshed when playback starts.
+  const speakerRouteRef = useRef(false);
+  const lastSpeakEndRef = useRef(0);
+  const refreshRoute = useCallback(() => { void outputIsSpeaker().then((s) => { speakerRouteRef.current = s; }); }, []);
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -329,6 +335,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     refreshMic();
     voiceOnRef.current = true;
     setModeBoth("listening");
+    refreshRoute();
     playEarcon("start");   // distinct "I'm listening now" chime
     // Native continuous listen loop: the mic stays open across turns and during
     // TTS playback, streaming each finalized utterance via `stt-utterance`
@@ -428,9 +435,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       ? createStreamSpeaker({
           voiceURI: getSavedVoice() || undefined,
           rate: getSavedRate(),
-          onStart: () => setModeBoth("speaking"),
-          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
-          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onStart: () => { refreshRoute(); setModeBoth("speaking"); },
+          onEnd: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); lastSpeakEndRef.current = Date.now(); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
+          onError: () => { voiceKeepaliveEnd(); speakerRef.current = null; setAgentActive(false); lastSpeakEndRef.current = Date.now(); if (voiceOnRef.current) setModeBoth("listening"); else setModeBoth("idle"); },
         })
       : null;
     setModeBoth("thinking");
@@ -472,9 +479,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     const m = modeRef.current;
     // approval / transcribing / idle: not a moment to take a new turn by voice.
     if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
-    // HANDS-FREE BARGE-IN while the agent is speaking: the open mic also hears
-    // the agent, so reject echo (an utterance that just repeats what it's
-    // saying). Novel speech is a real interruption — cut the TTS and take it.
+    // BUILT-IN SPEAKER = no echo cancellation, so go HALF-DUPLEX: ignore the mic
+    // while the agent is speaking (and for a beat after, while the tail decays),
+    // or it transcribes its own voice and talks to itself. Interrupt with a tap
+    // instead. Headsets/AirPods (route not speaker) keep full-duplex barge-in.
+    if (speakerRouteRef.current) {
+      if (m === "speaking") return;
+      if (Date.now() - lastSpeakEndRef.current < 900) return;
+    }
+    // HANDS-FREE BARGE-IN while the agent is speaking (headset route): the open
+    // mic also hears the agent, so reject echo (an utterance that just repeats
+    // what it's saying). Novel speech is a real interruption.
     if (m === "speaking") {
       // Match against a rolling window of RECENT agent speech (this reply plus the
       // tail of the prior one) — the mic can echo audio from a moment ago, so a

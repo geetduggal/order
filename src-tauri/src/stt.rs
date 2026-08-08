@@ -294,6 +294,33 @@ mod apple {
         }
     }
 
+    /// True when audio is playing out the phone's BUILT-IN SPEAKER (portType
+    /// "Speaker"), as opposed to headphones / AirPods / other Bluetooth. On the
+    /// built-in speaker there's no echo cancellation, so the mic hears the agent
+    /// loudly — the caller uses this to go half-duplex there. macOS: false.
+    pub fn output_is_speaker() -> bool {
+        #[cfg(target_os = "ios")]
+        unsafe {
+            let session: *mut AnyObject = msg_send![class!(AVAudioSession), sharedInstance];
+            if session.is_null() { return false; }
+            let route: *mut AnyObject = msg_send![session, currentRoute];
+            if route.is_null() { return false; }
+            let outputs: *mut AnyObject = msg_send![route, outputs];
+            if outputs.is_null() { return false; }
+            let count: usize = msg_send![outputs, count];
+            for i in 0..count {
+                let port: *mut AnyObject = msg_send![outputs, objectAtIndex: i];
+                if port.is_null() { continue; }
+                let pt: Retained<NSString> = msg_send![port, portType];
+                // AVAudioSessionPortBuiltInSpeaker == "Speaker".
+                if pt.to_string() == "Speaker" { return true; }
+            }
+            false
+        }
+        #[cfg(target_os = "macos")]
+        { false }
+    }
+
     #[cfg(target_os = "ios")]
     extern "C" {
         static AVAudioSessionCategoryPlayAndRecord: *const AnyObject;
@@ -689,6 +716,16 @@ pub fn stt_input_name() -> Option<String> {
     { apple::current_input_name() }
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     { None }
+}
+
+/// True when TTS is playing out the built-in speaker (no echo cancellation there,
+/// so the frontend goes half-duplex to stop the agent hearing itself).
+#[tauri::command]
+pub fn stt_output_is_speaker() -> bool {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    { apple::output_is_speaker() }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    { false }
 }
 
 /// Record one hands-free utterance and transcribe it. Returns the recognized

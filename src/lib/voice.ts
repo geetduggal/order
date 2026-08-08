@@ -112,3 +112,9 @@ export function voiceConvoStop(): void {
 export function inputName(): Promise<string | null> {
   return invoke<string | null>("stt_input_name").catch(() => null);
 }
+
+/** True when TTS is coming out the phone's built-in speaker (no hardware echo
+ *  cancellation → the mic hears the agent). The chat goes half-duplex there. */
+export function outputIsSpeaker(): Promise<boolean> {
+  return invoke<boolean>("stt_output_is_speaker").catch(() => false);
+}

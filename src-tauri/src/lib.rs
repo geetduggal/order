@@ -290,6 +290,7 @@ pub fn run() {
             stt::stt_listen,
             stt::stt_cancel,
             stt::stt_input_name,
+            stt::stt_output_is_speaker,
             stt::stt_transcribe,
             stt::stt_start_loop,
             stt::stt_stop_loop,
