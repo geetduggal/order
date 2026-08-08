@@ -398,6 +398,47 @@ pub fn tts_is_speaking() -> bool {
     }
 }
 
+// ---- helpers for the Rust-driven (locked) voice loop ----------------------
+// The background voice loop in stt.rs speaks replies with the native synthesizer
+// (reliable offline / while locked) and bridges the model call with a background
+// task assertion. These thin wrappers give it access without going through the
+// Tauri command layer.
+
+/// Speak `text` with the native synthesizer (AVSpeech). No-op off macOS/iOS.
+pub fn speak_native(#[allow(unused_variables)] text: &str, #[allow(unused_variables)] voice_id: Option<&str>, #[allow(unused_variables)] rate: f32) {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::speak(text, voice_id, rate);
+    }
+}
+
+/// Whether the native synthesizer is currently speaking.
+pub fn is_native_speaking() -> bool {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::is_speaking()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        false
+    }
+}
+
+/// Take / release a background-execution assertion (bridges the no-audio think
+/// gap so a locked phone doesn't suspend mid-turn).
+pub fn keepalive_begin() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::keepalive_begin();
+    }
+}
+pub fn keepalive_end() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::keepalive_end();
+    }
+}
+
 /// Play a base64 audio clip (cloud TTS mp3) through the NATIVE audio session so
 /// it coexists with the recording mic (WebView `<audio>` interrupts recording).
 /// Returns the clip's playback duration in seconds. No-op off macOS/iOS.

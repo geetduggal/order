@@ -21,6 +21,101 @@ static CANCEL: AtomicBool = AtomicBool::new(false);
 /// The loop re-arms the native recognizer after each utterance so the mic stays
 /// open across turns AND during TTS playback — the basis for barge-in.
 static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the app (WebView) is in the foreground. JS flips this on
+/// visibilitychange. When the app is BACKGROUNDED (phone locked), JS is
+/// suspended and can't drive the voice loop — so the STT loop runs the turn +
+/// speaks the reply itself (see `run_background_turn`). Foreground is unchanged:
+/// the loop just emits `stt-utterance` and JS orchestrates as before.
+static FOREGROUND: AtomicBool = AtomicBool::new(true);
+
+/// True when the app is in the foreground (JS is alive to drive the loop).
+pub fn is_foreground() -> bool {
+    FOREGROUND.load(Ordering::Relaxed)
+}
+
+/// Config for the Rust-driven voice conversation used while backgrounded/locked.
+/// Provided by JS when hands-free voice starts (`voice_convo_start`).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+struct VoiceConvo {
+    chat_rel: String,
+    api_key: String,
+    voice_id: Option<String>,
+    rate: f32,
+}
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+static VOICE_CONVO: std::sync::Mutex<Option<VoiceConvo>> = std::sync::Mutex::new(None);
+
+/// Tell the native side whether the app is foregrounded (JS visibilitychange).
+#[tauri::command]
+pub fn set_foreground(foreground: bool) {
+    FOREGROUND.store(foreground, Ordering::Relaxed);
+}
+
+/// Arm the Rust-driven voice conversation (used only while backgrounded). JS
+/// calls this when hands-free voice starts; `voice_convo_stop` disarms it.
+#[tauri::command]
+pub fn voice_convo_start(
+    #[allow(unused_variables)] chat_path: String,
+    #[allow(unused_variables)] api_key: String,
+    #[allow(unused_variables)] voice_id: Option<String>,
+    #[allow(unused_variables)] rate: Option<f32>,
+) {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        *VOICE_CONVO.lock().unwrap() = Some(VoiceConvo {
+            chat_rel: chat_path,
+            api_key,
+            voice_id,
+            rate: rate.unwrap_or(1.0),
+        });
+    }
+}
+
+#[tauri::command]
+pub fn voice_convo_stop() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        *VOICE_CONVO.lock().unwrap() = None;
+    }
+}
+
+/// Locked-phone path: JS is suspended, so run the agent turn and speak the reply
+/// entirely in Rust. The mic engine is already torn down between utterances, so
+/// nothing records during the (native) TTS — no echo, no barge-in here, just a
+/// clean walkie-talkie loop. A background-task assertion bridges the model call
+/// (no audio flowing) so the app isn't suspended mid-think.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
+    let (chat_rel, api_key, voice_id, rate) = {
+        let g = VOICE_CONVO.lock().unwrap();
+        match g.as_ref() {
+            Some(c) => (c.chat_rel.clone(), c.api_key.clone(), c.voice_id.clone(), c.rate),
+            None => return, // no conversation armed
+        }
+    };
+    if api_key.trim().is_empty() {
+        return;
+    }
+    crate::tts::keepalive_begin();
+    let reply = crate::agent::run::run_turn_for(app, &api_key, &chat_rel, utterance);
+    crate::tts::keepalive_end();
+    let reply = match reply {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    if reply.trim().is_empty() {
+        return;
+    }
+    // Speak natively (system voice) — reliable offline and while locked. Wait for
+    // it to finish before the loop re-arms the mic so the next turn is clean.
+    crate::tts::speak_native(&reply, voice_id.as_deref(), rate);
+    let start = std::time::Instant::now();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    while crate::tts::is_native_speaking() && start.elapsed() < std::time::Duration::from_secs(180) {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+    }
+}
 /// Last time (ms since UNIX epoch) an `stt-level` event was emitted. The audio
 /// tap fires ~40×/s; throttling the emit keeps the JS bridge from being flooded
 /// (which, during TTS, was starving the agent-text rendering).
@@ -713,8 +808,16 @@ pub async fn stt_start_loop(
                 match result {
                     Ok(Some(text)) if !text.trim().is_empty() && !looks_like_hallucination(&text) => {
                         consecutive_errs = 0;
-                        let _ = app.emit("stt-utterance", &text);
                         let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": started.elapsed().as_secs_f64() }));
+                        if is_foreground() {
+                            // Awake: JS orchestrates the turn (barge-in, earcons, TTS).
+                            let _ = app.emit("stt-utterance", &text);
+                        } else {
+                            // Locked/backgrounded: JS is suspended — run it here.
+                            // (Deliberately no stt-utterance emit: a buffered event
+                            // delivered when JS wakes would double-run the turn.)
+                            run_background_turn(&app, &text);
+                        }
                     }
                     Ok(_) => { consecutive_errs = 0; /* silence / cancelled — just re-arm */ }
                     Err(e) => {

@@ -83,6 +83,31 @@ export async function onUtterance(handler: (text: string) => void): Promise<Unli
   return listen<string>("stt-utterance", (e) => handler(e.payload));
 }
 
+// ---- locked-phone (backgrounded) voice ------------------------------------
+// When the app is backgrounded (phone locked) the WebView's JS is suspended, so
+// it can't drive the voice loop. These let Rust take over: JS reports the
+// foreground state, and arms a conversation (which chat, which key) that Rust
+// runs + speaks natively while backgrounded. The foreground path is unchanged.
+
+/** Tell the native side whether the app/WebView is foregrounded. */
+export function setForeground(foreground: boolean): void {
+  if (!micSupported()) return;
+  void invoke("set_foreground", { foreground }).catch(() => {});
+}
+
+/** Arm the Rust-driven conversation used while backgrounded. `chatPath` is the
+ *  vault-relative chat file; `voiceId` is an optional NATIVE voice id (locked
+ *  replies use the system synthesizer). */
+export function voiceConvoStart(chatPath: string, apiKey: string, voiceId: string | null, rate: number): void {
+  if (!micSupported()) return;
+  void invoke("voice_convo_start", { chatPath, apiKey, voiceId, rate }).catch(() => {});
+}
+
+export function voiceConvoStop(): void {
+  if (!micSupported()) return;
+  void invoke("voice_convo_stop").catch(() => {});
+}
+
 /** The microphone that will be used (e.g. "AirPods Pro"), or null if unknown. */
 export function inputName(): Promise<string | null> {
   return invoke<string | null>("stt_input_name").catch(() => null);

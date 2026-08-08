@@ -15,7 +15,7 @@ import {
   approve, cancelTurn, getAgentKey, onAgentStream, runTurn,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance } from "../lib/voice";
+import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
@@ -267,6 +267,16 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const refreshMic = useCallback(() => { if (micSupported()) void inputName().then(setMicName); }, []);
   useEffect(() => { refreshMic(); }, [refreshMic]);
 
+  // Report foreground state to the native side. When the app backgrounds (phone
+  // locks), JS is about to suspend — visibilitychange fires first — so Rust knows
+  // to drive the voice loop itself until we're visible again.
+  useEffect(() => {
+    const onVis = () => setForeground(document.visibilityState === "visible");
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   // Load the available read-aloud voices so the user can pick one right here.
   useEffect(() => {
     if (!ttsSupported()) return;
@@ -286,6 +296,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const failLoud = useCallback((msg: string) => {
     voiceOnRef.current = false;
     voiceKeepaliveEnd();
+    voiceConvoStop();
     void stopListenLoop();
     void cancelTurn();
     turnInFlightRef.current = false;
@@ -318,12 +329,21 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // possible — the old per-turn "open the mic only between turns" flow couldn't
     // hear you interrupt.
     void startListenLoop().catch((e) => failLoud(typeof e === "string" ? e : "Voice input failed."));
+    // Arm the Rust-driven conversation for when the phone locks (JS suspends):
+    // Rust then runs the turn and speaks the reply with the native voice. A
+    // native voice id is passed if the chosen voice is native, else the system
+    // default is used while locked.
+    const sv = getSavedVoice();
+    const nativeVoiceId = sv.startsWith("native:") ? sv.slice("native:".length) : null;
+    voiceConvoStart(rel, getAgentKey(), nativeVoiceId, getSavedRate());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasKey, failLoud]);
+  }, [hasKey, failLoud, rel]);
 
   const stopVoice = useCallback(() => {
     voiceOnRef.current = false;
     voiceKeepaliveEnd();
+    voiceConvoStop();
+    setForeground(true);
     void stopListenLoop();
     void cancelTurn();
     turnInFlightRef.current = false;
@@ -428,6 +448,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // barge-in: interrupt whatever the agent is doing and take the new input.
   const handleUtterance = useCallback((text: string) => {
     if (!voiceOnRef.current) return;
+    // When the app isn't visible (backgrounded/locked), the native loop drives
+    // turns itself — ignore here so we don't double-run at the transition or when
+    // a buffered event lands as JS wakes.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     const t = text.trim();
     if (!t) return;
     const m = modeRef.current;
@@ -542,7 +566,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [rel]);
 
   // Tear the loop down on unmount.
-  useEffect(() => () => { voiceOnRef.current = false; voiceKeepaliveEnd(); void stopListenLoop(); void cancelTurn(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
+  useEffect(() => () => { voiceOnRef.current = false; voiceKeepaliveEnd(); voiceConvoStop(); void stopListenLoop(); void cancelTurn(); speakerRef.current?.cancel(); stopSpeaking(); }, []);
 
   const sendTyped = useCallback(() => {
     const text = input.trim();

@@ -268,7 +268,32 @@ fn run_turn(
 }
 
 fn self_auto(app: &AppHandle) -> bool {
-    app.state::<AgentState>().auto_approve.load(Ordering::Relaxed)
+    // Auto-approve when the user has chosen "approve all", OR when the app is
+    // backgrounded (locked hands-free voice): there's no UI to approve against,
+    // and the user is actively talking to their own vault, so writes proceed
+    // rather than stalling on an approval that can never arrive.
+    app.state::<AgentState>().auto_approve.load(Ordering::Relaxed) || !crate::stt::is_foreground()
+}
+
+/// Run one agent turn synchronously (already on a blocking thread) against an
+/// existing chat, returning the assistant's text. Used by the Rust-driven voice
+/// loop when the app is backgrounded and JS can't invoke `agent_turn`. Streams
+/// the same `agent-stream` events and persists to the chat file, so the UI is
+/// consistent once it wakes.
+pub fn run_turn_for(
+    app: &AppHandle,
+    api_key: &str,
+    chat_rel: &str,
+    user_text: &str,
+) -> Result<String, String> {
+    app.state::<AgentState>().cancel.store(false, Ordering::Relaxed);
+    let root = vault_root(app)?;
+    let dir_rel = Path::new(chat_rel)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let provider = Anthropic::new(api_key.to_string());
+    run_turn(app, &provider, &root, chat_rel, &dir_rel, user_text)
 }
 
 // ---- commands --------------------------------------------------------------
