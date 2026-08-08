@@ -176,6 +176,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // the turn it kicks off (they share one earcon player; back-to-back would cut
   // the first off, and the interrupt cue already signals "got it").
   const skipThinkEarconRef = useRef(false);
+  // Rambling support: the text of the current in-flight user turn, and whether a
+  // queued continuation should REPLACE that turn's bubble rather than add a new
+  // one. If you keep talking before the agent replies, we combine it all into one
+  // turn instead of throwing the earlier part away.
+  const lastUserTextRef = useRef("");
+  const pendingReplaceRef = useRef(false);
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -323,6 +329,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     refreshMic();
     voiceOnRef.current = true;
     setModeBoth("listening");
+    playEarcon("start");   // distinct "I'm listening now" chime
     // Native continuous listen loop: the mic stays open across turns and during
     // TTS playback, streaming each finalized utterance via `stt-utterance`
     // (handled in the onUtterance effect below). This is what makes barge-in
@@ -386,12 +393,15 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Send a user turn (from voice or keyboard).
-  const sendTurn = useCallback((text: string) => {
+  // Send a user turn (from voice or keyboard). `replaceLastUser` rewrites the last
+  // user bubble instead of adding one — used when combining a rambling
+  // continuation into the same turn.
+  const sendTurn = useCallback((text: string, opts?: { replaceLastUser?: boolean }) => {
     setError(null);
     bargeInRef.current = false;
     pendingUtteranceRef.current = null;
     turnInFlightRef.current = true;
+    lastUserTextRef.current = text;
     setAgentActive(true);
     // Soft "thinking" cue when a voice turn starts (skipped right after a barge-in
     // interrupt cue, which already acknowledged you).
@@ -399,7 +409,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       if (skipThinkEarconRef.current) skipThinkEarconRef.current = false;
       else playEarcon("thinking");
     }
-    setTurns((prev) => [...prev, { role: "user", text, tools: [] }]);
+    setTurns((prev) => opts?.replaceLastUser && prev.length && prev[prev.length - 1].role === "user"
+      ? [...prev.slice(0, -1), { role: "user", text, tools: [] }]
+      : [...prev, { role: "user", text, tools: [] }]);
     setStreamText("");
     setStreamTools([]);
     setPartial("");
@@ -431,10 +443,13 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       .catch((err) => { if (!bargeInRef.current) failLoud(typeof err === "string" ? err : "The agent turn failed."); })
       .finally(() => {
         turnInFlightRef.current = false;
-        // A barge-in queued the next utterance while this turn was still
-        // generating; now that it's wound down, send it.
+        // A barge-in / continuation queued the next utterance while this turn was
+        // still generating; now that it's wound down, send it (replacing the last
+        // user bubble when it's a rambling continuation of the same turn).
         const pending = pendingUtteranceRef.current;
-        if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending); }
+        const replace = pendingReplaceRef.current;
+        pendingReplaceRef.current = false;
+        if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending, { replaceLastUser: replace }); }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rel, failLoud, finalizeAgent]);
@@ -476,16 +491,19 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     }
     clearFiller();
     if (turnInFlightRef.current) {
-      // Still generating (thinking) → abandon it and queue this as the next turn
-      // (two model turns can't run at once); the runTurn .finally sends it once
-      // wound down.
+      // Still THINKING (agent hasn't spoken yet) and you kept talking → this is a
+      // continuation of the same thought, not an interruption. Abandon the
+      // in-flight turn and re-send the COMBINED text so nothing you said is lost
+      // (rambling). No interrupt cue — you didn't interrupt anything spoken.
+      const combined = (lastUserTextRef.current ? lastUserTextRef.current + " " : "") + t;
       bargeInRef.current = true;
-      playEarcon("interrupt");
-      skipThinkEarconRef.current = true;
+      skipThinkEarconRef.current = true;   // don't re-cue on the combined resend
       void cancelTurn();
       speakerRef.current?.cancel();
       speakerRef.current = null;
-      pendingUtteranceRef.current = t;
+      pendingUtteranceRef.current = combined;
+      pendingReplaceRef.current = true;    // replace the same user bubble
+      lastUserTextRef.current = combined;
       setStreamText("");
       setModeBoth("listening");
       return;

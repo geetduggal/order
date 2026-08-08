@@ -48,12 +48,16 @@ function tones(segs: { freq: number; ms: number }[], vol: number): Float32Array 
   return out;
 }
 
-// Precomputed once. Thinking: a single soft low tone. Interrupt: a quick rising
-// two-note "got it" tick.
+// Precomputed once, each clearly distinct:
+//  - start:     a warm rising three-note arpeggio — "I'm listening" (tap Talk).
+//  - thinking:  a single soft low tone — "got it, working" (after you speak).
+//  - interrupt: a quick rising two-note tick — "cutting in".
+const START = encodeWav(tones([{ freq: 523, ms: 70 }, { freq: 659, ms: 70 }, { freq: 784, ms: 95 }], 0.13));
 const THINKING = encodeWav(tones([{ freq: 396, ms: 130 }], 0.12));
 const INTERRUPT = encodeWav(tones([{ freq: 784, ms: 45 }, { freq: 1046, ms: 65 }], 0.15));
 
-export function playEarcon(kind: "thinking" | "interrupt"): void {
+export function playEarcon(kind: "start" | "thinking" | "interrupt"): void {
   if (!isTauri()) return;
-  void invoke("tts_play_earcon", { audioBase64: kind === "thinking" ? THINKING : INTERRUPT }).catch(() => {});
+  const b64 = kind === "start" ? START : kind === "thinking" ? THINKING : INTERRUPT;
+  void invoke("tts_play_earcon", { audioBase64: b64 }).catch(() => {});
 }
