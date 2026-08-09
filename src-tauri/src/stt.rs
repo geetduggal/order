@@ -22,6 +22,13 @@ static CANCEL: AtomicBool = AtomicBool::new(false);
 /// open across turns AND during TTS playback — the basis for barge-in.
 static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Whether the last `listen_live` utterance ended NATURALLY (you paused) vs was
+/// CUT by the on-device recognizer's ~60s segment limit (you were still talking).
+/// A cut segment is a continuation, not a finished turn — the frontend holds it
+/// and keeps accumulating until a natural end, so long speech isn't split (and
+/// isn't lost). Default true.
+static END_NATURAL: AtomicBool = AtomicBool::new(true);
+
 /// Whether the app (WebView) is in the foreground. JS flips this on
 /// visibilitychange. When the app is BACKGROUNDED (phone locked), JS is
 /// suspended and can't drive the voice loop — so the STT loop runs the turn +
@@ -42,32 +49,64 @@ struct VoiceConvo {
     api_key: String,
     voice_id: Option<String>,
     rate: f32,
+    // Cloud voice for the locked path so it sounds the same as when awake. When
+    // `cloud_engine` is None (or synthesis fails), fall back to the native voice.
+    cloud_engine: Option<String>, // "openai" | "eleven" | "unreal"
+    cloud_voice: String,
+    cloud_model: String,
+    cloud_key: String,
 }
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 static VOICE_CONVO: std::sync::Mutex<Option<VoiceConvo>> = std::sync::Mutex::new(None);
 
 /// Tell the native side whether the app is foregrounded (JS visibilitychange).
 #[tauri::command]
-pub fn set_foreground(foreground: bool) {
+pub fn set_foreground(#[allow(unused_variables)] app: tauri::AppHandle, foreground: bool) {
     FOREGROUND.store(foreground, Ordering::Relaxed);
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        // Keep-alive under lock: while a hands-free voice loop is running and we go
+        // to the background, loop inaudible audio so iOS keeps doing audio I/O in
+        // the gaps between utterances and doesn't suspend/cold-start us. Stop it
+        // the instant we return to the foreground (the awake path drives itself).
+        if !foreground && LOOP_RUNNING.load(Ordering::Relaxed) {
+            let _ = app.run_on_main_thread(|| crate::tts::silence_keepalive_begin());
+        } else if foreground {
+            let _ = app.run_on_main_thread(|| crate::tts::silence_keepalive_end());
+        }
+    }
 }
 
 /// Arm the Rust-driven voice conversation (used only while backgrounded). JS
 /// calls this when hands-free voice starts; `voice_convo_stop` disarms it.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn voice_convo_start(
     #[allow(unused_variables)] chat_path: String,
     #[allow(unused_variables)] api_key: String,
     #[allow(unused_variables)] voice_id: Option<String>,
     #[allow(unused_variables)] rate: Option<f32>,
+    #[allow(unused_variables)] cloud_engine: Option<String>,
+    #[allow(unused_variables)] cloud_voice: Option<String>,
+    #[allow(unused_variables)] cloud_model: Option<String>,
+    #[allow(unused_variables)] cloud_key: Option<String>,
 ) {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
+        // Only treat it as a cloud voice if there's actually a key to use.
+        let cloud_engine = match cloud_key.as_deref() {
+            Some(k) if !k.trim().is_empty() => cloud_engine,
+            _ => None,
+        };
         *VOICE_CONVO.lock().unwrap() = Some(VoiceConvo {
             chat_rel: chat_path,
             api_key,
             voice_id,
             rate: rate.unwrap_or(1.0),
+            cloud_engine,
+            cloud_voice: cloud_voice.unwrap_or_default(),
+            cloud_model: cloud_model.unwrap_or_default(),
+            cloud_key: cloud_key.unwrap_or_default(),
         });
     }
 }
@@ -87,34 +126,71 @@ pub fn voice_convo_stop() {
 /// (no audio flowing) so the app isn't suspended mid-think.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
-    let (chat_rel, api_key, voice_id, rate) = {
+    // If we've returned to the foreground since this utterance was routed here, the
+    // JS loop owns the turn — bail so the reply isn't spoken twice (the lock/unlock
+    // transition otherwise let both paths answer the same thing).
+    if is_foreground() {
+        return;
+    }
+    let (chat_rel, api_key, voice_id, rate, cloud_engine, cloud_voice, cloud_model, cloud_key) = {
         let g = VOICE_CONVO.lock().unwrap();
         match g.as_ref() {
-            Some(c) => (c.chat_rel.clone(), c.api_key.clone(), c.voice_id.clone(), c.rate),
+            Some(c) => (
+                c.chat_rel.clone(), c.api_key.clone(), c.voice_id.clone(), c.rate,
+                c.cloud_engine.clone(), c.cloud_voice.clone(), c.cloud_model.clone(), c.cloud_key.clone(),
+            ),
             None => return, // no conversation armed
         }
     };
     if api_key.trim().is_empty() {
         return;
     }
+    // Hold the background-execution assertion across the WHOLE turn — model call,
+    // cloud-TTS synth, AND playback — not just the model call. The gap between the
+    // model finishing and audio starting (network synth, no audio flowing) was
+    // otherwise unprotected, so iOS could suspend us mid-turn; that's a big part of
+    // why only the FIRST locked turn worked (it fit inside the initial grace).
     crate::tts::keepalive_begin();
     let reply = crate::agent::run::run_turn_for(app, &api_key, &chat_rel, utterance);
-    crate::tts::keepalive_end();
     let reply = match reply {
         Ok(r) => r,
-        Err(_) => return,
+        Err(_) => { crate::tts::keepalive_end(); return; }
     };
     if reply.trim().is_empty() {
+        crate::tts::keepalive_end();
         return;
     }
-    // Speak natively (system voice) — reliable offline and while locked. Wait for
-    // it to finish before the loop re-arms the mic so the next turn is clean.
-    crate::tts::speak_native(&reply, voice_id.as_deref(), rate);
-    let start = std::time::Instant::now();
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    while crate::tts::is_native_speaking() && start.elapsed() < std::time::Duration::from_secs(180) {
-        std::thread::sleep(std::time::Duration::from_millis(120));
+    // Speak the reply. Prefer the SAME cloud voice used when awake (so locking the
+    // phone doesn't swap to the robotic system voice) by synthesizing mp3 in Rust
+    // and playing it on the shared session. Fall back to the native synthesizer if
+    // no cloud voice is configured or synthesis/playback fails (e.g. offline).
+    let spoke_cloud = if let Some(engine) = cloud_engine.as_deref() {
+        match crate::tts::synth_cloud_bytes(engine, &cloud_voice, &cloud_model, &cloud_key, &reply) {
+            Ok(bytes) => match crate::tts::play_audio_bytes(&bytes, rate) {
+                Ok(dur) => {
+                    // Wait out playback before re-arming the mic (clean walkie-talkie).
+                    let ms = ((dur * 1000.0) as u64).saturating_add(150).min(180_000);
+                    std::thread::sleep(std::time::Duration::from_millis(ms));
+                    true
+                }
+                Err(_) => false,
+            },
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+    if !spoke_cloud {
+        // Native (system voice): reliable offline / while locked. Wait for it to
+        // finish before the loop re-arms the mic so the next turn is clean.
+        crate::tts::speak_native(&reply, voice_id.as_deref(), rate);
+        let start = std::time::Instant::now();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        while crate::tts::is_native_speaking() && start.elapsed() < std::time::Duration::from_secs(180) {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
     }
+    crate::tts::keepalive_end();
 }
 /// Last time (ms since UNIX epoch) an `stt-level` event was emitted. The audio
 /// tap fires ~40×/s; throttling the emit keeps the JS bridge from being flooded
@@ -557,11 +633,113 @@ mod apple {
         TRAILING.contains(&last.as_str())
     }
 
-    /// Live on-device recognition: streams partial transcripts (`stt-partial`)
-    /// word-by-word as the user speaks (AVAudioEngine feeding
-    /// SFSpeechAudioBufferRecognitionRequest), and finalizes after a pause.
-    /// Returns the final transcript, or None if nothing was said / cancelled.
-    pub fn listen_live(app: &AppHandle) -> Result<Option<String>, String> {
+    // The capture engine is built ONCE and kept RUNNING across utterances (see
+    // `ensure_engine`) rather than torn down and rebuilt per turn. Rebuilding it
+    // per-utterance meant that while the phone was LOCKED only the FIRST turn
+    // worked — iOS resists starting a fresh mic capture under lock — and it also
+    // dropped barge-in during TTS. A continuously-running engine fixes both, and is
+    // itself the reliable "keep the app alive" signal (active mic I/O). Each
+    // utterance's recognition request is swapped in via REQ_CUR, which the single
+    // persistent tap feeds.
+    static ENGINE: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+    static REQ_CUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static REQ_KEEP: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+
+    /// Build (once) and keep the capture engine running. Idempotent: a cheap check
+    /// when it's already up; if it fell over, restart or rebuild it.
+    unsafe fn ensure_engine(app: &AppHandle) -> Result<(), String> {
+        use block2::RcBlock;
+        {
+            let g = ENGINE.lock().unwrap();
+            if *g != 0 {
+                let engine = *g as *mut AnyObject;
+                let running: objc2::runtime::Bool = msg_send![engine, isRunning];
+                if running.as_bool() { return Ok(()); }
+                let mut err: *mut AnyObject = std::ptr::null_mut();
+                let _: () = msg_send![engine, prepare];
+                let ok: objc2::runtime::Bool = msg_send![engine, startAndReturnError: &mut err];
+                if ok.as_bool() { return Ok(()); }
+                // Couldn't restart the existing engine — tear it down and rebuild.
+                let input: *mut AnyObject = msg_send![engine, inputNode];
+                let _: () = msg_send![input, removeTapOnBus: 0usize];
+                let _: () = msg_send![engine, stop];
+                let _: () = msg_send![engine, release];
+            }
+        }
+        prepare_session();
+        let ealloc: *mut AnyObject = msg_send![class!(AVAudioEngine), alloc];
+        let engine: *mut AnyObject = msg_send![ealloc, init];
+        let input: *mut AnyObject = msg_send![engine, inputNode];
+        // AEC via the input node's voice-processing unit is gated behind STT_AEC:
+        // enabling it crashed on-device (format churn), so it's OFF by default.
+        if super::aec_enabled() {
+            let mut vp_err: *mut AnyObject = std::ptr::null_mut();
+            let _: objc2::runtime::Bool = msg_send![input, setVoiceProcessingEnabled: true, error: &mut vp_err];
+        }
+        let fmt: *mut AnyObject = msg_send![input, outputFormatForBus: 0usize];
+        // Persistent tap: feed the CURRENT recognition request (when an utterance is
+        // active) and emit a rough input level. Between utterances REQ_CUR is 0, so
+        // the mic just stays warm and the engine never stops.
+        let app_tap = app.clone();
+        let tap = RcBlock::new(move |buffer: *mut AnyObject, _when: *mut AnyObject| {
+            let req = REQ_CUR.load(Ordering::Relaxed) as *mut AnyObject;
+            if !req.is_null() {
+                let _: () = msg_send![req, appendAudioPCMBuffer: buffer];
+            }
+            let data: *const *const f32 = msg_send![buffer, floatChannelData];
+            let frames: u32 = msg_send![buffer, frameLength];
+            if !data.is_null() && frames > 0 {
+                let ch0 = *data;
+                if !ch0.is_null() {
+                    let n = frames as usize;
+                    let mut sum = 0.0f32;
+                    for i in 0..n { let v = *ch0.add(i); sum += v * v; }
+                    let rms = (sum / n as f32).sqrt();
+                    if super::level_should_emit() {
+                        let _ = app_tap.emit("stt-level", (rms * 6.0).min(1.0));
+                    }
+                }
+            }
+        });
+        let _: () = msg_send![input, installTapOnBus: 0usize, bufferSize: 1024u32, format: fmt, block: &*tap];
+        let mut err: *mut AnyObject = std::ptr::null_mut();
+        let _: () = msg_send![engine, prepare];
+        let started: objc2::runtime::Bool = msg_send![engine, startAndReturnError: &mut err];
+        if !started.as_bool() {
+            let _: () = msg_send![input, removeTapOnBus: 0usize];
+            let _: () = msg_send![engine, release];
+            return Err("Couldn't start the audio engine for live transcription.".into());
+        }
+        *ENGINE.lock().unwrap() = engine as usize;
+        Ok(())
+    }
+
+    /// Stop and release the persistent capture engine (loop teardown).
+    pub fn stop_engine() {
+        unsafe {
+            REQ_CUR.store(0, Ordering::Relaxed);
+            {
+                let mut g = REQ_KEEP.lock().unwrap();
+                if *g != 0 { let r = *g as *mut AnyObject; let _: () = msg_send![r, release]; *g = 0; }
+            }
+            let mut g = ENGINE.lock().unwrap();
+            if *g != 0 {
+                let engine = *g as *mut AnyObject;
+                let input: *mut AnyObject = msg_send![engine, inputNode];
+                let _: () = msg_send![input, removeTapOnBus: 0usize];
+                let _: () = msg_send![engine, stop];
+                let _: () = msg_send![engine, release];
+                *g = 0;
+            }
+        }
+    }
+
+    /// Live on-device recognition for ONE utterance against the persistent capture
+    /// engine: streams partial transcripts (`stt-partial`, prefixed with `prefix` —
+    /// the already-accumulated monologue, so the on-screen text never resets when
+    /// the recognizer restarts at its ~60s cap) and finalizes after a pause. Returns
+    /// the final transcript, or None if nothing was said / cancelled.
+    pub fn listen_live(app: &AppHandle, prefix: &str) -> Result<Option<String>, String> {
         use block2::RcBlock;
         use std::sync::{Arc, Mutex};
 
@@ -569,7 +747,7 @@ mod apple {
         let shared = Arc::new(Mutex::new(Shared { text: String::new(), last: Instant::now(), got: false, done: false, err: None }));
 
         unsafe {
-            prepare_session();
+            ensure_engine(app)?;
             let status: isize = msg_send![class!(SFSpeechRecognizer), authorizationStatus];
             if status == 0 {
                 let (tx, rx) = sync_channel::<isize>(1);
@@ -593,54 +771,24 @@ mod apple {
             let on_device: objc2::runtime::Bool = msg_send![recognizer, supportsOnDeviceRecognition];
             if on_device.as_bool() { let _: () = msg_send![request, setRequiresOnDeviceRecognition: true]; }
 
-            let ealloc: *mut AnyObject = msg_send![class!(AVAudioEngine), alloc];
-            let engine: *mut AnyObject = msg_send![ealloc, init];
-            let input: *mut AnyObject = msg_send![engine, inputNode];
-            // Acoustic echo cancellation via the input node's voice-processing unit
-            // is gated behind STT_AEC: enabling it crashed on-device (format churn
-            // after enabling VP), so it's OFF by default until done safely.
-            if super::aec_enabled() {
-                let mut vp_err: *mut AnyObject = std::ptr::null_mut();
-                let _: objc2::runtime::Bool = msg_send![input, setVoiceProcessingEnabled: true, error: &mut vp_err];
+            // Point the persistent tap at THIS request, and keep it owned in REQ_KEEP
+            // (the alloc/init +1) so the audio thread can't use-after-free after we
+            // stop feeding it at teardown. The PREVIOUS request is released here — by
+            // now its REQ_CUR was long since cleared, so the tap isn't touching it.
+            {
+                let mut keep = REQ_KEEP.lock().unwrap();
+                if *keep != 0 { let old = *keep as *mut AnyObject; let _: () = msg_send![old, release]; }
+                *keep = request as usize;
             }
-            let fmt: *mut AnyObject = msg_send![input, outputFormatForBus: 0usize];
+            REQ_CUR.store(request as usize, Ordering::Relaxed);
 
-            // Tap: append each buffer to the request + emit a rough input level.
-            let req_addr = request as usize;
-            let app_tap = app.clone();
-            let tap = RcBlock::new(move |buffer: *mut AnyObject, _when: *mut AnyObject| {
-                let req = req_addr as *mut AnyObject;
-                let _: () = msg_send![req, appendAudioPCMBuffer: buffer];
-                let data: *const *const f32 = msg_send![buffer, floatChannelData];
-                let frames: u32 = msg_send![buffer, frameLength];
-                if !data.is_null() && frames > 0 {
-                    let ch0 = *data;
-                    if !ch0.is_null() {
-                        let n = frames as usize;
-                        let mut sum = 0.0f32;
-                        for i in 0..n { let v = *ch0.add(i); sum += v * v; }
-                        let rms = (sum / n as f32).sqrt();
-                        if super::level_should_emit() {
-                            let _ = app_tap.emit("stt-level", (rms * 6.0).min(1.0));
-                        }
-                    }
-                }
-            });
-            let _: () = msg_send![input, installTapOnBus: 0usize, bufferSize: 1024u32, format: fmt, block: &*tap];
-
-            let mut err: *mut AnyObject = std::ptr::null_mut();
-            let _: () = msg_send![engine, prepare];
-            let started: objc2::runtime::Bool = msg_send![engine, startAndReturnError: &mut err];
-            if !started.as_bool() {
-                let _: () = msg_send![input, removeTapOnBus: 0usize];
-                return Err("Couldn't start the audio engine for live transcription.".into());
-            }
-            // The mic is genuinely capturing now (session active + route settled,
-            // which on Bluetooth can lag). The frontend uses this to fire the
-            // "I'm listening" cue reliably, instead of optimistically at tap time.
+            // Mic is already live (persistent engine) — cue "listening" for this turn.
             let _ = app.emit("stt-listening", ());
 
-            // Recognition task: stream partials.
+            // Recognition task: stream partials, PREFIXED with the held monologue so
+            // the on-screen transcript keeps growing instead of resetting at each
+            // ~60s recognizer restart.
+            let prefix_s = prefix.to_string();
             let shared_h = shared.clone();
             let app_h = app.clone();
             let handler = RcBlock::new(move |result: *mut AnyObject, error: *mut AnyObject| {
@@ -659,7 +807,10 @@ mod apple {
                     if !text.trim().is_empty() { st.text = text.clone(); st.got = true; st.last = Instant::now(); }
                     if is_final.as_bool() { st.done = true; }
                 }
-                let _ = app_h.emit("stt-partial", &text);
+                let shown = if prefix_s.is_empty() { text }
+                    else if text.is_empty() { prefix_s.clone() }
+                    else { format!("{} {}", prefix_s, text) };
+                let _ = app_h.emit("stt-partial", &shown);
                 let _ = app_h.emit("stt-state", "heard");
             });
             let task: *mut AnyObject = msg_send![recognizer, recognitionTaskWithRequest: request, resultHandler: &*handler];
@@ -675,6 +826,10 @@ mod apple {
             let max_wait = Duration::from_secs(20);
             let max_utter = Duration::from_secs(90);
             let mut cancelled = false;
+            // Whether this segment ended because you actually paused (natural) or
+            // was cut by the recognizer's own finalization / our hard cap (you
+            // were likely still talking). Continuations are held by the caller.
+            let mut natural = true;
             loop {
                 std::thread::sleep(Duration::from_millis(60));
                 if CANCEL.load(Ordering::Relaxed) { cancelled = true; break; }
@@ -682,16 +837,21 @@ mod apple {
                     let s = shared.lock().unwrap();
                     (s.got, s.done, s.last.elapsed(), start.elapsed(), s.text.clone())
                 };
-                if done { break; }
+                // Recognizer finalized on its own (its ~60s on-device limit) while
+                // you were mid-speech: a cut, not a real end.
+                if done { natural = false; break; }
                 let eff_silence = if looks_incomplete(&txt) { silence_incomplete } else { silence };
-                if got && since_last > eff_silence { break; }
-                if !got && since_start > max_wait { break; }
-                if since_start > max_utter { break; }
+                if got && since_last > eff_silence { natural = true; break; } // you paused
+                if !got && since_start > max_wait { natural = true; break; }   // nothing said
+                if since_start > max_utter { natural = false; break; }         // our cap; likely still talking
             }
 
-            // Teardown.
-            let _: () = msg_send![input, removeTapOnBus: 0usize];
-            let _: () = msg_send![engine, stop];
+            // Teardown for THIS utterance only — the engine keeps running. Stop
+            // feeding the request (so the persistent tap can't touch it), then
+            // finalize it and the task. REQ_KEEP holds the request alive until the
+            // next utterance swaps it in, avoiding a use-after-free on the audio
+            // thread.
+            REQ_CUR.store(0, Ordering::Relaxed);
             let _: () = msg_send![request, endAudio];
             let _: () = msg_send![task, cancel];
             let _ = app.emit("stt-level", 0.0f32);
@@ -699,6 +859,7 @@ mod apple {
             if cancelled { return Ok(None); }
             let final_text = { let s = shared.lock().unwrap(); s.text.trim().to_string() };
             if final_text.is_empty() { return Ok(None); }
+            super::END_NATURAL.store(natural, Ordering::Relaxed);
             Ok(Some(final_text))
         }
     }
@@ -751,10 +912,11 @@ pub async fn stt_listen(
             // it's the lowest-latency path.
             if engine == "native" {
                 let started = std::time::Instant::now();
-                let text = match apple::listen_live(&app)? {
+                let text = match apple::listen_live(&app, "")? {
                     Some(t) => t,
                     None => return Ok(String::new()),
                 };
+                apple::stop_engine(); // single-shot: don't leave the mic running
                 if looks_like_hallucination(&text) { return Ok(String::new()); }
                 let _ = app.emit("stt-usage", serde_json::json!({ "engine": "native", "seconds": started.elapsed().as_secs_f64() }));
                 return Ok(text);
@@ -828,11 +990,26 @@ pub async fn stt_start_loop(
         {
             use tauri::Emitter;
             let mut consecutive_errs = 0u32;
+            // Continuation buffer (foreground AND background): segments the recognizer
+            // cut mid-speech (its ~60s cap) are held here and joined until a NATURAL
+            // pause, so a long monologue is ONE utterance — nothing lost, nothing sent
+            // early. The display keeps up because listen_live prefixes its partials
+            // with this. Sending is driven purely by the on-device VAD (no JS timer).
+            let mut accum = String::new();
             while LOOP_RUNNING.load(Ordering::Relaxed) {
                 apple::reset_cancel();
+                // While backgrounded/locked, make sure the inaudible keep-alive is
+                // still playing before each listen — an audio-session interruption
+                // (e.g. after a reply) can pause it, and if it stays paused iOS
+                // suspends us during the next think (why locked chat died after the
+                // first turn). Idempotent: no-op when already playing.
+                if !is_foreground() {
+                    let _ = app.run_on_main_thread(|| crate::tts::silence_keepalive_begin());
+                }
+                END_NATURAL.store(true, Ordering::Relaxed); // default; native path overrides
                 let started = std::time::Instant::now();
                 let result = if engine == "native" {
-                    apple::listen_live(&app)
+                    apple::listen_live(&app, &accum)
                 } else {
                     match apple::record_utterance(&app) {
                         Ok(Some((path, _secs))) => {
@@ -849,18 +1026,41 @@ pub async fn stt_start_loop(
                 match result {
                     Ok(Some(text)) if !text.trim().is_empty() && !looks_like_hallucination(&text) => {
                         consecutive_errs = 0;
+                        let continues = !END_NATURAL.load(Ordering::Relaxed);
                         let _ = app.emit("stt-usage", serde_json::json!({ "engine": engine, "seconds": started.elapsed().as_secs_f64() }));
-                        if is_foreground() {
-                            // Awake: JS orchestrates the turn (barge-in, earcons, TTS).
-                            let _ = app.emit("stt-utterance", &text);
+                        let seg = text.trim();
+                        if continues {
+                            // Recognizer cut you mid-thought (its ~60s cap): HOLD the
+                            // segment and keep listening. No turn is sent, nothing is
+                            // shown as final — the display already grows via prefixed
+                            // partials. This is what stops long speech being lost/chopped.
+                            if !accum.is_empty() { accum.push(' '); }
+                            accum.push_str(seg);
                         } else {
-                            // Locked/backgrounded: JS is suspended — run it here.
-                            // (Deliberately no stt-utterance emit: a buffered event
-                            // delivered when JS wakes would double-run the turn.)
-                            run_background_turn(&app, &text);
+                            // Natural pause = the WHOLE utterance is done.
+                            let full = if accum.is_empty() { seg.to_string() } else { format!("{} {}", accum.trim(), seg) };
+                            accum.clear();
+                            if is_foreground() {
+                                let _ = app.emit("stt-utterance", serde_json::json!({ "text": full }));
+                            } else {
+                                run_background_turn(&app, full.trim());
+                            }
                         }
                     }
-                    Ok(_) => { consecutive_errs = 0; /* silence / cancelled — just re-arm */ }
+                    Ok(_) => {
+                        consecutive_errs = 0; // silence / cancelled — re-arm
+                        // You stopped after a mid-thought cut with nothing more: flush
+                        // the held text now as the complete utterance.
+                        if !accum.trim().is_empty() {
+                            let full = accum.trim().to_string();
+                            accum.clear();
+                            if is_foreground() {
+                                let _ = app.emit("stt-utterance", serde_json::json!({ "text": full }));
+                            } else {
+                                run_background_turn(&app, &full);
+                            }
+                        }
+                    }
                     Err(e) => {
                         // A transient failure — e.g. the audio engine couldn't
                         // (re)start because TTS is currently using the session.
@@ -877,6 +1077,8 @@ pub async fn stt_start_loop(
                 }
             }
             LOOP_RUNNING.store(false, Ordering::SeqCst);
+            apple::stop_engine();
+            let _ = app.run_on_main_thread(|| crate::tts::silence_keepalive_end());
             let _ = app.emit("stt-loop-ended", ());
         }
         #[cfg(not(any(target_os = "macos", target_os = "ios")))]

@@ -127,6 +127,107 @@ mod imp {
         }
     }
 
+    // Continuous inaudible audio that keeps the app alive while backgrounded /
+    // locked. iOS only keeps an `audio`-background app running while it is
+    // actively doing audio I/O. Between utterances the mic engine is stopped
+    // (stt.rs teardown), leaving a gap in which a LOCKED phone suspends the
+    // process — which is exactly why the app cold-started on relaunch. Looping an
+    // inaudible buffer through the shared session fills those gaps so the process
+    // stays alive. Background-only: started on `setForeground(false)` during an
+    // active voice loop, stopped the moment we return to the foreground.
+    static KEEPALIVE_PLAYER: Mutex<usize> = Mutex::new(0);
+
+    /// A 1s 16-bit mono WAV holding a barely-there 50 Hz tone (amplitude ~24 of
+    /// 32767) — non-silent so the audio pipeline treats it as real playback, but
+    /// inaudible (the player volume is also near zero).
+    fn silence_wav() -> Vec<u8> {
+        const SR: u32 = 44100;
+        let n = SR as usize; // 1 second
+        let data_len = n * 2;
+        let mut buf = Vec::with_capacity(44 + data_len);
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+        buf.extend_from_slice(&SR.to_le_bytes());
+        buf.extend_from_slice(&(SR * 2).to_le_bytes()); // byte rate
+        buf.extend_from_slice(&2u16.to_le_bytes()); // block align
+        buf.extend_from_slice(&16u16.to_le_bytes()); // bits
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+        for i in 0..n {
+            let s = ((i as f32 * 50.0 * std::f32::consts::TAU / SR as f32).sin() * 24.0) as i16;
+            buf.extend_from_slice(&s.to_le_bytes());
+        }
+        buf
+    }
+
+    pub fn silence_keepalive_begin() {
+        unsafe {
+            // Ensure it's actively playing. If a player exists but stopped (an audio
+            // session interruption after a reply can pause it), kick it again; only
+            // rebuild if that fails. This self-heal is what keeps the app alive past
+            // the FIRST locked turn (it was dying on turn 2 when the loop stopped).
+            {
+                let mut g = KEEPALIVE_PLAYER.lock().unwrap();
+                if *g != 0 {
+                    let p = *g as *mut AnyObject;
+                    let playing: objc2::runtime::Bool = msg_send![p, isPlaying];
+                    if playing.as_bool() {
+                        return; // already looping
+                    }
+                    let ok: objc2::runtime::Bool = msg_send![p, play];
+                    if ok.as_bool() {
+                        return; // resumed
+                    }
+                    // Couldn't resume — drop the stale player and rebuild below.
+                    let _: () = msg_send![p, stop];
+                    let _: () = msg_send![p, release];
+                    *g = 0;
+                }
+            }
+            let bytes = silence_wav();
+            let data: *mut AnyObject = msg_send![
+                class!(NSData),
+                dataWithBytes: bytes.as_ptr() as *const std::ffi::c_void,
+                length: bytes.len()
+            ];
+            if data.is_null() {
+                return;
+            }
+            let alloc: *mut AnyObject = msg_send![class!(AVAudioPlayer), alloc];
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let player: *mut AnyObject = msg_send![alloc, initWithData: data, error: &mut err];
+            if player.is_null() {
+                return;
+            }
+            let _: () = msg_send![player, setNumberOfLoops: -1isize]; // loop forever
+            let _: () = msg_send![player, setVolume: 0.01f32];
+            let _: objc2::runtime::Bool = msg_send![player, prepareToPlay];
+            let ok: objc2::runtime::Bool = msg_send![player, play];
+            if !ok.as_bool() {
+                return;
+            }
+            let _: *mut AnyObject = msg_send![player, retain];
+            *KEEPALIVE_PLAYER.lock().unwrap() = player as usize;
+        }
+    }
+
+    pub fn silence_keepalive_end() {
+        unsafe {
+            let mut g = KEEPALIVE_PLAYER.lock().unwrap();
+            if *g != 0 {
+                let p = *g as *mut AnyObject;
+                let _: () = msg_send![p, stop];
+                let _: () = msg_send![p, release];
+                *g = 0;
+            }
+        }
+    }
+
     // One shared synthesizer, created + driven on the main thread. Stored as a
     // retained raw pointer (Send) behind a Mutex.
     static SYNTH: Mutex<usize> = Mutex::new(0);
@@ -439,6 +540,23 @@ pub fn keepalive_end() {
     }
 }
 
+/// Start / stop a continuous inaudible audio loop that keeps the app alive while
+/// backgrounded / locked (fills the mic-engine gaps between utterances so iOS
+/// doesn't suspend and cold-start the process). Call on the main thread. No-op
+/// off macOS/iOS.
+pub fn silence_keepalive_begin() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::silence_keepalive_begin();
+    }
+}
+pub fn silence_keepalive_end() {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::silence_keepalive_end();
+    }
+}
+
 /// Play a base64 audio clip (cloud TTS mp3) through the NATIVE audio session so
 /// it coexists with the recording mic (WebView `<audio>` interrupts recording).
 /// Returns the clip's playback duration in seconds. No-op off macOS/iOS.
@@ -549,6 +667,68 @@ fn read_audio_b64(resp: ureq::Response) -> Result<String, String> {
         .read_to_end(&mut buf)
         .map_err(|e| format!("read audio: {e}"))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(buf))
+}
+
+/// Synthesize cloud TTS to raw mp3 bytes, synchronously. Used by the locked /
+/// backgrounded voice loop (which plays via `play_audio_bytes`) so a locked phone
+/// keeps the SAME cloud voice as when awake. Mirrors the `tts_openai` /
+/// `tts_eleven` / `tts_unreal` commands but returns bytes instead of base64.
+pub fn synth_cloud_bytes(
+    engine: &str,
+    voice: &str,
+    model: &str,
+    api_key: &str,
+    text: &str,
+) -> Result<Vec<u8>, String> {
+    let req = match engine {
+        "openai" => http_agent()
+            .post("https://api.openai.com/v1/audio/speech")
+            .set("Authorization", &format!("Bearer {api_key}"))
+            .send_json(serde_json::json!({
+                "model": model, "voice": voice, "input": text,
+                "response_format": "mp3", "speed": 1.0,
+            })),
+        "eleven" => http_agent()
+            .post(&format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}"))
+            .set("xi-api-key", api_key)
+            .set("Accept", "audio/mpeg")
+            .send_json(serde_json::json!({ "text": text, "model_id": model })),
+        "unreal" => http_agent()
+            .post("https://api.v8.unrealspeech.com/stream")
+            .set("Authorization", &format!("Bearer {api_key}"))
+            .send_json(serde_json::json!({
+                "Text": text, "VoiceId": voice, "Bitrate": "192k",
+                "Speed": 0, "Pitch": 1.0, "Codec": "libmp3lame",
+            })),
+        other => return Err(format!("unknown TTS engine: {other}")),
+    };
+    match req {
+        Ok(r) => {
+            let mut buf = Vec::new();
+            r.into_reader()
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("read audio: {e}"))?;
+            Ok(buf)
+        }
+        Err(ureq::Error::Status(code, r)) => {
+            Err(format!("cloud TTS {code}: {}", r.into_string().unwrap_or_default()))
+        }
+        Err(e) => Err(format!("cloud TTS: {e}")),
+    }
+}
+
+/// Play mp3 bytes on the shared native session; returns playback seconds (0 off
+/// macOS/iOS). Module-level twin of the `tts_play_audio` command for Rust callers
+/// (the locked voice loop).
+pub fn play_audio_bytes(#[allow(unused_variables)] bytes: &[u8], #[allow(unused_variables)] rate: f32) -> Result<f64, String> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        imp::play_audio(bytes, rate)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        Ok(0.0)
+    }
 }
 
 /// OpenAI text-to-speech → base64 mp3.

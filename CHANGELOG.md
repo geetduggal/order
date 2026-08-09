@@ -13,6 +13,25 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.4] - 2026-08-09
+
+A focused round on the hands-free voice agent: long speech is no longer lost,
+and voice chat now keeps working with the phone locked.
+
+### Voice
+
+- **Talk as long as you want** — a long, unbroken stretch of speech is captured
+  as one turn instead of being cut off and partly lost around the one-minute
+  mark. The on-screen transcript keeps growing the whole time instead of
+  resetting, and the agent waits for you to actually pause before replying.
+- **Voice chat works with the phone locked** — a hands-free conversation now
+  continues turn after turn while the screen is off, not just for the first
+  exchange. Replies are spoken in your chosen cloud voice, the same as when the
+  app is open, rather than falling back to the system voice.
+- **Steadier listening** — the microphone now runs continuously across turns
+  rather than restarting each time, which is what makes locked multi-turn and
+  reliable barge-in during playback possible.
+
 ## [2026.8.3] - 2026-08-07
 
 A big pass on the hands-free voice agent, the calendar, and everyday polish

@@ -78,9 +78,12 @@ export function stopListenLoop(): Promise<void> {
   return invoke("stt_stop_loop");
 }
 
-/** Subscribe to finalized utterances from the continuous listen loop. */
+/** Subscribe to finalized utterances from the continuous listen loop. The native
+ *  side now accumulates across the recognizer's ~60s segment cuts and emits only
+ *  COMPLETE utterances (on a natural pause), so the caller just sends them — no
+ *  client-side holding/timers. Partial text streams separately via `onPartial`. */
 export async function onUtterance(handler: (text: string) => void): Promise<UnlistenFn> {
-  return listen<string>("stt-utterance", (e) => handler(e.payload));
+  return listen<{ text: string }>("stt-utterance", (e) => handler(e.payload.text));
 }
 
 // ---- locked-phone (backgrounded) voice ------------------------------------
@@ -96,11 +99,27 @@ export function setForeground(foreground: boolean): void {
 }
 
 /** Arm the Rust-driven conversation used while backgrounded. `chatPath` is the
- *  vault-relative chat file; `voiceId` is an optional NATIVE voice id (locked
- *  replies use the system synthesizer). */
-export function voiceConvoStart(chatPath: string, apiKey: string, voiceId: string | null, rate: number): void {
+ *  vault-relative chat file; `voiceId` is an optional NATIVE voice id (fallback);
+ *  `cloud` is the cloud-TTS config so a LOCKED phone speaks in the same cloud
+ *  voice as when awake (falls back to the native voice if it's null or fails). */
+export function voiceConvoStart(
+  chatPath: string,
+  apiKey: string,
+  voiceId: string | null,
+  rate: number,
+  cloud?: { engine: string; voice: string; model: string; key: string } | null,
+): void {
   if (!micSupported()) return;
-  void invoke("voice_convo_start", { chatPath, apiKey, voiceId, rate }).catch(() => {});
+  void invoke("voice_convo_start", {
+    chatPath,
+    apiKey,
+    voiceId,
+    rate,
+    cloudEngine: cloud?.engine ?? null,
+    cloudVoice: cloud?.voice ?? null,
+    cloudModel: cloud?.model ?? null,
+    cloudKey: cloud?.key ?? null,
+  }).catch(() => {});
 }
 
 export function voiceConvoStop(): void {

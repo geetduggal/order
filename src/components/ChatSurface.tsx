@@ -16,7 +16,7 @@ import {
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
 import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop, outputIsSpeaker } from "../lib/voice";
-import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, type StreamSpeaker, type TtsVoice } from "../lib/tts";
+import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, cloudVoiceConfig, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
 import { playEarcon } from "../lib/earcon";
@@ -239,6 +239,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         setModeBoth("listening");
       }
     }).then((fn) => { if (alive) b = fn; else fn(); });
+    // Live partial from the recognizer. The native side already prefixes it with
+    // the accumulated monologue (across ~60s recognizer restarts), so the on-screen
+    // transcript keeps growing and never resets — just show it.
     void onPartial((t) => { if (modeRef.current === "listening") setPartial(t); }).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
@@ -371,12 +374,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // hear you interrupt.
     void startListenLoop().catch((e) => failLoud(typeof e === "string" ? e : "Voice input failed."));
     // Arm the Rust-driven conversation for when the phone locks (JS suspends):
-    // Rust then runs the turn and speaks the reply with the native voice. A
-    // native voice id is passed if the chosen voice is native, else the system
-    // default is used while locked.
+    // Rust then runs the turn and speaks the reply. Pass the SAME cloud voice you
+    // use when awake so locking doesn't swap to the robotic system voice; a native
+    // voice id is passed as the fallback (used if no cloud voice / synth fails).
     const sv = getSavedVoice();
     const nativeVoiceId = sv.startsWith("native:") ? sv.slice("native:".length) : null;
-    voiceConvoStart(rel, getAgentKey(), nativeVoiceId, getSavedRate());
+    voiceConvoStart(rel, getAgentKey(), nativeVoiceId, getSavedRate(), cloudVoiceConfig());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKey, failLoud, rel]);
 
@@ -497,14 +500,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
 
   // A finalized user utterance from the native listen loop (voice mode). Drives
   // barge-in: interrupt whatever the agent is doing and take the new input.
-  const handleUtterance = useCallback((text: string) => {
-    if (!voiceOnRef.current) return;
-    // When the app isn't visible (backgrounded/locked), the native loop drives
-    // turns itself — ignore here so we don't double-run at the transition or when
-    // a buffered event lands as JS wakes.
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    const t = text.trim();
-    if (!t) return;
+  // The complete utterance (after accumulation) drives the turn / barge-in.
+  const processUtterance = useCallback((t: string) => {
+    if (!voiceOnRef.current || !t) return;
     const m = modeRef.current;
     // approval / transcribing / idle: not a moment to take a new turn by voice.
     if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
@@ -555,6 +553,17 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     sendTurn(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendTurn]);
+
+  // A COMPLETE utterance from the native loop (it accumulates across the
+  // recognizer's ~60s cuts and only emits on a natural pause), so just process it.
+  const handleUtterance = useCallback((text: string) => {
+    if (!voiceOnRef.current) return;
+    // Backgrounded/locked: the native loop drives turns itself — ignore here.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    const t = text.trim();
+    if (!t) return;
+    processUtterance(t);
+  }, [processUtterance]);
 
   // Reliable manual interrupt: tap the transcript while the agent is talking /
   // thinking to cut it off and hand the floor back to you. Works regardless of

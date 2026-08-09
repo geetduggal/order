@@ -633,5 +633,19 @@ export function getSavedVoice(): string { return lsGet(VOICE_KEY); }
 export function saveVoice(uri: string): void { lsSet(VOICE_KEY, uri); }
 export function getSavedRate(): number { const r = parseFloat(lsGet(RATE_KEY)); return Number.isFinite(r) ? r : 1; }
 export function saveRate(r: number): void { lsSet(RATE_KEY, String(r)); }
+
+/** The saved voice as a CLOUD-synthesis config, or null if it's a native voice.
+ *  Handed to the locked/background voice loop (`voiceConvoStart`) so a phone that
+ *  locks keeps speaking in the SAME cloud voice instead of the system default. */
+export function cloudVoiceConfig(): { engine: string; voice: string; model: string; key: string } | null {
+  const sv = getSavedVoice();
+  const engine = engineOf(sv);
+  if (engine === "native") return null;
+  const voice = voiceOf(sv);
+  if (engine === "openai") return { engine, voice, model: OPENAI_MODEL, key: getOpenaiKey() };
+  if (engine === "eleven") return { engine, voice, model: ELEVEN_MODEL, key: getElevenKey() };
+  if (engine === "unreal") return { engine, voice, model: "", key: getUnrealKey() };
+  return null;
+}
 export function hintDismissed(): boolean { return lsGet(HINT_KEY) === "1"; }
 export function dismissHint(): void { lsSet(HINT_KEY, "1"); }
