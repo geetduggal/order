@@ -635,6 +635,10 @@ mod apple {
                 let _: () = msg_send![input, removeTapOnBus: 0usize];
                 return Err("Couldn't start the audio engine for live transcription.".into());
             }
+            // The mic is genuinely capturing now (session active + route settled,
+            // which on Bluetooth can lag). The frontend uses this to fire the
+            // "I'm listening" cue reliably, instead of optimistically at tap time.
+            let _ = app.emit("stt-listening", ());
 
             // Recognition task: stream partials.
             let shared_h = shared.clone();

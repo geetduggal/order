@@ -188,6 +188,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const speakerRouteRef = useRef(false);
   const lastSpeakEndRef = useRef(0);
   const refreshRoute = useCallback(() => { void outputIsSpeaker().then((s) => { speakerRouteRef.current = s; }); }, []);
+  // Fire the "I'm listening" cue when the mic ACTUALLY starts (stt-listening),
+  // not optimistically at tap time — on Bluetooth the route can take a moment to
+  // settle, which is why the cue "only worked sometimes".
+  const startCuePendingRef = useRef(false);
   // Streaming TTS: a speaker fed the reply text as it arrives (native + cloud).
   const speakerRef = useRef<StreamSpeaker | null>(null);
   // "Thinking" voice cue: a brief spoken filler while a slow (tool-heavy) turn
@@ -204,7 +208,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // Live input level for the meter + "heard you" state (native capture streams
   // `stt-level` / `stt-state`).
   useEffect(() => {
-    let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined;
+    let a: (() => void) | undefined, b: (() => void) | undefined, c: (() => void) | undefined, d: (() => void) | undefined, e: (() => void) | undefined;
     let alive = true;
     // CRITICAL: the native mic loop stays open across turns, so it streams
     // stt-level (per audio buffer, ~40/s) and stt-partial the WHOLE time —
@@ -215,11 +219,26 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // listening (when the meter/partial are even shown); ignore the flood
     // otherwise. The meter/partial aren't rendered in other modes anyway.
     void onLevel((l) => { if (modeRef.current === "listening") setLevel(l); }).then((fn) => { if (alive) a = fn; else fn(); });
-    // "heard" fires on every partial — including the recognizer picking up the
-    // agent's OWN TTS (echo). We deliberately do NOT auto-interrupt on it: without
-    // rock-solid echo cancellation that made the agent cut itself off. Interrupt
-    // is the reliable button/tap, or a full utterance once we're back to listening.
-    void onSttState((s) => { if (s === "heard" && modeRef.current === "listening") setHeard(true); }).then((fn) => { if (alive) b = fn; else fn(); });
+    // "heard" = speech detected (fires on the first partial, ~300ms in).
+    void onSttState((s) => {
+      if (s !== "heard") return;
+      const m = modeRef.current;
+      if (m === "listening") { setHeard(true); return; }
+      // INSTANT barge-in on a headset: the moment you start speaking over the
+      // agent, cut the TTS immediately (don't wait for your utterance to finish)
+      // and give an instant audible cue. The finalized utterance then drives the
+      // next turn; the agent's reply is already persisted, so nothing is lost.
+      // Only on a headset — on the built-in speaker this would trip on the
+      // agent's own echo (that route stays half-duplex; tap to interrupt).
+      if (m === "speaking" && !speakerRouteRef.current && speakerRef.current) {
+        speakerRef.current.cancel();
+        speakerRef.current = null;
+        setAgentActive(false);
+        skipThinkEarconRef.current = true;   // interrupt cue already covers it
+        playEarcon("interrupt");
+        setModeBoth("listening");
+      }
+    }).then((fn) => { if (alive) b = fn; else fn(); });
     void onPartial((t) => { if (modeRef.current === "listening") setPartial(t); }).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
@@ -227,7 +246,15 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         ? { nativeSeconds: e.payload.seconds }
         : { whisperSeconds: e.payload.seconds }));
     }).then((fn) => { if (alive) c = fn; else fn(); });
-    return () => { alive = false; a?.(); b?.(); c?.(); d?.(); };
+    // Mic is actually capturing now → fire the pending "start" cue reliably.
+    void listen("stt-listening", () => {
+      if (startCuePendingRef.current && voiceOnRef.current) {
+        startCuePendingRef.current = false;
+        refreshRoute();
+        playEarcon("start");
+      }
+    }).then((fn) => { if (alive) e = fn; else fn(); });
+    return () => { alive = false; a?.(); b?.(); c?.(); d?.(); e?.(); };
   }, [rel]);
 
   // Load the transcript from disk on mount / when the file changes.
@@ -336,7 +363,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     voiceOnRef.current = true;
     setModeBoth("listening");
     refreshRoute();
-    playEarcon("start");   // distinct "I'm listening now" chime
+    startCuePendingRef.current = true;   // cue fires on stt-listening (mic ready)
     // Native continuous listen loop: the mic stays open across turns and during
     // TTS playback, streaming each finalized utterance via `stt-utterance`
     // (handled in the onUtterance effect below). This is what makes barge-in
@@ -393,9 +420,11 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       // returns to "listening" (the native loop never stopped capturing).
       speakerRef.current.finish();
     } else {
-      // Typed turn (or voice reply with nothing to speak): no auto-speak.
+      // Typed turn (or a voice reply whose speech was already cut by a barge-in):
+      // no auto-speak. In voice mode return to listening so the next utterance is
+      // accepted; otherwise idle.
       setAgentActive(false);
-      setModeBoth("idle");
+      setModeBoth(voiceOnRef.current ? "listening" : "idle");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
