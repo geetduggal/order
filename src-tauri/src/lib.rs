@@ -11,6 +11,7 @@ mod badge;
 mod tts;
 mod stt;
 mod agent;
+mod finance;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -283,6 +284,7 @@ pub fn run() {
             tts::tts_unreal,
             tts::tts_eleven_voices,
             agent::run::agent_turn,
+            agent::run::agent_record_user,
             agent::run::agent_new_chat,
             agent::run::agent_chat_title,
             agent::run::agent_approve,
@@ -304,6 +306,14 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_close,
+            finance::finance_set_creds,
+            finance::finance_creds_status,
+            finance::finance_accounts,
+            finance::finance_connect,
+            finance::finance_disconnect,
+            finance::finance_fetch,
+            finance::finance_report,
+            finance::finance_report_from_csv,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

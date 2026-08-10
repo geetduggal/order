@@ -13,6 +13,24 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+### Voice
+- Dictation is captured reliably: every spoken utterance is written to the chat
+  record the moment it's finalized (decoupled from replying), so nothing is lost
+  even when the agent doesn't reply, and the cumulative "override" of earlier
+  turns is gone.
+- The agent's setup/system prompt can no longer leak into a spoken reply.
+
+### Finance (OSuite Finance MVP, experimental)
+- A finance feature built into Order (a future OSuite app; principles per the RFC):
+  connect banks via Plaid, and generate a per-run snapshot CSV plus an HTML report
+  grouped by merchant, with trailing-average anomaly and recurring-charge flags.
+  Rust core owns the logic; secrets live outside the vault. Launched from a
+  notable folder's ⋯ menu; Plaid setup lives in Settings → Finance.
+- Raw `.csv` files now render as a table in Order (like the spreadsheet view).
+
+### Published viewer
+- The sidebar defaults open and is drag-resizable, matching the app.
+
 ## [2026.8.4] - 2026-08-09
 
 A focused round on the hands-free voice agent: long speech is no longer lost,

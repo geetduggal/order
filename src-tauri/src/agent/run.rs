@@ -17,6 +17,28 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
+
+/// Defense-in-depth against the system/developer prompt leaking into a reply that
+/// gets saved and spoken aloud. The prompt itself now forbids disclosure (see
+/// system_prompt.md), but if the model ever echoes it verbatim anyway, drop any
+/// output line that reproduces a DISTINCTIVE line of the system prompt (long
+/// enough that a match is regurgitation, not coincidence). Returns the cleaned
+/// text (trimmed).
+fn scrub_prompt_leak(text: &str) -> String {
+    use std::collections::HashSet;
+    let distinctive: HashSet<&str> = SYSTEM_PROMPT
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| l.len() >= 40)
+        .collect();
+    if distinctive.is_empty() { return text.trim().to_string(); }
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| !distinctive.contains(l.trim()))
+        .collect();
+    kept.join("\n").trim().to_string()
+}
+
 /// How far back to pull sibling chats for context. One knob, easy to change.
 const CHAT_WINDOW_DAYS: i64 = 14;
 /// Ceiling on model↔tool round-trips in a single turn.
@@ -160,15 +182,22 @@ fn run_turn(
     chat_rel: &str,
     dir_rel: &str,
     user_text: &str,
+    record_user: bool,
 ) -> Result<String, String> {
     let (context, loaded) = gather_context(root, dir_rel, chat_rel);
     emit(app, chat_rel, serde_json::json!({ "kind": "context", "loadedChats": loaded }));
     let system = format!("{SYSTEM_PROMPT}\n\n---\n\n{context}");
 
     let mut messages = reconstruct_history(root, chat_rel);
-    // Persist the user's turn immediately (crash safety), then include it.
-    chat::append_user(root, chat_rel, user_text)?;
-    messages.push(Msg::user_text(user_text));
+    if record_user {
+        // Persist the user's turn immediately (crash safety), then include it.
+        chat::append_user(root, chat_rel, user_text)?;
+        messages.push(Msg::user_text(user_text));
+    } else {
+        // The utterance was already captured to the record before this turn ran
+        // (voice capture-first: every spoken utterance is saved even when no reply
+        // follows). reconstruct_history already read it back, so don't duplicate.
+    }
 
     let tool_defs = tools::tool_defs();
     let mut agent_text_parts: Vec<String> = Vec::new();
@@ -254,7 +283,9 @@ fn run_turn(
         }
     }
 
-    let final_text = agent_text_parts.join("\n\n");
+    // Scrub any verbatim system-prompt leak from the reply before it is saved and
+    // (in Lock Mode) spoken. The record must never contain the internal prompt.
+    let final_text = scrub_prompt_leak(&agent_text_parts.join("\n\n"));
     chat::append_agent(root, chat_rel, &final_text, &tool_lines)?;
     emit(app, chat_rel, serde_json::json!({
         "kind": "final", "text": final_text,
@@ -293,7 +324,33 @@ pub fn run_turn_for(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
     let provider = Anthropic::new(api_key.to_string());
-    run_turn(app, &provider, &root, chat_rel, &dir_rel, user_text)
+    run_turn(app, &provider, &root, chat_rel, &dir_rel, user_text, true)
+}
+
+/// Capture a user utterance into the chat record WITHOUT running a turn. Used in
+/// Lock Mode as a guarantee: whatever the user says is saved even when a full turn
+/// can't run (no API key, no armed conversation). A running turn records the user
+/// itself (see `run_turn`), so this is only for those no-turn paths — calling it
+/// there won't duplicate.
+pub fn record_user_utterance(app: &AppHandle, chat_rel: &str, user_text: &str) -> Result<(), String> {
+    let root = vault_root(app)?;
+    chat::append_user(&root, chat_rel, user_text)
+}
+
+/// Record a spoken utterance into the chat record WITHOUT running a turn. The
+/// voice loop calls this for EVERY finalized utterance so nothing said is ever
+/// lost, even when we choose not to reply (echo of the agent, mid-reply, or a
+/// transient state). When a reply DOES follow, that turn passes `record_user:
+/// false` so the same utterance isn't written twice.
+#[tauri::command]
+pub async fn agent_record_user(
+    app: AppHandle,
+    chat_path: String,
+    user_text: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || record_user_utterance(&app, &chat_path, &user_text))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ---- commands --------------------------------------------------------------
@@ -308,6 +365,10 @@ pub async fn agent_turn(
     create_dir: Option<String>,
     title: Option<String>,
     user_text: String,
+    // Whether this turn should write the user's message to the record. Voice
+    // capture-first records the utterance the moment it's spoken and passes false
+    // here so it isn't duplicated; typed input (and the default) pass true.
+    record_user: Option<bool>,
 ) -> Result<TurnResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         // Fresh turn: clear any stale barge-in cancel from a previous turn.
@@ -326,7 +387,7 @@ pub async fn agent_turn(
         };
         let dir_rel = Path::new(&chat_rel).parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
         let provider = Anthropic::new(api_key);
-        let text = match run_turn(&app, &provider, &root, &chat_rel, &dir_rel, &user_text) {
+        let text = match run_turn(&app, &provider, &root, &chat_rel, &dir_rel, &user_text, record_user.unwrap_or(true)) {
             Ok(t) => t,
             Err(e) => { emit(&app, &chat_rel, serde_json::json!({ "kind": "error", "message": e.clone() })); return Err(e); }
         };

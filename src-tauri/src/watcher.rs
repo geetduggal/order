@@ -26,7 +26,7 @@ pub fn start_watcher(app: AppHandle, path: String) -> Result<(), String> {
                 .flat_map(|e| e.event.paths.iter())
                 .filter(|p| matches!(
                     p.extension().and_then(|s| s.to_str()),
-                    Some("md") | Some("txt")
+                    Some("md") | Some("txt") | Some("html") | Some("htm") | Some("csv")
                 ))
                 .map(|p| p.to_string_lossy().to_string())
                 .collect();

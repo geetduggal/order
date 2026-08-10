@@ -16,6 +16,7 @@ import { costBreakdown, formatUSD, resetUsage, USAGE_EVENT } from "../lib/usage"
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
 import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal";
+import * as finance from "../lib/finance";
 
 export function SettingsPanel({
   onChangeVault, onClose,
@@ -56,12 +57,13 @@ export function SettingsPanel({
   const usage = costBreakdown();
   // Group the settings into a few tabs so the panel never becomes a long scroll.
   // Rows carry a data-group; the active tab hides the rest (see settings CSS).
-  type SettingsTab = "vault" | "calendar" | "voice" | "usage";
+  type SettingsTab = "vault" | "calendar" | "voice" | "finance" | "usage";
   const [tab, setTab] = useState<SettingsTab>("vault");
   const TABS: { key: SettingsTab; label: string }[] = [
     { key: "vault", label: "Vault" },
     { key: "calendar", label: "Calendar" },
     { key: "voice", label: "Voice & Agent" },
+    { key: "finance", label: "Finance" },
     { key: "usage", label: "Usage" },
   ];
   const [elevenVoices, setElevenVoices] = useState<{ id: string; name: string }[]>([]);
@@ -98,6 +100,22 @@ export function SettingsPanel({
   const [gcalBusy, setGcalBusy] = useState(false);
   const [gcalError, setGcalError] = useState<string | null>(null);
   const [gcalHelpOpen, setGcalHelpOpen] = useState(false);
+
+  // ---- Finance (OSuite Finance MVP) — SETUP ONLY here (keys + linked accounts).
+  // Report generation is launched from a notable folder's ⋯ menu (the $ item),
+  // where date range + account subset are chosen.
+  const [finStatus, setFinStatus] = useState<finance.CredsStatus>({ configured: false, env: "sandbox", accounts: [] });
+  const [finId, setFinId] = useState("");
+  const [finSecret, setFinSecret] = useState("");
+  const [finEnv, setFinEnv] = useState("sandbox");
+  const [finNewAccount, setFinNewAccount] = useState("");
+  const [finBusy, setFinBusy] = useState(false);
+  const [finError, setFinError] = useState<string | null>(null);
+  const refreshFinance = useCallback(async () => {
+    try { const s = await finance.credsStatus(); setFinStatus(s); setFinEnv((e) => e || s.env); }
+    catch (e) { setFinError(String(e)); }
+  }, []);
+  useEffect(() => { if (tab === "finance") void refreshFinance(); }, [tab, refreshFinance]);
   const refreshGcal = useCallback(async () => {
     // Keep the default view if the backend returns nothing — otherwise a null
     // response nulls out `gcal` and every `gcal.client_id` read below throws.
@@ -327,6 +345,83 @@ export function SettingsPanel({
             above so there's something to count (the count is 0 until then).</>}
           </span>
         </div>
+
+        <div className="settings-row" data-group="finance">
+          <span className="settings-label">Plaid keys</span>
+          <span className="settings-value">
+            <input className="settings-input" placeholder="Client ID" defaultValue={finId} onChange={(e) => setFinId(e.target.value)} />
+            <input className="settings-input" type="password" placeholder="Secret" defaultValue={finSecret} onChange={(e) => setFinSecret(e.target.value)} />
+            <select className="settings-input" value={finEnv} onChange={(e) => setFinEnv(e.target.value)}>
+              <option value="sandbox">Sandbox</option>
+              <option value="development">Development</option>
+              <option value="production">Production</option>
+            </select>
+            <button
+              type="button"
+              className="settings-btn"
+              disabled={finBusy}
+              onClick={async () => {
+                setFinBusy(true); setFinError(null);
+                try { await finance.setPlaidCreds(finId.trim(), finSecret.trim(), finEnv); await refreshFinance(); }
+                catch (e) { setFinError(String(e)); }
+                finally { setFinBusy(false); }
+              }}
+            >Save</button>
+          </span>
+          <span className="settings-hint">
+            Get free API keys at <strong>dashboard.plaid.com</strong> (Team Settings → Keys):
+            your <strong>client_id</strong> and a <strong>secret</strong>. Pick which secret matches
+            the environment: <strong>Sandbox</strong> uses fake test banks (no approval needed, great
+            to try this out), while <strong>Production</strong> connects your real accounts and needs
+            Plaid to grant production access. Keys are stored outside the vault (in the app config
+            dir), never in a note. {finStatus.configured ? "Keys are set." : "No keys yet."}
+            {finError && <> <span className="settings-error">{finError}</span></>}
+          </span>
+        </div>
+
+        <div className="settings-row" data-group="finance">
+          <span className="settings-label">Linked accounts</span>
+          <span className="settings-value">
+            <input className="settings-input" placeholder="Name (e.g. Amex)" value={finNewAccount} onChange={(e) => setFinNewAccount(e.target.value)} />
+            <button
+              type="button"
+              className="settings-btn"
+              disabled={finBusy || !finNewAccount.trim() || (!finStatus.configured && (!finId.trim() || !finSecret.trim()))}
+              title={!finNewAccount.trim() ? "Type an account name first" : (!finStatus.configured && (!finId.trim() || !finSecret.trim()) ? "Enter your Plaid keys above first" : "")}
+              onClick={async () => {
+                setFinBusy(true); setFinError(null);
+                try {
+                  // Persist the typed keys first so Connect always uses current creds
+                  // (no separate Save step needed for the connect flow).
+                  if (finId.trim() && finSecret.trim()) await finance.setPlaidCreds(finId.trim(), finSecret.trim(), finEnv);
+                  await finance.connectAccount(finNewAccount.trim());
+                  setFinNewAccount(""); await refreshFinance();
+                } catch (e) { setFinError(String(e)); }
+                finally { setFinBusy(false); }
+              }}
+            >{finBusy ? "Connecting…" : "Connect bank"}</button>
+          </span>
+          <span className="settings-hint">
+            <strong>1.</strong> Type a label for the account (e.g. "Amex" or "Chase Checking").
+            {" "}<strong>2.</strong> Click <strong>Connect bank</strong> — it opens Plaid in your
+            browser to sign in. In <strong>Sandbox</strong>, pick any bank and use the test login
+            <strong> user_good</strong> / <strong>pass_good</strong>. When it finishes, the account
+            shows here and is ready for reports. (The window waits up to 5 minutes for you to finish.)
+            {finStatus.accounts.length > 0 && (
+              <span className="settings-chips">
+                {finStatus.accounts.map((a) => (
+                  <span key={a} className="settings-chip">
+                    {a}
+                    <button type="button" className="settings-chip-x" title="Disconnect" onClick={async () => {
+                      try { await finance.disconnectAccount(a); await refreshFinance(); } catch (e) { setFinError(String(e)); }
+                    }}>×</button>
+                  </span>
+                ))}
+              </span>
+            )}
+          </span>
+        </div>
+
 
         <div className="settings-row" data-group="voice">
           <span className="settings-label">Read-aloud voices</span>

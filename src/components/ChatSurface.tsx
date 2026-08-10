@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { toVaultRel } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import {
-  approve, cancelTurn, getAgentKey, onAgentStream, runTurn,
+  approve, cancelTurn, getAgentKey, onAgentStream, runTurn, recordUser,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
 import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop, outputIsSpeaker } from "../lib/voice";
@@ -260,6 +260,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     return () => { alive = false; a?.(); b?.(); c?.(); d?.(); e?.(); };
   }, [rel]);
 
+  // Re-read the transcript from disk. Used on mount and when returning from Lock
+  // Mode (where turns were written natively while JS was suspended).
+  const reloadTranscript = useCallback(() => {
+    return vaultFs.readText(rel).then((raw) => setTurns(parseTranscript(raw))).catch(() => {});
+  }, [rel]);
+
   // Load the transcript from disk on mount / when the file changes.
   useEffect(() => {
     let cancelled = false;
@@ -313,11 +319,22 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // locks), JS is about to suspend — visibilitychange fires first — so Rust knows
   // to drive the voice loop itself until we're visible again.
   useEffect(() => {
-    const onVis = () => setForeground(document.visibilityState === "visible");
+    const onVis = () => {
+      const visible = document.visibilityState === "visible";
+      setForeground(visible);
+      if (visible) {
+        // Returning from Lock Mode: turns handled natively while locked were saved
+        // to the file but not to this view, and a stale live partial may still be
+        // on screen. Reload the record so those turns appear, and clear the partial
+        // so nothing reads as "written to the screen, then erased."
+        void reloadTranscript();
+        setPartial("");
+      }
+    };
     onVis();
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
+  }, [reloadTranscript]);
 
   // Load the available read-aloud voices so the user can pick one right here.
   useEffect(() => {
@@ -433,9 +450,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, []);
 
   // Send a user turn (from voice or keyboard). `replaceLastUser` rewrites the last
-  // user bubble instead of adding one — used when combining a rambling
-  // continuation into the same turn.
-  const sendTurn = useCallback((text: string, opts?: { replaceLastUser?: boolean }) => {
+  // user bubble instead of adding one. `alreadyRecorded` = the utterance was already
+  // written to the record (voice capture-first), so the turn must not re-write it.
+  const sendTurn = useCallback((text: string, opts?: { replaceLastUser?: boolean; alreadyRecorded?: boolean }) => {
     setError(null);
     bargeInRef.current = false;
     pendingUtteranceRef.current = null;
@@ -448,9 +465,13 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       if (skipThinkEarconRef.current) skipThinkEarconRef.current = false;
       else playEarcon("thinking");
     }
-    setTurns((prev) => opts?.replaceLastUser && prev.length && prev[prev.length - 1].role === "user"
-      ? [...prev.slice(0, -1), { role: "user", text, tools: [] }]
-      : [...prev, { role: "user", text, tools: [] }]);
+    // Voice utterances are captured + shown as a bubble in processUtterance before
+    // this runs (alreadyRecorded), so don't add a second one. Typed input adds it.
+    if (!opts?.alreadyRecorded) {
+      setTurns((prev) => opts?.replaceLastUser && prev.length && prev[prev.length - 1].role === "user"
+        ? [...prev.slice(0, -1), { role: "user", text, tools: [] }]
+        : [...prev, { role: "user", text, tools: [] }]);
+    }
     setStreamText("");
     setStreamTools([]);
     setPartial("");
@@ -477,18 +498,18 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // open mic would hear as echo (and we now allow a genuine barge-in while
     // thinking). The visual "thinking" indicator carries the wait instead.
     clearFiller();
-    void runTurn(rel, text)
+    void runTurn(rel, text, { alreadyRecorded: opts?.alreadyRecorded })
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
       .catch((err) => { if (!bargeInRef.current) failLoud(typeof err === "string" ? err : "The agent turn failed."); })
       .finally(() => {
         turnInFlightRef.current = false;
-        // A barge-in / continuation queued the next utterance while this turn was
-        // still generating; now that it's wound down, send it (replacing the last
-        // user bubble when it's a rambling continuation of the same turn).
+        // A barge-in queued the next utterance while this turn was still
+        // generating; now that it's wound down, reply to it. It was already written
+        // to the record when spoken (capture-first), so pass alreadyRecorded.
         const pending = pendingUtteranceRef.current;
         const replace = pendingReplaceRef.current;
         pendingReplaceRef.current = false;
-        if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending, { replaceLastUser: replace }); }
+        if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending, { replaceLastUser: replace, alreadyRecorded: true }); }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rel, failLoud, finalizeAgent]);
@@ -498,61 +519,74 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const sendTurnRef = useRef(sendTurn);
   sendTurnRef.current = sendTurn;
 
-  // A finalized user utterance from the native listen loop (voice mode). Drives
-  // barge-in: interrupt whatever the agent is doing and take the new input.
-  // The complete utterance (after accumulation) drives the turn / barge-in.
-  const processUtterance = useCallback((t: string) => {
+  // A finalized user utterance from the native listen loop (voice mode).
+  //
+  // CAPTURE IS DECOUPLED FROM REPLYING. Every real utterance is written to the
+  // chat record FIRST — no matter what we then decide about a reply — so nothing
+  // you say is ever lost. Only a confirmed echo of the agent's own voice is
+  // skipped (it isn't something you said). Reply paths then run the turn with
+  // `alreadyRecorded` so the same utterance isn't written to the file twice.
+  const processUtterance = useCallback(async (t: string) => {
     if (!voiceOnRef.current || !t) return;
     const m = modeRef.current;
-    // approval / transcribing / idle: not a moment to take a new turn by voice.
-    if (m !== "listening" && m !== "thinking" && m !== "speaking") return;
-    // BUILT-IN SPEAKER = no echo cancellation, so go HALF-DUPLEX: ignore the mic
-    // while the agent is speaking (and for a beat after, while the tail decays),
-    // or it transcribes its own voice and talks to itself. Interrupt with a tap
-    // instead. Headsets/AirPods (route not speaker) keep full-duplex barge-in.
-    if (speakerRouteRef.current) {
-      if (m === "speaking") return;
-      if (Date.now() - lastSpeakEndRef.current < 900) return;
-    }
-    // HANDS-FREE BARGE-IN while the agent is speaking (headset route): the open
-    // mic also hears the agent, so reject echo (an utterance that just repeats
-    // what it's saying). Novel speech is a real interruption.
+    // ECHO of the agent's OWN voice → ignore (don't record; you didn't say it).
+    // On the built-in speaker the whole speaking window plus a short decay tail is
+    // echo we can't separate from your voice; on a headset, only an utterance that
+    // repeats what the agent is currently saying counts as echo.
     if (m === "speaking") {
-      // Match against a rolling window of RECENT agent speech (this reply plus the
-      // tail of the prior one) — the mic can echo audio from a moment ago, so a
-      // current-reply-only match missed it.
-      if (isLikelyEcho(t, agentSpokenRef.current)) return; // echo of the agent → ignore
+      if (speakerRouteRef.current || isLikelyEcho(t, agentSpokenRef.current)) return;
+    } else if (speakerRouteRef.current && Date.now() - lastSpeakEndRef.current < 900) {
+      return;
+    }
+
+    // CAPTURE-FIRST GUARANTEE: record it before deciding anything else.
+    try { await recordUser(rel, t); } catch { /* non-fatal; a reply may still record it */ }
+    if (!voiceOnRef.current) return; // voice was turned off mid-record
+
+    clearFiller();
+    // Commit the utterance to the on-screen transcript IMMEDIATELY (it's already in
+    // the record). This is what stops text from appearing and then vanishing: the
+    // bubble is permanent the instant you finish speaking, whether or not a reply
+    // follows. Reply paths below pass `alreadyRecorded`, which also skips adding a
+    // second bubble in sendTurn.
+    setPartial("");
+    setTurns((prev) => [...prev, { role: "user", text: t, tools: [] }]);
+
+    if (m === "speaking") {
+      // Novel speech over the agent (headset) → barge-in and reply to it.
       playEarcon("interrupt");
       skipThinkEarconRef.current = true;
-      clearFiller();
       speakerRef.current?.cancel();
       speakerRef.current = null;
       setAgentActive(false);
-      sendTurn(t);
+      sendTurn(t, { alreadyRecorded: true });
       return;
     }
-    clearFiller();
     if (turnInFlightRef.current) {
-      // Still THINKING (agent hasn't spoken yet) and you kept talking → this is a
-      // continuation of the same thought, not an interruption. Abandon the
-      // in-flight turn and re-send the COMBINED text so nothing you said is lost
-      // (rambling). No interrupt cue — you didn't interrupt anything spoken.
-      const combined = (lastUserTextRef.current ? lastUserTextRef.current + " " : "") + t;
+      // You spoke while the agent was still thinking → take THIS as its own new
+      // turn. NO cumulative combine (that prepended the previous turn and
+      // progressively overrode the record). The prior turn is already saved, and
+      // so is this one; this becomes the next reply once the in-flight turn winds
+      // down (queued so we don't race its teardown).
       bargeInRef.current = true;
-      skipThinkEarconRef.current = true;   // don't re-cue on the combined resend
+      skipThinkEarconRef.current = true;
       void cancelTurn();
       speakerRef.current?.cancel();
       speakerRef.current = null;
-      pendingUtteranceRef.current = combined;
-      pendingReplaceRef.current = true;    // replace the same user bubble
-      lastUserTextRef.current = combined;
+      pendingUtteranceRef.current = t;
+      pendingReplaceRef.current = false;
       setStreamText("");
       setModeBoth("listening");
       return;
     }
-    sendTurn(t);
+    if (m === "listening") {
+      sendTurn(t, { alreadyRecorded: true });
+      return;
+    }
+    // Any other mode (transcribing / approval): it's recorded and already shown
+    // above — don't start a competing turn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sendTurn]);
+  }, [sendTurn, rel]);
 
   // A COMPLETE utterance from the native loop (it accumulates across the
   // recognizer's ~60s cuts and only emits on a natural pause), so just process it.
@@ -562,7 +596,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     const t = text.trim();
     if (!t) return;
-    processUtterance(t);
+    void processUtterance(t);
   }, [processUtterance]);
 
   // Reliable manual interrupt: tap the transcript while the agent is talking /

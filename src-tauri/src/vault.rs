@@ -103,7 +103,7 @@ fn list_md_files(root: &Path) -> Vec<(PathBuf, u64)> {
         .filter(|e| e.path().is_file()
             && matches!(
                 e.path().extension().and_then(|s| s.to_str()),
-                Some("md") | Some("html") | Some("htm")
+                Some("md") | Some("html") | Some("htm") | Some("csv")
             )
             // .sheet.html is a spreadsheet sidecar, not a standalone card.
             && !e.path().to_string_lossy().ends_with(".sheet.html"))

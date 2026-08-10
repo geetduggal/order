@@ -53,15 +53,26 @@ export function newChat(dirRel: string, title?: string): Promise<string> {
 }
 
 /** Run one agent turn against an existing chat. Progress arrives via
- *  `onAgentStream`; the resolved value is the final assistant text. */
-export function runTurn(chatPath: string, userText: string): Promise<TurnResult> {
+ *  `onAgentStream`; the resolved value is the final assistant text.
+ *  `alreadyRecorded` = the user's message was already written to the record
+ *  (voice capture-first), so this turn must NOT write it again. */
+export function runTurn(chatPath: string, userText: string, opts?: { alreadyRecorded?: boolean }): Promise<TurnResult> {
   return invoke<TurnResult>("agent_turn", {
     apiKey: getAgentKey(),
     chatPath,
     createDir: null,
     title: null,
     userText,
+    recordUser: !opts?.alreadyRecorded,
   });
+}
+
+/** Write a spoken utterance to the chat record WITHOUT running a turn. The voice
+ *  loop calls this for every finalized utterance so nothing said is ever lost,
+ *  even when we don't reply to it. When a reply does follow, the turn is run with
+ *  `alreadyRecorded: true` so it isn't written twice. */
+export function recordUser(chatPath: string, userText: string): Promise<void> {
+  return invoke<void>("agent_record_user", { chatPath, userText });
 }
 
 /** Ask the model for a short, filesystem-friendly title summarising a chat's

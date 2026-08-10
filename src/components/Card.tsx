@@ -60,7 +60,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -68,6 +68,8 @@ import { isIosSync } from "../lib/vault";
 import { useTextScale } from "../lib/text-scale";
 import { CardSpeech } from "./CardSpeech";
 import { ChatSurface } from "./ChatSurface";
+import { CsvSurface } from "./CsvSurface";
+import { FinanceReportModal } from "./FinanceReportModal";
 import { consumeFullscreenIntent, onFullscreenRequest } from "../lib/fullscreen-intent";
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -395,6 +397,7 @@ export function Card(props: Props) {
   // row stays uncrowded (and doesn't overlap the date chip or a flipped
   // surface's own toolbar).
   const [moreOpen, setMoreOpen] = useState(false);
+  const [finReportOpen, setFinReportOpen] = useState(false);
   // The menu renders in a portal (fixed coords from the button) so it escapes
   // sibling cards' stacking contexts / overflow — otherwise a later card
   // paints over it.
@@ -1291,6 +1294,9 @@ export function Card(props: Props) {
   const isChatNote = /\.chat\.md$/i.test(filename);
   // A date-prefixed image surfaced as its own card in the folder pile.
   const isImageNote = isImagePath(filename);
+  // A `.csv` file (e.g. a Finance report snapshot) — rendered as a table. #4 of
+  // the OSuite Finance MVP: view raw CSVs the way `.sheet.html` sheets render.
+  const isCsvNote = /\.csv$/i.test(filename);
 
   /** Write (or clear) the `folded: true` flag straight into this note's
    *  YAML. Editor-only — the read-only viewer reveals via the spine but
@@ -1594,6 +1600,16 @@ export function Card(props: Props) {
               <FolderOpenIcon size={14} strokeWidth={2} /><span>{flipped ? "Back to note" : "Folder contents"}</span>
             </button>
           )}
+          {isMainDoc && !isIosSync() && (
+            <button
+              type="button"
+              role="menuitem"
+              className="order-card-more-item"
+              onClick={() => { setMoreOpen(false); setFinReportOpen(true); }}
+            >
+              <DollarSignIcon size={14} strokeWidth={2} /><span>Generate finance report</span>
+            </button>
+          )}
           {!isIosSync() && (
             <button type="button" role="menuitem" className={"order-card-more-item" + (termOpen ? " is-on" : "")} onClick={() => { setTermOpen((t) => !t); setFlipped(false); setMoreOpen(false); }}>
               <TerminalIcon size={14} strokeWidth={2} /><span>{termOpen ? "Close terminal" : "Open terminal"}</span>
@@ -1717,6 +1733,9 @@ export function Card(props: Props) {
           // transcript, streams the live turn, and handles write-approval. The
           // Rust core does every file touch + model call.
           <ChatSurface path={pathRef.current} autoFocus={autoFocus && !readOnly} onMaybeTitle={onMaybeChatTitle} />
+        ) : isCsvNote ? (
+          // Raw CSV rendered as a table (Finance report snapshots + any CSV).
+          <CsvSurface path={pathRef.current} />
         ) : isHtmlNote ? (
           // Dated HTML note: render the page itself in a sandboxed frame, filling
           // the card (and the whole screen in fullscreen) so you see at a glance
@@ -1903,6 +1922,12 @@ export function Card(props: Props) {
               recents={recentFolders}
             />
           </span>
+        )}
+        {finReportOpen && (
+          <FinanceReportModal
+            dirRel={(() => { const r = toVaultRel(pathRef.current); return r.includes("/") ? r.slice(0, r.lastIndexOf("/")) : ""; })()}
+            onClose={() => setFinReportOpen(false)}
+          />
         )}
       </div>
       {deleteError && (

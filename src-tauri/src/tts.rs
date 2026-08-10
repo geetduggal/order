@@ -557,6 +557,57 @@ pub fn silence_keepalive_end() {
     }
 }
 
+/// A tiny 16-bit mono WAV of one or more tones, each with a raised-cosine bell
+/// envelope (soft attack + release, no clicks). Mirrors the JS `tones()` in
+/// src/lib/earcon.ts so the native (Lock Mode) cues sound identical to the ones
+/// the web layer plays when the app is open. `segs` is (freq_hz, ms).
+fn earcon_wav(segs: &[(f32, u32)], vol: f32) -> Vec<u8> {
+    const SR: u32 = 44100;
+    let total: usize = segs.iter().map(|(_, ms)| (SR * ms / 1000) as usize).sum();
+    let data_len = total * 2;
+    let mut buf = Vec::with_capacity(44 + data_len);
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes());
+    buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+    buf.extend_from_slice(&SR.to_le_bytes());
+    buf.extend_from_slice(&(SR * 2).to_le_bytes());
+    buf.extend_from_slice(&2u16.to_le_bytes());
+    buf.extend_from_slice(&16u16.to_le_bytes());
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for (freq, ms) in segs {
+        let len = (SR * ms / 1000) as usize;
+        for i in 0..len {
+            let env = (std::f32::consts::PI * (i as f32 / len as f32)).sin(); // 0 → 1 → 0
+            let s = ((2.0 * std::f32::consts::PI * freq * (i as f32 / SR as f32)).sin()
+                * env * vol * 32767.0) as i16;
+            buf.extend_from_slice(&s.to_le_bytes());
+        }
+    }
+    buf
+}
+
+/// Play a feedback earcon natively (used by the Lock Mode voice loop, where the
+/// web layer's earcons can't fire because JS is suspended). `kind` matches the JS
+/// earcons: "start"/"listening" (ready for you), "thinking" (processing), and
+/// "interrupt". No-op off macOS/iOS.
+pub fn play_earcon_kind(#[allow(unused_variables)] kind: &str) {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        let (segs, vol): (&[(f32, u32)], f32) = match kind {
+            "start" | "listening" => (&[(523.0, 70), (659.0, 70), (784.0, 95)], 0.13),
+            "interrupt" => (&[(784.0, 45), (1046.0, 65)], 0.15),
+            _ => (&[(396.0, 130)], 0.12), // thinking
+        };
+        let bytes = earcon_wav(segs, vol);
+        let _ = imp::play_earcon(&bytes);
+    }
+}
+
 /// Play a base64 audio clip (cloud TTS mp3) through the NATIVE audio session so
 /// it coexists with the recording mic (WebView `<audio>` interrupts recording).
 /// Returns the clip's playback duration in seconds. No-op off macOS/iOS.

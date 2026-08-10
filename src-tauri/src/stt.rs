@@ -30,10 +30,13 @@ static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 static END_NATURAL: AtomicBool = AtomicBool::new(true);
 
 /// Whether the app (WebView) is in the foreground. JS flips this on
-/// visibilitychange. When the app is BACKGROUNDED (phone locked), JS is
-/// suspended and can't drive the voice loop — so the STT loop runs the turn +
-/// speaks the reply itself (see `run_background_turn`). Foreground is unchanged:
-/// the loop just emits `stt-utterance` and JS orchestrates as before.
+/// visibilitychange. When the app is backgrounded (the phone is locked or the app
+/// is switched away) the WebView's JS is suspended and can't drive the voice loop
+/// — we call this **Lock Mode**. In Lock Mode the STT loop runs the turn and
+/// speaks the reply itself (see `run_background_turn`), captures everything said,
+/// and plays its own audible cues. Foreground (active) mode is unchanged: the loop
+/// emits `stt-utterance` and JS orchestrates as before. (`is_foreground()` names
+/// the underlying OS state; "Lock Mode" is the product name for `!is_foreground`.)
 static FOREGROUND: AtomicBool = AtomicBool::new(true);
 
 /// True when the app is in the foreground (JS is alive to drive the loop).
@@ -119,19 +122,13 @@ pub fn voice_convo_stop() {
     }
 }
 
-/// Locked-phone path: JS is suspended, so run the agent turn and speak the reply
-/// entirely in Rust. The mic engine is already torn down between utterances, so
-/// nothing records during the (native) TTS — no echo, no barge-in here, just a
-/// clean walkie-talkie loop. A background-task assertion bridges the model call
-/// (no audio flowing) so the app isn't suspended mid-think.
+/// Lock Mode turn: JS is suspended, so run the agent turn and speak the reply
+/// entirely in Rust. Captures the user's utterance to the record first (a running
+/// turn records it; the no-turn bail paths record it explicitly), then thinks and
+/// speaks with audible cues. A background-execution assertion bridges the whole
+/// turn so the app isn't suspended mid-think.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
-    // If we've returned to the foreground since this utterance was routed here, the
-    // JS loop owns the turn — bail so the reply isn't spoken twice (the lock/unlock
-    // transition otherwise let both paths answer the same thing).
-    if is_foreground() {
-        return;
-    }
     let (chat_rel, api_key, voice_id, rate, cloud_engine, cloud_voice, cloud_model, cloud_key) = {
         let g = VOICE_CONVO.lock().unwrap();
         match g.as_ref() {
@@ -139,12 +136,25 @@ fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
                 c.chat_rel.clone(), c.api_key.clone(), c.voice_id.clone(), c.rate,
                 c.cloud_engine.clone(), c.cloud_voice.clone(), c.cloud_model.clone(), c.cloud_key.clone(),
             ),
-            None => return, // no conversation armed
+            None => return, // no conversation armed → nowhere to record it
         }
     };
-    if api_key.trim().is_empty() {
+    // CAPTURE-FIRST GUARANTEE: whatever the user said is saved to the record even
+    // when a full turn can't run here. A running turn records the user itself, so
+    // we only record explicitly on the no-turn paths below (never a duplicate).
+    if is_foreground() {
+        // Returned to the foreground since this utterance was routed here: don't
+        // also speak a reply (JS owns live turns), but still capture what was said.
+        let _ = crate::agent::run::record_user_utterance(app, &chat_rel, utterance);
         return;
     }
+    if api_key.trim().is_empty() {
+        let _ = crate::agent::run::record_user_utterance(app, &chat_rel, utterance);
+        return;
+    }
+    // Audible "processing" cue — the same feedback the web layer gives when the
+    // app is open, but played natively because JS is suspended in Lock Mode.
+    crate::tts::play_earcon_kind("thinking");
     // Hold the background-execution assertion across the WHOLE turn — model call,
     // cloud-TTS synth, AND playback — not just the model call. The gap between the
     // model finishing and audio starting (network synth, no audio flowing) was
@@ -191,6 +201,8 @@ fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
         }
     }
     crate::tts::keepalive_end();
+    // Reply delivered — cue that the mic is listening again for your next turn.
+    crate::tts::play_earcon_kind("listening");
 }
 /// Last time (ms since UNIX epoch) an `stt-level` event was emitted. The audio
 /// tap fires ~40×/s; throttling the emit keeps the JS bridge from being flooded

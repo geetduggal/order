@@ -4,7 +4,7 @@
 // views; filtering is managed exclusively through the left-rail pills,
 // identical to CardGrid.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Files, FileText, Folder as FolderIcon, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Search as SearchIcon, ChevronsRight, PanelRight, Settings as SettingsIcon, ZoomIn, ZoomOut, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX } from "lucide-react";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../src/lib/theme";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../src/lib/text-scale";
@@ -93,9 +93,34 @@ export function ViewerApp(
   const fromSearch = typeof location !== "undefined" ? filtersFromSearch(location.search) : [];
 
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // Sidebar hidden by default — viewers shouldn't get a wall of UI on
-  // first paint. Toggle via the › / ‹ button or Cmd+;.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Sidebar SHOWS by default (matches the app) and is user-resizable by dragging
+  // its left edge; both are persisted per visitor. Toggle via the › / ‹ button or
+  // Cmd+;.
+  const SIDEBAR_W_MIN = 260, SIDEBAR_W_MAX = 720, SIDEBAR_W_DEFAULT = 360;
+  const clampSidebarW = (w: number) => {
+    const cap = typeof window !== "undefined" ? Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.6)) : SIDEBAR_W_MAX;
+    return Math.max(SIDEBAR_W_MIN, Math.min(cap, Math.round(w)));
+  };
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("order.sidebar.open") !== "0"; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem("order.sidebar.open", sidebarOpen ? "1" : "0"); } catch { /* non-fatal */ } }, [sidebarOpen]);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try { const v = parseInt(localStorage.getItem("order.sidebar.width") ?? "", 10); return Number.isFinite(v) ? clampSidebarW(v) : SIDEBAR_W_DEFAULT; } catch { return SIDEBAR_W_DEFAULT; }
+  });
+  const startSidebarResize = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => setSidebarWidth(clampSidebarW(window.innerWidth - ev.clientX));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setSidebarWidth((w) => { try { localStorage.setItem("order.sidebar.width", String(w)); } catch { /* non-fatal */ } return w; });
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
   const [view, setView] = useState<View>("pile");
   // Bumped by resetToDefault to collapse Show-more expansions.
   const [collapseNonce, setCollapseNonce] = useState(0);
@@ -625,7 +650,7 @@ export function ViewerApp(
   }, [includeSet, data.home?.name]);
 
   return (
-    <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}>
+    <div className={"shell viewer-shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")} style={{ "--sidebar-w": `${sidebarWidth}px` } as CSSProperties}>
       {/* Bottom dock — viewer doesn't have new-note or publish, so
           just pile-mode + search. */}
       <div className="bottom-dock" role="toolbar" aria-label="Main controls">
@@ -808,6 +833,17 @@ export function ViewerApp(
         )}
       </main>
 
+      {sidebarOpen && (
+        <div
+          className="sidebar-resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={startSidebarResize}
+          onDoubleClick={() => setSidebarWidth(SIDEBAR_W_DEFAULT)}
+          title="Drag to resize · double-click to reset"
+        />
+      )}
       {sidebarOpen && (
         <Sidebar
           view={view}
