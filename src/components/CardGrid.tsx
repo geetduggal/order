@@ -101,12 +101,21 @@ import type { ListItem, ListNoteRef } from "../lib/list-folder";
 import { ITEM_TO_CALENDAR, EVENT_TO_LIST, type ItemToCalendarDetail, type EventToListDetail } from "../lib/list-cal-dnd";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
+// The sidebar is an overlay/wall of UI on a phone, so on a narrow screen it
+// ALWAYS starts closed and only opens when explicitly tapped this session — no
+// persisted "open" is honored there, and closing/opening on mobile doesn't
+// overwrite the desktop preference. On desktop it's shown by default and sticks.
+function isNarrowScreen(): boolean {
+  return typeof window !== "undefined" && window.innerWidth <= 640;
+}
 function readSidebarOpen(): boolean {
+  if (isNarrowScreen()) return false;
   // Shown by default; the toggle (›/‹ or Cmd+;) sets it and the choice sticks
   // across reloads. Only an explicit "0" keeps it closed.
   try { return localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0"; } catch { return true; }
 }
 function writeSidebarOpen(open: boolean): void {
+  if (isNarrowScreen()) return; // don't persist mobile toggles
   try { localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0"); } catch { /* non-fatal */ }
 }
 

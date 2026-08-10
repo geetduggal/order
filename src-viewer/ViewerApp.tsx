@@ -101,10 +101,18 @@ export function ViewerApp(
     const cap = typeof window !== "undefined" ? Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.6)) : SIDEBAR_W_MAX;
     return Math.max(SIDEBAR_W_MIN, Math.min(cap, Math.round(w)));
   };
+  // On a phone the sidebar is an overlay, so it ALWAYS starts closed and only
+  // opens when tapped this session (no persisted "open" honored, mobile toggles
+  // don't pollute the desktop preference). On desktop it shows by default.
+  const isNarrowScreen = () => typeof window !== "undefined" && window.innerWidth <= 640;
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (isNarrowScreen()) return false;
     try { return localStorage.getItem("order.sidebar.open") !== "0"; } catch { return true; }
   });
-  useEffect(() => { try { localStorage.setItem("order.sidebar.open", sidebarOpen ? "1" : "0"); } catch { /* non-fatal */ } }, [sidebarOpen]);
+  useEffect(() => {
+    if (isNarrowScreen()) return; // don't persist mobile toggles
+    try { localStorage.setItem("order.sidebar.open", sidebarOpen ? "1" : "0"); } catch { /* non-fatal */ }
+  }, [sidebarOpen]);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try { const v = parseInt(localStorage.getItem("order.sidebar.width") ?? "", 10); return Number.isFinite(v) ? clampSidebarW(v) : SIDEBAR_W_DEFAULT; } catch { return SIDEBAR_W_DEFAULT; }
   });

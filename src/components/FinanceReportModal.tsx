@@ -3,6 +3,7 @@
 // include. The report writes a snapshot CSV + HTML into `dirRel` (this folder).
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import * as finance from "../lib/finance";
 
 function monthStartIso(): string {
@@ -46,7 +47,10 @@ export function FinanceReportModal({ dirRel, onClose }: { dirRel: string; onClos
     }
   };
 
-  return (
+  // Portal to <body> so the fixed overlay escapes the card's transformed
+  // stacking context (a transformed ancestor becomes the containing block for
+  // position:fixed, which otherwise trapped this modal inside the card).
+  return createPortal(
     <div className="order-fin-modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="order-fin-modal" role="dialog" aria-label="Generate finance report">
         <div className="order-fin-modal-head">
@@ -87,6 +91,7 @@ export function FinanceReportModal({ dirRel, onClose }: { dirRel: string; onClos
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
