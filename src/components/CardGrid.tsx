@@ -4514,6 +4514,10 @@ export function CardGrid() {
       ? (frontmatter.emails as unknown[]).filter((x): x is string => typeof x === "string")
       : undefined;
     delete frontmatter.emails;
+    // DECOUPLED MODEL: invitees live in the note's OWN frontmatter (canonical key
+    // `invitees`), the single source for gcal/apple sync (buildSpacetime reads it).
+    // Kept mirrored onto the derived event line below only for legacy calendar reads.
+    if (createEmails && createEmails.length) frontmatter.invitees = createEmails;
     // The folder choice decides WHERE the file is written — it is never
     // stored in YAML (placement is structural). Resolution priority:
     //   1. caller supplied `folder` (calendar quick-create from a
@@ -5146,12 +5150,21 @@ export function CardGrid() {
   /** Commit a new recipient list onto the event's spacetime.mw line. Updates
    *  the open menu optimistically so chips repaint without closing it. */
   const handleSetEmails = useCallback(async (path: string, emails: string[]) => {
-    const chip = eventChipRef.current.get(path);
-    if (!chip) return;
-    const { date, title } = chip.ev;
     setEventMenu((m) => (m && m.path === path ? { ...m, emails } : m));
-    await applyMwEdit((mw) => mwUpdateEvent(mw, date, title, { emails }));
-  }, [applyMwEdit]);
+    // DECOUPLED MODEL: invitees live in the event note's OWN frontmatter
+    // (`invitees`), not on a spacetime line. buildSpacetime reads them back so
+    // gcal/apple sync still sees them.
+    try {
+      const raw = await readVault(path);
+      const { frontmatter, body } = splitFrontmatter(raw);
+      const next: Frontmatter = { ...frontmatter };
+      if (emails.length) next.invitees = emails; else delete next.invitees;
+      await writeVault(path, joinFrontmatter(next, body));
+      await reloadNotes();
+    } catch (err) {
+      console.warn("set invitees failed", err);
+    }
+  }, [reloadNotes]);
 
   /** Generic frontmatter patcher driving the FrontmatterInspector.
    *  Read, mutate, write, sync state. Keys set to `null` are deleted;
@@ -5259,27 +5272,12 @@ export function CardGrid() {
       flashCap(`Rename failed: ${String(err)}`);
       return;
     }
-    // 5. Rename the folder in spacetime.mw (source of truth): rename the node
-    //    in the `# Space` tree AND re-tag every event that pointed at it.
-    //    writeSpacetimeModel stamps lastMarkwhenRef, so Effect 2 won't try to
-    //    re-reconcile (and re-rename) the directory we already moved on disk.
-    try {
-      const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
-      if (mw) {
-        const st = parseMarkwhenFormat(mw);
-        const walk = (nodes: SpaceNode[]) => {
-          for (const n of nodes) { if (n.name === oldName) n.name = safe; walk(n.children); }
-        };
-        walk(st.space);
-        for (const ev of st.events) if (ev.folder === oldName) ev.folder = safe;
-        await writeSpacetimeModel(st);
-      }
-    } catch (err) {
-      console.warn("mw folder rename sync skipped", err);
-    }
-    // 6. Pick up everything fresh — paths, refs, chain order all moved.
+    // DECOUPLED MODEL: the directory rename above IS the change — the hierarchy is
+    // derived from physical placement (taxonomyFromPaths), so there's no spacetime
+    // ledger to keep in sync. (spacetime.md is now only an optional generated view.)
+    // 5. Pick up everything fresh — paths, refs, order all moved.
     await reloadNotes();
-  }, [reloadNotes, writeSpacetimeModel]);
+  }, [reloadNotes]);
 
 
   /** Create a new Notable Folder Main Document for the given area +

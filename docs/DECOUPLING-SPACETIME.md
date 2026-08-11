@@ -36,16 +36,26 @@ What was still coupled to `spacetime.md`:
   `recipients` / `emails`) and `appleCalendar` into the derived event, so gcal/apple
   sync works off frontmatter instead of a spacetime line.
 
+## Write-side progress (this pass; compiles, tests pass)
+
+- **Folder rename is now pure filesystem.** `handleRenameNotableFolder` already
+  renamed the directory + main doc + inbound refs; its redundant `spacetime.mw`
+  write (the old "source of truth" step) is removed. The taxonomy re-derives from the
+  renamed directory.
+- **Invitees now write to frontmatter.** Event creation (`createNote`) keeps invitees
+  in the note's own frontmatter as `invitees` (was: deleted from YAML and written to a
+  spacetime line). `handleSetEmails` (edit an event's invitees) now writes `invitees:`
+  into the event note's frontmatter. `buildSpacetime` reads them back for gcal/apple.
+
 ## Remaining work (write-side + migration + view) — NOT yet done
 
-1. **Structure edits become directory operations.** The sidebar's folder
-   rename / reorder / move (and `applySpaceMutation` / `serializeSpacetime` writers)
-   must rename/move real directories on disk instead of editing `spacetime.md`. This
-   is the largest piece and needs on-device verification (it touches `Sidebar.tsx`,
-   `CardGrid.tsx` structure handlers, and the Rust vault move commands).
-2. **Invitee writes → frontmatter.** The calendar event editor (event create/edit UI)
-   must write `invitees:` into the note's frontmatter rather than onto a spacetime line;
-   `gcal-push` / `apple-sync-plan` read from the event (already frontmatter-derived here).
+1. **Reorder / move folder → directory operations.** Rename is done. Folder *move*
+   (reparent) and *reorder* still flow through `patchSpacetimeSpace` + the reconcile
+   effect (Effect 2). In the JD/filesystem model, order = numeric prefix, so reorder
+   becomes a JD renumber and move becomes a directory move. Needs on-device verification
+   (touches `Sidebar.tsx`, `CardGrid.tsx` handlers, Rust vault move).
+2. Remove the now-redundant `spacetime.mw` **event write** on creation once `gcal-push`
+   reads the frontmatter-derived events (invitees are already frontmatter-sourced).
 3. **`spacetime.md` as a generated view.** Add a Settings action "Generate spacetime.md"
    that compiles the current filesystem+frontmatter into a spacetime-format file on
    demand; stop auto-writing it and stop reading it as truth (keep the compact syntax as
