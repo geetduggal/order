@@ -40,10 +40,53 @@ interface ChainNote {
   filename: string;
   body: string;
   frontmatter: Frontmatter;
+  /** Vault-relative path. When present, physical placement is the source of
+   *  truth for the hierarchy (see `taxonomyFromPaths`). */
+  path?: string;
 }
 
 function refOf(filename: string): string {
   return filename.replace(/\.md$/i, "");
+}
+
+/** Build the Area → Category → Notable Folder taxonomy PURELY from physical
+ *  directory placement — the vault's three-level directory structure
+ *  (`Area / Category / NotableFolder / file`) IS the hierarchy. This is the
+ *  source of truth in the decoupled model: no `spacetime.md` ledger and no
+ *  `Areas.md` chain of list files. Ordering follows Johnny Decimal id prefixes
+ *  when present (they sort naturally with numeric collation), else name order.
+ *
+ *  A folder/category/area appears as soon as ANY file lives at or under it, so
+ *  the tree reflects exactly what's on disk. Returns empty when no note carries a
+ *  deep-enough path (callers fall back to the legacy derivation). */
+export function taxonomyFromPaths(notes: ChainNote[]): VaultTaxonomy {
+  // area -> (category -> set<notable folder>)
+  const areas = new Map<string, Map<string, Set<string>>>();
+  for (const n of notes) {
+    if (!n.path) continue;
+    const parts = n.path.split("/").filter(Boolean);
+    // Need at least Area / Category / NotableFolder / file.
+    if (parts.length < 4) continue;
+    const area = parts[parts.length - 4];
+    const cat = parts[parts.length - 3];
+    const nf = parts[parts.length - 2];
+    if (!area || !cat || !nf) continue;
+    let cats = areas.get(area);
+    if (!cats) { cats = new Map(); areas.set(area, cats); }
+    let folders = cats.get(cat);
+    if (!folders) { folders = new Set(); cats.set(cat, folders); }
+    folders.add(nf);
+  }
+  const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  const areaNodes: AreaNode[] = [...areas.keys()].sort(cmp).map((area) => {
+    const cats = areas.get(area)!;
+    const categories: CategoryNode[] = [...cats.keys()].sort(cmp).map((cat) => ({
+      ref: cat,
+      folders: [...cats.get(cat)!].sort(cmp),
+    }));
+    return { ref: area, categories };
+  });
+  return { areas: areaNodes, hiddenRefs: new Set() };
 }
 
 function bulletsOf(note: ChainNote): string[] {
@@ -61,9 +104,12 @@ function findAreasNote(notes: ChainNote[]): ChainNote | undefined {
 }
 
 export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime): VaultTaxonomy {
-  // When spacetime.yml carries a non-empty space tree, it is the source of
-  // truth for the hierarchy and its order. Fall back to the chain files only
-  // when spacetime has no space data (vault not yet migrated).
+  // DECOUPLED MODEL: physical directory placement is the source of truth for the
+  // hierarchy. Derive it straight from the file paths whenever they're available.
+  const physical = taxonomyFromPaths(notes);
+  if (physical.areas.length > 0) return physical;
+  // Legacy fallbacks for vaults that don't (yet) have the physical three-level
+  // structure: a spacetime.yml `space` tree, then the Areas.md chain of lists.
   if (spacetime && spacetime.space.length > 0) {
     return spacetimeTaxonomy(spacetime.space);
   }

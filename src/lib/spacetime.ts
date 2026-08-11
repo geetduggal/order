@@ -179,6 +179,13 @@ export function buildSpacetime(
     // note actually reads — not a possibly-stale frontmatter `title:`. Falls
     // back to the frontmatter/filename derivation when there's no H1.
     const title = firstMajorHeader(n.body) ?? noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
+    // Invitees live in the note's OWN frontmatter now (decoupled model), not on a
+    // spacetime.md line. Accept `invitees` (canonical) or `recipients`/`emails`.
+    const rawInvitees = fm.invitees ?? fm.recipients ?? fm.emails;
+    const invitees = Array.isArray(rawInvitees)
+      ? rawInvitees.filter((x): x is string => typeof x === "string" && x.includes("@"))
+      : undefined;
+    const apple = typeof fm.appleCalendar === "string" ? fm.appleCalendar : undefined;
     const ev: SpacetimeEvent = {
       date, title,
       ...(folder ? { folder } : {}),
@@ -186,6 +193,8 @@ export function buildSpacetime(
       ...(endTime ? { endTime } : {}),
       ...(endDate ? { endDate } : {}),
       ...(allDay ? { allDay: true } : {}),
+      ...(invitees && invitees.length ? { emails: invitees } : {}),
+      ...(apple ? { apple } : {}),
     };
     const k = `${date}|${time ?? ""}|${title.toLowerCase()}`;
     if (!byKey.has(k)) byKey.set(k, ev);

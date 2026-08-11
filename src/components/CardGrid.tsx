@@ -996,7 +996,9 @@ export function CardGrid() {
       if (r.spacetime.space.length > 0) effectiveSpacetime = r.spacetime;
     }
     return buildVaultTaxonomy(
-      notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body })),
+      // Pass the physical path — placement on disk is now the source of truth for
+      // the hierarchy (decoupled from spacetime.md).
+      notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, path: n.path })),
       effectiveSpacetime,
     );
   }, [notes, parsedSpacetime, mwSources]);
