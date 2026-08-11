@@ -234,6 +234,8 @@ pub fn run() {
             vault_fs::vault_stat,
             vault_fs::vault_rename,
             vault_fs::vault_remove,
+            vault_fs::vault_create_dir,
+            vault_fs::vault_list_dirs,
             vault_fs::vault_backup,
             vault::scan_vault,
             vault::refresh_note,

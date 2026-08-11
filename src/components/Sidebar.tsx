@@ -842,12 +842,8 @@ function FolderRow({ folder, checked, onToggle, onMoveUp, onMoveDown, onRemove, 
       </button>
       {hasControls && (
         <span className="sb-folder-controls">
-          <button type="button" className="sb-folder-ctl" disabled={!onMoveUp} onClick={onMoveUp} title="Move up" aria-label="Move up">
-            <ChevronUp size={11} strokeWidth={2.5} />
-          </button>
-          <button type="button" className="sb-folder-ctl" disabled={!onMoveDown} onClick={onMoveDown} title="Move down" aria-label="Move down">
-            <ChevronDown size={11} strokeWidth={2.5} />
-          </button>
+          {/* Reorder removed: order is the directory's Johnny-Decimal prefix / name,
+              not a manual arrangement — this is a file browser, not a canvas. */}
           {onRemove && (
             <button
               type="button"

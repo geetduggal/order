@@ -40,10 +40,65 @@ interface ChainNote {
   filename: string;
   body: string;
   frontmatter: Frontmatter;
+  /** Vault-relative path. When present, physical placement is the source of
+   *  truth for the hierarchy (see `taxonomyFromPaths`). */
+  path?: string;
 }
 
 function refOf(filename: string): string {
   return filename.replace(/\.md$/i, "");
+}
+
+/** Build the Area → Category → Notable Folder taxonomy PURELY from physical
+ *  directory placement — the vault's three-level directory structure
+ *  (`Area / Category / NotableFolder / file`) IS the hierarchy. This is the
+ *  source of truth in the decoupled model: no `spacetime.md` ledger and no
+ *  `Areas.md` chain of list files. Ordering follows Johnny Decimal id prefixes
+ *  when present (they sort naturally with numeric collation), else name order.
+ *
+ *  A folder/category/area appears as soon as ANY file lives at or under it, so
+ *  the tree reflects exactly what's on disk. Returns empty when no note carries a
+ *  deep-enough path (callers fall back to the legacy derivation). */
+export function taxonomyFromPaths(notes: ChainNote[], dirs: string[] = []): VaultTaxonomy {
+  // area -> (category -> set<notable folder>). Paths MUST be vault-relative, so
+  // the FIRST three directory levels are Area / Category / Notable Folder; anything
+  // deeper is content living INSIDE the Notable Folder (Readwise imports, an event's
+  // attachments, a note's sub-notes) and must NOT shift the hierarchy window.
+  const areas = new Map<string, Map<string, Set<string>>>();
+  // Register a directory chain (already sliced to at most Area/Category/NF).
+  const register = (chain: string[]) => {
+    if (chain.length === 0) return;
+    const area = chain[0];
+    let cats = areas.get(area);
+    if (!cats) { cats = new Map(); areas.set(area, cats); }
+    if (chain.length < 2) return; // registers the Area only
+    const cat = chain[1];
+    let folders = cats.get(cat);
+    if (!folders) { folders = new Set(); cats.set(cat, folders); }
+    if (chain.length < 3) return; // registers the Category only
+    folders.add(chain[2]); // the Notable Folder (3rd level)
+  };
+  for (const n of notes) {
+    if (!n.path) continue;
+    const parts = n.path.split("/").filter(Boolean);
+    register(parts.slice(0, -1)); // directories above the file
+  }
+  // Empty Area/Category/NF directories (no note inside yet) come in via `dirs`
+  // so a freshly-created empty Area shows immediately. The directory path IS the
+  // chain — take its first three levels.
+  for (const d of dirs) {
+    register(d.split("/").filter(Boolean).slice(0, 3));
+  }
+  const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  const areaNodes: AreaNode[] = [...areas.keys()].sort(cmp).map((area) => {
+    const cats = areas.get(area)!;
+    const categories: CategoryNode[] = [...cats.keys()].sort(cmp).map((cat) => ({
+      ref: cat,
+      folders: [...cats.get(cat)!].sort(cmp),
+    }));
+    return { ref: area, categories };
+  });
+  return { areas: areaNodes, hiddenRefs: new Set() };
 }
 
 function bulletsOf(note: ChainNote): string[] {
@@ -60,10 +115,14 @@ function findAreasNote(notes: ChainNote[]): ChainNote | undefined {
     ?? notes.find((n) => n.filename === AREAS_FILENAME);
 }
 
-export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime): VaultTaxonomy {
-  // When spacetime.yml carries a non-empty space tree, it is the source of
-  // truth for the hierarchy and its order. Fall back to the chain files only
-  // when spacetime has no space data (vault not yet migrated).
+export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime, dirs: string[] = []): VaultTaxonomy {
+  // DECOUPLED MODEL: physical directory placement is the source of truth for the
+  // hierarchy. Derive it straight from the file paths whenever they're available.
+  // `dirs` adds any EMPTY Area/Category/NF directories that hold no note yet.
+  const physical = taxonomyFromPaths(notes, dirs);
+  if (physical.areas.length > 0) return physical;
+  // Legacy fallbacks for vaults that don't (yet) have the physical three-level
+  // structure: a spacetime.yml `space` tree, then the Areas.md chain of lists.
   if (spacetime && spacetime.space.length > 0) {
     return spacetimeTaxonomy(spacetime.space);
   }

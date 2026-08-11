@@ -447,6 +447,51 @@ pub fn vault_remove(state: tauri::State<VaultState>, rel: String) -> Result<(), 
     .map_err(|e| e.to_string())
 }
 
+/// Create a directory (and any missing parents) at a vault-relative path.
+/// In the decoupled model the directory tree IS the Area/Category/Notable-Folder
+/// hierarchy, so adding an empty Area or Category is just creating a directory.
+#[tauri::command]
+pub fn vault_create_dir(state: tauri::State<VaultState>, rel: String) -> Result<(), String> {
+    let p = resolve(&state, &rel)?;
+    fs::create_dir_all(p).map_err(|e| e.to_string())
+}
+
+/// Recursively list every directory under the vault root as a vault-RELATIVE
+/// POSIX path, skipping dotdirs and the Attachments dir. Lets the taxonomy
+/// surface Area/Category/Notable-Folder directories that are still EMPTY (no
+/// note inside yet) — placement on disk is the source of truth, so a freshly
+/// created empty Area must appear immediately, before any note lives under it.
+#[tauri::command]
+pub fn vault_list_dirs(state: tauri::State<VaultState>) -> Result<Vec<String>, String> {
+    let root = {
+        let guard = state.root.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("vault root not set")?.clone()
+    };
+    let mut out = Vec::new();
+    collect_dirs(&root, &root, &mut out);
+    Ok(out)
+}
+
+fn collect_dirs(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "Attachments" {
+            continue;
+        }
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let p = entry.path();
+            if let Ok(rel) = p.strip_prefix(root) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+            collect_dirs(root, &p, out);
+        }
+    }
+}
+
 /// Timestamped full-vault snapshot into `<vault>/.order-legacy/backup-<ts>/`.
 /// Skips if a backup was made less than 60 seconds ago. Returns the backup path.
 #[tauri::command]
