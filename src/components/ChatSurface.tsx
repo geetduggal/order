@@ -369,6 +369,26 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     setError(msg);
   }, [setModeBoth]);
 
+  // A turn/model error (e.g. an Anthropic 400, a transient network fail) — show it
+  // but KEEP the voice loop alive and listening. A single bad turn must never tear
+  // down capture: what you say next still needs to be recorded and answered. (Your
+  // errored utterance is already saved to the record via capture-first.)
+  const softFail = useCallback((msg: string) => {
+    clearFiller();
+    setError(msg);
+    setStreamText("");
+    setStreamTools([]);
+    setApproval(null);
+    speakerRef.current?.cancel();
+    speakerRef.current = null;
+    turnInFlightRef.current = false;
+    bargeInRef.current = false;
+    setAgentActive(false);
+    voiceKeepaliveEnd();
+    setModeBoth(voiceOnRef.current ? "listening" : "idle");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setModeBoth]);
+
   const startVoice = useCallback(() => {
     if (!hasKey) { setError("Add your Anthropic API key in Settings to use the agent."); return; }
     if (getSttEngine() === "whisper" && !getOpenaiKey()) {
@@ -500,7 +520,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     clearFiller();
     void runTurn(rel, text, { alreadyRecorded: opts?.alreadyRecorded })
       .then((res) => { finalizeAgent(res.text); })   // safety net if `final` was missed
-      .catch((err) => { if (!bargeInRef.current) failLoud(typeof err === "string" ? err : "The agent turn failed."); })
+      .catch((err) => { if (!bargeInRef.current) softFail(typeof err === "string" ? err : "The agent turn failed."); })
       .finally(() => {
         turnInFlightRef.current = false;
         // A barge-in queued the next utterance while this turn was still
@@ -512,7 +532,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         if (pending && voiceOnRef.current) { pendingUtteranceRef.current = null; sendTurnRef.current?.(pending, { replaceLastUser: replace, alreadyRecorded: true }); }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rel, failLoud, finalizeAgent]);
+  }, [rel, softFail, finalizeAgent]);
 
   // Latest sendTurn, so the runTurn .finally and the utterance handler can call
   // it without capturing a stale closure.
@@ -658,10 +678,9 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
           break;
         }
         case "error": {
-          setApproval(null);
-          setStreamText("");
-          setStreamTools([]);
-          failLoud(e.message);
+          // A turn/model error (e.g. Anthropic 400). Keep the voice loop alive so
+          // capture continues — don't tear it down over one bad turn.
+          softFail(e.message);
           break;
         }
       }

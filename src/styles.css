@@ -8256,7 +8256,7 @@ body.is-tile-dragging * {
 
 /* Composer */
 .order-chat-input { display: flex; gap: 8px; align-items: flex-end; padding-top: 8px; border-top: 1px solid var(--card-border); }
-.order-chat-input textarea { flex: 1 1 auto; resize: none; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); color: var(--ink); padding: 9px 11px; font: inherit; font-size: 0.95rem; line-height: 1.4; }
+.order-chat-input textarea { flex: 1 1 auto; resize: none; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); color: var(--ink); padding: 9px 11px; font: inherit; font-size: calc(15px * var(--text-scale, 1)); line-height: 1.5; }
 .order-chat-input textarea:focus { outline: none; border-color: color-mix(in srgb, var(--coral) 50%, var(--card-border)); }
 .order-chat-send { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; border: none; background: var(--coral); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .order-chat-send:disabled { opacity: 0.4; cursor: default; }

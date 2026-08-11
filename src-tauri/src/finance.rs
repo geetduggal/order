@@ -557,74 +557,123 @@ fn esc_html(s: &str) -> String {
 /// external assets, safe to open in a browser or Order's HTML viewer.
 pub fn render_html(r: &ReportData) -> String {
     let money = |x: f64| format!("${:.2}", x);
-    let mut rows = String::new();
-    for m in &r.by_merchant {
-        rows.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td class=n>{}</td><td class=n>{}</td></tr>",
-            esc_html(&m.merchant), esc_html(&m.account), money(m.total), m.count
+    let p = &r.provenance;
+    let max_total = r.by_merchant.iter().map(|m| m.total).fold(0.0_f64, f64::max).max(0.01);
+    let txn_count: u32 = r.by_merchant.iter().map(|m| m.count).sum();
+
+    // Merchant bar chart (top 20 by spend), widths computed server-side so it needs
+    // no JS to draw.
+    let mut bars = String::new();
+    for m in r.by_merchant.iter().take(20) {
+        let pct = (m.total / max_total * 100.0).clamp(1.5, 100.0);
+        bars.push_str(&format!(
+            "<div class=\"row\"><div class=\"lbl\"><span class=\"m\">{m}</span><span class=\"a\">{ac}</span></div><div class=\"track\"><div class=\"fill\" style=\"width:{pct:.1}%\"></div></div><div class=\"amt\">{amt}</div></div>",
+            m = esc_html(&m.merchant), ac = esc_html(&m.account), pct = pct, amt = money(m.total)
         ));
     }
+    if bars.is_empty() { bars = "<p class=\"muted\">No spending in this period.</p>".into(); }
+
     let mut anoms = String::new();
     for a in &r.anomalies {
-        let note = if a.is_new { "new".to_string() } else { format!("{:.1}× avg {}", a.ratio, money(a.trailing_avg)) };
+        let note = if a.is_new { "new".to_string() } else { format!("{:.1}× · trailing avg {}", a.ratio, money(a.trailing_avg)) };
+        let cls = if a.is_new { "pill new" } else { "pill hot" };
         anoms.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td class=n>{}</td><td>{}</td></tr>",
-            esc_html(&a.merchant), esc_html(&a.account), money(a.current), note
+            "<tr><td>{m}</td><td class=\"dim\">{ac}</td><td class=\"n\">{cur}</td><td><span class=\"{cls}\">{note}</span></td></tr>",
+            m = esc_html(&a.merchant), ac = esc_html(&a.account), cur = money(a.current), cls = cls, note = esc_html(&note)
         ));
     }
-    if anoms.is_empty() {
-        anoms = "<tr><td colspan=4 class=muted>Nothing running unusually hot.</td></tr>".into();
-    }
+    if anoms.is_empty() { anoms = "<tr><td colspan=\"4\" class=\"muted\">Nothing running unusually hot.</td></tr>".into(); }
+
     let mut recur = String::new();
     for rc in &r.recurring {
-        let tag = if rc.is_new { " <span class=tag>new</span>" } else { "" };
+        let tag = if rc.is_new { " <span class=\"pill new\">new</span>" } else { "" };
         recur.push_str(&format!(
-            "<tr><td>{}{}</td><td>{}</td><td class=n>{}</td><td class=n>{}</td></tr>",
-            esc_html(&rc.merchant), tag, esc_html(&rc.account), rc.months, money(rc.avg_amount)
+            "<tr><td>{m}{tag}</td><td class=\"dim\">{ac}</td><td class=\"n\">{mo}</td><td class=\"n\">{avg}</td></tr>",
+            m = esc_html(&rc.merchant), tag = tag, ac = esc_html(&rc.account), mo = rc.months, avg = money(rc.avg_amount)
         ));
     }
-    if recur.is_empty() {
-        recur = "<tr><td colspan=4 class=muted>No recurring merchants detected.</td></tr>".into();
-    }
-    let p = &r.provenance;
-    format!(
-        r#"<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Finance report {ps} – {pe}</title>
-<style>
-:root{{color-scheme:light dark}}
-body{{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:0;padding:24px;max-width:820px}}
-h1{{font-size:22px;margin:0 0 2px}} h2{{font-size:16px;margin:28px 0 8px}}
-.sub{{opacity:.6;font-size:13px}} .total{{font-size:28px;font-weight:700;margin:12px 0}}
-table{{border-collapse:collapse;width:100%}} th,td{{text-align:left;padding:6px 10px;border-bottom:1px solid rgba(128,128,128,.25)}}
-th{{font-size:12px;text-transform:uppercase;letter-spacing:.04em;opacity:.6}}
-td.n,th.n{{text-align:right;font-variant-numeric:tabular-nums}}
-.muted{{opacity:.5}} .tag{{font-size:11px;background:rgba(128,128,128,.2);padding:1px 6px;border-radius:6px}}
-footer{{margin-top:32px;font-size:11px;opacity:.5;border-top:1px solid rgba(128,128,128,.2);padding-top:10px}}
-</style></head><body>
-<h1>Finance report</h1>
-<div class=sub>{ps} to {pe} · {accts}</div>
-<div class=total>{total} <span class=sub>total spend</span></div>
-<h2>By merchant</h2>
-<table><tr><th>Merchant</th><th>Account</th><th class=n>Spent</th><th class=n>#</th></tr>{rows}</table>
-<h2>Running hot</h2>
-<table><tr><th>Merchant</th><th>Account</th><th class=n>This period</th><th>vs trailing</th></tr>{anoms}</table>
-<h2>Recurring / subscriptions</h2>
-<table><tr><th>Merchant</th><th>Account</th><th class=n>Months</th><th class=n>Avg</th></tr>{recur}</table>
-<footer>Generated {gen} by {ver} · fetched {fs}–{fe} ({rc} rows). Reproducible from the snapshot CSV beside this file.</footer>
-</body></html>"#,
-        ps = esc_html(&p.period_start),
-        pe = esc_html(&p.period_end),
-        accts = esc_html(&p.accounts.join(", ")),
-        total = money(r.total_spend),
-        rows = rows,
-        anoms = anoms,
-        recur = recur,
-        gen = esc_html(&p.generated_at),
-        ver = esc_html(&p.script_version),
-        fs = esc_html(&p.fetched_start),
-        fe = esc_html(&p.fetched_end),
-        rc = p.row_count,
-    )
+    if recur.is_empty() { recur = "<tr><td colspan=\"4\" class=\"muted\">No recurring merchants detected.</td></tr>".into(); }
+
+    let top_tile = match r.by_merchant.first() {
+        Some(m) => format!(
+            "<div class=\"tile\"><div class=\"k\">Top merchant</div><div class=\"v\">{}</div><div class=\"k\" style=\"text-transform:none;letter-spacing:0\">{}</div></div>",
+            esc_html(&m.merchant), money(m.total)
+        ),
+        None => String::new(),
+    };
+
+    let css = r##"<style>
+:root{--bg:#f6f4ee;--panel:#fff;--ink:#16181a;--dim:#6b7280;--line:rgba(20,24,28,.10);--brand:#1f3fa8;--accent:#ff5a48;--bar1:#1f3fa8;--bar2:#5478e8;--shadow:0 8px 30px rgba(20,30,60,.08);--hot:#b3400c;--hotbg:#fde3d2;--new:#1f3fa8;--newbg:#e5eaff}
+:root[data-theme="dark"]{--bg:#0b1020;--panel:#141b30;--ink:#eef1f8;--dim:#9aa3bd;--line:rgba(255,255,255,.10);--brand:#6488f0;--accent:#ff8a78;--bar1:#4d6ff0;--bar2:#8aa2ff;--shadow:0 12px 36px rgba(0,0,0,.5);--hot:#ffb27a;--hotbg:rgba(179,64,12,.28);--new:#9db4ff;--newbg:rgba(31,63,168,.30)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:26px 18px 48px;transition:background .25s,color .25s}
+.page{max-width:760px;margin:0 auto}
+.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:12px;color:var(--dim)}
+.range{font-size:26px;font-weight:700;margin:4px 0 2px}
+.accts{color:var(--dim);font-size:13px}
+.total{margin-top:14px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.total .amt{font-size:42px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,var(--brand),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+.total .cap{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.tile .k{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-size:20px;font-weight:700;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px;margin:16px 0}
+h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.hint{font-weight:400;font-size:12px;color:var(--dim)}
+.bars{display:flex;flex-direction:column;gap:11px}
+.row{display:grid;grid-template-columns:minmax(110px,32%) 1fr auto;gap:12px;align-items:center}
+.lbl{display:flex;flex-direction:column;min-width:0}
+.lbl .m{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lbl .a{font-size:12px;color:var(--dim)}
+.track{height:12px;background:var(--line);border-radius:999px;overflow:hidden}
+.fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--bar1),var(--bar2))}
+.amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);font-weight:600;padding:0 10px 8px}
+td{padding:9px 10px;border-top:1px solid var(--line)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.dim{color:var(--dim)}
+.muted{color:var(--dim);padding:14px 10px;text-align:center}
+.pill{font-size:12px;padding:2px 9px;border-radius:999px;font-weight:600;white-space:nowrap}
+.pill.hot{color:var(--hot);background:var(--hotbg)}
+.pill.new{color:var(--new);background:var(--newbg)}
+.theme-toggle{position:fixed;top:14px;right:14px;width:38px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:17px;line-height:1;cursor:pointer;box-shadow:var(--shadow);z-index:10}
+footer{margin-top:24px;color:var(--dim);font-size:11px;border-top:1px solid var(--line);padding-top:12px}
+</style>"##;
+
+    let script = r##"<script>(function(){var root=document.documentElement;function apply(t){root.setAttribute('data-theme',t);try{localStorage.setItem('finreport-theme',t);}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=(t==='dark'?'☀':'☾');}var s=null;try{s=localStorage.getItem('finreport-theme');}catch(e){}apply(s||((window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'));var btn=document.getElementById('themeToggle');if(btn)btn.addEventListener('click',function(){apply(root.getAttribute('data-theme')==='dark'?'light':'dark');});})();</script>"##;
+
+    let mut h = String::new();
+    h.push_str("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Finance report</title>");
+    h.push_str(css);
+    h.push_str("</head><body><button id=\"themeToggle\" class=\"theme-toggle\" aria-label=\"Toggle dark mode\">\u{263e}</button><div class=\"page\">");
+    h.push_str(&format!(
+        "<div class=\"eyebrow\">Finance report</div><div class=\"range\">{ps} \u{2192} {pe}</div><div class=\"accts\">{accts}</div><div class=\"total\"><span class=\"amt\">{total}</span><span class=\"cap\">total spend</span></div>",
+        ps = esc_html(&p.period_start), pe = esc_html(&p.period_end), accts = esc_html(&p.accounts.join(", ")), total = money(r.total_spend)
+    ));
+    h.push_str("<div class=\"tiles\">");
+    h.push_str(&top_tile);
+    h.push_str(&format!("<div class=\"tile\"><div class=\"k\">Merchants</div><div class=\"v\">{}</div></div>", r.by_merchant.len()));
+    h.push_str(&format!("<div class=\"tile\"><div class=\"k\">Transactions</div><div class=\"v\">{}</div></div>", txn_count));
+    h.push_str("</div>");
+    h.push_str("<section class=\"panel\"><h2>By merchant</h2><div class=\"bars\">");
+    h.push_str(&bars);
+    h.push_str("</div></section>");
+    h.push_str("<section class=\"panel\"><h2>Running hot <span class=\"hint\">vs recent months</span></h2><table><tr><th>Merchant</th><th>Account</th><th class=\"n\">This period</th><th>vs trailing</th></tr>");
+    h.push_str(&anoms);
+    h.push_str("</table></section>");
+    h.push_str("<section class=\"panel\"><h2>Recurring <span class=\"hint\">subscriptions &amp; repeat charges</span></h2><table><tr><th>Merchant</th><th>Account</th><th class=\"n\">Months</th><th class=\"n\">Avg</th></tr>");
+    h.push_str(&recur);
+    h.push_str("</table></section>");
+    h.push_str(&format!(
+        "<footer>Generated {gen} \u{00b7} {ver} \u{00b7} fetched {fs}\u{2013}{fe} ({rc} rows). Reproducible from the snapshot CSV beside this file.</footer>",
+        gen = esc_html(&p.generated_at), ver = esc_html(&p.script_version), fs = esc_html(&p.fetched_start), fe = esc_html(&p.fetched_end), rc = p.row_count
+    ));
+    h.push_str("</div>");
+    h.push_str(script);
+    h.push_str("</body></html>");
+    h
 }
 
 // ---- commands (the "API") --------------------------------------------------
@@ -847,6 +896,14 @@ mod tests {
         assert_eq!(back.len(), 4);
         assert_eq!(back[0].merchant, "Amazon");
         assert_eq!(back[3].amount, -3000.0);
+        // Rendered report is well-formed and includes the theme toggle, the bar
+        // chart, and the merchant data.
+        let html = render_html(&r);
+        assert!(html.starts_with("<!doctype html>") && html.ends_with("</html>"));
+        assert!(html.contains("id=\"themeToggle\""));
+        assert!(html.contains("class=\"bars\""));
+        assert!(html.contains("Amazon"));
+        assert!(html.contains("$220.00")); // total spend
     }
 
     #[test]

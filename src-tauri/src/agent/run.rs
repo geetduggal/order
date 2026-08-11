@@ -193,10 +193,15 @@ fn run_turn(
         // Persist the user's turn immediately (crash safety), then include it.
         chat::append_user(root, chat_rel, user_text)?;
         messages.push(Msg::user_text(user_text));
-    } else {
+    } else if !matches!(messages.last(), Some(m) if m.role == "user") {
         // The utterance was already captured to the record before this turn ran
-        // (voice capture-first: every spoken utterance is saved even when no reply
-        // follows). reconstruct_history already read it back, so don't duplicate.
+        // (voice capture-first), so reconstruct_history normally read it back as the
+        // final user turn and we must NOT duplicate it. But if the history does NOT
+        // end on a user turn — the record didn't land in time, or the last thing on
+        // disk is an agent reply — include the text anyway. Anthropic rejects a
+        // request that ends on an assistant message ("must end with a user
+        // message"), and this also guarantees the model actually sees what was said.
+        messages.push(Msg::user_text(user_text));
     }
 
     let tool_defs = tools::tool_defs();
@@ -286,7 +291,13 @@ fn run_turn(
     // Scrub any verbatim system-prompt leak from the reply before it is saved and
     // (in Lock Mode) spoken. The record must never contain the internal prompt.
     let final_text = scrub_prompt_leak(&agent_text_parts.join("\n\n"));
-    chat::append_agent(root, chat_rel, &final_text, &tool_lines)?;
+    // Only write an agent turn if it actually produced something. A barged-in /
+    // cancelled turn yields no text and no tools — writing an empty "## Agent"
+    // then pollutes the record AND leaves the file ending on an assistant turn,
+    // which makes the next request fail Anthropic's "must end with a user message".
+    if !final_text.trim().is_empty() || !tool_lines.is_empty() {
+        chat::append_agent(root, chat_rel, &final_text, &tool_lines)?;
+    }
     emit(app, chat_rel, serde_json::json!({
         "kind": "final", "text": final_text,
         "usage": {

@@ -751,7 +751,7 @@ mod apple {
     /// the already-accumulated monologue, so the on-screen text never resets when
     /// the recognizer restarts at its ~60s cap) and finalizes after a pause. Returns
     /// the final transcript, or None if nothing was said / cancelled.
-    pub fn listen_live(app: &AppHandle, prefix: &str) -> Result<Option<String>, String> {
+    pub fn listen_live(app: &AppHandle, prefix: &str, no_speech_ms: u64) -> Result<Option<String>, String> {
         use block2::RcBlock;
         use std::sync::{Arc, Mutex};
 
@@ -833,9 +833,18 @@ mod apple {
             // function word, no terminal punctuation), grant a longer window so a
             // natural pause isn't mistaken for "done".
             let start = Instant::now();
-            let silence = Duration::from_millis(1600);
-            let silence_incomplete = Duration::from_millis(3400);
-            let max_wait = Duration::from_secs(20);
+            // Pause tolerance BEFORE we treat silence as "you're done". Kept long
+            // enough that Apple's own on-device isFinal (its segment boundary, which
+            // fires ~2s into a pause) reliably wins the race — so a brief pause-then-
+            // resume is HELD and stitched into one utterance by the caller (accum),
+            // instead of our timer committing it early and the resumed words starting
+            // a fresh turn. That early-commit was the pause-boundary data-loss seam.
+            let silence = Duration::from_millis(2600);
+            let silence_incomplete = Duration::from_millis(4200);
+            // No-speech timeout: patient on a fresh utterance (wait for you to start),
+            // but a short grace when we're already holding a continuation (`accum`) —
+            // if you don't resume within it, commit what's held rather than hanging.
+            let no_speech = Duration::from_millis(no_speech_ms);
             let max_utter = Duration::from_secs(90);
             let mut cancelled = false;
             // Whether this segment ended because you actually paused (natural) or
@@ -854,7 +863,7 @@ mod apple {
                 if done { natural = false; break; }
                 let eff_silence = if looks_incomplete(&txt) { silence_incomplete } else { silence };
                 if got && since_last > eff_silence { natural = true; break; } // you paused
-                if !got && since_start > max_wait { natural = true; break; }   // nothing said
+                if !got && since_start > no_speech { natural = true; break; }  // no speech
                 if since_start > max_utter { natural = false; break; }         // our cap; likely still talking
             }
 
@@ -924,7 +933,7 @@ pub async fn stt_listen(
             // it's the lowest-latency path.
             if engine == "native" {
                 let started = std::time::Instant::now();
-                let text = match apple::listen_live(&app, "")? {
+                let text = match apple::listen_live(&app, "", 20_000)? {
                     Some(t) => t,
                     None => return Ok(String::new()),
                 };
@@ -1021,7 +1030,11 @@ pub async fn stt_start_loop(
                 END_NATURAL.store(true, Ordering::Relaxed); // default; native path overrides
                 let started = std::time::Instant::now();
                 let result = if engine == "native" {
-                    apple::listen_live(&app, &accum)
+                    // Fresh utterance: wait patiently (20s) for you to start. Holding
+                    // a continuation (accum non-empty): only a short grace (2.5s) for
+                    // you to RESUME before we commit what's held — this is what stitches
+                    // a pause-then-resume into one turn instead of losing the tail.
+                    apple::listen_live(&app, &accum, if accum.is_empty() { 20_000 } else { 2_500 })
                 } else {
                     match apple::record_utterance(&app) {
                         Ok(Some((path, _secs))) => {
