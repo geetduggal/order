@@ -3121,36 +3121,13 @@ export function CardGrid() {
   // isn't in spacetime.mw. effectiveFolder hides them from every view; here we
   // collect them so the reconciliation indicator can flag them for the user to
   // add to spacetime.mw or delete.
-  const orphanedEvents = useMemo<{ title: string; path: string; date: string }[]>(() => {
-    if (!notes) return [];
-    return notes
-      .filter((n) => isOrphanEventNote(n, mwEventIndex, noteEventLinkRef.current, focusedPath))
-      .map((n) => ({
-        title: n.title || n.filename.replace(/\.md$/i, ""),
-        path: n.path,
-        date: toIsoDateValue(n.frontmatter.date) ?? "",
-      }));
-  }, [notes, mwEventIndex, focusedPath]);
-  // Events whose backing note was EDITED so it no longer matches the spacetime
-  // line (almost always a retitle on auto-save). The note still carries a live
-  // link to a real mw event (noteEventLinkRef), so it is NOT orphaned — instead
-  // it's surfaced for the user to push the change into spacetime.mw (the source
-  // of truth) or leave alone. This is the "modified, not orphaned" path.
-  const modifiedEvents = useMemo<{ noteId: string; path: string; date: string; oldTitle: string; newTitle: string }[]>(() => {
-    if (!notes) return [];
-    const out: { noteId: string; path: string; date: string; oldTitle: string; newTitle: string }[] = [];
-    for (const n of notes) {
-      const link = noteEventLinkRef.current.get(n.id);
-      if (!link) continue;
-      // The linked event must still exist in the mw (else it's a true orphan).
-      if (!mwEventIndex.has(`${link.date}|${link.title.toLowerCase()}`)) continue;
-      const cur = (n.title || n.filename.replace(/\.md$/i, "")).trim();
-      if (cur && cur.toLowerCase() !== link.title.toLowerCase()) {
-        out.push({ noteId: n.id, path: n.path, date: link.date, oldTitle: link.title, newTitle: cur });
-      }
-    }
-    return out;
-  }, [notes, mwEventIndex]);
+  // DECOUPLED MODEL: events on disk (note frontmatter) ARE the source of truth and
+  // the calendar renders them directly, so there are no "events on disk but not in
+  // spacetime" orphans to reconcile, and no drift between a note and a spacetime
+  // line to resolve. Both detectors are inert now (spacetime.md is only a generated
+  // view, never a sync target).
+  const orphanedEvents = useMemo<{ title: string; path: string; date: string }[]>(() => [], []);
+  const modifiedEvents = useMemo<{ noteId: string; path: string; date: string; oldTitle: string; newTitle: string }[]>(() => [], []);
   // NOTE: Undated, non-main files inside a Notable Folder are NOT flagged for
   // reconciliation. Reconciliation only surfaces files that LOOK like they
   // belong in spacetime but aren't — i.e. dated event notes missing from the mw
