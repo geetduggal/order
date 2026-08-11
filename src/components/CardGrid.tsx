@@ -5466,12 +5466,24 @@ export function CardGrid() {
     return "";
   }
 
-  // Seasons: prefer spacetime.yml when it carries season records; fall back
-  // to Seasons.md so un-migrated vaults keep working.
+  // DECOUPLED MODEL: seasons come from the filesystem — the hand-editable Seasons.md
+  // note PLUS any note that declares itself a season in its own frontmatter
+  // (season: true + date, optional endDate). Never from spacetime.md.
   const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-  const seasons: Season[] = (parsedSpacetime && parsedSpacetime.seasons.length > 0)
-    ? parsedSpacetime.seasons.map((s) => ({ start: s.date, end: s.endDate ?? null, name: s.title }))
-    : (seasonsFile ? parseSeasons(seasonsFile.body) : []);
+  const seasons: Season[] = (() => {
+    const out: Season[] = seasonsFile ? parseSeasons(seasonsFile.body) : [];
+    for (const n of notes) {
+      if (n.frontmatter.season !== true) continue;
+      const start = toIsoDateValue(n.frontmatter.date);
+      if (!start) continue;
+      const end = typeof n.frontmatter.endDate === "string" ? String(n.frontmatter.endDate).slice(0, 10) : null;
+      const name = typeof n.frontmatter.title === "string" && n.frontmatter.title.trim()
+        ? n.frontmatter.title
+        : n.filename.replace(/\.md$/i, "");
+      out.push({ start, end, name });
+    }
+    return out.sort((a, b) => a.start.localeCompare(b.start));
+  })();
   const seasonsPath = seasonsFile?.path ?? null;
 
   // Notable Folder Main Documents — notes whose YAML carries `category`.

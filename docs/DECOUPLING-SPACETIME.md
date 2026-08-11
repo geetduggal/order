@@ -72,6 +72,16 @@ Handled two ways, both file-native, never spacetime.md:
 
 `buildSpacetime` merges both, sorted by start date.
 
+## Live reads are now filesystem/frontmatter (this pass)
+
+- **Calendar events** were already frontmatter-driven (`CalendarView.notesToEvents`).
+- **Sidebar taxonomy** is the physical tree.
+- **Seasons** in the live app (the SeasonBar) now read from `Seasons.md` + `season:true`
+  frontmatter notes, no longer preferring `parsedSpacetime.seasons` from the `.mw`.
+- **Generate the view**: `openSpacetimeMw` / `openSpacetime` already serialize
+  `buildSpacetime` (now a pure derivation) into `spacetime.md` / `.yml` on demand — that
+  IS the optional generated view. Just needs surfacing in Settings as such.
+
 ## Remaining work (write-side + migration + view) — NOT yet done
 
 1. **Reorder / move folder → directory operations.** Rename is done. Folder *move*
