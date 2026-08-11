@@ -60,22 +60,25 @@ function refOf(filename: string): string {
  *  the tree reflects exactly what's on disk. Returns empty when no note carries a
  *  deep-enough path (callers fall back to the legacy derivation). */
 export function taxonomyFromPaths(notes: ChainNote[]): VaultTaxonomy {
-  // area -> (category -> set<notable folder>)
+  // area -> (category -> set<notable folder>). `path` MUST be vault-relative, so
+  // the FIRST three directory levels are Area / Category / Notable Folder; anything
+  // deeper is content living INSIDE the Notable Folder (Readwise imports, an event's
+  // attachments, a note's sub-notes) and must NOT shift the hierarchy window.
   const areas = new Map<string, Map<string, Set<string>>>();
   for (const n of notes) {
     if (!n.path) continue;
     const parts = n.path.split("/").filter(Boolean);
-    // Need at least Area / Category / NotableFolder / file.
-    if (parts.length < 4) continue;
-    const area = parts[parts.length - 4];
-    const cat = parts[parts.length - 3];
-    const nf = parts[parts.length - 2];
-    if (!area || !cat || !nf) continue;
+    const dirs = parts.slice(0, -1); // directories above the file
+    if (dirs.length === 0) continue; // a vault-root file (Areas.md, spacetime.md, …)
+    const area = dirs[0];
     let cats = areas.get(area);
     if (!cats) { cats = new Map(); areas.set(area, cats); }
+    if (dirs.length < 2) continue; // an Area main doc — registers the Area only
+    const cat = dirs[1];
     let folders = cats.get(cat);
     if (!folders) { folders = new Set(); cats.set(cat, folders); }
-    folders.add(nf);
+    if (dirs.length < 3) continue; // a Category main doc — registers the Category only
+    folders.add(dirs[2]); // the Notable Folder (3rd level); deeper paths stay inside it
   }
   const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   const areaNodes: AreaNode[] = [...areas.keys()].sort(cmp).map((area) => {

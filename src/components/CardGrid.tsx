@@ -996,9 +996,10 @@ export function CardGrid() {
       if (r.spacetime.space.length > 0) effectiveSpacetime = r.spacetime;
     }
     return buildVaultTaxonomy(
-      // Pass the physical path — placement on disk is now the source of truth for
-      // the hierarchy (decoupled from spacetime.md).
-      notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, path: n.path })),
+      // Pass the VAULT-RELATIVE path — placement on disk is the source of truth for
+      // the hierarchy now, and taxonomyFromPaths reads Area/Category/NF as the first
+      // three directory levels (so it must be vault-relative, not absolute).
+      notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, path: toVaultRel(n.path) })),
       effectiveSpacetime,
     );
   }, [notes, parsedSpacetime, mwSources]);
