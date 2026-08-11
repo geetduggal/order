@@ -124,42 +124,37 @@ export function buildSpacetime(
   mwSources?: SpacetimeSource[],
 ): Spacetime & { conflicts?: SpacetimeConflict[] } {
 
-  let space: SpaceNode[];
-  let seasons: SpacetimeSeason[];
-  let conflicts: SpacetimeConflict[] | undefined;
+  // DECOUPLED MODEL: this function is now purely a DERIVATION of the filesystem +
+  // frontmatter — it no longer reads spacetime `.mw` / `.yml` as truth.
+  //
+  //  - `space` (Area → Category → Notable Folder) comes from the PHYSICAL taxonomy
+  //    (`tax` is derived from directory placement upstream).
+  //  - SEASONS come from the filesystem too: the hand-editable `Seasons.md` note
+  //    (`role: seasons`, a real, scannable ledger — kept because a season is a rare,
+  //    coarse range where one habitable file still fits the "minimal but functional"
+  //    ethos), PLUS any note that declares itself a season in its OWN frontmatter
+  //    (`season: true` with a `date` and optional `endDate`). Either source works;
+  //    both are real files, never spacetime.md.
+  const space: SpaceNode[] = spaceFromTaxonomy(tax);
+  const conflicts: SpacetimeConflict[] | undefined = undefined;
+  void mwSources; void existing; // legacy params, no longer read as truth
 
-  if (mwSources && mwSources.length > 0) {
-    // Full composability path: merge all .mw sources
-    const mergeResult = mergeSpacetimes(mwSources);
-    space = mergeResult.spacetime.space.length > 0
-      ? mergeResult.spacetime.space
-      : (existing?.space.length ? existing.space : spaceFromTaxonomy(tax));
-    seasons = mergeResult.spacetime.seasons.length > 0
-      ? mergeResult.spacetime.seasons
-      : (existing?.seasons.length ? existing.seasons : []);
-    if (mergeResult.conflicts.length > 0) conflicts = mergeResult.conflicts;
-  } else if (existing && existing.space.length > 0) {
-    // Single-file path: existing spacetime.yml is authoritative
-    space = existing.space;
-    seasons = existing.seasons.length > 0 ? existing.seasons : [];
-  } else {
-    // Fallback: chain taxonomy + Seasons.md (un-migrated vaults)
-    space = spaceFromTaxonomy(tax);
-    const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-    seasons = (seasonsFile ? parseSeasons(seasonsFile.body) : [])
-      .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }
-
-  // When no seasons from mw/yml yet, fall back to Seasons.md
-  if (seasons.length === 0 && !mwSources?.length && existing?.seasons.length === 0) {
-    const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
-    if (seasonsFile) {
-      seasons = parseSeasons(seasonsFile.body)
-        .map((s) => ({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) }))
-        .sort((a, b) => a.date.localeCompare(b.date));
+  const seasonsList: SpacetimeSeason[] = [];
+  const seasonsFile = notes.find((n) => isSeasonsFile(n.frontmatter, n.filename));
+  if (seasonsFile) {
+    for (const s of parseSeasons(seasonsFile.body)) {
+      seasonsList.push({ date: s.start, title: s.name ?? "", ...(s.end ? { endDate: s.end } : {}) });
     }
   }
+  for (const n of notes) {
+    if (n.frontmatter.season !== true) continue;
+    const sd = toIsoDateValue(n.frontmatter.date);
+    if (!sd) continue;
+    const se = typeof n.frontmatter.endDate === "string" ? String(n.frontmatter.endDate).slice(0, 10) : undefined;
+    const st = firstMajorHeader(n.body) ?? noteTitle(n.frontmatter, n.body, n.filename.replace(/\.md$/i, ""));
+    seasonsList.push({ date: sd, title: st, ...(se ? { endDate: se } : {}) });
+  }
+  const seasons = seasonsList.sort((a, b) => a.date.localeCompare(b.date));
 
   const byKey = new Map<string, SpacetimeEvent>();
   for (const n of notes) {

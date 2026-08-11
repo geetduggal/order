@@ -47,6 +47,31 @@ What was still coupled to `spacetime.md`:
   spacetime line). `handleSetEmails` (edit an event's invitees) now writes `invitees:`
   into the event note's frontmatter. `buildSpacetime` reads them back for gcal/apple.
 
+## `buildSpacetime` is now a pure derivation (this pass)
+
+`buildSpacetime` no longer reads `.mw` / `.yml` as truth — it derives everything from
+the filesystem + frontmatter, so it doubles as the "generate the spacetime view" path:
+
+- **`space`** (Area → Category → Notable Folder) = the physical taxonomy (`tax`, itself
+  derived from directory placement).
+- **Seasons** (see below) = the `Seasons.md` note + any `season: true` frontmatter notes.
+- Events already came from note frontmatter; invitees now read from frontmatter too.
+
+## Seasons
+
+A season is a coarse dated *range* (a semester, a life phase), not a per-day event.
+Handled two ways, both file-native, never spacetime.md:
+
+1. **`Seasons.md`** (a real note with `role: seasons`, a `- START - END · Name` bullet
+   list). Kept deliberately: seasons are rare and coarse, so one hand-editable,
+   scannable ledger still fits the "minimal but functional" ethos, and it's already a
+   normal file — not the spacetime.md source-of-truth being removed.
+2. **Frontmatter-native seasons:** any note with `season: true` plus a `date` (and
+   optional `endDate`) in its own YAML is picked up as a season. This is the fully
+   file-first option for anyone who'd rather a season be its own note.
+
+`buildSpacetime` merges both, sorted by start date.
+
 ## Remaining work (write-side + migration + view) — NOT yet done
 
 1. **Reorder / move folder → directory operations.** Rename is done. Folder *move*
