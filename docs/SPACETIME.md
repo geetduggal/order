@@ -1,8 +1,14 @@
 # Spacetime convention
 
-Spacetime is Order's canonical data format: a minimal map of where your work lives
-(space) and when things happen (time). It is the single source of truth for the vault's
-hierarchy and schedule.
+> **Status (2026-08):** Spacetime is no longer the source of truth. The **directory
+> tree + per-note frontmatter** is authoritative (see
+> [DECOUPLING-SPACETIME.md](DECOUPLING-SPACETIME.md)). Spacetime is now an *optional,
+> generated view* and a compact **input grammar** for the agent/CLI. The format below
+> still describes that view/grammar; just read "source of truth" as "generated
+> projection" throughout.
+
+Spacetime is Order's compact data format: a minimal map of where your work lives
+(space) and when things happen (time), generated from the filesystem and frontmatter.
 
 Order has two surface formats for Spacetime: a Markwhen-based plain-text format
 (`spacetime.mw`) and a YAML dialect (`spacetime.yml`). They represent the same

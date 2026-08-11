@@ -130,6 +130,13 @@ export const vaultFs = {
     invoke<{ name: string; is_dir: boolean }[]>("vault_read_dir", { rel }).then((es) =>
       es.map((e): VaultDirEntry => ({ name: e.name, isDir: e.is_dir })),
     ),
+  /** Create a directory (and missing parents) at a vault-relative path.
+   *  Adding an empty Area/Category is just making a directory now. */
+  createDir: (rel: string) => invoke<void>("vault_create_dir", { rel }),
+  /** Every directory under the vault root, vault-relative (POSIX). Used so
+   *  the taxonomy can surface Area/Category/NF directories that are still
+   *  empty (no note inside yet). */
+  listDirs: (): Promise<string[]> => invoke<string[]>("vault_list_dirs"),
   /** Rich dir listing — name, is_dir, mtime, size — for the
    *  folder-flip card. Hidden dotfiles + the folder's own Main Doc
    *  are filtered server-side. */

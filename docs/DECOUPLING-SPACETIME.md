@@ -95,9 +95,12 @@ Handled two ways, both file-native, never spacetime.md:
    that compiles the current filesystem+frontmatter into a spacetime-format file on
    demand; stop auto-writing it and stop reading it as truth (keep the compact syntax as
    an INPUT grammar for CLI/agent commands only).
-4. **Vault migration (one-time):** move any invitee emails currently living on
-   spacetime lines into each event note's frontmatter; then the spacetime.md/.yml/.mw
-   files can be archived. A dry-run + backup are required (vault already backed up).
+4. **Vault migration (one-time): DONE.** `scripts/migrate-spacetime.mjs --apply` (run
+   2026-08-11, vault backed up first) materialized every spacetime-only event into a real
+   note and moved invitee emails into frontmatter `invitees:`. Result: 736 notes created,
+   9 dirs, 26 invitee notes patched; all 4 unique invitee emails preserved (0 lost). A
+   JD-id conflict (`43.10 Scratchpad` vs the real `43.10 Log`) resolved to the existing
+   folder; unresolvable non-JD refs went to `90-99 Unfiled/99 Migrated`.
 5. **Prune the now-dead read paths** (mwSources merge for taxonomy, `spacetime.yml`
    space authority) once 1–4 are verified.
 

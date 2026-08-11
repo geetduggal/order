@@ -59,26 +59,35 @@ function refOf(filename: string): string {
  *  A folder/category/area appears as soon as ANY file lives at or under it, so
  *  the tree reflects exactly what's on disk. Returns empty when no note carries a
  *  deep-enough path (callers fall back to the legacy derivation). */
-export function taxonomyFromPaths(notes: ChainNote[]): VaultTaxonomy {
-  // area -> (category -> set<notable folder>). `path` MUST be vault-relative, so
+export function taxonomyFromPaths(notes: ChainNote[], dirs: string[] = []): VaultTaxonomy {
+  // area -> (category -> set<notable folder>). Paths MUST be vault-relative, so
   // the FIRST three directory levels are Area / Category / Notable Folder; anything
   // deeper is content living INSIDE the Notable Folder (Readwise imports, an event's
   // attachments, a note's sub-notes) and must NOT shift the hierarchy window.
   const areas = new Map<string, Map<string, Set<string>>>();
+  // Register a directory chain (already sliced to at most Area/Category/NF).
+  const register = (chain: string[]) => {
+    if (chain.length === 0) return;
+    const area = chain[0];
+    let cats = areas.get(area);
+    if (!cats) { cats = new Map(); areas.set(area, cats); }
+    if (chain.length < 2) return; // registers the Area only
+    const cat = chain[1];
+    let folders = cats.get(cat);
+    if (!folders) { folders = new Set(); cats.set(cat, folders); }
+    if (chain.length < 3) return; // registers the Category only
+    folders.add(chain[2]); // the Notable Folder (3rd level)
+  };
   for (const n of notes) {
     if (!n.path) continue;
     const parts = n.path.split("/").filter(Boolean);
-    const dirs = parts.slice(0, -1); // directories above the file
-    if (dirs.length === 0) continue; // a vault-root file (Areas.md, spacetime.md, …)
-    const area = dirs[0];
-    let cats = areas.get(area);
-    if (!cats) { cats = new Map(); areas.set(area, cats); }
-    if (dirs.length < 2) continue; // an Area main doc — registers the Area only
-    const cat = dirs[1];
-    let folders = cats.get(cat);
-    if (!folders) { folders = new Set(); cats.set(cat, folders); }
-    if (dirs.length < 3) continue; // a Category main doc — registers the Category only
-    folders.add(dirs[2]); // the Notable Folder (3rd level); deeper paths stay inside it
+    register(parts.slice(0, -1)); // directories above the file
+  }
+  // Empty Area/Category/NF directories (no note inside yet) come in via `dirs`
+  // so a freshly-created empty Area shows immediately. The directory path IS the
+  // chain — take its first three levels.
+  for (const d of dirs) {
+    register(d.split("/").filter(Boolean).slice(0, 3));
   }
   const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   const areaNodes: AreaNode[] = [...areas.keys()].sort(cmp).map((area) => {
@@ -106,10 +115,11 @@ function findAreasNote(notes: ChainNote[]): ChainNote | undefined {
     ?? notes.find((n) => n.filename === AREAS_FILENAME);
 }
 
-export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime): VaultTaxonomy {
+export function buildVaultTaxonomy(notes: ChainNote[], spacetime?: Spacetime, dirs: string[] = []): VaultTaxonomy {
   // DECOUPLED MODEL: physical directory placement is the source of truth for the
   // hierarchy. Derive it straight from the file paths whenever they're available.
-  const physical = taxonomyFromPaths(notes);
+  // `dirs` adds any EMPTY Area/Category/NF directories that hold no note yet.
+  const physical = taxonomyFromPaths(notes, dirs);
   if (physical.areas.length > 0) return physical;
   // Legacy fallbacks for vaults that don't (yet) have the physical three-level
   // structure: a spacetime.yml `space` tree, then the Areas.md chain of lists.

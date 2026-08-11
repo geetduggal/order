@@ -493,6 +493,10 @@ async function isLoneStubDir(rel: string, folderSafe: string): Promise<boolean> 
 
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
+  // Every directory under the vault root (vault-relative). Feeds the taxonomy so
+  // EMPTY Area/Category/Notable-Folder directories (a just-created Area with no
+  // note yet) still appear in the sidebar. Refreshed on every reloadNotes.
+  const [vaultDirs, setVaultDirs] = useState<string[]>([]);
   const [view, setView] = useState<View>(readInitialView);
   // Live mirror of `view` for callbacks with empty dep arrays (removeFilter).
   const viewRef = useRef<View>(view);
@@ -1001,8 +1005,9 @@ export function CardGrid() {
       // three directory levels (so it must be vault-relative, not absolute).
       notes.map((n) => ({ filename: n.filename, frontmatter: n.frontmatter, body: n.body, path: toVaultRel(n.path) })),
       effectiveSpacetime,
+      vaultDirs,
     );
-  }, [notes, parsedSpacetime, mwSources]);
+  }, [notes, parsedSpacetime, mwSources, vaultDirs]);
 
   // Index each Notable Folder's on-disk directory name → its canonical name
   // so effectiveFolder() can resolve a note's parent directory to the folder
@@ -1116,6 +1121,10 @@ export function CardGrid() {
    *  write handlers can derive the correct nested directory. */
   const notesRef = useRef<LoadedNote[] | null>(null);
   useEffect(() => { notesRef.current = notes; }, [notes]);
+  // Latest directory list for the structure handlers (add/remove Area/Category
+  // resolve directories synchronously without a stale closure).
+  const vaultDirsRef = useRef<string[]>([]);
+  useEffect(() => { vaultDirsRef.current = vaultDirs; }, [vaultDirs]);
 
   function notePathByRef(ref: string): string | null {
     const list = notesRef.current;
@@ -1156,6 +1165,62 @@ export function CardGrid() {
     return join(await vaultRoot(), folderDirName(areaName), folderDirName(categoryName));
   }
 
+  // ---- Vault-RELATIVE directory resolvers (decoupled structure ops) ----
+  // The hierarchy IS the directory tree, so add/remove of an Area/Category/Notable
+  // Folder is a direct directory operation. These find the on-disk directory that
+  // backs a taxonomy name, checking notes first (non-empty levels) then the empty
+  // directory list, and falling back to the sanitized name.
+  function areaDirRel(areaName: string): string {
+    const aKey = folderMatchKey(areaName);
+    for (const n of notesRef.current ?? []) {
+      const parts = toVaultRel(n.path).split("/").filter(Boolean);
+      if (parts.length >= 1 && folderMatchKey(parts[0]) === aKey) return parts[0];
+    }
+    for (const d of vaultDirsRef.current) {
+      const parts = d.split("/").filter(Boolean);
+      if (parts.length >= 1 && folderMatchKey(parts[0]) === aKey) return parts[0];
+    }
+    return folderDirName(areaName);
+  }
+  function categoryDirRel(areaName: string, categoryName: string): string {
+    const aKey = folderMatchKey(areaName), cKey = folderMatchKey(categoryName);
+    const match = (parts: string[]) =>
+      parts.length >= 2 && folderMatchKey(parts[0]) === aKey && folderMatchKey(parts[1]) === cKey;
+    for (const n of notesRef.current ?? []) {
+      const parts = toVaultRel(n.path).split("/").filter(Boolean);
+      if (match(parts)) return `${parts[0]}/${parts[1]}`;
+    }
+    for (const d of vaultDirsRef.current) {
+      const parts = d.split("/").filter(Boolean);
+      if (match(parts)) return `${parts[0]}/${parts[1]}`;
+    }
+    return `${areaDirRel(areaName)}/${folderDirName(categoryName)}`;
+  }
+  function folderDirRel(areaName: string, categoryName: string, folderRef: string): string | null {
+    const aKey = folderMatchKey(areaName), cKey = folderMatchKey(categoryName);
+    const fKey = folderMatchKey(folderRef), fKeyStrip = folderMatchKey(stripJdPrefix(folderRef));
+    const match = (parts: string[]) => {
+      if (!(parts.length >= 3 && folderMatchKey(parts[0]) === aKey && folderMatchKey(parts[1]) === cKey)) return false;
+      return folderMatchKey(parts[2]) === fKey || folderMatchKey(stripJdPrefix(parts[2])) === fKeyStrip;
+    };
+    for (const n of notesRef.current ?? []) {
+      const parts = toVaultRel(n.path).split("/").filter(Boolean);
+      if (match(parts)) return `${parts[0]}/${parts[1]}/${parts[2]}`;
+    }
+    for (const d of vaultDirsRef.current) {
+      const parts = d.split("/").filter(Boolean);
+      if (match(parts)) return `${parts[0]}/${parts[1]}/${parts[2]}`;
+    }
+    return null;
+  }
+  // Reversible "delete": move a directory into .order-legacy/trash-<ts>/ (excluded
+  // from every vault walk, so it vanishes from the app but nothing is destroyed).
+  async function trashRel(rel: string): Promise<void> {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const base = rel.split("/").filter(Boolean).pop() ?? "item";
+    await vaultFs.rename(rel, `.order-legacy/trash-${ts}/${base}`);
+  }
+
   /** Absolute path of the loaded Areas note. Prefer the path the note was
    *  loaded from (always under the active vault root, including the iOS
    *  security-scoped bookmark) over reconstructing it from vaultRoot(),
@@ -1194,6 +1259,8 @@ export function CardGrid() {
         return;
       }
       setIosNeedsVault(false);
+      // Directory list (for empty Area/Category folders) in parallel with notes.
+      void vaultFs.listDirs().then(setVaultDirs).catch(() => {});
       const fresh = await loadAndNormalizeAll();
       // Stable identity across reloads: when a note's path still exists,
       // reuse its previous id so React keys don't change. This keeps
@@ -1821,42 +1888,42 @@ export function CardGrid() {
     });
   }, [writeSpacetimeModel]);
 
-  /** Add an Area = append a bullet to Areas.md. Caps at 10. */
+  /** Add an Area = create its directory. The tree IS the hierarchy, so an empty
+   *  Area is just an empty directory (surfaced via the vaultDirs list). Caps at 10. */
   const handleAddArea = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const cur = parseMarkwhenFormat(await readVault(spacetimeRootPathRef.current).catch(() => ""));
-    if (cur.space.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return; }
-    await patchSpacetimeSpace({ kind: "addArea", name: trimmed });
+    if (vaultTaxonomy.areas.length >= 10) { flashCap("Areas full (10 / 10) — remove one to add another."); return; }
+    await vaultFs.createDir(folderDirName(trimmed));
     await reloadNotes();
-  }, [patchSpacetimeSpace, reloadNotes, flashCap]);
+  }, [reloadNotes, flashCap, vaultTaxonomy]);
 
+  /** Remove an Area = move its directory (and everything under it) to the
+   *  reversible .order-legacy trash. */
   const handleRemoveArea = useCallback(async (name: string) => {
-    await patchSpacetimeSpace({ kind: "removeArea", name });
+    await trashRel(areaDirRel(name));
     await reloadNotes();
-  }, [patchSpacetimeSpace, reloadNotes]);
+  }, [reloadNotes]);
 
+  /** Add a Category = create its directory under the Area (creating the Area
+   *  directory too if it doesn't exist yet). Caps at 10 per Area. */
   const handleAddCategory = useCallback(async (name: string, areaName: string) => {
     const trimmed = name.trim();
     const trimmedArea = areaName.trim();
     if (!trimmed || !trimmedArea) return;
-    // Read from the mw (source of truth) so events are preserved on rewrite.
-    const cur = parseMarkwhenFormat(await readVault(spacetimeRootPathRef.current).catch(() => ""));
-    const area = cur.space.find((a) => a.name === trimmedArea);
-    if (area && area.children.length >= 10) {
+    const aNode = vaultTaxonomy.areas.find((a) => folderMatchKey(a.ref) === folderMatchKey(trimmedArea));
+    if (aNode && aNode.categories.length >= 10) {
       flashCap(`${trimmedArea} full (10 / 10 categories) — remove one to add another.`); return;
     }
-    // Ensure Area exists in space, then add the category
-    let next = area ? cur : { ...cur, space: applySpaceMutation(cur.space, { kind: "addArea", name: trimmedArea }) };
-    next = { ...next, space: applySpaceMutation(next.space, { kind: "addCategory", area: trimmedArea, name: trimmed }) };
-    await writeSpacetimeModel(next);
+    const areaRel = areaDirRel(trimmedArea);
+    await vaultFs.createDir(`${areaRel}/${folderDirName(trimmed)}`);
     await reloadNotes();
-  }, [reloadNotes, flashCap, writeSpacetimeModel]);
+  }, [reloadNotes, flashCap, vaultTaxonomy]);
 
   const handleRemoveCategory = useCallback(async (name: string, areaName: string) => {
-    await patchSpacetimeSpace({ kind: "removeCategory", area: areaName, name });
+    await trashRel(categoryDirRel(areaName, name));
     await reloadNotes();
-  }, [patchSpacetimeSpace, reloadNotes]);
+  }, [reloadNotes]);
 
   // Reorder a bullet within its list file by one slot (up = earlier).
   // Returns silently if the item is missing or already at the edge.
@@ -1920,9 +1987,14 @@ export function CardGrid() {
   // Remove a Notable Folder from a Category: drop it from spacetime.yml
   // space tree. The note itself is kept (non-destructive).
   const handleRemoveFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
-    await patchSpacetimeSpace({ kind: "removeFolder", area: areaName, category: categoryName, name });
+    // Delete a Notable Folder = move its directory (main doc + every note inside)
+    // to the reversible .order-legacy trash. No spacetime write — the sidebar
+    // re-derives from disk, so the old bullet-removal was a no-op and the folder
+    // stayed put ("doesn't work well").
+    const rel = folderDirRel(areaName, categoryName, name);
+    if (rel) await trashRel(rel);
     await reloadNotes();
-  }, [patchSpacetimeSpace, reloadNotes]);
+  }, [reloadNotes]);
 
   // Rewrite a list file's bullets into the given ref order (drag-reorder).
   // Refs not present are appended in their original order; no-op if the
@@ -5263,19 +5335,24 @@ export function CardGrid() {
    *  <vault>/<Area>/<Category>/<Name>/<Name>.md and the Category's
    *  bullet list gains a [[Name]] entry. */
   const handleCreateFolder = useCallback(async (name: string, areaName: string, categoryName: string) => {
-    const base = stripJdPrefix(name.trim());
+    const trimmed = name.trim();
+    const base = stripJdPrefix(trimmed);
     if (!base) return;
-    // In Johnny-Decimal Mode a new folder gets the next free id in its category
-    // (e.g. "52 Creative Projects" → "52.15 …") so the sidebar/directory stay
-    // numbered. Its Main-Doc H1 stays the CLEAN name, so list/wikilink renders
-    // show the pretty title while the sidebar shows the id.
-    let jdId: string | null = null;
-    if (getJohnnyDecimal() && !isJohnnyDecimalName(name.trim())) {
+    // The on-disk directory name carries the Johnny-Decimal id; the Main-Doc H1
+    // and `title` stay the CLEAN name so list/wikilink renders show the pretty
+    // title while the sidebar shows the id.
+    //  - User TYPED an id ("52.15 Foo"): honor it verbatim (was being stripped).
+    //  - JD Mode on, no id typed: auto-assign the next free id in the category.
+    //  - Otherwise: no id.
+    let dirBase = base;
+    if (isJohnnyDecimalName(trimmed)) {
+      dirBase = trimmed;
+    } else if (getJohnnyDecimal()) {
       const aNode = vaultTaxonomy.areas.find((a) => folderMatchKey(a.ref) === folderMatchKey(areaName));
       const cNode = aNode?.categories.find((c) => folderMatchKey(c.ref) === folderMatchKey(categoryName));
-      jdId = nextJdFolderId(categoryName, cNode?.folders ?? []);
+      const jdId = nextJdFolderId(categoryName, cNode?.folders ?? []);
+      if (jdId) dirBase = `${jdId} ${base}`;
     }
-    const dirBase = jdId ? `${jdId} ${base}` : base;
     // Resolve the Category's directory structurally — categories no longer
     // exist as notes on disk (placement is structural), so this must not
     // depend on a Category `.md` being present.
@@ -5288,24 +5365,22 @@ export function CardGrid() {
     // created by writing the main doc inside it below. Title stays the clean
     // base name; the H1 too, so displays render the pretty title.
     const frontmatter: Frontmatter = {
-      ...(jdId || safe !== dirBase ? { title: base } : {}),
+      // Keep an explicit clean title whenever the on-disk name differs from it
+      // (a JD id prefix, or characters the filesystem sanitized away).
+      ...(dirBase !== base || safe !== dirBase ? { title: base } : {}),
     };
     const body = `# ${base}\n`;
     const content = joinFrontmatter(frontmatter, body);
     const nfDir = await join(catDir, safe);
     const path = await uniqueWrite(nfDir, `${safe}.md`, content);
     const filename = path.split("/").pop() ?? `${safe}.md`;
-    // Bullet ref = the on-disk basename (safe) so the resolver finds
-    // the file; without this the parent's list would point at a name
-    // that no .md file matches.
-    const bulletRef = filename.replace(/\.md$/i, "");
-    // Register the new folder in spacetime.yml (replaces the old category bullet)
-    await patchSpacetimeSpace({ kind: "addFolder", area: areaName, category: categoryName, name: bulletRef });
+    // No spacetime write — placement on disk is the source of truth; the new
+    // note's path makes the folder appear in the taxonomy on its own.
     setNotes((prev) => [
       ...(prev ?? []),
       { id: newNoteId(), path, filename, frontmatter, title: base, body, mtime: Date.now() },
     ]);
-  }, [patchSpacetimeSpace, vaultTaxonomy]);
+  }, [vaultTaxonomy]);
 
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     // Todo.txt items are a parallel calendar source — route to the line writer.
@@ -6576,12 +6651,6 @@ export function CardGrid() {
           onRemoveArea={handleRemoveArea}
           onAddCategory={handleAddCategory}
           onRemoveCategory={handleRemoveCategory}
-          onReorderArea={handleReorderArea}
-          onReorderCategory={handleReorderCategory}
-          onReorderFolder={handleReorderFolder}
-          onReorderAreas={handleReorderAreasTo}
-          onReorderCategories={handleReorderCategoriesTo}
-          onReorderFolders={handleReorderFoldersTo}
           onRemoveFolder={handleRemoveFolder}
           onRenameFolder={handleRenameNotableFolder}
           order={vaultTaxonomy.areas}

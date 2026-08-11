@@ -13,6 +13,18 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+### Structure (filesystem is the source of truth)
+- The vault's hierarchy is now derived purely from the **directory tree** and each
+  note's **frontmatter** — no `parent`/`folder` keys, and `spacetime.md`/`.yml`/`.mw`
+  are no longer read as authority. The first three levels under the vault root are
+  Area / Category / Notable Folder; Johnny-Decimal prefixes give order.
+- **Invitees live in note frontmatter** (`invitees:`), not on a spacetime line, and
+  the Google/Apple calendar sync reads them from there.
+- **Seasons** are a `Seasons.md` note or any note with `season: true` frontmatter.
+- **Spacetime is now an optional, generated view** (and a compact input grammar for
+  the agent/CLI); editing it no longer changes the vault. A one-time migration
+  materialized every event that only existed on a spacetime line into a real note.
+
 ### Voice
 - Dictation is captured reliably: every spoken utterance is written to the chat
   record the moment it's finalized (decoupled from replying), so nothing is lost

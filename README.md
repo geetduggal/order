@@ -13,11 +13,11 @@ the same files. Obsidian-compatible vault. One Tauri codebase ships desktop and 
 - **Edit in place** — WYSIWYG markdown cards (Milkdown Crepe). No modes, no preview pane.
 - **Flip a card to a sheet or a drawing** — the same note becomes a spreadsheet (formulas, spreadsheet-style overflow, colors) or an Excalidraw canvas, backed by a sidecar file and remembered per note. See [SHEET-DRAWING.md](docs/SHEET-DRAWING.md).
 - **List modes** — a note with `list:` frontmatter renders its bullets as `cards`, `lines`, or `masonry` (variable-height cards-on-a-card with inline links/images, drag-reorder, and an immersive fullscreen gallery).
-- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10. A **Johnny-Decimal Mode** toggle in Settings makes the ids explicit (`10-19`, `11`, `11.01`) across `spacetime.md` and the directories.
+- **A real hierarchy** — Areas → Categories → Notable Folders, capped Johnny-Decimal style at 10×10, and it **is the directory tree**: placement on disk is the source of truth, no `parent`/`folder` key in any file. A **Johnny-Decimal Mode** toggle in Settings makes the ids explicit (`10-19`, `11`, `11.01`) on the directories.
 - **A calendar that *is* your notes** — Day / Week / Month / Year / Season views over the same notes.
 - **todo.txt, always in sync** — every calendar event mirrored as one readable line.
 - **Seasons** — name your own date ranges and see each one as a grid of what happened, by Area.
-- **Spacetime** — a single canonical map of your space (hierarchy) and time (events + seasons) at the vault root, in two companion formats: `spacetime.yml` and `spacetime.mw`. Edit either one and Order syncs the other immediately. See [SPACETIME.md](docs/SPACETIME.md).
+- **Spacetime** — an *optional, generated* map of your space (hierarchy) and time (events + seasons), derived on demand from the directory tree and each note's frontmatter. It's a read-only view and a compact input grammar for the agent/CLI — **not** the source of truth. See [SPACETIME.md](docs/SPACETIME.md).
 - **Google Calendar curated sync** — push hand-picked events (with invites) to Google Calendar and pull a day's events back in, via the spacetime reconciliation flow. No Google IDs stored; identity is the natural key. See [GCAL-SYNC.md](docs/GCAL-SYNC.md).
 - **Apple / system calendar (EventKit)** — pick which macOS/iOS system calendars to include, import a day's events into spacetime, and create events on a calendar with an `@[Calendar]` token. Native, no accounts. Invitations route through Google (Apple's API can't add guests). See [APPLE-CAL.md](docs/APPLE-CAL.md).
 - **Talk to your vault** — an in-app voice agent that reads and edits notes in the current folder by voice. A chat is an ordinary `.chat.md` note; the whole tool-use loop lives in Rust (React never touches a path, a file body, or the model key). Hands-free: speak, it transcribes (OpenAI or on-device Apple), the reply streams straight to speech, then it listens again — writes wait behind one approval, and a running cost shows per chat. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-agent--voice-chat).
@@ -46,8 +46,8 @@ xattr -cr ~/Downloads/Order.app && open ~/Downloads/Order.app
 
 ```
 <vault>/
-├── spacetime.yml             canonical space + time (YAML)
-├── spacetime.mw              canonical space + time (Markwhen)
+├── spacetime.yml             generated view of space + time (YAML, optional)
+├── spacetime.mw              generated view of space + time (Markwhen, optional)
 ├── todo.txt                  one-line calendar events (optional)
 └── Craft/                    an Area
     └── Craft Projects/       a Category
@@ -58,10 +58,11 @@ xattr -cr ~/Downloads/Order.app && open ~/Downloads/Order.app
 ```
 
 The vault's structure (which Areas, Categories, and Notable Folders exist, and
-their order) lives in `spacetime.yml` and `spacetime.mw`. The old chain index
-files (`Areas.md`, `<Area>.md`, `<Category>.md`) are still supported as a fallback
-for un-migrated vaults; the migration button in Settings moves them to safe storage
-when you're ready.
+their order) **is** the directory tree — the first three levels below the vault
+root are Area / Category / Notable Folder, and Johnny-Decimal prefixes on the
+directory names give the order. Nothing outside the filesystem records hierarchy.
+`spacetime.yml`/`spacetime.mw` and the old chain index files (`Areas.md`, etc.)
+are only a generated view / legacy fallback, never authority.
 
 ## The surfaces
 
@@ -78,19 +79,14 @@ an action popup. Events are notes with a `date:`.
 
 ![Week view — events colored by Notable Folder](img/calendar-week.png)
 
-**Seasons.** Name your own date ranges in `spacetime.yml` or `spacetime.mw`:
+**Seasons.** Name your own date ranges in a `Seasons.md` note (a scannable
+`- START - END · Name` list), or make any note a season with `season: true` plus
+a `date`/`endDate` in its own frontmatter:
 
 ```
-# spacetime.yml
-time:
-  seasons:
-    - {date: 2026-02-15, title: Spring Builds,  endDate: 2026-04-30}
-    - {date: 2026-05-01, title: Frontier}
-
-# spacetime.mw
-## Seasons
-2026-02-15 / 2026-04-30: Spring Builds
-2026-05-01             : Frontier
+# Seasons.md
+- 2026-02-15 - 2026-04-30 · Spring Builds
+- 2026-05-01 · Frontier
 ```
 
 The Season view clusters every notable update by Area over the range.
@@ -102,11 +98,11 @@ due:2026-06-13 07:30  Long run +weekly-hub end:09:30
 due:2026-06-13 15:00  Ship Issue 22 +wide-margins end:17:00
 ```
 
-**Spacetime.** `spacetime.yml` and `spacetime.mw` at the vault root are Order's
-canonical map. Both are regenerated continuously as you work. Open either from
-Settings to hand-edit it as a raw-text card. Edits to either file sync to the
-other immediately and update the sidebar, calendar, and seasons without an explicit
-apply step.
+**Spacetime.** `spacetime.yml` / `spacetime.mw` are an *optional generated view*
+of the whole vault (hierarchy from the directory tree, events + seasons + invitees
+from frontmatter). Generate one from Settings to read or feed to the agent/CLI;
+it's never read back as authority, so editing a file has no effect on the vault.
+The sidebar, calendar, and seasons read straight from the filesystem + frontmatter.
 
 "Apply to vault…" in Settings lets you push structural changes (add/remove/reorder
 folders, edit events) from the YAML back into the vault's note files with a review
