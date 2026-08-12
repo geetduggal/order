@@ -217,7 +217,20 @@ export function stopSpeaking(): void {
   c?.cancel();
 }
 
-export interface SpeakHandle { stop: () => void }
+export interface SpeakHandle {
+  stop: () => void;
+  /** Pause without ending (cloud playback only). Absent → not pausable (native). */
+  pause?: () => void;
+  /** Resume after pause (cloud playback only). */
+  resume?: () => void;
+  /** Change playback speed live, no restart (cloud playback only). */
+  setRate?: (r: number) => void;
+  /** The underlying <audio> element for a scrub/time UI; null for native. */
+  audio?: HTMLAudioElement | null;
+  /** True only while a COMPLETE stored recording is playing (cache hit) — i.e. the
+   *  whole file is loaded and seekable. False for chunk-by-chunk fresh synth. */
+  seekable?: () => boolean;
+}
 
 export function speak(
   text: string,
@@ -301,7 +314,10 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
   // Always synth at natural speed and time-stretch on playback, so ONE cached
   // recording works at any speed (speed isn't baked into the file).
   const apiSpeed = 1;
-  const playbackRate = rate;
+  let playbackRate = rate;
+  // True only once a COMPLETE cached recording is playing (one seekable file);
+  // stays false for chunk-by-chunk fresh synth, which can't be scrubbed.
+  let singleFile = false;
   // Unreal Speech's /stream endpoint caps at 1000 chars per call; others are fine larger.
   const chunks = chunkText(text, engine === "unreal" ? 900 : 1800);
   const audio = new Audio();
@@ -405,6 +421,7 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
         if (saved === cache.key && await vaultFs.exists(cache.mp3)) {
           audio.onended = () => end();
           audio.onerror = () => { console.error("[tts] cached audio error", audio.error); end(); };
+          singleFile = true; // the whole recording is one seekable file
           await playSrc(assetUrl(cache.mp3), false);
           opts.onStart?.(); wireMedia();
           return;
@@ -414,7 +431,14 @@ function speakCloud(text: string, opts: Parameters<typeof speak>[1]): SpeakHandl
     void playFromApi();
   })();
 
-  return { stop: end };
+  return {
+    stop: end,
+    pause: () => { try { audio.pause(); } catch { /* */ } },
+    resume: () => { void audio.play().catch(() => {}); },
+    setRate: (r) => { playbackRate = r; audio.playbackRate = r; },
+    audio,
+    seekable: () => singleFile && Number.isFinite(audio.duration) && audio.duration > 0,
+  };
 }
 
 // ---- streaming speaker: speak a reply as it is generated ------------------
