@@ -44,6 +44,68 @@ pub fn is_foreground() -> bool {
     FOREGROUND.load(Ordering::Relaxed)
 }
 
+/// DEBUG: append one line to `<vault>/voice-trace.log`. It sits at the vault ROOT
+/// (a dotdir like `.order-legacy` is NOT synced by Dropbox, but root files such as
+/// spacetime.yml are), and `.log` isn't in Order's card walk, so it syncs for
+/// retrieval without cluttering the UI. Cheap + safe: it only fires on segment
+/// boundaries / commits, never per partial.
+/// Master switch for the voice trace. Flip to `true` (and rebuild) to capture a
+/// walk to `<vault>/voice-trace.log` when debugging dictation; off in normal use.
+const VTRACE_ENABLED: bool = false;
+
+pub fn vtrace(app: &tauri::AppHandle, line: &str) {
+    if !VTRACE_ENABLED { return; }
+    use tauri::Manager;
+    let root = app
+        .try_state::<crate::vault_fs::VaultState>()
+        .and_then(|st| st.root.lock().ok().and_then(|g| g.clone()));
+    let Some(root) = root else { return };
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true).append(true).open(root.join("voice-trace.log"))
+    {
+        let _ = writeln!(f, "{ms} {line}");
+    }
+}
+
+/// Frontend bridge to the same trace file, so Rust loop events and UI decisions
+/// (utterance received → saved vs echo-dropped) interleave in one timeline.
+#[tauri::command]
+pub fn voice_trace(app: tauri::AppHandle, line: String) {
+    vtrace(&app, &line);
+}
+
+/// Did the on-device recognizer RESET its running transcript to a NEW sentence
+/// (an endpoint on a pause) rather than grow or lightly revise the current one?
+/// True only when the new text is shorter than the current segment AND shares
+/// little of its leading text — a growth or minor revision keeps a long common
+/// prefix (so this stays false). A trivially short current segment isn't worth
+/// banking, which also avoids false positives on early word-by-word growth.
+pub fn is_segment_reset(cur: &str, new: &str) -> bool {
+    let cur = cur.trim();
+    let new = new.trim();
+    let cur_n = cur.chars().count();
+    let new_n = new.chars().count();
+    if cur_n < 8 || new_n >= cur_n { return false; } // too short to matter, or still growing
+    let common = cur.chars().zip(new.chars()).take_while(|(a, b)| a == b).count();
+    common < cur_n / 2
+}
+
+/// Head+tail of a string for the trace (enough to recognise the buffer content
+/// without dumping the whole utterance).
+pub fn snippet(s: &str) -> String {
+    let s = s.trim();
+    let n = s.chars().count();
+    if n <= 44 { return s.to_string(); }
+    let head: String = s.chars().take(30).collect();
+    let tail: String = s.chars().skip(n - 10).collect();
+    format!("{head}…{tail}")
+}
+
 /// Config for the Rust-driven voice conversation used while backgrounded/locked.
 /// Provided by JS when hands-free voice starts (`voice_convo_start`).
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -755,8 +817,14 @@ mod apple {
         use block2::RcBlock;
         use std::sync::{Arc, Mutex};
 
-        struct Shared { text: String, last: Instant, got: bool, done: bool, err: Option<String> }
-        let shared = Arc::new(Mutex::new(Shared { text: String::new(), last: Instant::now(), got: false, done: false, err: None }));
+        // `text` = the FULL utterance so far = `finalized` (sentences the on-device
+        // recognizer has already completed and RESET past) + `cur` (the sentence it's
+        // currently building). The recognizer resets its running transcript to a fresh
+        // short string every time you pause (it endpoints the sentence); without banking
+        // `cur` into `finalized` at that moment, everything before the pause is
+        // overwritten and lost — the confirmed "text vanishes on a pause" bug.
+        struct Shared { text: String, finalized: String, cur: String, last: Instant, got: bool, done: bool, err: Option<String> }
+        let shared = Arc::new(Mutex::new(Shared { text: String::new(), finalized: String::new(), cur: String::new(), last: Instant::now(), got: false, done: false, err: None }));
 
         unsafe {
             ensure_engine(app)?;
@@ -815,13 +883,43 @@ mod apple {
                     s.to_string()
                 };
                 let is_final: objc2::runtime::Bool = msg_send![result, isFinal];
+                let mut full = String::new();
+                let mut banked: Option<(String, usize)> = None; // (finished sentence, total finalized len)
                 if let Ok(mut st) = shared_h.lock() {
-                    if !text.trim().is_empty() { st.text = text.clone(); st.got = true; st.last = Instant::now(); }
+                    let seg = text.trim();
+                    if !seg.is_empty() {
+                        // The recognizer resets its running transcript to a fresh, much
+                        // shorter, divergent string when it endpoints a sentence (a pause).
+                        // Detect that and BANK the sentence it just finished so it can't be
+                        // overwritten. A normal growth or minor revision keeps a big shared
+                        // prefix, so it is NOT treated as a reset.
+                        if super::is_segment_reset(&st.cur, seg) {
+                            let done_sentence = st.cur.trim().to_string();
+                            if !done_sentence.is_empty() {
+                                if !st.finalized.is_empty() { st.finalized.push(' '); }
+                                st.finalized.push_str(&done_sentence);
+                                banked = Some((done_sentence, st.finalized.chars().count()));
+                            }
+                        }
+                        st.cur = seg.to_string();
+                        st.text = if st.finalized.is_empty() {
+                            st.cur.clone()
+                        } else {
+                            format!("{} {}", st.finalized.trim(), st.cur.trim())
+                        };
+                        st.got = true;
+                        st.last = Instant::now();
+                    }
+                    full = st.text.clone();
                     if is_final.as_bool() { st.done = true; }
                 }
-                let shown = if prefix_s.is_empty() { text }
-                    else if text.is_empty() { prefix_s.clone() }
-                    else { format!("{} {}", prefix_s, text) };
+                if let Some((sentence, fin_len)) = banked {
+                    super::vtrace(&app_h, &format!("  BANK sentence on pause-reset: kept '{}' (finalized now {} chars)",
+                        super::snippet(&sentence), fin_len));
+                }
+                let shown = if prefix_s.is_empty() { full.clone() }
+                    else if full.is_empty() { prefix_s.clone() }
+                    else { format!("{} {}", prefix_s, full) };
                 let _ = app_h.emit("stt-partial", &shown);
                 let _ = app_h.emit("stt-state", "heard");
             });
@@ -851,20 +949,21 @@ mod apple {
             // was cut by the recognizer's own finalization / our hard cap (you
             // were likely still talking). Continuations are held by the caller.
             let mut natural = true;
+            let mut reason = "?";
             loop {
                 std::thread::sleep(Duration::from_millis(60));
-                if CANCEL.load(Ordering::Relaxed) { cancelled = true; break; }
+                if CANCEL.load(Ordering::Relaxed) { cancelled = true; reason = "cancel"; break; }
                 let (got, done, since_last, since_start, txt) = {
                     let s = shared.lock().unwrap();
                     (s.got, s.done, s.last.elapsed(), start.elapsed(), s.text.clone())
                 };
                 // Recognizer finalized on its own (its ~60s on-device limit) while
                 // you were mid-speech: a cut, not a real end.
-                if done { natural = false; break; }
+                if done { natural = false; reason = "isFinal"; break; }
                 let eff_silence = if looks_incomplete(&txt) { silence_incomplete } else { silence };
-                if got && since_last > eff_silence { natural = true; break; } // you paused
-                if !got && since_start > no_speech { natural = true; break; }  // no speech
-                if since_start > max_utter { natural = false; break; }         // our cap; likely still talking
+                if got && since_last > eff_silence { natural = true; reason = "pause-timer"; break; } // you paused
+                if !got && since_start > no_speech { natural = true; reason = "no-speech"; break; }  // no speech
+                if since_start > max_utter { natural = false; reason = "hard-cap-90s"; break; }         // our cap; likely still talking
             }
 
             // Teardown for THIS utterance only — the engine keeps running. Stop
@@ -877,10 +976,15 @@ mod apple {
             let _: () = msg_send![task, cancel];
             let _ = app.emit("stt-level", 0.0f32);
 
-            if cancelled { return Ok(None); }
+            if cancelled { super::vtrace(app, &format!("  listen_live END reason=cancel natural={} prefix_len={} -> None", natural, prefix.len())); return Ok(None); }
             let final_text = { let s = shared.lock().unwrap(); s.text.trim().to_string() };
-            if final_text.is_empty() { return Ok(None); }
+            if final_text.is_empty() {
+                super::vtrace(app, &format!("  listen_live END reason={} EMPTY prefix_len={} -> None", reason, prefix.len()));
+                return Ok(None);
+            }
             super::END_NATURAL.store(natural, Ordering::Relaxed);
+            super::vtrace(app, &format!("  listen_live END reason={} natural={} prefix_len={} text_len={} text='{}'",
+                reason, natural, prefix.len(), final_text.len(), super::snippet(&final_text)));
             Ok(Some(final_text))
         }
     }
@@ -1017,6 +1121,7 @@ pub async fn stt_start_loop(
             // early. The display keeps up because listen_live prefixes its partials
             // with this. Sending is driven purely by the on-device VAD (no JS timer).
             let mut accum = String::new();
+            vtrace(&app, &format!("=== LOOP START engine={} (accum reset to empty) ===", engine));
             while LOOP_RUNNING.load(Ordering::Relaxed) {
                 apple::reset_cancel();
                 // While backgrounded/locked, make sure the inaudible keep-alive is
@@ -1029,6 +1134,7 @@ pub async fn stt_start_loop(
                 }
                 END_NATURAL.store(true, Ordering::Relaxed); // default; native path overrides
                 let started = std::time::Instant::now();
+                vtrace(&app, &format!("iter start: fg={} accum_len={} accum='{}'", is_foreground(), accum.len(), snippet(&accum)));
                 let result = if engine == "native" {
                     // Fresh utterance: wait patiently (20s) for you to start. Holding
                     // a continuation (accum non-empty): only a short grace (2.5s) for
@@ -1061,10 +1167,12 @@ pub async fn stt_start_loop(
                             // partials. This is what stops long speech being lost/chopped.
                             if !accum.is_empty() { accum.push(' '); }
                             accum.push_str(seg);
+                            vtrace(&app, &format!("HELD (continues) seg_len={} -> accum_len={} '{}'", seg.len(), accum.len(), snippet(&accum)));
                         } else {
                             // Natural pause = the WHOLE utterance is done.
                             let full = if accum.is_empty() { seg.to_string() } else { format!("{} {}", accum.trim(), seg) };
                             accum.clear();
+                            vtrace(&app, &format!("COMMIT-send fg={} full_len={} '{}'", is_foreground(), full.len(), snippet(&full)));
                             if is_foreground() {
                                 let _ = app.emit("stt-utterance", serde_json::json!({ "text": full }));
                             } else {
@@ -1079,11 +1187,14 @@ pub async fn stt_start_loop(
                         if !accum.trim().is_empty() {
                             let full = accum.trim().to_string();
                             accum.clear();
+                            vtrace(&app, &format!("COMMIT-flush fg={} full_len={} '{}'", is_foreground(), full.len(), snippet(&full)));
                             if is_foreground() {
                                 let _ = app.emit("stt-utterance", serde_json::json!({ "text": full }));
                             } else {
                                 run_background_turn(&app, &full);
                             }
+                        } else {
+                            vtrace(&app, "None/empty: accum also empty (nothing to commit)");
                         }
                     }
                     Err(e) => {
@@ -1093,6 +1204,7 @@ pub async fn stt_start_loop(
                         // mic comes back (during playback for barge-in, and after
                         // it for the next turn). Only give up after many in a row.
                         consecutive_errs += 1;
+                        vtrace(&app, &format!("ERR '{}' consec={} accum_len={} (accum KEPT)", e, consecutive_errs, accum.len()));
                         if consecutive_errs >= 15 {
                             let _ = app.emit("stt-error", &e);
                             break;
@@ -1101,6 +1213,8 @@ pub async fn stt_start_loop(
                     }
                 }
             }
+            vtrace(&app, &format!("=== LOOP END (running={}) accum_len={} '{}' <-- if accum_len>0 here, HELD TEXT WAS LOST ===",
+                LOOP_RUNNING.load(Ordering::Relaxed), accum.len(), snippet(&accum)));
             LOOP_RUNNING.store(false, Ordering::SeqCst);
             apple::stop_engine();
             let _ = app.run_on_main_thread(|| crate::tts::silence_keepalive_end());

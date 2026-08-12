@@ -298,6 +298,7 @@ pub fn run() {
             stt::stt_transcribe,
             stt::stt_start_loop,
             stt::stt_stop_loop,
+            stt::voice_trace,
             stt::set_foreground,
             stt::voice_convo_start,
             stt::voice_convo_stop,

@@ -15,7 +15,7 @@ import {
   approve, cancelTurn, getAgentKey, onAgentStream, runTurn, recordUser,
   type AgentEvent, type ApprovalItem,
 } from "../lib/agent";
-import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop, outputIsSpeaker } from "../lib/voice";
+import { micSupported, onLevel, onSttState, onPartial, inputName, startListenLoop, stopListenLoop, onUtterance, setForeground, voiceConvoStart, voiceConvoStop, outputIsSpeaker, voiceTrace } from "../lib/voice";
 import { speak, stopSpeaking, speakableFromMarkdown, getSavedVoice, saveVoice, getSavedRate, ttsSupported, getOpenaiKey, getVoices, createStreamSpeaker, voiceKeepaliveBegin, voiceKeepaliveEnd, cloudVoiceConfig, type StreamSpeaker, type TtsVoice } from "../lib/tts";
 import { getSttEngine } from "../lib/voice";
 import { useTextScale } from "../lib/text-scale";
@@ -136,6 +136,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
   const [partial, setPartial] = useState("");   // live transcript while speaking
+  const lastPartialLenRef = useRef(0);          // DEBUG: detect the caption jumping back
   // True from when a turn is sent until its reply finishes speaking (or is
   // interrupted). Drives the "interrupt" affordance independently of `mode`,
   // which can lag/misreport — so tapping to interrupt always works.
@@ -242,7 +243,18 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // Live partial from the recognizer. The native side already prefixes it with
     // the accumulated monologue (across ~60s recognizer restarts), so the on-screen
     // transcript keeps growing and never resets — just show it.
-    void onPartial((t) => { if (modeRef.current === "listening") setPartial(t); }).then((fn) => { if (alive) d = fn; else fn(); });
+    void onPartial((t) => {
+      if (modeRef.current !== "listening") return;
+      // DEBUG: the caption jumping back to a much shorter string is exactly the
+      // "text disappears and starts from the beginning" symptom — log it so we can
+      // line it up with the Rust loop's accum events (was a turn committed first?).
+      const prev = lastPartialLenRef.current;
+      if (prev >= 20 && t.length < prev - 12) {
+        voiceTrace(`UI PARTIAL RESET on screen: ${prev} -> ${t.length} chars, new='${t.slice(0, 34)}'`);
+      }
+      lastPartialLenRef.current = t.length;
+      setPartial(t);
+    }).then((fn) => { if (alive) d = fn; else fn(); });
     void listen<{ engine: string; seconds: number }>("stt-usage", (e) => {
       recordDictation(e.payload.engine, e.payload.seconds);
       setChatUsage(addChatUsage(rel, e.payload.engine === "native"
@@ -553,14 +565,20 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
     // On the built-in speaker the whole speaking window plus a short decay tail is
     // echo we can't separate from your voice; on a headset, only an utterance that
     // repeats what the agent is currently saying counts as echo.
+    voiceTrace(`UI utterance received: len=${t.length} mode=${m} speaker=${speakerRouteRef.current} inflight=${turnInFlightRef.current} '${t.slice(0, 34)}'`);
     if (m === "speaking") {
-      if (speakerRouteRef.current || isLikelyEcho(t, agentSpokenRef.current)) return;
+      if (speakerRouteRef.current || isLikelyEcho(t, agentSpokenRef.current)) {
+        voiceTrace(`UI -> ECHO DROP (mode=speaking, not saved, not shown) len=${t.length}`);
+        return;
+      }
     } else if (speakerRouteRef.current && Date.now() - lastSpeakEndRef.current < 900) {
+      voiceTrace(`UI -> DROP (speaker, ${Date.now() - lastSpeakEndRef.current}ms after speech end, not saved) len=${t.length}`);
       return;
     }
 
     // CAPTURE-FIRST GUARANTEE: record it before deciding anything else.
-    try { await recordUser(rel, t); } catch { /* non-fatal; a reply may still record it */ }
+    try { await recordUser(rel, t); voiceTrace(`UI -> saved to .chat.md + bubble len=${t.length}`); }
+    catch (e) { voiceTrace(`UI -> recordUser FAILED: ${String(e)} len=${t.length}`); }
     if (!voiceOnRef.current) return; // voice was turned off mid-record
 
     clearFiller();
@@ -611,9 +629,12 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   // A COMPLETE utterance from the native loop (it accumulates across the
   // recognizer's ~60s cuts and only emits on a natural pause), so just process it.
   const handleUtterance = useCallback((text: string) => {
-    if (!voiceOnRef.current) return;
+    if (!voiceOnRef.current) { voiceTrace(`UI stt-utterance IGNORED (voice off) len=${text.length}`); return; }
     // Backgrounded/locked: the native loop drives turns itself — ignore here.
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      voiceTrace(`UI stt-utterance IGNORED (not visible: ${document.visibilityState}) len=${text.length}`);
+      return;
+    }
     const t = text.trim();
     if (!t) return;
     void processUtterance(t);

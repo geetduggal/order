@@ -8,6 +8,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getOpenaiKey, ttsSupported } from "./tts";
 
+/** DEBUG: append a line to the shared voice-trace log (same file the Rust loop
+ *  writes) so UI decisions interleave with the loop's events in one timeline. */
+export const voiceTrace = (line: string): void => {
+  void invoke("voice_trace", { line }).catch(() => {});
+};
+
 // STT engine selection (Whisper by default; native Apple on request).
 const STT_ENGINE_KEY = "order.stt.engine";
 export type SttEngine = "whisper" | "native";
