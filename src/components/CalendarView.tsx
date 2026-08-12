@@ -535,6 +535,11 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     sel?.removeAllRanges();
     sel?.addRange(range);
     const onKey = (ke: KeyboardEvent) => {
+      // FullCalendar treats an event element like a button — Space/Enter "activate"
+      // it — so without this the keystrokes never reach the contentEditable (Space
+      // did nothing while typing a title). Stop propagation so typing goes to the
+      // field; we still handle Enter/Escape ourselves.
+      ke.stopPropagation();
       if (ke.key === "Enter") { ke.preventDefault(); titleEl.blur(); }
       if (ke.key === "Escape") { ke.preventDefault(); titleEl.textContent = origTitle; titleEl.blur(); }
     };
