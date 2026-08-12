@@ -13,6 +13,27 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.5] - 2026-08-12
+
+The vault's structure becomes filesystem-first, plus a fix for dictation losing
+text on a pause, a real audio-playback panel, and calendar polish.
+
+### Voice
+- **Dictation no longer drops words when you pause.** The on-device recognizer
+  resets its running transcript to a new sentence whenever you pause; the app now
+  banks each finished sentence before it's overwritten and stitches them together,
+  so a long ramble with thinking-pauses is captured whole instead of "vanishing and
+  starting over."
+
+### Audio playback
+- The little hover speed popover is replaced by a **playback panel docked above the
+  bottom dock** — play/pause, speed, and voice always; and for a note already
+  recorded to a stored file, a **scrubber, −10s/+10s, and a time readout**.
+
+### Calendar
+- You can type **spaces when renaming an event** inline (FullCalendar was treating
+  the Space key as "activate the event").
+
 ### Structure (filesystem is the source of truth)
 - The vault's hierarchy is now derived purely from the **directory tree** and each
   note's **frontmatter** — no `parent`/`folder` keys, and `spacetime.md`/`.yml`/`.mw`
