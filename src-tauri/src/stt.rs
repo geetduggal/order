@@ -236,19 +236,29 @@ fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
     // phone doesn't swap to the robotic system voice) by synthesizing mp3 in Rust
     // and playing it on the shared session. Fall back to the native synthesizer if
     // no cloud voice is configured or synthesis/playback fails (e.g. offline).
+    // RETRY before dropping to the system voice. Locked + walking = flaky cellular,
+    // so a single synth/playback failure shouldn't switch you to the robotic Apple
+    // voice — that's the "it often defaults back" complaint. Try the SELECTED cloud
+    // voice a few times (short backoff) and only fall back to native as a last resort.
     let spoke_cloud = if let Some(engine) = cloud_engine.as_deref() {
-        match crate::tts::synth_cloud_bytes(engine, &cloud_voice, &cloud_model, &cloud_key, &reply) {
-            Ok(bytes) => match crate::tts::play_audio_bytes(&bytes, rate) {
-                Ok(dur) => {
-                    // Wait out playback before re-arming the mic (clean walkie-talkie).
-                    let ms = ((dur * 1000.0) as u64).saturating_add(150).min(180_000);
-                    std::thread::sleep(std::time::Duration::from_millis(ms));
-                    true
-                }
-                Err(_) => false,
-            },
-            Err(_) => false,
+        let mut ok = false;
+        for attempt in 0..3u32 {
+            match crate::tts::synth_cloud_bytes(engine, &cloud_voice, &cloud_model, &cloud_key, &reply) {
+                Ok(bytes) => match crate::tts::play_audio_bytes(&bytes, rate) {
+                    Ok(dur) => {
+                        // Wait out playback before re-arming the mic (clean walkie-talkie).
+                        let ms = ((dur * 1000.0) as u64).saturating_add(150).min(180_000);
+                        std::thread::sleep(std::time::Duration::from_millis(ms));
+                        ok = true;
+                        break;
+                    }
+                    Err(_) => {} // playback failed — retry the whole synth+play
+                },
+                Err(_) => {} // synth failed (usually a transient network blip) — retry
+            }
+            if attempt < 2 { std::thread::sleep(std::time::Duration::from_millis(700)); }
         }
+        ok
     } else {
         false
     };

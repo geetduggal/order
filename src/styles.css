@@ -3175,6 +3175,16 @@ body.is-tile-dragging * {
 }
 .fc-shell .order-event-row.is-completed .order-event-loc { text-decoration: line-through; }
 
+/* Month / multi-month (day-grid) event text must ride the zoom. The default
+   sizes above are `em`, and FullCalendar's runtime-injected day-grid styles pin
+   the effective size in month view so the em never tracked --text-scale. Size the
+   day-grid event text DIRECTLY off --text-scale (higher specificity wins), so
+   resizing text actually changes the event boxes in Month. A touch larger, too,
+   so titles stay legible in the small cells. */
+.fc-shell .fc-daygrid-event .order-event-title { font-size: calc(12px * var(--text-scale, 1)); }
+.fc-shell .fc-daygrid-event .order-event-time  { font-size: calc(10.5px * var(--text-scale, 1)); }
+.fc-shell .fc-daygrid-event .order-event-loc   { font-size: calc(10px * var(--text-scale, 1)); }
+
 /* "High bits" — the weekly-hub folder's all-day events. They mark the
    day's headline, so they lift off the all-day band as a distinct royal
    card: a saturated tint, a defined royal border, extra shadow, and a

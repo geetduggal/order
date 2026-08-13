@@ -13,6 +13,15 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+### Voice
+- Lock Mode keeps your **selected cloud voice** instead of occasionally dropping to
+  the system voice — a transient network blip while locked now retries the synth a
+  few times before any fallback.
+
+### Calendar
+- **Month view event text now scales with zoom** (it was pinned by FullCalendar's
+  injected day-grid styles).
+
 ## [2026.8.5] - 2026-08-12
 
 The vault's structure becomes filesystem-first, plus a fix for dictation losing
