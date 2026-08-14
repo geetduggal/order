@@ -42,7 +42,7 @@ A **timed multi-day** range is deliberately out of scope.
 4. **gcal / apple import + push** already flow through the derived `SpacetimeEvent`,
    so they follow once 1–3 do; verify the natural-key identity still holds.
 
-### Write side — create/edit an event = NAME (or RENAME) the file
+### Write side — DONE: create/edit an event = NAME (or RENAME) the file
 5. **Create** (`createNote`, calendar drag-create): write the note at the
    convention filename; do NOT write date frontmatter.
 6. **Move / resize / all-day-toggle** (calendar drop/resize, `updateNoteFrontmatter`

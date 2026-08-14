@@ -264,6 +264,7 @@ import {
   noteTitle,
   type Frontmatter,
 } from "../lib/frontmatter";
+import { parseEventFilename, formatEventFilename } from "../lib/event-filename";
 import yaml from "js-yaml";
 
 /** Try writing the seed at `<dir>/<basename>`; if a file already exists
@@ -3411,7 +3412,7 @@ export function CardGrid() {
             title: r.title,
           };
           const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
-          await uniqueWrite(dir, basenameForEvent(r.date, r.title), joinFrontmatter(fm, body));
+          await uniqueWrite(dir, basenameForEvent({ date: r.date, time: r.time, endTime: r.endTime, endDate: r.endDate }, r.title), joinFrontmatter(fm, body));
         } catch (e) {
           noteErrors.push(`${r.title}: ${String(e)}`);
         }
@@ -3746,7 +3747,7 @@ export function CardGrid() {
         };
         const seedBody = `# ${c.title}\n`;
         try {
-          const path = await uniqueWrite(c.dir, basenameForEvent(c.date, c.title), joinFrontmatter(fm, seedBody));
+          const path = await uniqueWrite(c.dir, basenameForEvent({ date: c.date, time: c.time, endTime: c.endTime, endDate: c.endDate }, c.title), joinFrontmatter(fm, seedBody));
           if (cancelled) return;
           created.push({
             id: newNoteId(), path, filename: path.split("/").pop() ?? "",
@@ -3865,7 +3866,7 @@ export function CardGrid() {
       const root = await vaultRoot();
       const createEvent = async (e: SpacetimeEvent) => {
         const dir = (e.folder && noteDirByRef(e.folder)) || root;
-        await uniqueWrite(dir, basenameForEvent(e.date, e.title), joinFrontmatter(fmFor(e), e.title ? `# ${e.title}\n` : ""));
+        await uniqueWrite(dir, basenameForEvent({ date: e.date, time: e.time, endTime: e.endTime, endDate: e.endDate }, e.title), joinFrontmatter(fmFor(e), e.title ? `# ${e.title}\n` : ""));
       };
       for (const op of syncReview.plan.events) {
         if (op.kind === "delete") {
@@ -4116,32 +4117,30 @@ export function CardGrid() {
       ) ?? null);
       return;
     }
-    // mw event: the calendar reads the title from spacetime.mw, so the rename
-    // must update the mw event first (source of truth for display).
+    // An event's title is its note's `# ` header (buildSpacetime reads the H1 first),
+    // so renaming = rewriting the H1 (+ keep a `title:` in sync). No spacetime.mw write
+    // — the calendar derives from the file. The file NAME's label is only a fallback,
+    // left as-is so a title edit doesn't churn the path (and remount the card).
     const chip = eventChipRef.current.get(path);
-    if (!chip) return;
-    const { ev, notePath } = chip;
-    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, { title: cleanTitle }));
-    // If a backing note exists, also rewrite its frontmatter title + H1 so the
-    // note's own content matches the renamed event.
-    if (notePath) {
-      const raw = await readVault(toVaultRel(notePath)).catch(() => "");
-      if (raw) {
-        const { frontmatter, body } = splitFrontmatter(raw);
-        const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
-        const lines = body.split(/\r?\n/);
-        let h1Replaced = false;
-        for (let i = 0; i < lines.length; i++) {
-          const t = lines[i].trim();
-          if (!t) continue;
-          if (t.startsWith("#")) { lines[i] = `# ${cleanTitle}`; h1Replaced = true; }
-          break;
-        }
-        const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
-        await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, newBody));
+    if (!chip?.notePath) return;
+    const { notePath } = chip;
+    const raw = await readVault(toVaultRel(notePath)).catch(() => "");
+    if (raw) {
+      const { frontmatter, body } = splitFrontmatter(raw);
+      const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
+      const lines = body.split(/\r?\n/);
+      let h1Replaced = false;
+      for (let i = 0; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (!t) continue;
+        if (t.startsWith("#")) { lines[i] = `# ${cleanTitle}`; h1Replaced = true; }
+        break;
       }
+      const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
+      await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, newBody));
+      await reloadNotes();
     }
-  }, [applyMwEdit]);
+  }, [reloadNotes]);
 
   /** Change a calendar event's start/end time (or flip it to all-day) from
    *  the action menu. spacetime.mw is the source of truth, so the mw event is
@@ -4167,31 +4166,13 @@ export function CardGrid() {
       setNotes((prev) => prev?.map((n) => n.path === split.file ? { ...n, body: nextBody } : n) ?? null);
       return;
     }
+    // Retime / all-day-toggle = RENAME the backing file to the new schedule (the file
+    // name is the source of truth). No spacetime.mw / frontmatter write.
     const chip = eventChipRef.current.get(path);
-    if (!chip) return;
-    const { ev, notePath } = chip;
-    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, {
-      time: startTime,
-      endTime,
-      ...(allDay ? { allDay: true } : {}),
-    }));
-    if (notePath) {
-      const raw = await readVault(toVaultRel(notePath)).catch(() => "");
-      if (raw) {
-        const { frontmatter, body } = splitFrontmatter(raw);
-        const nextFm: Frontmatter = { ...frontmatter };
-        if (allDay) {
-          nextFm.allDay = true;
-          delete nextFm.startTime; delete nextFm.endTime;
-        } else {
-          delete nextFm.allDay;
-          if (startTime) nextFm.startTime = startTime; else delete nextFm.startTime;
-          if (endTime) nextFm.endTime = endTime; else delete nextFm.endTime;
-        }
-        await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, body));
-      }
-    }
-  }, [applyMwEdit]);
+    if (!chip?.notePath) return;
+    await renameEventFile(chip.notePath, { startTime, endTime, allDay });
+    await reloadNotes();
+  }, [reloadNotes]);
 
   const openEventNote = useCallback((path: string) => {
     if (path.startsWith("mw-event:")) {
@@ -4216,7 +4197,7 @@ export function CardGrid() {
         };
         const notePath = await uniqueWrite(
           dir,
-          basenameForEvent(mwEv.date, mwEv.title),
+          basenameForEvent({ date: mwEv.date, time: mwEv.time, endTime: mwEv.endTime, endDate: mwEv.endDate }, mwEv.title),
           joinFrontmatter(fm, `# ${mwEv.title}\n`),
         );
         navigateAndFocus(notePath);
@@ -4264,19 +4245,14 @@ export function CardGrid() {
     const prompt = createMdPrompt;
     if (!prompt) return;
     const root = await vaultRoot();
-    const frontmatter: Frontmatter = {
-      date: prompt.date,
-      allDay: prompt.allDay,
-      ...(prompt.startTime ? { startTime: prompt.startTime } : {}),
-      ...(prompt.endTime ? { endTime: prompt.endTime } : {}),
-      ...(prompt.endDate ? { endDate: prompt.endDate } : {}),
-    };
+    // Schedule (date/time) lives in the FILE NAME (built below) — not frontmatter.
+    const frontmatter: Frontmatter = {};
     // Placement is the directory's job — the folder choice picks the
     // write dir, it is never written into YAML.
     const writeDir = (prompt.folder && noteDirByRef(prompt.folder)) || root;
     const seedBody = `# ${prompt.title}\n`;
     const content = joinFrontmatter(frontmatter, seedBody);
-    const basename = basenameForEvent(prompt.date, prompt.title);
+    const basename = basenameForEvent({ date: prompt.date, time: prompt.startTime, endTime: prompt.endTime, endDate: prompt.endDate }, prompt.title);
     const path = await uniqueWrite(writeDir, basename, content);
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
@@ -4597,10 +4573,23 @@ export function CardGrid() {
     // Seed the body with an H1 when a title was supplied (calendar create
     // popups send one). Empty title = blank body, as before.
     const seedBody = title ? `# ${title}\n` : "";
-    const content = joinFrontmatter(frontmatter, seedBody);
     const titleForName = title || "Untitled";
-    const date = typeof frontmatter.date === "string" ? frontmatter.date : undefined;
-    const basename = basenameForEvent(date, titleForName);
+    // An event's schedule lives in its FILE NAME now. If this create carries a date,
+    // encode date/time in the name and STRIP those fields from the written frontmatter
+    // (no longer read). A date-less create stays a plain note (no date prefix → not an
+    // event), instead of being stamped with today's date.
+    const isDatedEvent = typeof frontmatter.date === "string";
+    const sched = {
+      date: typeof frontmatter.date === "string" ? frontmatter.date : undefined,
+      time: typeof frontmatter.startTime === "string" ? frontmatter.startTime : undefined,
+      endTime: typeof frontmatter.endTime === "string" ? frontmatter.endTime : undefined,
+      endDate: typeof frontmatter.endDate === "string" ? frontmatter.endDate : undefined,
+    };
+    for (const f of ["date", "startTime", "endTime", "endDate", "allDay"] as const) delete frontmatter[f];
+    const content = joinFrontmatter(frontmatter, seedBody);
+    const basename = isDatedEvent
+      ? basenameForEvent(sched, titleForName)
+      : `${titleForName.replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled"}.md`;
     const path = await uniqueWrite(writeDir, basename, content);
     const filename = path.split("/").pop() ?? basename;
     setNotes((prev) => [
@@ -5382,32 +5371,61 @@ export function CardGrid() {
     ]);
   }, [vaultTaxonomy]);
 
+  // Rename an event's BACKING FILE to encode a new schedule (and/or title) per the
+  // dated-filename convention — the source of truth now. `patch` is the CalendarView
+  // shape (date / startTime / endTime / endDate / allDay). Returns the new abs path.
+  async function renameEventFile(notePath: string, patch: Frontmatter, newTitle?: string): Promise<string | null> {
+    const rel = toVaultRel(notePath);
+    const parts = rel.split("/");
+    const oldName = parts.pop() ?? "";
+    const dir = parts.join("/");
+    const extM = /^(.*?)(\.chat)?\.md$/i.exec(oldName);
+    if (!extM) return null;
+    const oldBase = extM[1]; const ext = `${extM[2] ?? ""}.md`;
+    const cur = parseEventFilename(oldBase);
+    let date = cur?.date;
+    let time = cur?.time;
+    let endTime = cur?.endTime;
+    let endDate = cur?.endDate;
+    let label = cur?.title ?? oldBase;
+    if ("date" in patch && typeof patch.date === "string") date = patch.date.slice(0, 10);
+    if ("startTime" in patch) time = patch.startTime === undefined ? undefined : String(patch.startTime).slice(0, 5);
+    if ("endTime" in patch)   endTime = patch.endTime === undefined ? undefined : String(patch.endTime).slice(0, 5);
+    if ("endDate" in patch)   endDate = patch.endDate === undefined ? undefined : String(patch.endDate).slice(0, 10);
+    if (patch.allDay === true) { time = undefined; endTime = undefined; }
+    if (patch.allDay === false && !time) time = "12:00"; // becoming timed needs a time
+    if (typeof newTitle === "string") label = newTitle.trim();
+    if (!date) return null;
+    const desiredBase = formatEventFilename({ date, time, endTime, endDate }, label);
+    let newName = `${desiredBase}${ext}`;
+    if (newName === oldName) return notePath;
+    let newRel = dir ? `${dir}/${newName}` : newName;
+    let n = 2;
+    while (newRel !== rel && (await vaultFs.exists(newRel))) {
+      newName = `${desiredBase} ${n}${ext}`;
+      newRel = dir ? `${dir}/${newName}` : newName;
+      n++;
+    }
+    await vaultFs.rename(rel, newRel);
+    return join(await vaultRoot(), newRel);
+  }
+
   const updateNoteFrontmatter = useCallback(async (path: string, patch: Frontmatter) => {
     // Todo.txt items are a parallel calendar source — route to the line writer.
-    // The patch shape from CalendarView is the same (date / startTime / endTime
-    // / endDate / allDay) but the writer is line-based, not YAML.
     if (isTodoTxtPath(path)) {
       await mutateTodoTxtFromPatch(path, patch);
       return;
     }
-    // Every other calendar chip is an mw event. Locate it via the chip map and
-    // apply the move/edit to spacetime.mw — the source of truth the calendar
-    // reads from. (Writing note frontmatter here would be ignored on re-render
-    // and the event would snap back to its mw position.)
+    // Calendar move / resize / all-day-toggle → RENAME the event's backing file to
+    // the new schedule (the file name is the source of truth). Note-less markwhen
+    // events have no file to rename — skip.
     const chip = eventChipRef.current.get(path);
-    if (!chip) return;
-    const { ev } = chip;
-    const next: Partial<SpacetimeEvent> = {};
-    if ("date" in patch)      next.date    = typeof patch.date === "string" ? patch.date : ev.date;
-    if ("startTime" in patch) next.time    = patch.startTime === undefined ? undefined : String(patch.startTime);
-    if ("endTime" in patch)   next.endTime = patch.endTime   === undefined ? undefined : String(patch.endTime);
-    if ("endDate" in patch)   next.endDate = patch.endDate   === undefined ? undefined : String(patch.endDate);
-    if (patch.allDay === true)  { next.allDay = true; next.time = undefined; next.endTime = undefined; }
-    if (patch.allDay === false) { next.allDay = undefined; }
-    await applyMwEdit((mw) => mwUpdateEvent(mw, ev.date, ev.title, next));
+    if (!chip?.notePath) return;
+    await renameEventFile(chip.notePath, patch);
+    await reloadNotes();
     // mutateTodoTxtFromPatch is a stable useCallback declared just below; it is
     // intentionally omitted from deps to avoid a temporal-dead-zone reference.
-  }, [applyMwEdit]);
+  }, [reloadNotes]);
 
   /** Apply a CalendarView-shape patch to a single todo.txt line.
    *  Reads the file fresh so concurrent edits don't clobber. */
