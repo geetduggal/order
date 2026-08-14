@@ -13,14 +13,38 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
-### Voice
-- Lock Mode keeps your **selected cloud voice** instead of occasionally dropping to
-  the system voice — a transient network blip while locked now retries the synth a
-  few times before any fallback.
+## [2026.8.6] - 2026-08-14
 
-### Calendar
+The event model becomes filename-first, plus a round of hands-free voice fixes.
+
+### Calendar / structure
+- **An event's date & time live in its FILE NAME**, not YAML frontmatter:
+  `YYYY-MM-DD Title` (all-day), `YYYY-MM-DD HHMM Title` (timed, defaults to 30 min),
+  `YYYY-MM-DD HHMM-HHMM Title` (same-day range), `YYYY-MM-DD - YYYY-MM-DD Title`
+  (multi-day). Calendars derive from the name; creating an event names the file and
+  dragging/resizing renames it. A one-time migration moved every event over and
+  stripped the old `date`/`startTime`/`endTime`/`endDate`/`allDay` fields.
 - **Month view event text now scales with zoom** (it was pinned by FullCalendar's
   injected day-grid styles).
+
+### Voice
+- **The spoken reply comes out of the loudspeaker again.** iOS `VoiceChat` mode had
+  been routing it to the quiet earpiece; it now forces the speaker on the built-in
+  route (and leaves AirPods / wired alone).
+- **Choose your audio output** — Settings → Voice & Agent → *Voice output*
+  (Auto / Speaker / Earpiece).
+- **Approve changes hands-free** — the agent speaks a brief summary of a pending
+  change (not the full diff) and you approve or skip by voice ("yes" / "no"). The
+  manual Approve/Reject buttons still work.
+- Lock Mode keeps your **selected cloud voice** instead of occasionally dropping to
+  the system voice — a transient network blip while locked now retries before any
+  fallback.
+
+### Themes
+- Buttons stay **readable in the mono themes** — coral/royal fills used hardcoded
+  white text, unreadable on the terminal/WordPerfect yellow and Christmas green.
+  New `--on-coral` / `--on-royal` per-theme text colors fix the voice-chat, settings,
+  and sidebar buttons.
 
 ## [2026.8.5] - 2026-08-12
 
