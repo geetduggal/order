@@ -16,6 +16,26 @@ function isTauri(): boolean {
 
 export function ttsSupported(): boolean { return isTauri(); }
 
+// ---- Audio OUTPUT routing (iOS): where the spoken reply plays ----
+// "auto" = loud speaker on the built-in route, but keep AirPods/wired if connected;
+// "speaker" = always the built-in speaker; "receiver" = the earpiece.
+export type AudioOutput = "auto" | "speaker" | "receiver";
+const AUDIO_OUTPUT_KEY = "order.audioOutput";
+const outPref = (v: AudioOutput): number => (v === "speaker" ? 1 : v === "receiver" ? 2 : 0);
+export function getAudioOutput(): AudioOutput {
+  const v = lsGet(AUDIO_OUTPUT_KEY);
+  return v === "speaker" || v === "receiver" ? v : "auto";
+}
+export function setAudioOutput(v: AudioOutput): void {
+  lsSet(AUDIO_OUTPUT_KEY, v);
+  void invoke("set_audio_output", { pref: outPref(v) }).catch(() => {});
+}
+/** Push the saved preference to the native side — call once on startup (the Rust
+ *  default resets to auto each launch). */
+export function applyAudioOutput(): void {
+  void invoke("set_audio_output", { pref: outPref(getAudioOutput()) }).catch(() => {});
+}
+
 // Background-execution assertion for a voice turn (#27). Keeps the app running
 // through the "thinking" gap (mic off, nothing playing) so a locked/backgrounded
 // phone doesn't suspend mid-turn and drop the reply. begin/end are idempotent in

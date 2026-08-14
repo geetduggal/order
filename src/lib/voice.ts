@@ -6,7 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getOpenaiKey, ttsSupported } from "./tts";
+import { getOpenaiKey, ttsSupported, applyAudioOutput } from "./tts";
 
 /** DEBUG: append a line to the shared voice-trace log (same file the Rust loop
  *  writes) so UI decisions interleave with the loop's events in one timeline. */
@@ -73,6 +73,7 @@ export function cancelListen(): Promise<void> {
  * talking. Idempotent; pair with `stopListenLoop`.
  */
 export function startListenLoop(): Promise<void> {
+  applyAudioOutput(); // push the saved output routing before the session activates
   return invoke("stt_start_loop", {
     engine: getSttEngine(),
     openaiKey: getOpenaiKey(),
