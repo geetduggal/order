@@ -8,7 +8,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react";
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
-import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected, getUnrealKey, setUnrealKey, getUnrealSelected, setUnrealSelected, UNREAL_VOICES } from "../lib/tts";
+import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected, getUnrealKey, setUnrealKey, getUnrealSelected, setUnrealSelected, UNREAL_VOICES, getAudioOutput, setAudioOutput, type AudioOutput } from "../lib/tts";
 import { getAgentKey, setAgentKey } from "../lib/agent";
 import { getSttEngine, setSttEngine, type SttEngine } from "../lib/voice";
 import { costBreakdown, formatUSD, resetUsage, USAGE_EVENT } from "../lib/usage";
@@ -47,6 +47,7 @@ export function SettingsPanel({
   const [elevenKey, setElevenKeyState] = useState<string>(() => getElevenKey());
   const [anthropicKey, setAnthropicKeyState] = useState<string>(() => getAgentKey());
   const [sttEngine, setSttEngineState] = useState<SttEngine>(() => getSttEngine());
+  const [audioOut, setAudioOutState] = useState<AudioOutput>(() => getAudioOutput());
   // Re-render the usage meter whenever a chat/dictation/read-aloud is recorded.
   const [, setUsageTick] = useState(0);
   useEffect(() => {
@@ -537,6 +538,16 @@ export function SettingsPanel({
                   onChange={() => { setSttEngineState("native"); setSttEngine("native"); }} />
                 <span>On-device (Apple)</span>
               </label>
+            </div>
+            <div className="settings-stt-engine" style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 8, fontSize: "0.9rem", flexWrap: "wrap" }}>
+              <span style={{ color: "var(--ink-faint)" }}>Voice output:</span>
+              {([["auto", "Auto"], ["speaker", "Speaker"], ["receiver", "Earpiece"]] as [AudioOutput, string][]).map(([val, label]) => (
+                <label key={val} style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
+                  <input type="radio" name="audio-output" checked={audioOut === val}
+                    onChange={() => { setAudioOutState(val); setAudioOutput(val); }} />
+                  <span>{label}</span>
+                </label>
+              ))}
             </div>
           </span>
           <span className="settings-hint">

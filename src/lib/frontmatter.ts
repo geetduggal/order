@@ -6,6 +6,7 @@
 // Obsidian / other tools to read.
 
 import yaml from "js-yaml";
+import { formatEventFilename } from "./event-filename";
 
 export type Frontmatter = Record<string, unknown>;
 
@@ -254,11 +255,17 @@ export function firstLineTitle(body: string): string | null {
   return null;
 }
 
-/** Filename for an event in the Obsidian Full Calendar convention:
- *  `YYYY-MM-DD Title.md` (date prefix + title). Unsafe filesystem
- *  characters in the title get replaced with `-`. */
-export function basenameForEvent(date: string | undefined, title: string): string {
-  const datePart = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoDate();
+/** Filename for an event under the dated-filename convention (the source of truth
+ *  for its schedule — see event-filename.ts): `YYYY-MM-DD Title.md` all-day,
+ *  `YYYY-MM-DD HHMM Title.md` timed, `HHMM-HHMM` a range, `YYYY-MM-DD - YYYY-MM-DD`
+ *  a multi-day span. Pass a schedule object to encode the time; a bare date string
+ *  is treated as an all-day event (back-compat). Unsafe FS chars in the title → `-`. */
+export function basenameForEvent(
+  sched: string | undefined | { date?: string; time?: string; endTime?: string; endDate?: string },
+  title: string,
+): string {
+  const s = (sched && typeof sched === "object") ? sched : { date: sched };
+  const date = s.date && /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : isoDate();
   const safe = (title || "Untitled").replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
-  return `${datePart} ${safe}.md`;
+  return `${formatEventFilename({ date, time: s.time, endTime: s.endTime, endDate: s.endDate }, safe)}.md`;
 }
