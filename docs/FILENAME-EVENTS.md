@@ -50,7 +50,17 @@ A **timed multi-day** range is deliberately out of scope.
    The note keeps its body + other frontmatter; only the name changes.
 7. **Invitees** stay in frontmatter (`invitees:`) — orthogonal to scheduling.
 
-### Migration (one-time, destructive → needs the backup)
+### Migration — APPLIED (2026-08-13)
+
+`scripts/migrate-filename-events.mjs --apply` (idempotent; run to convergence) renamed
+every event note to the convention and stripped `date/startTime/endTime/endDate/allDay`:
+**1699 renamed, 1406 frontmatter-stripped, 450 dated-reference notes → noon, 2 wikilinks
+updated.** A real event is `allDay:true` OR a `startTime` — a note with only a `date:`
+(Readwise/article save-dates) is NOT an event and was left untouched. Chats and season
+notes are excluded. Long names are trimmed under the 255-byte limit. Vault backed up
+(`order-vault-backup-preFNmig-20260813-230820.tar.gz`).
+
+### Migration details
 8. For every note with event frontmatter (~2419): compute the convention name from
    its frontmatter, **rename** the file (dedupe collisions with a numeric suffix),
    and **strip** `date/startTime/endTime/endDate/allDay` from the YAML. Update
