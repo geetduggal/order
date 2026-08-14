@@ -57,18 +57,19 @@ A **timed multi-day** range is deliberately out of scope.
    inbound `[[wikilinks]]` to the renamed files. Season notes keep their `date`
    (seasons are a separate, coarse concept — see below).
 
-## Key decision to confirm (semantic expansion)
+## Decision (settled): dated reference notes → NOON events
 
-Under the rule, **any date-prefixed note is an event**. The vault has **~510 notes
-with a dated name but no event frontmatter** (journal/log entries). Today those are
-"dated reference notes" and DON'T show on the calendar; after this change they
-become **all-day events**. Options:
+The vault has **~510 notes with a dated name but no event frontmatter** (journal/log
+entries). The migration converts each to a **12:00 (noon) timed event** by renaming
+`YYYY-MM-DD Title.md` → `YYYY-MM-DD 1200 Title.md`. So:
 
-- **(A) Follow the rule as written** — they become all-day events. Simplest; matches
-  "a calendar that is your notes." Risk: ~510 extra all-day items across the calendar.
-- **(B) Keep a lightweight opt-out** — e.g. only treat a dated note as an event when
-  it's the intent (some minimal marker), so pure reference notes stay off the
-  calendar. Reintroduces a small piece of frontmatter, softening "filename is truth."
+- Genuinely all-day events (had `allDay: true`) → date-only name (`YYYY-MM-DD Title`).
+- Timed events → `YYYY-MM-DD HHMM …` from their `startTime` (+ `endTime`/range).
+- Bare dated reference notes → `YYYY-MM-DD 1200 …` (a midday point, not an all-day
+  banner), so they appear on the calendar without swamping the all-day row.
+
+The read-side rule is unchanged (`date-only = all-day`); only the one-time migration
+picks noon for these existing bare-dated notes.
 
 Seasons are unaffected either way (they remain `Seasons.md` / `season: true`, which
 still needs a `date:` — the one scheduling field that stays in frontmatter, because a

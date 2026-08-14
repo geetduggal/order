@@ -14,6 +14,7 @@ import type { VaultTaxonomy, AreaNode, CategoryNode } from "./taxonomy";
 import { type Frontmatter, toIsoDateValue, noteTitle, firstMajorHeader } from "./frontmatter";
 import { parseSeasons, isSeasonsFile } from "./seasons";
 import { parseMarkwhenEvents } from "./markwhen";
+import { parseEventFilename } from "./event-filename";
 
 /** True for a spacetime SOURCE file — the canonical timeline description Order
  *  reads events + hierarchy from. Historically a single `spacetime.mw`; the
@@ -158,24 +159,22 @@ export function buildSpacetime(
 
   const byKey = new Map<string, SpacetimeEvent>();
   for (const n of notes) {
+    // SOURCE OF TRUTH = THE FILE NAME. An event's date/time is parsed from the
+    // basename per the dated-filename convention (see event-filename.ts); YAML date
+    // fields are no longer read. Only markdown notes are events; strip `.md` (and a
+    // `.chat` sub-extension) before parsing.
+    if (!/\.md$/i.test(n.filename)) continue;
+    const base = n.filename.replace(/\.md$/i, "").replace(/\.chat$/i, "");
+    const parsed = parseEventFilename(base);
+    if (!parsed) continue; // not a dated name → not an event
     const fm = n.frontmatter;
-    const date = toIsoDateValue(fm.date);
-    if (!date) continue;
-    const startRaw = typeof fm.startTime === "string" ? fm.startTime : undefined;
-    const time = startRaw && /^\d{2}:\d{2}$/.test(startRaw) ? startRaw : undefined;
-    const endRaw = typeof fm.endTime === "string" ? fm.endTime : undefined;
-    const endTime = endRaw && /^\d{2}:\d{2}$/.test(endRaw) ? endRaw : undefined;
-    const allDay = fm.allDay === true || (!!startRaw && !time);
-    if (!allDay && !time) continue; // dated reference note, not an event
-    const endDate = typeof fm.endDate === "string" ? String(fm.endDate).slice(0, 10) : undefined;
+    const { date, time, endTime, endDate, allDay } = parsed;
     const folder = folderOf(n);
-    // Event titles follow the note's first `# ` header (the same source the
-    // card / list / wikilink renders use), so an event's name reflects how the
-    // note actually reads — not a possibly-stale frontmatter `title:`. Falls
-    // back to the frontmatter/filename derivation when there's no H1.
-    const title = firstMajorHeader(n.body) ?? noteTitle(fm, n.body, n.filename.replace(/\.md$/i, ""));
-    // Invitees live in the note's OWN frontmatter now (decoupled model), not on a
-    // spacetime.md line. Accept `invitees` (canonical) or `recipients`/`emails`.
+    // Title prefers the note's first `# ` header (how the note actually reads), then
+    // the filename's label, then the derived fallback.
+    const title = firstMajorHeader(n.body) ?? (parsed.title || noteTitle(fm, n.body, base));
+    // Invitees live in the note's OWN frontmatter (`invitees` / `recipients` /
+    // `emails`) — orthogonal to scheduling, which is the filename.
     const rawInvitees = fm.invitees ?? fm.recipients ?? fm.emails;
     const invitees = Array.isArray(rawInvitees)
       ? rawInvitees.filter((x): x is string => typeof x === "string" && x.includes("@"))

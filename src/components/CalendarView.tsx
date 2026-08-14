@@ -26,6 +26,7 @@ import type {
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
+import { parseEventFilename } from "../lib/event-filename";
 import { overListZone, emitEventToList, highlightListZone, clearListZoneHighlight } from "../lib/list-cal-dnd";
 
 // Cancel text selection while dragging an event (module-level = stable ref).
@@ -87,24 +88,21 @@ function addOneDayIso(iso: string): string {
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
   const events: EventInput[] = [];
   for (const note of notes) {
-    const date = toIsoDateValue(note.frontmatter.date);
-    if (!date) continue;
+    // SOURCE OF TRUTH = THE FILE NAME. Date/time come from the basename per the
+    // dated-filename convention (see event-filename.ts), not YAML frontmatter.
+    if (!/\.md$/i.test(note.filename)) continue;
+    const base = note.filename.replace(/\.md$/i, "").replace(/\.chat$/i, "");
+    const parsed = parseEventFilename(base);
+    if (!parsed) continue; // not a dated name → not a calendar event
+    const date = parsed.date;
+    const allDay = parsed.allDay;
+    const startTime = parsed.time ?? null;
+    const endTime = parsed.endTime ?? null;
+    // Multi-day all-day range end (inclusive in the convention; FullCalendar's
+    // all-day `end` is exclusive, so +1 day below). Timed events are same-day only.
+    const endDate = parsed.endDate ?? null;
 
-    const allDay = note.frontmatter.allDay === true;
-    const startTime = typeof note.frontmatter.startTime === "string"
-      ? note.frontmatter.startTime
-      : null;
-    const endTime = typeof note.frontmatter.endTime === "string"
-      ? note.frontmatter.endTime
-      : null;
-    // Optional `endDate` (Obsidian Full Calendar convention) — present
-    // on multi-day events. The value the user writes is INCLUSIVE
-    // (e.g. a Mon–Wed event has endDate: Wed). For FullCalendar's
-    // all-day `end` we need exclusive, so we add a day before
-    // handing it over. ISO date or full datetime both work.
-    const endDate = toIsoDateValue(note.frontmatter.endDate);
-
-    const title = note.title || note.filename;
+    const title = note.title || parsed.title || base;
     const completed = note.frontmatter.completed === true;
     // Events wear the same chrome as cards (card surface + hairline via
     // the --fc-event-* tokens in styles.css) — no per-event inline
@@ -132,24 +130,13 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
       });
       continue;
     }
-    // Date but no startTime AND no allDay flag: this is a "dated
-    // reference" (Readwise article, imported note, etc.), not a
-    // calendar event. Skip — otherwise hundreds of articles bunched
-    // at midnight crowd the all-day band on the same calendar day.
-    if (!startTime) continue;
-
-    // Timed events. If `endDate` is set and differs from `date`, the
-    // event spans multiple days — combine endDate with endTime (or
-    // fall back to startTime so the event has a positive duration).
-    // If endTime ≤ startTime (e.g. 23:00 → 00:00 crossing midnight)
-    // and no explicit endDate was provided, advance the end to the
-    // next calendar day so FullCalendar renders a positive-duration
-    // event instead of collapsing it.
-    const endIsoTime = endTime ?? startTime;
-    let endDayIso = endDate && endDate !== date ? endDate : date;
-    if (!endDate && endTime && endTime <= startTime) {
-      endDayIso = addOneDayIso(date);
-    }
+    // Timed events (same-day; the convention has no timed multi-day range).
+    // No explicit end time → default to a DEFAULT_EVENT_MINUTES (30-min) block, so a
+    // `YYYY-MM-DD HHMM Title` event reads as a real half-hour slot, not a zero-width
+    // sliver. An explicit end that is ≤ the start crosses midnight → end next day.
+    if (!startTime) continue; // unreachable (parser gives time when not all-day), defensive
+    const endIsoTime = endTime ?? addMinutesToIsoTime(startTime, DEFAULT_EVENT_MINUTES);
+    const endDayIso = endTime && endTime <= startTime ? addOneDayIso(date) : date;
     events.push({
       id: note.path,
       title,
