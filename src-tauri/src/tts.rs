@@ -19,6 +19,21 @@ pub struct VoiceInfo {
     pub quality: u8,
 }
 
+/// Audio OUTPUT routing preference for the voice loop:
+///   0 = auto  — the loud built-in speaker when on the built-in route, but keep an
+///               external route (AirPods / wired) if one is connected;
+///   1 = speaker — always the built-in speaker;
+///   2 = receiver — the earpiece (quiet, phone-to-ear).
+/// iOS `VoiceChat` mode otherwise pins playback to the quiet earpiece even with the
+/// DefaultToSpeaker option — this is why the spoken reply wasn't coming out loud.
+pub static AUDIO_OUTPUT_PREF: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Set the voice output routing (from Settings). Applied on the next session setup.
+#[tauri::command]
+pub fn set_audio_output(pref: u8) {
+    AUDIO_OUTPUT_PREF.store(pref, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod imp {
     use super::VoiceInfo;
@@ -317,10 +332,43 @@ mod imp {
             let _: objc2::runtime::Bool = msg_send![session, setMode: AVAudioSessionModeVoiceChat, error: &mut merr];
             let mut err2: *mut AnyObject = std::ptr::null_mut();
             let _: objc2::runtime::Bool = msg_send![session, setActive: true, error: &mut err2];
+            route_output(session);
         }
     }
     #[cfg(not(target_os = "ios"))]
     fn activate_audio_session() {}
+
+    /// Force the loud speaker when VoiceChat mode would otherwise pin playback to the
+    /// quiet earpiece (Receiver). Honors `AUDIO_OUTPUT_PREF`; in auto it leaves an
+    /// external route (AirPods / wired) alone. THE fix for "the reply didn't come out
+    /// of the iPhone speaker."
+    #[cfg(target_os = "ios")]
+    unsafe fn route_output(session: *mut AnyObject) {
+        use std::sync::atomic::Ordering;
+        let (apply, ov): (bool, usize) = match super::AUDIO_OUTPUT_PREF.load(Ordering::Relaxed) {
+            1 => (true, 1), // speaker: force built-in speaker
+            2 => (true, 0), // receiver: OverrideNone → VoiceChat's earpiece default
+            _ => {          // auto: speaker only if on the built-in Receiver, no headset
+                let route: *mut AnyObject = msg_send![session, currentRoute];
+                if route.is_null() { return; }
+                let outs: *mut AnyObject = msg_send![route, outputs];
+                let cnt: usize = if outs.is_null() { 0 } else { msg_send![outs, count] };
+                let (mut recv, mut ext) = (false, false);
+                for i in 0..cnt {
+                    let p: *mut AnyObject = msg_send![outs, objectAtIndex: i];
+                    if p.is_null() { continue; }
+                    let pt: Retained<NSString> = msg_send![p, portType];
+                    let s = pt.to_string();
+                    if s == "Receiver" { recv = true; } else if s != "Speaker" { ext = true; }
+                }
+                (recv && !ext, 1)
+            }
+        };
+        if apply {
+            let mut oerr: *mut AnyObject = std::ptr::null_mut();
+            let _: objc2::runtime::Bool = msg_send![session, overrideOutputAudioPort: ov, error: &mut oerr];
+        }
+    }
 
     // ---- background-execution assertion (#27) ---------------------------------
     // UIBackgroundModes=audio only keeps the app alive while audio is actually

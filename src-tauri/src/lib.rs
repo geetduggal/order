@@ -275,6 +275,7 @@ pub fn run() {
             tts::tts_voices,
             tts::tts_speak,
             tts::tts_stop,
+            tts::set_audio_output,
             tts::tts_is_speaking,
             tts::voice_keepalive_begin,
             tts::voice_keepalive_end,

@@ -503,6 +503,36 @@ mod apple {
         let _: objc2::runtime::Bool = msg_send![session, setMode: AVAudioSessionModeVoiceChat, error: &mut merr];
         let mut err2: *mut AnyObject = std::ptr::null_mut();
         let _: objc2::runtime::Bool = msg_send![session, setActive: true, error: &mut err2];
+        // VoiceChat mode pins playback to the quiet earpiece (Receiver) even with
+        // DefaultToSpeaker — force the loud speaker per AUDIO_OUTPUT_PREF (auto leaves
+        // an external route alone). Mirrors tts::imp::route_output.
+        {
+            use std::sync::atomic::Ordering;
+            let (apply, ov): (bool, usize) = match crate::tts::AUDIO_OUTPUT_PREF.load(Ordering::Relaxed) {
+                1 => (true, 1),
+                2 => (true, 0),
+                _ => {
+                    let route: *mut AnyObject = msg_send![session, currentRoute];
+                    if route.is_null() { (false, 0) } else {
+                        let outs: *mut AnyObject = msg_send![route, outputs];
+                        let cnt: usize = if outs.is_null() { 0 } else { msg_send![outs, count] };
+                        let (mut recv, mut ext) = (false, false);
+                        for i in 0..cnt {
+                            let p: *mut AnyObject = msg_send![outs, objectAtIndex: i];
+                            if p.is_null() { continue; }
+                            let pt: Retained<NSString> = msg_send![p, portType];
+                            let s = pt.to_string();
+                            if s == "Receiver" { recv = true; } else if s != "Speaker" { ext = true; }
+                        }
+                        (recv && !ext, 1)
+                    }
+                }
+            };
+            if apply {
+                let mut oerr: *mut AnyObject = std::ptr::null_mut();
+                let _: objc2::runtime::Bool = msg_send![session, overrideOutputAudioPort: ov, error: &mut oerr];
+            }
+        }
         // Ask for mic permission and wait (block until the user has decided once).
         let (tx, rx) = sync_channel::<bool>(1);
         let tx2 = tx.clone();

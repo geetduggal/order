@@ -49,6 +49,11 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   --royal-soft: #c8d4ee;  /* more saturated wash for chips / today / hover */
   --coral:      #ff5a48;  /* a touch more saturated for chrome accents */
   --coral-soft: #ffc5b6;  /* deeper coral wash so today / focus reads strongly */
+  --on-coral:   #ffffff;  /* readable text/icon color ON a --coral fill (themes with a
+                             light coral — terminal/wordperfect yellow, christmas green —
+                             override this to a dark color so labels stay legible). */
+  --on-royal:   #ffffff;  /* same, for text ON a --royal fill (terminal/wordperfect
+                             have a white royal, so they override this to dark). */
 
   /* Text selection + search highlight. Defined once in terms of each
      theme's own accent/background so every theme gets a legible pair:
@@ -248,6 +253,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   --royal:      #ffffff;
   --royal-soft: #2a2ac4;
   --coral:      #ffff55; /* classic DOS yellow accent */
+  --on-coral:   #000000; /* black on the yellow fill */
+  --on-royal:   #000000; /* royal is white here — dark text on it */
   --coral-soft: #3a3a8a;
 }
 
@@ -271,6 +278,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   --royal-soft: #1a1a1a;
   --coral:      #ffff55; /* keep the DOS yellow accent */
   --coral-soft: #2a2a1a;
+  --on-coral:   #000000; /* black on the yellow fill (white was unreadable) */
+  --on-royal:   #000000; /* royal is white here — dark text on it */
 }
 
 /* Typewriter: same idea as Terminal — pure mono everywhere, no
@@ -331,6 +340,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   --royal:      #ff2436; /* vivid christmas red */
   --royal-soft: #6e0f17;
   --coral:      #20d65e; /* vivid bright green */
+  --on-coral:   #06210f; /* dark green-black on the bright-green fill */
   --coral-soft: #0a4423;
 }
 
@@ -2623,7 +2633,7 @@ iframe.order-youtube-embed {
 .box:hover .box-check,
 .box.checked .box-check { opacity: 1; }
 .box.checked .box-check {
-  background: var(--royal); border-color: var(--royal); color: #fff;
+  background: var(--royal); border-color: var(--royal); color: var(--on-royal, #fff);
 }
 .box.coral.checked .box-check {
   background: var(--coral); border-color: var(--coral);
@@ -3803,7 +3813,7 @@ body.is-tile-dragging * {
   font-size: calc(11px * var(--text-scale, 1));
   cursor: pointer;
 }
-.sb-apply-pile:hover { background: var(--royal); color: #fff; }
+.sb-apply-pile:hover { background: var(--royal); color: var(--on-royal, #fff); }
 .sb-apply-pile svg { flex: 0 0 auto; }
 
 /* spacetime.yml sync review modal */
@@ -3823,7 +3833,7 @@ body.is-tile-dragging * {
 }
 .sync-deletes ul { margin: 4px 0 0; padding-left: 16px; }
 .settings-btn.is-danger { border-color: var(--coral); color: var(--coral); }
-.settings-btn.is-danger:hover { background: var(--coral); color: #fff; }
+.settings-btn.is-danger:hover { background: var(--coral); color: var(--on-coral, #fff); }
 
 /* Immersive spacetime.mw review dialog: fixed header + scrollable body +
    fixed footer, larger than the stock settings panel. */
@@ -3923,7 +3933,7 @@ body.is-tile-dragging * {
 }
 .mw-orphan-btn:hover { border-color: var(--ink); }
 .mw-orphan-btn.is-danger { border-color: var(--coral); color: var(--coral); }
-.mw-orphan-btn.is-danger:hover { background: var(--coral); color: #fff; }
+.mw-orphan-btn.is-danger:hover { background: var(--coral); color: var(--on-coral, #fff); }
 
 /* Subtle "spacetime changes pending" reminder. Fixed, low-key, but always
    reachable — clicking it reopens the review dialog. */
@@ -7820,7 +7830,7 @@ body.is-tile-dragging * {
 .order-fin-error { color: var(--coral); font-size: 13px; }
 .order-fin-ok { color: var(--royal); font-size: 13px; }
 .order-fin-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 18px 16px; }
-.settings-btn.is-primary { background: var(--royal); color: #fff; border-color: transparent; }
+.settings-btn.is-primary { background: var(--royal); color: var(--on-royal, #fff); border-color: transparent; }
 
 /* Theme the react-spreadsheet grid to Order's palette (it hard-codes
    white/black). The surface color is the card background: EMPTY cells stay
@@ -8314,7 +8324,7 @@ body.is-tile-dragging * {
 .order-chat-diff-add { color: #2f8a4e; white-space: pre-wrap; word-break: break-word; }
 .order-chat-approval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .order-chat-btn { border: 1px solid var(--card-border); background: var(--card-bg); color: var(--ink); padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; }
-.order-chat-btn.primary { background: var(--coral); border-color: var(--coral); color: #fff; font-weight: 600; }
+.order-chat-btn.primary { background: var(--coral); border-color: var(--coral); color: var(--on-coral, #fff); font-weight: 600; }
 .order-chat-btn.ghost { background: none; color: var(--ink-faint); }
 .order-chat-btn:hover { filter: brightness(1.05); }
 
@@ -8322,14 +8332,14 @@ body.is-tile-dragging * {
 .order-chat-input { display: flex; gap: 8px; align-items: flex-end; padding-top: 8px; border-top: 1px solid var(--card-border); }
 .order-chat-input textarea { flex: 1 1 auto; resize: none; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); color: var(--ink); padding: 9px 11px; font: inherit; font-size: calc(15px * var(--text-scale, 1)); line-height: 1.5; }
 .order-chat-input textarea:focus { outline: none; border-color: color-mix(in srgb, var(--coral) 50%, var(--card-border)); }
-.order-chat-send { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; border: none; background: var(--coral); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.order-chat-send { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; border: none; background: var(--coral); color: var(--on-coral, #fff); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .order-chat-send:disabled { opacity: 0.4; cursor: default; }
 
 /* ---- Voice chat controls ----------------------------------------------- */
 .order-chat-voice { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--card-border); }
 .order-chat-mic { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--coral); background: color-mix(in srgb, var(--coral) 10%, var(--card-bg)); color: var(--coral); font-size: 0.95rem; font-weight: 600; cursor: pointer; }
 .order-chat-mic:disabled { opacity: 0.45; cursor: default; }
-.order-chat-mic.active { background: var(--coral); color: #fff; border-color: var(--coral); }
+.order-chat-mic.active { background: var(--coral); color: var(--on-coral, #fff); border-color: var(--coral); }
 .order-chat-mic.active.mode-listening { animation: order-chat-pulse 1.6s ease-in-out infinite; }
 @keyframes order-chat-pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--coral) 55%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--coral) 0%, transparent); } }
 .order-chat-voice-status { display: flex; align-items: center; gap: 10px; }
