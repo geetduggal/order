@@ -3173,13 +3173,13 @@ export function CardGrid() {
   // paint — no effect timing, no async gap, no dependency on note YAML.
   // Note frontmatter is irrelevant to what appears on the calendar.
   const mwEvents = useMemo<SpacetimeEvent[]>(() => {
-    // Match the ROOT spacetime.mw specifically — sub-folder .mw files (e.g.
-    // Craft/spacetime.mw) share the same filename but hold only a subset of
-    // events. Selecting by vault-relative path avoids grabbing the wrong one.
-    const mwNote = notes?.find((n) => toVaultRel(n.path) === spacetimeRootPathRef.current);
-    if (!mwNote?.body) return [];
-    return parseMarkwhenFormat(mwNote.body).events;
-  }, [notes]);
+    // SOURCE OF TRUTH = the filesystem. Events are DERIVED by buildSpacetime from
+    // each note's FILE NAME (see event-filename.ts) — not parsed from the generated
+    // spacetime.md, which is only an optional exported view and can be stale. This is
+    // what makes the calendar reflect the file names live.
+    if (!notes) return [];
+    return buildSpacetime(notes, vaultTaxonomy, parsedSpacetime, mwSources.length > 0 ? mwSources : undefined).events;
+  }, [notes, vaultTaxonomy, parsedSpacetime, mwSources]);
   const mwEventIndex = useMemo<Map<string, SpacetimeEvent>>(() => {
     const idx = new Map<string, SpacetimeEvent>();
     for (const ev of mwEvents) idx.set(`${ev.date}|${ev.title.toLowerCase()}`, ev);

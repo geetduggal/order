@@ -26,7 +26,6 @@ import type {
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
-import { parseEventFilename } from "../lib/event-filename";
 import { overListZone, emitEventToList, highlightListZone, clearListZoneHighlight } from "../lib/list-cal-dnd";
 
 // Cancel text selection while dragging an event (module-level = stable ref).
@@ -88,21 +87,18 @@ function addOneDayIso(iso: string): string {
 function notesToEvents(notes: NoteMeta[]): EventInput[] {
   const events: EventInput[] = [];
   for (const note of notes) {
-    // SOURCE OF TRUTH = THE FILE NAME. Date/time come from the basename per the
-    // dated-filename convention (see event-filename.ts), not YAML frontmatter.
-    if (!/\.md$/i.test(note.filename)) continue;
-    const base = note.filename.replace(/\.md$/i, "").replace(/\.chat$/i, "");
-    const parsed = parseEventFilename(base);
-    if (!parsed) continue; // not a dated name → not a calendar event
-    const date = parsed.date;
-    const allDay = parsed.allDay;
-    const startTime = parsed.time ?? null;
-    const endTime = parsed.endTime ?? null;
-    // Multi-day all-day range end (inclusive in the convention; FullCalendar's
-    // all-day `end` is exclusive, so +1 day below). Timed events are same-day only.
-    const endDate = parsed.endDate ?? null;
+    // These NoteMeta are SYNTHESIZED (in CardGrid) from the filename-derived events
+    // (buildSpacetime → markdownCalendarNotes) + todo.txt, so their frontmatter
+    // already reflects the file names — reading date/time here is correct. The file
+    // name is the source of truth one layer up, in buildSpacetime/event-filename.
+    const date = toIsoDateValue(note.frontmatter.date);
+    if (!date) continue;
+    const allDay = note.frontmatter.allDay === true;
+    const startTime = typeof note.frontmatter.startTime === "string" ? note.frontmatter.startTime : null;
+    const endTime = typeof note.frontmatter.endTime === "string" ? note.frontmatter.endTime : null;
+    const endDate = toIsoDateValue(note.frontmatter.endDate);
 
-    const title = note.title || parsed.title || base;
+    const title = note.title || note.filename;
     const completed = note.frontmatter.completed === true;
     // Events wear the same chrome as cards (card surface + hairline via
     // the --fc-event-* tokens in styles.css) — no per-event inline
