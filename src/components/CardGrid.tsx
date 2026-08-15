@@ -5606,6 +5606,23 @@ export function CardGrid() {
     color: folderColor(f.name, f.frontmatter.color),
   }));
 
+  // Same folders, but ordered by recency — the most-recently-touched folder
+  // (newest note mtime inside it) first. Powers the calendar event menu's
+  // "Move to folder" picker so the folders you're actually working in surface
+  // at the top; folders with no notes yet keep their taxonomy order at the end.
+  const folderRecency = new Map<string, number>();
+  for (const n of notes) {
+    const parts = n.path.split("/");
+    const folder = parts.length >= 2 ? parts[parts.length - 2] : null;
+    if (!folder) continue;
+    const prev = folderRecency.get(folder) ?? 0;
+    if (n.mtime > prev) folderRecency.set(folder, n.mtime);
+  }
+  const foldersByRecency = availableFolderRefs
+    .map((f, i) => ({ f, i, r: folderRecency.get(f.name) ?? 0 }))
+    .sort((a, b) => (b.r - a.r) || (a.i - b.i))
+    .map((x) => x.f);
+
   // Notes can only live in Notable Folders, so the new-note folder picker
   // (and the single-filter auto-assign) only offers notable include
   // filters — areas/categories/other includes are not valid targets.
@@ -5751,6 +5768,13 @@ export function CardGrid() {
   // pinned-folder cover, when one is active, still sits above the
   // alphabetical NF block.
   const sortedNotesFull = [...filteredNotes].sort((a, b) => {
+    // Hard pin: any note whose FILENAME contains `~` (e.g. `61.04~`) floats to
+    // the very top of the pile, above folder covers and the recency feed.
+    // Multiple such notes sort lexicographically by filename among themselves.
+    const at = a.filename.includes("~");
+    const bt = b.filename.includes("~");
+    if (at !== bt) return at ? -1 : 1;
+    if (at && bt) return a.filename.localeCompare(b.filename);
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
@@ -5980,6 +6004,12 @@ export function CardGrid() {
         const sectionNotes = filteredNotes
           .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
           .sort((a, b) => {
+            // `~`-tagged notes (e.g. `61.04~`) pin to the top of the section,
+            // lexicographically among themselves; everything else stays dated.
+            const at = a.filename.includes("~");
+            const bt = b.filename.includes("~");
+            if (at !== bt) return at ? -1 : 1;
+            if (at && bt) return a.filename.localeCompare(b.filename);
             const sk = sortKeyOf(b).localeCompare(sortKeyOf(a));
             return sk !== 0 ? sk : (b.mtime ?? 0) - (a.mtime ?? 0);
           });
@@ -6047,6 +6077,10 @@ export function CardGrid() {
   // frontmatter was stripped, its filename still identifies which mw event it
   // backs — this prevents openEventNote from creating a duplicate file.
   const noteByFilenameKey = new Map<string, LoadedNote>();
+  // (Exact backing note by vault path is `noteByPath`, built above from `notes`.
+  // Filename events carry their own `sourcePath`, so it's the authoritative link
+  // — it can't be fooled by timed/ranged filenames whose title token differs
+  // from the event title, or by two events sharing a title.)
   for (const n of notes) {
     if (isRawTextFile(n.filename)) continue;
     const t = n.title.toLowerCase();
@@ -6072,6 +6106,7 @@ export function CardGrid() {
     for (const ev of mwEvents) {
       const t = ev.title.toLowerCase();
       const backing =
+        (ev.sourcePath ? noteByPath.get(ev.sourcePath) : undefined) ?? // exact note (filename events)
         noteByDateTitle.get(`${ev.date}|${t}`) ??   // same date AND title (most specific)
         noteByFilenameKey.get(`${ev.date}|${t}`) ?? // filename encodes date+title
         noteByTitle.get(t);                         // title alone — the spacetime key
@@ -6997,7 +7032,7 @@ export function CardGrid() {
 
       {importReview && (
         <div className="settings-overlay" onMouseDown={() => { if (!importBusy) setImportReview(null); }}>
-          <div className="settings-panel" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="settings-panel import-review-panel" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="settings-title">Import {importReview.date} from {importReview.provider === "apple" ? "the system calendar" : "Google"}</h2>
             <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events default to the weekly hub folder — override any event with its own notable folder below.</p>
             <datalist id="import-folder-options">
@@ -7137,7 +7172,7 @@ export function CardGrid() {
           // picker uses, so the gesture is consistent with what's in the
           // Pile's notes.
           currentFolder={eventMenu.folder}
-          availableFolders={availableFolderRefs}
+          availableFolders={foldersByRecency}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
           onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
           onMoveToDay={(iso) => {
@@ -7345,11 +7380,16 @@ function EventActionMenu({
     if (Math.round(nt) !== Math.round(r.top)) el.style.top = `${nt}px`;
   }, [folderOpen, draftAllDay, weekDays.length, emails?.length, left, top]);
   return (
-    <div className="event-action-overlay" onMouseDown={onCancel}>
+    <div className="event-action-overlay" onClick={onCancel}>
       <div
         ref={menuRef}
         className="event-action-menu"
         style={{ left: `${left}px`, top: `${top}px` }}
+        // Close on a backdrop CLICK (not mousedown): a mousedown-to-close fires
+        // before the focused title input can blur+commit, so a mobile tap-outside
+        // silently dropped the rename (#57). Click runs after blur. Stop clicks
+        // inside the menu from bubbling to the backdrop's close.
+        onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input

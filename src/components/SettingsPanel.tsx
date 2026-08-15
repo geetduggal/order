@@ -539,15 +539,17 @@ export function SettingsPanel({
                 <span>On-device (Apple)</span>
               </label>
             </div>
-            <div className="settings-stt-engine" style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 8, fontSize: "0.9rem", flexWrap: "wrap" }}>
+            <div className="settings-stt-engine" style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: "0.9rem" }}>
               <span style={{ color: "var(--ink-faint)" }}>Voice output:</span>
-              {([["auto", "Auto"], ["speaker", "Speaker"], ["receiver", "Earpiece"]] as [AudioOutput, string][]).map(([val, label]) => (
-                <label key={val} style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
-                  <input type="radio" name="audio-output" checked={audioOut === val}
-                    onChange={() => { setAudioOutState(val); setAudioOutput(val); }} />
-                  <span>{label}</span>
-                </label>
-              ))}
+              <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+                {([["auto", "Auto"], ["speaker", "Speaker"], ["receiver", "Earpiece"]] as [AudioOutput, string][]).map(([val, label]) => (
+                  <label key={val} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <input type="radio" name="audio-output" checked={audioOut === val}
+                      onChange={() => { setAudioOutState(val); setAudioOutput(val); }} />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </span>
           <span className="settings-hint">

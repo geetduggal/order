@@ -74,6 +74,10 @@ export interface SpacetimeEvent {
   allDay?: boolean;
   emails?: string[];       // Google sync recipients written on the line (Task 3 classifies)
   apple?: string;          // Apple/system calendar to create this event on (@[Calendar] token)
+  /** Vault path of the note this event was derived from (filename events only).
+   *  Lets consumers resolve the exact backing note without re-guessing by
+   *  date/title — essential for timed/ranged filenames and duplicate titles. */
+  sourcePath?: string;
 }
 
 export interface SpacetimeSeason {
@@ -189,6 +193,7 @@ export function buildSpacetime(
       ...(allDay ? { allDay: true } : {}),
       ...(invitees && invitees.length ? { emails: invitees } : {}),
       ...(apple ? { apple } : {}),
+      ...(n.path ? { sourcePath: n.path } : {}),
     };
     const k = `${date}|${time ?? ""}|${title.toLowerCase()}`;
     if (!byKey.has(k)) byKey.set(k, ev);

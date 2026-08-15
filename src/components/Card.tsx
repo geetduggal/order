@@ -44,6 +44,7 @@ import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
 import { folderColor, isMainDocPath, parseRef } from "../lib/folders";
 import { isSpacetimeFile } from "../lib/spacetime";
+import { parseEventFilename, formatEventFilename } from "../lib/event-filename";
 import { resolveWikilink } from "../lib/wikilink";
 import {
   attachmentAssetPrefix,
@@ -1397,6 +1398,18 @@ export function Card(props: Props) {
   // An all-day event gets a filled star (in the theme's other colour) in place
   // of the calendar glyph, so a marked day reads at a glance.
   const isAllDayEvent = !!fmDateRaw && (spacetimeEvent ? spacetimeEvent.allDay : fmLive.allDay === true);
+  // The chip shows the WHOLE filename prefix that precedes the title, not just a
+  // bare date: an event's full date/time/range token (`2026-05-24 - 2026-05-28`,
+  // `2026-05-24 2300-2340`) or a Johnny-Decimal id (`61.04`). Falls back to the
+  // spacetime/frontmatter date for notes whose name carries no such prefix.
+  const chipLabel = (() => {
+    const base = (pathRef.current.split("/").pop() ?? "").replace(/\.md$/i, "").replace(/\.chat$/i, "");
+    const parsed = parseEventFilename(base);
+    if (parsed) return formatEventFilename(parsed, "");
+    const jd = base.match(/^(\d{1,2}(?:\.\d{1,3})+)(?=\s)/);
+    if (jd) return jd[1];
+    return fmDateRaw;
+  })();
   // First http(s) URL in the YAML → a small link-out pill beside the
   // date chip (replaces the old auto-open-frontmatter heuristic). Always
   // visible so it works on touch; opens via openExternalUrl so every
@@ -1439,7 +1452,7 @@ export function Card(props: Props) {
             {isAllDayEvent
               ? <StarIcon size={11} strokeWidth={2} fill="currentColor" className="order-card-fm-star" />
               : <CalendarIcon size={11} strokeWidth={2} />}
-            {fmDateRaw && <span className="order-card-fm-date">{fmDateRaw}</span>}
+            {chipLabel && <span className="order-card-fm-date">{chipLabel}</span>}
           </button>
           {fmUrl && (
             <button

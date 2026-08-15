@@ -1331,6 +1331,9 @@ input, textarea, select { outline: none; box-shadow: none; }
     border-color 0.12s var(--ease-out);
 }
 .order-card:hover .order-card-fm-toggle { opacity: 1; }
+/* The label can be a full filename prefix (a date range, a timed span, or a
+   JD id), so keep it on one line rather than wrapping the chip. */
+.order-card-fm-date { white-space: nowrap; }
 /* Link-out pill: the note's canonical URL (from frontmatter), always
    visible so it works on touch. Routes through openExternalUrl → the
    OS default browser on every surface, never an in-app WebView. */
@@ -7682,6 +7685,17 @@ body.is-tile-dragging * {
 .import-review-row .settings-toggle { flex: 1 1 auto; min-width: 0; }
 .import-review-folder { flex: 0 0 40%; max-width: 168px; min-width: 96px; }
 .import-review-folder:disabled { opacity: 0.4; }
+/* The panel is a flex column with a bounded height; the event list is the only
+   scroll region so the header, default-folder row, and Import/Cancel actions
+   stay pinned and reachable even with a full day of events (#59). */
+.import-review-panel > :not(.gcal-account-list) { flex: 0 0 auto; }
+.import-review-panel .gcal-account-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 
 
 /* Settings inline help (Google Calendar credentials), mirrors publish-ios-help. */
