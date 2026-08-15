@@ -33,23 +33,6 @@ interface Turn {
 /** listening → transcribing → thinking → (approval) → speaking → listening. */
 type Mode = "idle" | "listening" | "transcribing" | "thinking" | "approval" | "speaking";
 
-/** A brief SPOKEN summary of pending changes for hands-free approval — the item
- *  summaries only, never the full diff. */
-function spokenApprovalSummary(items: ApprovalItem[]): string {
-  if (items.length === 1) return `${items[0].summary}. Say yes to approve, or no to skip.`;
-  const list = items.slice(0, 4).map((i) => i.summary).join("; ");
-  const more = items.length > 4 ? `, and ${items.length - 4} more` : "";
-  return `${items.length} changes: ${list}${more}. Say yes to approve them all, or no to skip.`;
-}
-
-/** Map a spoken reply to an approval decision (null = not a clear yes/no). */
-function interpretApproval(t: string): "yes" | "reject" | null {
-  const s = ` ${t.toLowerCase().replace(/[^a-z0-9'\s]/g, " ")} `;
-  if (/\b(no|nope|nah|don'?t|do not|cancel|reject|skip|stop|never ?mind|deny|decline|hold off)\b/.test(s)) return "reject";
-  if (/\b(yes|yeah|yep|yup|approve|approved|do it|go ahead|sure|okay|ok|confirm|accept|sounds good|please do|proceed|all of them|all good)\b/.test(s)) return "yes";
-  return null;
-}
-
 /** Barge-in echo rejection: is `utterance` mostly a repeat of what the agent is
  *  currently speaking (`agentText`)? While the mic is open during TTS it picks
  *  up the agent's own voice; we treat a high word-overlap as echo and ignore it,
@@ -149,12 +132,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   const [streamText, setStreamText] = useState("");
   const [streamTools, setStreamTools] = useState<string[]>([]);
   const [approval, setApproval] = useState<ApprovalItem[] | null>(null);
-  // Hands-free approval: a live mirror of the pending items, a gate that's true only
-  // AFTER the spoken summary finishes (so the summary's own "yes/no" echo isn't taken
-  // as the answer), and a ref to `decide` (defined below) callable from processUtterance.
-  const approvalRef = useRef<ApprovalItem[] | null>(null);
-  const approvalListeningRef = useRef(false);
-  const decideRef = useRef<((d: "once" | "all" | "reject") => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
@@ -599,27 +576,6 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
       return;
     }
 
-    // Hands-free APPROVAL: while a change is pending approval, take the utterance as a
-    // yes/no decision (not chat content). The gate opens only after the spoken summary
-    // finishes so the summary's own "yes/no" echo isn't mistaken for the answer.
-    if (m === "approval") {
-      if (!approvalRef.current || !approvalListeningRef.current) return; // still speaking the summary
-      const d = interpretApproval(t);
-      if (d) {
-        const multi = (approvalRef.current?.length ?? 0) > 1;
-        approvalListeningRef.current = false;
-        decideRef.current?.(d === "reject" ? "reject" : (multi ? "all" : "once"));
-      } else if (voiceOnRef.current) {
-        approvalListeningRef.current = false; // re-prompt, then re-open the gate
-        speak("Sorry — say yes to approve, or no to skip.", {
-          voiceURI: getSavedVoice() || undefined, rate: getSavedRate(),
-          onEnd: () => { approvalListeningRef.current = true; },
-          onError: () => { approvalListeningRef.current = true; },
-        });
-      }
-      return;
-    }
-
     // CAPTURE-FIRST GUARANTEE: record it before deciding anything else.
     try { await recordUser(rel, t); voiceTrace(`UI -> saved to .chat.md + bubble len=${t.length}`); }
     catch (e) { voiceTrace(`UI -> recordUser FAILED: ${String(e)} len=${t.length}`); }
@@ -731,26 +687,7 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
         case "context": setLoadedChats(e.loadedChats); break;
         case "text": clearFiller(); agentSpokenRef.current = (agentSpokenRef.current + e.text).slice(-2000); setStreamText((s) => s + e.text); speakerRef.current?.push(e.text); break;
         case "tool": setStreamTools((t) => [...t, e.line]); break;
-        case "approval": {
-          setModeBoth("approval");
-          setApproval(e.items);
-          approvalRef.current = e.items;
-          approvalListeningRef.current = false;
-          // Hands-free: speak a BRIEF summary (not the diff) and take the next spoken
-          // utterance as the yes/no. The gate opens only when the summary finishes.
-          if (voiceOnRef.current) {
-            speakerRef.current?.cancel(); speakerRef.current = null;
-            speak(spokenApprovalSummary(e.items), {
-              voiceURI: getSavedVoice() || undefined,
-              rate: getSavedRate(),
-              onEnd: () => { approvalListeningRef.current = true; },
-              onError: () => { approvalListeningRef.current = true; },
-            });
-            // Fallback so a missed onEnd can't strand the approval.
-            setTimeout(() => { if (modeRef.current === "approval") approvalListeningRef.current = true; }, 12000);
-          }
-          break;
-        }
+        case "approval": setModeBoth("approval"); setApproval(e.items); break;
         case "note": setStreamText((s) => (s ? s + "\n\n" : "") + e.text); break;
         case "final": {
           if (e.usage) {
@@ -789,15 +726,10 @@ export function ChatSurface({ path, autoFocus, onMaybeTitle }: Props) {
   }, [sendTyped]);
 
   const decide = useCallback((d: "once" | "all" | "reject") => {
-    approvalRef.current = null;
-    approvalListeningRef.current = false;
     setApproval(null);
     setModeBoth("thinking");
     void approve(d);
   }, [setModeBoth]);
-  // Let processUtterance (defined earlier) call the latest `decide` without a
-  // render-order dependency.
-  useEffect(() => { decideRef.current = decide; }, [decide]);
 
   const chatCost = chatCostOf(chatUsage);
   useEffect(() => {
