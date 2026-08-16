@@ -1989,36 +1989,46 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
   // escapes the card grid's overflow clipping / stacking and never sits
   // behind sibling cards.
   const inputRef = useRef<HTMLInputElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   useLayoutEffect(() => {
     if (!open) { setMenuPos(null); return; }
     const el = inputRef.current;
     if (!el) return;
-    // Re-anchor the fixed dropdown to the input on every scroll AND on visual-
-    // viewport changes (the iOS soft keyboard). Without this the menu is placed
-    // once, then the keyboard scrolls the page under it and it drifts off-screen.
-    // Also keep it inside the visible viewport: flip above the input when there's
-    // no room below (e.g. the input got pushed near the keyboard).
-    const reposition = () => {
+    // Anchor the fixed dropdown to the input and keep it there through scroll AND
+    // visual-viewport changes (the iOS soft keyboard). When there's no room below
+    // (keyboard up), it grows UPWARD, hugging the input from just above — not
+    // stranded at the top of the screen — and scrolls inside its own space.
+    const place = () => {
       const r = el.getBoundingClientRect();
       const vv = window.visualViewport;
       const vTop = vv ? vv.offsetTop : 0;
       const vh = vv ? vv.height : window.innerHeight;
-      const menuH = Math.min(320, vh * 0.55);
-      let top = r.bottom + 4;
-      if (top + menuH > vTop + vh) top = Math.max(vTop + 4, r.top - menuH - 4); // flip up
-      setMenuPos({ top, left: r.left });
+      const gap = 6, pad = 8;
+      const menuH = menuRef.current?.scrollHeight ?? 240;   // real height once rendered
+      const spaceBelow = (vTop + vh) - r.bottom - gap - pad;
+      const spaceAbove = r.top - vTop - gap - pad;
+      const below = spaceBelow >= Math.min(menuH, 160) || spaceBelow >= spaceAbove;
+      if (below) {
+        setMenuPos({ top: r.bottom + gap, left: r.left, maxHeight: Math.max(120, spaceBelow) });
+      } else {
+        const h = Math.min(menuH, spaceAbove);
+        setMenuPos({ top: Math.max(vTop + pad, r.top - gap - h), left: r.left, maxHeight: Math.max(120, spaceAbove) });
+      }
     };
-    reposition();
-    window.addEventListener("scroll", reposition, { passive: true, capture: true });
-    window.addEventListener("resize", reposition);
-    window.visualViewport?.addEventListener("resize", reposition);
-    window.visualViewport?.addEventListener("scroll", reposition);
+    place();
+    const raf = requestAnimationFrame(place);   // re-place once the menu's real height is known
+    const opts = { passive: true, capture: true } as AddEventListenerOptions;
+    window.addEventListener("scroll", place, opts);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
     return () => {
-      window.removeEventListener("scroll", reposition, { capture: true } as EventListenerOptions);
-      window.removeEventListener("resize", reposition);
-      window.visualViewport?.removeEventListener("resize", reposition);
-      window.visualViewport?.removeEventListener("scroll", reposition);
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", place, opts);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
     };
   }, [open, query]);
 
@@ -2119,8 +2129,9 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
         // stacking context) can clip or trap it — fixed coords come from
         // the input's on-screen rect.
         <ul
+          ref={menuRef}
           className="order-card-folder-options"
-          style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, overflowY: "auto" }}
         >
           {matches.map((f) => (
             <li key={f.name}>

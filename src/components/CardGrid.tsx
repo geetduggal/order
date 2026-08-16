@@ -4553,9 +4553,12 @@ export function CardGrid() {
     delete frontmatter.folder;
     if (!folderRef) {
       const activeIncludes = notableIncludesRef.current;
-      // The Week Hub folder is the default home for new events (falls back to
-      // the home folder when no hub is configured).
+      // The folder the user is looking at: the front include, else the last-
+      // focused folder (the one navigation pinned to the top of the pile).
+      // Only then the Week Hub, then home.
+      const focused = pileRef.current?.focusedFolder ?? null;
       if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
+      else if (focused && noteDirByRef(focused)) folderRef = focused;
       else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
       else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     }
@@ -4638,7 +4641,9 @@ export function CardGrid() {
     const root = await vaultRoot();
     let folderRef: string | null = null;
     const activeIncludes = notableIncludesRef.current;
+    const focused = pileRef.current?.focusedFolder ?? null;
     if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
+    else if (focused && noteDirByRef(focused)) folderRef = focused;   // folder at the top of the pile
     else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
     else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     const absDir = (folderRef && noteDirByRef(folderRef)) || root;
@@ -5236,7 +5241,7 @@ export function CardGrid() {
     if (!safe || safe === oldName) return;
     const list = notesRef.current ?? [];
     const main = list.find(
-      (n) => n.filename.replace(/\.md$/i, "") === oldName && isMainDoc(n),
+      (n) => isMainDoc(n) && stripSortPrefix(n.filename.replace(/\.md$/i, "")) === oldName,
     );
     if (!main) return;
     const oldRel = toVaultRel(main.path);
@@ -5550,7 +5555,10 @@ export function CardGrid() {
   const notableFolders: NotableFolder[] = notes
     .filter((n) => isMainDoc(n))
     .map((n) => ({
-      name: n.filename.replace(/\.md$/, ""),
+      // The folder's ref is its cover name WITHOUT the `! ` marker, so it matches
+      // include refs / the taxonomy (otherwise notableIncludes never resolves and
+      // new notes fall through to the week hub).
+      name: stripSortPrefix(n.filename.replace(/\.md$/, "")),
       area: inferredArea(n),
       category: inferredCategory(n),
       frontmatter: n.frontmatter,
@@ -5567,7 +5575,7 @@ export function CardGrid() {
   const mainDocByFolderKey = new Map<string, LoadedNote>();
   for (const n of notes) {
     const parts = toVaultRel(n.path).split("/");
-    if (parts.length === 4 && parts[3].replace(/\.md$/i, "") === parts[2]) {
+    if (parts.length === 4 && (isMainDocName(parts[3]) || stripSortPrefix(parts[3].replace(/\.md$/i, "")) === parts[2])) {
       mainDocByFolderKey.set(folderMatchKey(parts[2]), n);
     }
   }
@@ -5736,7 +5744,7 @@ export function CardGrid() {
   const isPinnedMain = (n: LoadedNote): boolean =>
     pinnedRef !== null
     && isMainDoc(n)
-    && n.filename.replace(/\.md$/, "") === pinnedRef;
+    && stripSortPrefix(n.filename.replace(/\.md$/, "")) === pinnedRef;
   // sortKey is pure per note but the comparators below call it twice per
   // COMPARISON — O(N log N) recomputes per render, which at vault scale
   // kept the main thread busy through every keystroke / lazy body load.
@@ -5797,7 +5805,9 @@ export function CardGrid() {
   // the newspaper sections; capHeight is only set in newspaper mode.
   const cardNode = (n: LoadedNote, capHeight?: number, pile?: { folder: string }) => {
     const isMain = isMainDoc(n);
-    const ref = n.filename.replace(/\.md$/, "");
+    // The note's ref without a reserved marker (`! ` cover / `$ ` pinned) so a
+    // cover's ref is its folder name — matches includeSet, folderColor, home, etc.
+    const ref = stripSortPrefix(n.filename.replace(/\.md$/, ""));
     const folderName = isMain ? ref : (effectiveFolder(n) ?? pile?.folder ?? null);
     const c = folderName ? folderColor(folderName) : undefined;
     const inFilter = includeSet.has(ref);
@@ -5865,13 +5875,13 @@ export function CardGrid() {
             title,
           });
         } : undefined}
-        isHome={isMain ? n.filename.replace(/\.md$/i, "") === homeFolderRef.current : undefined}
+        isHome={isMain ? ref === homeFolderRef.current : undefined}
         onSetHome={isMain ? async () => {
           // Toggle the publishing/home key `home: "<user>/<repo>/<path>"`
           // for THIS NF Main Doc. There is at most one home at a time —
           // if another NF currently holds it, we confirm replacement
           // with the user before clearing the old one.
-          const thisRef = n.filename.replace(/\.md$/i, "");
+          const thisRef = ref;
           const current = homeFolderRef.current;
           const isThisHome = current === thisRef;
           if (isThisHome) {
@@ -5904,7 +5914,7 @@ export function CardGrid() {
           // Clear `home:` from the previous holder, if any.
           if (current) {
             const prevPath = (notesRef.current ?? []).find(
-              (other) => other.filename.replace(/\.md$/i, "") === current,
+              (other) => stripSortPrefix(other.filename.replace(/\.md$/i, "")) === current,
             )?.path;
             if (prevPath && prevPath !== n.path) {
               const raw = await vaultFs.readText(toVaultRel(prevPath));
@@ -6570,7 +6580,7 @@ export function CardGrid() {
           // is the SAME cardNode used in the pile — editing writes to the main
           // doc exactly as anywhere else.
           const hubNote = weekHubFolder
-            ? (notes?.find((n) => isMainDoc(n) && folderMatchKey(n.filename.replace(/\.md$/i, "")) === folderMatchKey(weekHubFolder)) ?? null)
+            ? (notes?.find((n) => isMainDoc(n) && folderMatchKey(stripSortPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(weekHubFolder)) ?? null)
             : null;
           const grid = (
             <CalendarView
