@@ -11,7 +11,7 @@ import { extractBaseBlock, parseBase } from "./list-base";
 import { smartMerge } from "./list-merge";
 import type { ListNoteRef } from "./list-folder";
 import { rewritePublishedImages, type AssetCopy } from "./publish-images";
-import { folderKey } from "./folders";
+import { folderKey, stripSortPrefix, isMainDocRef } from "./folders";
 
 export interface CollectInput {
   /** Every note in the vault, with bodies. `dir` is the note's vault-
@@ -88,7 +88,10 @@ export interface PublishedSite {
 }
 
 function refOf(filename: string): string {
-  return filename.replace(/\.md$/i, "");
+  // Strip a reserved leading marker (`! ` cover / `$ ` pinned) so a note's ref is
+  // its plain name — a cover's ref equals its folder name, which is what the
+  // sidebar/home/slug wiring matches on.
+  return stripSortPrefix(filename.replace(/\.md$/i, ""));
 }
 
 function pickTitle(n: { filename: string; frontmatter: Frontmatter }): string {
@@ -174,7 +177,9 @@ export function collectPublishedSite(input: CollectInput): CollectResult {
     // it renders as a note, not a folder.
     const dirSegs = (n.dir ?? "").split("/").filter(Boolean);
     const folderName = dirSegs[dirSegs.length - 1] ?? null;
-    const isMainDoc = !!folderName && refOf(n.filename) === folderName;
+    // A main doc is the folder's cover: identified by a leading `! ` marker, or
+    // (legacy) a filename that matches its folder name.
+    const isMainDoc = isMainDocRef({ filename: n.filename, folder: folderName ?? undefined });
     return {
       ref: refOf(n.filename),
       title: pickTitle(n),
