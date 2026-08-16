@@ -113,6 +113,13 @@ export function stripMainDocPrefix(nameNoExt: string): string {
   return nameNoExt.replace(/^!+\s*/, "");
 }
 
+/** The Main Document FILENAME (with `.md`) for a folder whose on-disk safe name
+ *  is `safe`. Every cover is written `! <safe>.md` so it floats to the top of a
+ *  plain directory listing. The one place the `! ` convention is spelled out. */
+export function mainDocFilename(safe: string): string {
+  return `! ${safe}.md`;
+}
+
 /** Normalise a slug-style token (CamelCase / PascalCase / kebab-case /
  *  snake_case / mixed) to lowercase words separated by single spaces.
  *  Used by todo.txt's `+project` resolver to fuzzy-match against the

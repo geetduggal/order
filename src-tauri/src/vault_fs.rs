@@ -330,12 +330,16 @@ pub fn vault_list_dir(
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
+    // The folder's cover — its Main Document — is dropped from the listing since
+    // it's already the card's front. It may be named `<Folder>.md` (legacy) or
+    // carry the `! ` sort prefix (`! <Folder>.md`); skip either form.
     let main_doc = format!("{folder_basename}.md");
+    let main_doc_bang = format!("! {folder_basename}.md");
     let mut out = Vec::new();
     for e in fs::read_dir(&p).map_err(|e| e.to_string())? {
         let e = e.map_err(|e| e.to_string())?;
         let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name == main_doc {
+        if name.starts_with('.') || name == main_doc || name == main_doc_bang {
             continue;
         }
         let ft = e.file_type().map_err(|e| e.to_string())?;

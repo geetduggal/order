@@ -1403,7 +1403,9 @@ export function Card(props: Props) {
   // `2026-05-24 2300-2340`) or a Johnny-Decimal id (`61.04`). Falls back to the
   // spacetime/frontmatter date for notes whose name carries no such prefix.
   const chipLabel = (() => {
-    const base = (pathRef.current.split("/").pop() ?? "").replace(/\.md$/i, "").replace(/\.chat$/i, "");
+    const base = (pathRef.current.split("/").pop() ?? "")
+      .replace(/\.md$/i, "").replace(/\.chat$/i, "")
+      .replace(/^!+\s*/, ""); // a Main-Doc "! " sort prefix isn't part of the label
     const parsed = parseEventFilename(base);
     if (parsed) return formatEventFilename(parsed, "");
     const jd = base.match(/^(\d{1,2}(?:\.\d{1,3})+)(?=\s)/);

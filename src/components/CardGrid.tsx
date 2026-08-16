@@ -37,7 +37,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug, stripMainDocPrefix } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug, stripMainDocPrefix, mainDocFilename } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { newChat, suggestChatTitle } from "../lib/agent";
 import { requestFullscreenPersistent } from "../lib/fullscreen-intent";
@@ -493,6 +493,24 @@ async function isLoneStubDir(rel: string, folderSafe: string): Promise<boolean> 
   } catch { return false; }
 }
 
+/** Rename a folder's Main Document to the `! `-prefixed cover for `newSafe`, and
+ *  return its new vault-relative path. Finds the cover under any of its plausible
+ *  current names (the migrated `! <old>.md`, a legacy `<old>.md`, or an already
+ *  correct `<new>.md`) so folder renames/renumbers keep the cover — and its `! `
+ *  prefix — intact. Returns the target path even when no cover exists yet. */
+async function renameFolderMainDoc(dirRel: string, oldSafe: string, newSafe: string): Promise<string> {
+  const target = `${dirRel}/${mainDocFilename(newSafe)}`;
+  for (const src of [
+    `${dirRel}/${mainDocFilename(oldSafe)}`,
+    `${dirRel}/${oldSafe}.md`,
+    `${dirRel}/${newSafe}.md`,
+  ]) {
+    if (src === target) return target;
+    try { if (await vaultFs.exists(src)) { await vaultFs.rename(src, target); return target; } } catch { /* try next candidate */ }
+  }
+  return target;
+}
+
 export function CardGrid() {
   const [notes, setNotes] = useState<LoadedNote[] | null>(null);
   // Every directory under the vault root (vault-relative). Feeds the taxonomy so
@@ -772,7 +790,8 @@ export function CardGrid() {
         // name), so any image note here is a member.
         if (isImagePath(n.filename)) return canonical;
         const base = n.filename.replace(/\.md$/i, "");
-        const isMain = folderMatchKey(base) === folderMatchKey(parts[2]);
+        // The cover may carry a leading `! ` sort prefix; strip it before matching.
+        const isMain = folderMatchKey(stripMainDocPrefix(base)) === folderMatchKey(parts[2]);
         const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
         return (isMain || isDated) ? canonical : null;
       }
@@ -2560,14 +2579,11 @@ export function CardGrid() {
       try {
         await vaultFs.rename(oldPath, newPath);
         const oldSafe = san(m.oldName), newSafe = san(m.newName);
-        if (oldSafe !== newSafe) {
-          // Rename the Main Document to match the new folder name.
-          try { await vaultFs.rename(`${newPath}/${oldSafe}.md`, `${newPath}/${newSafe}.md`); } catch { /* no main doc */ }
-        }
+        // Rename the Main Document (its `! ` cover) to match the new folder name.
+        const idx = await renameFolderMainDoc(newPath, oldSafe, newSafe);
         // Sync the title only when it still mirrors the old folder name (leave
         // real citation/article titles untouched).
         try {
-          const idx = `${newPath}/${newSafe}.md`;
           const raw = await readVault(idx);
           const { frontmatter, body } = splitFrontmatter(raw);
           const t = frontmatter.title;
@@ -2690,10 +2706,8 @@ export function CardGrid() {
           // 1. Rename the directory.
           await vaultFs.rename(oldFolderPath, newFolderPath);
 
-          // 2. Rename the index file (old name, now inside the renamed dir).
-          const oldIndexPath = `${newFolderPath}/${oldF.safe}.md`;
-          const newIndexPath = `${newFolderPath}/${newF.safe}.md`;
-          try { await vaultFs.rename(oldIndexPath, newIndexPath); } catch { /* no index */ }
+          // 2. Rename the cover (old name, now inside the renamed dir).
+          const newIndexPath = await renameFolderMainDoc(newFolderPath, oldF.safe, newF.safe);
 
           // 3. Sync title if it still mirrors the old name.
           try {
@@ -2832,9 +2846,10 @@ export function CardGrid() {
             const twins = onDiskStrip.get(folderMatchKey(stripJdPrefix(nf.name)));
             if (twins && [...twins].some((k) => k !== nfKey)) continue;
             const safe = nf.name.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
-            const relPath = `${area.name}/${cat.name}/${safe}/${safe}.md`;
+            const relPath = `${area.name}/${cat.name}/${safe}/${mainDocFilename(safe)}`;
             try { await readVault(relPath); continue; } catch { /* doesn't exist → create */ }
-            // Main-doc identity is structural (<NF>/<NF>.md) — no YAML needed.
+            // Main-doc identity is structural (the cover is named after its folder,
+            // carrying the `! ` sort prefix) — no YAML needed.
             await writeVault(relPath, `# ${nf.name}\n`);
           }
       persistMwBaseline(mwBody);
@@ -2930,9 +2945,7 @@ export function CardGrid() {
         if (r.level !== "folder") continue;
         // A Notable Folder: rename its main doc, sync the title, and rewrite
         // every inbound [[OldName]] wikilink across the vault.
-        const oldIndex = `${newPath}/${san(r.oldName)}.md`;
-        const newIndex = `${newPath}/${san(r.newName)}.md`;
-        try { await vaultFs.rename(oldIndex, newIndex); } catch { /* no main doc */ }
+        const newIndex = await renameFolderMainDoc(newPath, san(r.oldName), san(r.newName));
         try {
           const raw = await readVault(newIndex);
           const { frontmatter, body } = splitFrontmatter(raw);
@@ -2991,10 +3004,9 @@ export function CardGrid() {
         const newPath = `${catRel}/${newLeaf}`;
         if (!(await vaultFs.exists(oldPath)) || (await vaultFs.exists(newPath))) continue;
         await vaultFs.rename(oldPath, newPath);
-        try { await vaultFs.rename(`${newPath}/${san(r.oldName)}.md`, `${newPath}/${newLeaf}.md`); } catch { /* no main doc */ }
+        const idx = await renameFolderMainDoc(newPath, san(r.oldName), newLeaf);
         // Keep the Main-Doc title the clean (id-stripped) name for pretty renders.
         try {
-          const idx = `${newPath}/${newLeaf}.md`;
           const raw = await readVault(idx);
           const { frontmatter, body } = splitFrontmatter(raw);
           const t = frontmatter.title;
@@ -3101,17 +3113,13 @@ export function CardGrid() {
     // rewrite inbound wikilinks so links keep resolving.
     if (moved && renaming) {
       try {
-        const oldDoc = `${targetDir}/${oldLeaf}.md`;
-        const newDoc = `${targetDir}/${newLeaf}.md`;
-        if (await vaultFs.exists(oldDoc)) {
-          await vaultFs.rename(oldDoc, newDoc);
-          const raw = await readVault(newDoc).catch(() => "");
-          if (raw) {
-            const { frontmatter, body } = splitFrontmatter(raw);
-            const nextFm: Frontmatter = { ...frontmatter, title: newName };
-            const nextBody = rewriteWikilinksForRename(body, oldLeaf, newLeaf);
-            await writeVault(newDoc, joinFrontmatter(nextFm, nextBody));
-          }
+        const newDoc = await renameFolderMainDoc(targetDir, oldLeaf, newLeaf);
+        const raw = await readVault(newDoc).catch(() => "");
+        if (raw) {
+          const { frontmatter, body } = splitFrontmatter(raw);
+          const nextFm: Frontmatter = { ...frontmatter, title: newName };
+          const nextBody = rewriteWikilinksForRename(body, oldLeaf, newLeaf);
+          await writeVault(newDoc, joinFrontmatter(nextFm, nextBody));
         }
         await rewriteInboundWikilinks(oldLeaf, newLeaf);
       } catch (e) { console.error("orphan rename failed", e); }
@@ -3938,7 +3946,7 @@ export function CardGrid() {
           } else {
             const root = await vaultRoot();
             const safe = p[2].replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
-            const relPath = `${p[0]}/${p[1]}/${safe}/${safe}.md`;
+            const relPath = `${p[0]}/${p[1]}/${safe}/${mainDocFilename(safe)}`;
             await writeVault(relPath, `# ${p[2]}\n`);
             await patchSpacetimeSpace({ kind: "addFolder", area: p[0], category: p[1], name: safe });
             void root; // referenced for fallback clarity
@@ -5362,8 +5370,8 @@ export function CardGrid() {
     const body = `# ${base}\n`;
     const content = joinFrontmatter(frontmatter, body);
     const nfDir = await join(catDir, safe);
-    const path = await uniqueWrite(nfDir, `${safe}.md`, content);
-    const filename = path.split("/").pop() ?? `${safe}.md`;
+    const path = await uniqueWrite(nfDir, mainDocFilename(safe), content);
+    const filename = path.split("/").pop() ?? mainDocFilename(safe);
     // No spacetime write — placement on disk is the source of truth; the new
     // note's path makes the folder appear in the taxonomy on its own.
     setNotes((prev) => [
