@@ -64,7 +64,10 @@ export function timeToHhmm(time: string): string {
  * next-simpler shape (so "2026-01-01 2530 X" is an all-day event titled "2530 X").
  */
 export function parseEventFilename(nameNoExt: string): FilenameEvent | null {
-  const s = nameNoExt.trim();
+  // A reserved leading sort marker (`# ` pinned, or `! ` main doc) is not part of
+  // the schedule grammar — strip it, then parse the rest. So `# 2026-01-02 Foo`
+  // is the same event as `2026-01-02 Foo`, just pinned.
+  const s = nameNoExt.trim().replace(/^[!#]\s+/, "");
 
   // 1) Date range: YYYY-MM-DD - YYYY-MM-DD [Title]
   let m = RE_DATE_RANGE.exec(s);

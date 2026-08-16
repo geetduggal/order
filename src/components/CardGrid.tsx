@@ -37,7 +37,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug, stripMainDocPrefix, mainDocFilename } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug, stripMainDocPrefix, stripSortPrefix, isMainDocName, isPinnedName, mainDocFilename } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { newChat, suggestChatTitle } from "../lib/agent";
 import { requestFullscreenPersistent } from "../lib/fullscreen-intent";
@@ -790,9 +790,9 @@ export function CardGrid() {
         // name), so any image note here is a member.
         if (isImagePath(n.filename)) return canonical;
         const base = n.filename.replace(/\.md$/i, "");
-        // The cover may carry a leading `! ` sort prefix; strip it before matching.
-        const isMain = folderMatchKey(stripMainDocPrefix(base)) === folderMatchKey(parts[2]);
-        const isDated = /^\d{4}-\d{2}-\d{2}/.test(base);
+        // The cover is identified by its leading `! ` marker (name-match optional).
+        const isMain = isMainDocName(base) || folderMatchKey(stripMainDocPrefix(base)) === folderMatchKey(parts[2]);
+        const isDated = /^\d{4}-\d{2}-\d{2}/.test(stripSortPrefix(base));
         return (isMain || isDated) ? canonical : null;
       }
     }
@@ -825,7 +825,9 @@ export function CardGrid() {
         setPublicOnly(false);
         writePublicOnly(false);
       }
-      const ownRef = note.filename.replace(/\.md$/i, "");
+      // A cover's folder ref is its name WITHOUT the `! ` marker (the marker is a
+      // sort prefix, never part of the ref) so companions match the same ref.
+      const ownRef = stripSortPrefix(note.filename.replace(/\.md$/i, ""));
       const targetFolder = isMainDoc(note)
         ? ownRef
         : effectiveFolder(note);
@@ -1638,7 +1640,7 @@ export function CardGrid() {
     for (const n of notes) {
       const v = n.frontmatter.home;
       if (typeof v !== "string" || !v.trim()) continue;
-      const name = n.filename.replace(/\.md$/i, "");
+      const name = stripSortPrefix(n.filename.replace(/\.md$/i, ""));
       const titleFm = n.frontmatter.title;
       const title = typeof titleFm === "string" && titleFm.trim() ? titleFm : name;
       out.push({ name, title, target: v.trim() });
@@ -1834,9 +1836,9 @@ export function CardGrid() {
     return notes
       .filter((n) => n.frontmatter.public === true)
       .map((n) => ({
-        filename: n.filename.replace(/\.md$/i, ""),
+        filename: stripSortPrefix(n.filename.replace(/\.md$/i, "")),
         title: (typeof n.frontmatter.title === "string" && n.frontmatter.title)
-          || n.filename.replace(/\.md$/i, ""),
+          || stripSortPrefix(n.filename.replace(/\.md$/i, "")),
         folderRef: (() => {
           // Structural: the note's Notable Folder is its parent directory.
           const parts = toVaultRel(n.path).split("/");
@@ -5672,7 +5674,9 @@ export function CardGrid() {
   //   - a Category name (a main doc whose path category matches)
   //   - an Area name (the note's inferred area equals `ref`)
   const belongsTo = (n: LoadedNote, ref: string): boolean => {
-    if (n.filename.replace(/\.md$/, "") === ref) return true;
+    // Match the note's own name-ref with any reserved marker (`! `/`# `) stripped,
+    // so a cover belongs to its folder ref and a pinned note to its own ref.
+    if (stripSortPrefix(n.filename.replace(/\.md$/, "")) === ref) return true;
     if (effectiveFolder(n) === ref) return true;
     if (isMainDoc(n) && inferredCategory(n) === ref) return true;
     if (inferredArea(n) === ref) return true;
@@ -5777,13 +5781,9 @@ export function CardGrid() {
   // pinned-folder cover, when one is active, still sits above the
   // alphabetical NF block.
   const sortedNotesFull = [...filteredNotes].sort((a, b) => {
-    // Hard pin: any note whose FILENAME contains `~` (e.g. `61.04~`) floats to
-    // the very top of the pile, above folder covers and the recency feed.
-    // Multiple such notes sort lexicographically by filename among themselves.
-    const at = a.filename.includes("~");
-    const bt = b.filename.includes("~");
-    if (at !== bt) return at ? -1 : 1;
-    if (at && bt) return a.filename.localeCompare(b.filename);
+    // Reserved sort tiers (the raw-lexicographic idiom, surfaced in the app):
+    // the folder's main document (`! `) sits on top, then pinned notes (`# `),
+    // then the ordinary dated recency feed.
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);
     if (am !== bm) return am ? -1 : 1;
@@ -5793,6 +5793,11 @@ export function CardGrid() {
     if (aNF && bNF) {
       return a.filename.localeCompare(b.filename);
     }
+    // Pinned notes (`# `) come next, lexicographically among themselves.
+    const ap = isPinnedName(a.filename);
+    const bp = isPinnedName(b.filename);
+    if (ap !== bp) return ap ? -1 : 1;
+    if (ap && bp) return a.filename.localeCompare(b.filename);
     const sk = sortKeyOf(b).localeCompare(sortKeyOf(a));
     if (sk !== 0) return sk;
     // Same date (+time): break the tie by modified time, most-recent first.
@@ -6013,12 +6018,12 @@ export function CardGrid() {
         const sectionNotes = filteredNotes
           .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
           .sort((a, b) => {
-            // `~`-tagged notes (e.g. `61.04~`) pin to the top of the section,
-            // lexicographically among themselves; everything else stays dated.
-            const at = a.filename.includes("~");
-            const bt = b.filename.includes("~");
-            if (at !== bt) return at ? -1 : 1;
-            if (at && bt) return a.filename.localeCompare(b.filename);
+            // Pinned notes (`# `) pin to the top of the section, lexicographically
+            // among themselves; everything else stays in dated order.
+            const ap = isPinnedName(a.filename);
+            const bp = isPinnedName(b.filename);
+            if (ap !== bp) return ap ? -1 : 1;
+            if (ap && bp) return a.filename.localeCompare(b.filename);
             const sk = sortKeyOf(b).localeCompare(sortKeyOf(a));
             return sk !== 0 ? sk : (b.mtime ?? 0) - (a.mtime ?? 0);
           });

@@ -14,7 +14,7 @@
 // live in frontmatter only, never in the link syntax — that keeps the
 // source plain-text clean and Obsidian-compatible.
 
-import { isMainDocRef, stripMainDocPrefix } from "./folders";
+import { isMainDocRef, stripSortPrefix } from "./folders";
 import type { ListNoteRef } from "./list-folder";
 
 /** Minimal note shape the resolver needs. `folder` is the on-disk parent
@@ -55,9 +55,10 @@ export type WikiResolution =
   | { kind: "broken"; name: string };
 
 function baseName(n: WikiRef): string {
-  // Strip a folder cover's leading "! " sort prefix so `[[Folder]]` still
-  // resolves to `! Folder.md`; ordinary notes are unaffected.
-  return stripMainDocPrefix(n.filename.replace(/\.md$/i, ""));
+  // Strip a reserved leading marker (`! ` cover / `# ` pinned) so `[[Folder]]`
+  // resolves to `! Folder.md` and a link to a pinned note resolves too; ordinary
+  // notes are unaffected.
+  return stripSortPrefix(n.filename.replace(/\.md$/i, ""));
 }
 
 /** Resolve a `[[...]]` token (with or without brackets) against the

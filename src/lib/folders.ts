@@ -51,7 +51,10 @@ export function isMainDocPath(path: string): boolean {
   if (parts.length >= 2) {
     const file = parts[parts.length - 1].replace(/\.md$/i, "");
     const dir = parts[parts.length - 2];
-    res = folderMatchKey(stripMainDocPrefix(file)) === folderMatchKey(dir);
+    // Identity is the leading `! ` marker (one main doc per folder). Matching the
+    // folder name is only a recommendation, so a legacy unprefixed `<NF>/<NF>.md`
+    // still counts too.
+    res = isMainDocName(file) || folderMatchKey(stripMainDocPrefix(file)) === folderMatchKey(dir);
   }
   if (mainDocPathCache.size >= CACHE_CAP) mainDocPathCache.clear();
   mainDocPathCache.set(path, res);
@@ -102,15 +105,39 @@ export function folderMatchKey(name: string): string {
  *  its parent directory. Same identity rule as isMainDocPath. */
 export function isMainDocRef(n: { filename: string; folder?: string }): boolean {
   if (!n.folder) return false;
-  return folderMatchKey(stripMainDocPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(n.folder);
+  return isMainDocName(n.filename)
+    || folderMatchKey(stripMainDocPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(n.folder);
 }
 
-/** A Main Document may carry a leading `! ` sort prefix (`<NF>/! <NF>.md`) that
- *  floats the folder's cover to the top of a directory listing (`!` sorts above
- *  digits and letters). The prefix is a sort marker only, so it's stripped before
- *  matching a note to its folder. Leaves every other name untouched. */
+// ---- Reserved leading name markers -----------------------------------------
+// Two single characters, each with a code point below the digits, so they sort
+// ABOVE both Johnny-Decimal ids and ISO dates in a plain directory listing:
+//   `!`  the folder's ONE main document (identity marker; sorts first).
+//   `#`  a pinned note (zero-or-many positional/semantic marker; sorts next).
+// They never combine on one name. Both are stripped before a name is matched,
+// parsed, or displayed.
+
+/** True iff `basename` (with or without `.md`) is a main document: it carries the
+ *  leading `! ` marker. This is the whole identity — matching the folder name is
+ *  only a recommendation. */
+export function isMainDocName(basename: string): boolean {
+  return /^!\s/.test(basename);
+}
+
+/** True iff `basename` is a pinned note: it carries the leading `# ` marker. */
+export function isPinnedName(basename: string): boolean {
+  return /^#\s/.test(basename);
+}
+
+/** Strip a leading `! ` main-document marker. Leaves every other name untouched. */
 export function stripMainDocPrefix(nameNoExt: string): string {
   return nameNoExt.replace(/^!+\s*/, "");
+}
+
+/** Strip either reserved leading marker (`! ` main doc or `# ` pinned), so the
+ *  underlying name can be matched, parsed, or displayed. */
+export function stripSortPrefix(nameNoExt: string): string {
+  return nameNoExt.replace(/^[!#]+\s*/, "");
 }
 
 /** The Main Document FILENAME (with `.md`) for a folder whose on-disk safe name
