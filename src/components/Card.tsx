@@ -42,7 +42,7 @@ import {
 import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
-import { folderColor, isMainDocPath, parseRef, stripSortPrefix } from "../lib/folders";
+import { folderColor, isMainDocPath, isPinnedName, parseRef, stripSortPrefix } from "../lib/folders";
 import { isSpacetimeFile } from "../lib/spacetime";
 import { parseEventFilename, formatEventFilename } from "../lib/event-filename";
 import { resolveWikilink } from "../lib/wikilink";
@@ -61,7 +61,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon, Pin as PinIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -988,10 +988,10 @@ export function Card(props: Props) {
       const isMain = isMainDocPath(path);
       if (!isMain && title && title !== lastTitleRef.current) {
         const currentFilename = path.split("/").pop() ?? path;
-        // Preserve a reserved leading marker (`& ` pinned) across the rename, and
+        // Preserve a reserved leading marker (`$ ` pinned) across the rename, and
         // read the date from AFTER it — otherwise editing a pinned note's title
         // would strip its pin and mis-read the date as "today".
-        const marker = (currentFilename.match(/^([!&]\s+)/) || [])[1] ?? "";
+        const marker = (currentFilename.match(/^([!$]\s+)/) || [])[1] ?? "";
         const afterMarker = currentFilename.slice(marker.length);
         // Spacetime is the authority for an event's date, and the filename
         // already mirrors it — so on a title edit, KEEP the filename's existing
@@ -1344,6 +1344,9 @@ export function Card(props: Props) {
   // an NF cover at a glance — no need to remember which card you
   // just navigated to.
   const isMainDoc = isMainDocPath(initialPath);
+  // A pinned note (`$ ` marker) gets a subtle signifier so a glance tells you
+  // it's been floated to the top on purpose.
+  const isPinned = isPinnedName(pathRef.current.split("/").pop()?.replace(/\.md$/i, "") ?? "");
   // Folded: render the spine until revealed. The persistent flag lives
   // in YAML; pendingFolded gives an optimistic flip on the toggle.
   const isFolded = pendingFolded !== null
@@ -1367,6 +1370,7 @@ export function Card(props: Props) {
   const cardClass =
     "order-card" +
     (isMainDoc ? " is-main" : "") +
+    (isPinned ? " is-pinned" : "") +
     (isMainDoc && props.visited ? " is-visited" : "") +
     (fullscreen ? " is-fullscreen" : "") +
     (exiting ? " is-exiting" : "") +
@@ -1410,7 +1414,7 @@ export function Card(props: Props) {
   const chipLabel = (() => {
     const base = (pathRef.current.split("/").pop() ?? "")
       .replace(/\.md$/i, "").replace(/\.chat$/i, "")
-      .replace(/^[!&]+\s*/, ""); // a reserved "! "/"& " sort marker isn't part of the label
+      .replace(/^[!$]+\s*/, ""); // a reserved "! "/"$ " sort marker isn't part of the label
     const parsed = parseEventFilename(base);
     if (parsed) return formatEventFilename(parsed, "");
     const jd = base.match(/^(\d{1,2}(?:\.\d{1,3})+)(?=\s)/);
@@ -1461,6 +1465,11 @@ export function Card(props: Props) {
               : <CalendarIcon size={11} strokeWidth={2} />}
             {chipLabel && <span className="order-card-fm-date">{chipLabel}</span>}
           </button>
+          {isPinned && (
+            <span className="order-card-pin" title="Pinned" aria-label="Pinned">
+              <PinIcon size={11} strokeWidth={2} fill="currentColor" />
+            </span>
+          )}
           {fmUrl && (
             <button
               type="button"

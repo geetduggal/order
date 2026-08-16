@@ -1334,6 +1334,12 @@ input, textarea, select { outline: none; box-shadow: none; }
 /* The label can be a full filename prefix (a date range, a timed span, or a
    JD id), so keep it on one line rather than wrapping the chip. */
 .order-card-fm-date { white-space: nowrap; }
+/* Pinned note (the `$ ` marker): a small metadata-blue pin glyph beside the date
+   chip, plus a whisper tint on the card's border, so a pinned note reads as
+   intentionally floated to the top without shouting. */
+.order-card-pin { display: inline-flex; align-items: center; color: var(--royal); opacity: 0.75; }
+.order-card:hover .order-card-pin { opacity: 1; }
+.order-card.is-pinned { border-color: color-mix(in srgb, var(--royal) 40%, var(--card-border, var(--rule))); }
 /* Link-out pill: the note's canonical URL (from frontmatter), always
    visible so it works on touch. Routes through openExternalUrl → the
    OS default browser on every surface, never an in-app WebView. */

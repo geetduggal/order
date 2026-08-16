@@ -55,7 +55,7 @@ export type WikiResolution =
   | { kind: "broken"; name: string };
 
 function baseName(n: WikiRef): string {
-  // Strip a reserved leading marker (`! ` cover / `& ` pinned) so `[[Folder]]`
+  // Strip a reserved leading marker (`! ` cover / `$ ` pinned) so `[[Folder]]`
   // resolves to `! Folder.md` and a link to a pinned note resolves too; ordinary
   // notes are unaffected.
   return stripSortPrefix(n.filename.replace(/\.md$/i, ""));
