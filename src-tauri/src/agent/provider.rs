@@ -14,7 +14,14 @@ use std::io::{BufRead, BufReader};
 /// A default agent model — capable at tool use, cost-effective for a loop.
 /// One clearly-named constant so it's trivial to change.
 pub const DEFAULT_MODEL: &str = "claude-sonnet-5";
-pub const MAX_TOKENS: u32 = 4096;
+/// Output-token ceiling per turn. This must comfortably fit a full-file
+/// `write_file` (path + entire content as JSON) PLUS any reasoning the model
+/// emits before it — 4096 was too low, so writing a large note (e.g. a multi-KB
+/// doc) truncated the tool call mid-arguments, which parsed to `{}` and produced
+/// an empty write that the model retried forever. It's a cap, not a target: the
+/// model only generates what it needs, so a generous ceiling costs nothing on
+/// normal turns and simply stops large writes from being cut off.
+pub const MAX_TOKENS: u32 = 16384;
 
 /// A content block, shared across provider + loop + transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,7 +243,16 @@ fn parse_sse(
                 let input: serde_json::Value = if a.json.trim().is_empty() {
                     serde_json::json!({})
                 } else {
-                    serde_json::from_str(&a.json).unwrap_or(serde_json::json!({}))
+                    match serde_json::from_str(&a.json) {
+                        Ok(v) => v,
+                        // Non-empty but INVALID JSON means the tool arguments were
+                        // cut off before they finished streaming — almost always the
+                        // response hit the output-token limit mid tool-call. Flag it
+                        // so dispatch returns a clear "truncated" error instead of
+                        // silently running the tool with empty args (an empty
+                        // write_file the model then retries forever).
+                        Err(_) => serde_json::json!({ "__truncated__": true }),
+                    }
                 };
                 blocks.push(Block::ToolUse { id: a.id, name: a.name, input });
             }

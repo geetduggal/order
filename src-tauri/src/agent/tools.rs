@@ -75,6 +75,18 @@ pub fn describe(name: &str, input: &Value) -> String {
 /// Execute a tool call against the vault. Returns readable output or a
 /// recoverable error string.
 pub fn dispatch(root: &Path, name: &str, input: &Value) -> Result<String, String> {
+    // The provider flags a tool call whose JSON arguments were cut off mid-stream
+    // (it hit the output-token limit). Fail loudly with guidance instead of running
+    // the tool with empty/partial arguments, so the model adapts rather than
+    // retrying an empty call.
+    if input.get("__truncated__").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err(format!(
+            "The arguments to {name} were cut off before they finished (the response \
+             hit the output length limit). If you are writing a large file, split it \
+             into several smaller edit_file calls, or write it in parts — do not retry \
+             the same oversized call."
+        ));
+    }
     match name {
         "list_directory" => fs_tools::list_directory(root, get(input, "path")),
         "read_file" => fs_tools::read_file(root, get(input, "path")),
