@@ -42,7 +42,7 @@ import {
 import { extractBaseBlock, extractRawBaseBlock, parseBase, type ParsedBase } from "../lib/list-base";
 import { smartMerge } from "../lib/list-merge";
 import { ListView } from "./ListView";
-import { folderColor, isMainDocPath, parseRef } from "../lib/folders";
+import { folderColor, isMainDocPath, parseRef, stripSortPrefix } from "../lib/folders";
 import { isSpacetimeFile } from "../lib/spacetime";
 import { parseEventFilename, formatEventFilename } from "../lib/event-filename";
 import { resolveWikilink } from "../lib/wikilink";
@@ -1120,7 +1120,7 @@ export function Card(props: Props) {
     if (!vaultNotes || itemsForView.length === 0) return false;
     return itemsForView.every((item) => {
       const note = vaultNotes.find(
-        (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === item.ref.toLowerCase(),
+        (n) => stripSortPrefix(n.filename.replace(/\.md$/i, "")).toLowerCase() === item.ref.toLowerCase(),
       );
       return !!(note && (note.frontmatter.list || note.frontmatter.type === "list"));
     });

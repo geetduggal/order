@@ -9,7 +9,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Plus, X as XIcon, Image as ImageIcon, ClipboardPaste } from "lucide-react";
-import { folderColor, folderIcon, listItemIcon, isMainDocRef } from "../lib/folders";
+import { folderColor, folderIcon, listItemIcon, isMainDocRef, stripSortPrefix } from "../lib/folders";
 import { displayTitleFor, isListFolder, listRender, type ListItem, type ListNoteRef } from "../lib/list-folder";
 import { WikiRefInput } from "./WikiRefInput";
 import { resolveNoteRef } from "../lib/wikilink";
@@ -173,7 +173,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
     // Notable folders are Markdown main docs — an HTML page is never a folder,
     // so keep `.html`/`.htm` files out of the folder autocomplete.
     .filter((n) => isMainDocRef(n) && !/\.html?$/i.test(n.filename))
-    .map((n) => n.filename.replace(/\.md$/i, ""))
+    .map((n) => stripSortPrefix(n.filename.replace(/\.md$/i, "")))
     .sort((a, b) => a.localeCompare(b));
   const existingRefsLower = new Set(items.map((i) => i.ref.toLowerCase()));
 
@@ -247,7 +247,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
           const subItems = resolveListItems(note.frontmatter, note.body, vaultNotes);
           function metaText(sub: ListItem): string {
             const subNote = vaultNotes.find(
-              (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
+              (n) => stripSortPrefix(n.filename.replace(/\.md$/i, "")).toLowerCase() === sub.ref.toLowerCase(),
             );
             return sub.meta
               || (typeof subNote?.frontmatter.author === "string" ? subNote.frontmatter.author : "")
@@ -273,7 +273,7 @@ export function ListLines({ items, vaultNotes, onChange, readOnly, readOnlyMembe
                 <ul className="lr-sublist">
                   {subItems.map((sub) => {
                     const subNote = vaultNotes.find(
-                      (n) => n.filename.replace(/\.md$/i, "").toLowerCase() === sub.ref.toLowerCase(),
+                      (n) => stripSortPrefix(n.filename.replace(/\.md$/i, "")).toLowerCase() === sub.ref.toLowerCase(),
                     );
                     const meta = metaText(sub);
                     const subIsNF = !!(subNote && isMainDocRef(subNote));
