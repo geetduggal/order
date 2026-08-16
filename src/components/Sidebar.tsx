@@ -15,11 +15,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTextScale } from "../lib/text-scale";
 import type { LucideIcon } from "lucide-react";
-import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X, FileCog, Check as CheckDone } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import { stripJdPrefix } from "../lib/johnny-decimal";
 import { useTileDrag } from "../lib/use-tile-drag";
-import { CodeMirrorSurface } from "./CodeMirrorSurface";
 import type { Frontmatter } from "../lib/frontmatter";
 
 export type View = "pile" | "day" | "week" | "month" | "year" | "season";
@@ -98,12 +97,6 @@ interface Props {
   onToggleCategoryFilter?: (name: string, area: string) => void;
   /** Refs currently in the filter (same set used for NF rows). */
   filteredRefs?: Set<string>;
-  /** Current spacetime source (spacetime.md) body — enables the in-sidebar
-   *  editor. When present alongside onEditSpacetime, an edit toggle shows. */
-  spacetimeSource?: string;
-  /** Persist an edited spacetime.md body (same save path as the pile editor:
-   *  structural changes light the "spacetime · pending" review). */
-  onEditSpacetime?: (text: string) => void;
 }
 
 interface Taxonomy {
@@ -225,12 +218,8 @@ export function Sidebar({
   onToggleAreaFilter,
   onToggleCategoryFilter,
   filteredRefs,
-  spacetimeSource,
-  onEditSpacetime,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
-  const [editingSpacetime, setEditingSpacetime] = useState(false);
-  const canEditSpacetime = spacetimeSource !== undefined && !!onEditSpacetime;
 
   const taxonomy = useMemo(
     () => buildTaxonomy(folders, storedAreas, storedCategories, order),
@@ -254,34 +243,6 @@ export function Sidebar({
   const textScale = useTextScale();
   const scaleStyle = { "--text-scale": textScale } as CSSProperties;
 
-  if (editingSpacetime && canEditSpacetime) {
-    return (
-      <aside className="pane-right is-editing-spacetime" style={scaleStyle}>
-        {header && <section className="sb-section sb-header-slot">{header}</section>}
-        <section className="sb-section sb-spacetime-edit">
-          <div className="sb-spacetime-head">
-            <span className="sb-spacetime-title">spacetime.md</span>
-            <button
-              type="button"
-              className="sb-spacetime-done"
-              onClick={() => setEditingSpacetime(false)}
-              title="Done editing"
-            >
-              <CheckDone size={13} strokeWidth={2.2} /> Done
-            </button>
-          </div>
-          <div className="sb-spacetime-editor">
-            <CodeMirrorSurface
-              value={spacetimeSource ?? ""}
-              onChange={(t) => onEditSpacetime?.(t)}
-              lang="markdown"
-            />
-          </div>
-        </section>
-      </aside>
-    );
-  }
-
   return (
     <aside className="pane-right" style={scaleStyle}>
       {header && <section className="sb-section sb-header-slot">{header}</section>}
@@ -290,19 +251,6 @@ export function Sidebar({
           is still threaded so callers don't need to know we moved
           the UI. */}
       {filters && <section className="sb-section sb-filters-slot">{filters}</section>}
-
-      {canEditSpacetime && (
-        <div className="sb-spacetime-toolbar">
-          <button
-            type="button"
-            className="sb-spacetime-edit-btn"
-            onClick={() => setEditingSpacetime(true)}
-            title="Edit spacetime.md"
-          >
-            <FileCog size={13} strokeWidth={2} /> Edit spacetime.md
-          </button>
-        </div>
-      )}
 
       <section className="sb-section sb-filters">
         <DrillView
