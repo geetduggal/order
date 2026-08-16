@@ -1994,8 +1994,32 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
     if (!open) { setMenuPos(null); return; }
     const el = inputRef.current;
     if (!el) return;
-    const r = el.getBoundingClientRect();
-    setMenuPos({ top: r.bottom + 4, left: r.left });
+    // Re-anchor the fixed dropdown to the input on every scroll AND on visual-
+    // viewport changes (the iOS soft keyboard). Without this the menu is placed
+    // once, then the keyboard scrolls the page under it and it drifts off-screen.
+    // Also keep it inside the visible viewport: flip above the input when there's
+    // no room below (e.g. the input got pushed near the keyboard).
+    const reposition = () => {
+      const r = el.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const vTop = vv ? vv.offsetTop : 0;
+      const vh = vv ? vv.height : window.innerHeight;
+      const menuH = Math.min(320, vh * 0.55);
+      let top = r.bottom + 4;
+      if (top + menuH > vTop + vh) top = Math.max(vTop + 4, r.top - menuH - 4); // flip up
+      setMenuPos({ top, left: r.left });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, { passive: true, capture: true });
+    window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, { capture: true } as EventListenerOptions);
+      window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
+    };
   }, [open, query]);
 
   // Recents-first when the query is empty (most-recent on top, then

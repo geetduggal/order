@@ -1132,7 +1132,11 @@ export function CardGrid() {
     const list = notesRef.current;
     if (!list) return null;
     const lower = ref.toLowerCase();
-    const found = list.find((n) => n.filename.replace(/\.md$/i, "").toLowerCase() === lower);
+    // Strip a reserved leading marker (`! ` cover / `$ ` pinned) so a FOLDER ref
+    // (e.g. "Foo") resolves to its cover `! Foo.md`. Without this, noteDirByRef
+    // returns null for every folder → new notes/chats fall back to the vault root
+    // and move-to-folder can't find the target directory.
+    const found = list.find((n) => stripSortPrefix(n.filename.replace(/\.md$/i, "")).toLowerCase() === lower);
     return found?.path ?? null;
   }
 
