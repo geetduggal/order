@@ -37,7 +37,7 @@ import { CommandPalette } from "./CommandPalette";
 import { PublishPanel, type HomeFolder, type PublishableNote, type PublishOutcome } from "./PublishPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { collectPublishedSite } from "../lib/publish";
-import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug } from "../lib/folders";
+import { folderColor, folderDirName, folderMatchKey, isMainDocPath, parseRef, resolveProjectToNf, nfNameToProjectSlug, stripMainDocPrefix } from "../lib/folders";
 import { computePileOrder } from "../lib/file-piles";
 import { newChat, suggestChatTitle } from "../lib/agent";
 import { requestFullscreenPersistent } from "../lib/fullscreen-intent";
@@ -488,7 +488,8 @@ async function loadAndNormalizeAll(): Promise<LoadedNote[]> {
 async function isLoneStubDir(rel: string, folderSafe: string): Promise<boolean> {
   try {
     const entries = (await vaultFs.readDir(rel)).filter((e) => !e.name.startsWith("."));
-    return entries.length === 1 && !entries[0].isDir && entries[0].name === `${folderSafe}.md`;
+    return entries.length === 1 && !entries[0].isDir
+      && stripMainDocPrefix(entries[0].name.replace(/\.md$/i, "")) === folderSafe;
   } catch { return false; }
 }
 
@@ -5998,9 +5999,9 @@ export function CardGrid() {
         // as that section's centerpiece instead of an empty section.
         const mainNote =
           filteredNotes.find(
-            (n) => isMainDoc(n) && n.filename.replace(/\.md$/, "") === ref,
+            (n) => isMainDoc(n) && folderMatchKey(stripMainDocPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(ref),
           )
-          ?? filteredNotes.find((n) => n.filename.replace(/\.md$/, "") === ref);
+          ?? filteredNotes.find((n) => n.filename.replace(/\.md$/i, "") === ref);
         const sectionNotes = filteredNotes
           .filter((n) => !isMainDoc(n) && effectiveFolder(n) === ref)
           .sort((a, b) => {

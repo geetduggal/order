@@ -51,7 +51,7 @@ export function isMainDocPath(path: string): boolean {
   if (parts.length >= 2) {
     const file = parts[parts.length - 1].replace(/\.md$/i, "");
     const dir = parts[parts.length - 2];
-    res = folderMatchKey(file) === folderMatchKey(dir);
+    res = folderMatchKey(stripMainDocPrefix(file)) === folderMatchKey(dir);
   }
   if (mainDocPathCache.size >= CACHE_CAP) mainDocPathCache.clear();
   mainDocPathCache.set(path, res);
@@ -102,7 +102,15 @@ export function folderMatchKey(name: string): string {
  *  its parent directory. Same identity rule as isMainDocPath. */
 export function isMainDocRef(n: { filename: string; folder?: string }): boolean {
   if (!n.folder) return false;
-  return folderMatchKey(n.filename.replace(/\.md$/i, "")) === folderMatchKey(n.folder);
+  return folderMatchKey(stripMainDocPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(n.folder);
+}
+
+/** A Main Document may carry a leading `! ` sort prefix (`<NF>/! <NF>.md`) that
+ *  floats the folder's cover to the top of a directory listing (`!` sorts above
+ *  digits and letters). The prefix is a sort marker only, so it's stripped before
+ *  matching a note to its folder. Leaves every other name untouched. */
+export function stripMainDocPrefix(nameNoExt: string): string {
+  return nameNoExt.replace(/^!+\s*/, "");
 }
 
 /** Normalise a slug-style token (CamelCase / PascalCase / kebab-case /
