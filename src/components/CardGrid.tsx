@@ -782,18 +782,20 @@ export function CardGrid() {
     if (parts.length === 4) {
       const canonical = folderDirIndexRef.current.get(folderMatchKey(parts[2]));
       if (canonical) {
-        // Auto-membership: the main doc (<NF>/<NF>.md) and dated notes
-        // (<NF>/YYYY-MM-DD *.md) appear in the folder's pile automatically.
-        // Any other file is left alone on disk (not flagged, not auto-shown);
-        // it can be surfaced in the pile on demand via File Piles.
+        // Auto-membership: the main doc (`! <NF>.md`), pinned notes (`$ …`), and
+        // dated notes (`YYYY-MM-DD *.md`) appear in the folder's pile
+        // automatically. Any other file is left alone on disk (not flagged, not
+        // auto-shown); it can be surfaced in the pile on demand via File Piles.
         // Images are already date-gated by the walk (an ISO date anywhere in the
         // name), so any image note here is a member.
         if (isImagePath(n.filename)) return canonical;
         const base = n.filename.replace(/\.md$/i, "");
         // The cover is identified by its leading `! ` marker (name-match optional).
         const isMain = isMainDocName(base) || folderMatchKey(stripMainDocPrefix(base)) === folderMatchKey(parts[2]);
+        // A pinned note (`$ `) is deliberately surfaced — it's a member of its folder.
+        const isPinned = isPinnedName(base);
         const isDated = /^\d{4}-\d{2}-\d{2}/.test(stripSortPrefix(base));
-        return (isMain || isDated) ? canonical : null;
+        return (isMain || isPinned || isDated) ? canonical : null;
       }
     }
     return null;
