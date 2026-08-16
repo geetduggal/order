@@ -988,10 +988,10 @@ export function Card(props: Props) {
       const isMain = isMainDocPath(path);
       if (!isMain && title && title !== lastTitleRef.current) {
         const currentFilename = path.split("/").pop() ?? path;
-        // Preserve a reserved leading marker (`# ` pinned) across the rename, and
+        // Preserve a reserved leading marker (`& ` pinned) across the rename, and
         // read the date from AFTER it — otherwise editing a pinned note's title
         // would strip its pin and mis-read the date as "today".
-        const marker = (currentFilename.match(/^([!#]\s+)/) || [])[1] ?? "";
+        const marker = (currentFilename.match(/^([!&]\s+)/) || [])[1] ?? "";
         const afterMarker = currentFilename.slice(marker.length);
         // Spacetime is the authority for an event's date, and the filename
         // already mirrors it — so on a title edit, KEEP the filename's existing
@@ -1410,7 +1410,7 @@ export function Card(props: Props) {
   const chipLabel = (() => {
     const base = (pathRef.current.split("/").pop() ?? "")
       .replace(/\.md$/i, "").replace(/\.chat$/i, "")
-      .replace(/^[!#]+\s*/, ""); // a reserved "! "/"# " sort marker isn't part of the label
+      .replace(/^[!&]+\s*/, ""); // a reserved "! "/"& " sort marker isn't part of the label
     const parsed = parseEventFilename(base);
     if (parsed) return formatEventFilename(parsed, "");
     const jd = base.match(/^(\d{1,2}(?:\.\d{1,3})+)(?=\s)/);

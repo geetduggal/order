@@ -227,7 +227,7 @@ export function deriveNoteTitleFromBody(body: string): string | null {
  *  date prefix, and if image-embed junk was baked into the name, reduce
  *  it to the image basename. */
 export function cleanFilenameTitle(nameNoExt: string): string {
-  const base = nameNoExt.replace(/^[!#]+\s*/, ""); // drop a reserved "! "/"# " sort marker
+  const base = nameNoExt.replace(/^[!&]+\s*/, ""); // drop a reserved "! "/"& " sort marker
   const noDate = base.replace(/^\d{4}-\d{2}-\d{2}\s*-?\s*/, "");
   const img = imageLineTitle(noDate) ?? imageLineTitle(base);
   if (img) return img;

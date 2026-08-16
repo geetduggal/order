@@ -5782,7 +5782,7 @@ export function CardGrid() {
   // alphabetical NF block.
   const sortedNotesFull = [...filteredNotes].sort((a, b) => {
     // Reserved sort tiers (the raw-lexicographic idiom, surfaced in the app):
-    // the folder's main document (`! `) sits on top, then pinned notes (`# `),
+    // the folder's main document (`! `) sits on top, then pinned notes (`& `),
     // then the ordinary dated recency feed.
     const am = isPinnedMain(a);
     const bm = isPinnedMain(b);

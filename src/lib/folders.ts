@@ -113,9 +113,10 @@ export function isMainDocRef(n: { filename: string; folder?: string }): boolean 
 // Two single characters, each with a code point below the digits, so they sort
 // ABOVE both Johnny-Decimal ids and ISO dates in a plain directory listing:
 //   `!`  the folder's ONE main document (identity marker; sorts first).
-//   `#`  a pinned note (zero-or-many positional/semantic marker; sorts next).
-// They never combine on one name. Both are stripped before a name is matched,
-// parsed, or displayed.
+//   `&`  a pinned note (zero-or-many positional/semantic marker; sorts next).
+// `&` rather than `#` because `#` is a heading anchor inside an Obsidian
+// `[[wikilink]]`, so a `#`-led filename can't be linked. They never combine on
+// one name. Both are stripped before a name is matched, parsed, or displayed.
 
 /** True iff `basename` (with or without `.md`) is a main document: it carries the
  *  leading `! ` marker. This is the whole identity — matching the folder name is
@@ -124,9 +125,9 @@ export function isMainDocName(basename: string): boolean {
   return /^!\s/.test(basename);
 }
 
-/** True iff `basename` is a pinned note: it carries the leading `# ` marker. */
+/** True iff `basename` is a pinned note: it carries the leading `& ` marker. */
 export function isPinnedName(basename: string): boolean {
-  return /^#\s/.test(basename);
+  return /^&\s/.test(basename);
 }
 
 /** Strip a leading `! ` main-document marker. Leaves every other name untouched. */
@@ -134,10 +135,10 @@ export function stripMainDocPrefix(nameNoExt: string): string {
   return nameNoExt.replace(/^!+\s*/, "");
 }
 
-/** Strip either reserved leading marker (`! ` main doc or `# ` pinned), so the
+/** Strip either reserved leading marker (`! ` main doc or `& ` pinned), so the
  *  underlying name can be matched, parsed, or displayed. */
 export function stripSortPrefix(nameNoExt: string): string {
-  return nameNoExt.replace(/^[!#]+\s*/, "");
+  return nameNoExt.replace(/^[!&]+\s*/, "");
 }
 
 /** The Main Document FILENAME (with `.md`) for a folder whose on-disk safe name
