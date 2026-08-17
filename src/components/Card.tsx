@@ -1990,47 +1990,56 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
   // behind sibling cards.
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLUListElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  // `placed` gates opacity so the menu doesn't flash at 0,0 for one frame
+  // before the first rAF positions it. Position itself lives in the DOM node,
+  // not React state (see below).
+  const [placed, setPlaced] = useState(false);
+  // Keep the fixed dropdown glued to the input on EVERY paint frame via a
+  // continuous requestAnimationFrame poll — the same trick Floating UI's
+  // autoUpdate uses. Scroll/resize listeners are throttled during iOS momentum
+  // scrolling, so a fixed element repositioned from those events visibly
+  // detaches from the input and snaps back; polling per frame tracks smoothly.
+  //
+  // Crucially, top/left/maxHeight are written straight to the DOM node and are
+  // NEVER in the JSX style object, so a query-driven re-render can't clobber
+  // them (React only reconciles style props it owns). React owns only
+  // position/opacity. It also grows UPWARD when the keyboard leaves no room
+  // below, hugging the input from just above, and tracks the visual viewport.
   useLayoutEffect(() => {
-    if (!open) { setMenuPos(null); return; }
-    const el = inputRef.current;
-    if (!el) return;
-    // Anchor the fixed dropdown to the input and keep it there through scroll AND
-    // visual-viewport changes (the iOS soft keyboard). When there's no room below
-    // (keyboard up), it grows UPWARD, hugging the input from just above — not
-    // stranded at the top of the screen — and scrolls inside its own space.
+    if (!open) { setPlaced(false); return; }
+    let raf = 0;
+    let didPlace = false;
     const place = () => {
-      const r = el.getBoundingClientRect();
-      const vv = window.visualViewport;
-      const vTop = vv ? vv.offsetTop : 0;
-      const vh = vv ? vv.height : window.innerHeight;
-      const gap = 6, pad = 8;
-      const menuH = menuRef.current?.scrollHeight ?? 240;   // real height once rendered
-      const spaceBelow = (vTop + vh) - r.bottom - gap - pad;
-      const spaceAbove = r.top - vTop - gap - pad;
-      const below = spaceBelow >= Math.min(menuH, 160) || spaceBelow >= spaceAbove;
-      if (below) {
-        setMenuPos({ top: r.bottom + gap, left: r.left, maxHeight: Math.max(120, spaceBelow) });
-      } else {
-        const h = Math.min(menuH, spaceAbove);
-        setMenuPos({ top: Math.max(vTop + pad, r.top - gap - h), left: r.left, maxHeight: Math.max(120, spaceAbove) });
+      const el = inputRef.current;
+      const menu = menuRef.current;
+      if (el && menu) {
+        const r = el.getBoundingClientRect();
+        const vv = window.visualViewport;
+        const vTop = vv ? vv.offsetTop : 0;
+        const vh = vv ? vv.height : window.innerHeight;
+        const gap = 6, pad = 8;
+        const menuH = menu.scrollHeight;
+        const spaceBelow = (vTop + vh) - r.bottom - gap - pad;
+        const spaceAbove = r.top - vTop - gap - pad;
+        const below = spaceBelow >= Math.min(menuH, 160) || spaceBelow >= spaceAbove;
+        let top: number, maxH: number;
+        if (below) {
+          top = r.bottom + gap;
+          maxH = Math.max(120, spaceBelow);
+        } else {
+          maxH = Math.max(120, spaceAbove);
+          top = Math.max(vTop + pad, r.top - gap - Math.min(menuH, spaceAbove));
+        }
+        menu.style.top = `${Math.round(top)}px`;
+        menu.style.left = `${Math.round(r.left)}px`;
+        menu.style.maxHeight = `${Math.round(maxH)}px`;
+        if (!didPlace) { didPlace = true; setPlaced(true); }
       }
+      raf = requestAnimationFrame(place);
     };
-    place();
-    const raf = requestAnimationFrame(place);   // re-place once the menu's real height is known
-    const opts = { passive: true, capture: true } as AddEventListenerOptions;
-    window.addEventListener("scroll", place, opts);
-    window.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("scroll", place);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", place, opts);
-      window.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("scroll", place);
-    };
-  }, [open, query]);
+    raf = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
 
   // Recents-first when the query is empty (most-recent on top, then
   // the rest alphabetically); substring filter with prefix-match
@@ -2124,14 +2133,16 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
         onBlur={onClose}
         placeholder="Assign folder…"
       />
-      {matches.length > 0 && menuPos && createPortal(
+      {matches.length > 0 && createPortal(
         // Rendered into <body> so NO card ancestor (transform / overflow /
         // stacking context) can clip or trap it — fixed coords come from
-        // the input's on-screen rect.
+        // the input's on-screen rect. top/left/maxHeight are set imperatively
+        // by the rAF loop above (kept out of this style object on purpose so
+        // re-renders never reset them); opacity hides the pre-placement frame.
         <ul
           ref={menuRef}
           className="order-card-folder-options"
-          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, overflowY: "auto" }}
+          style={{ position: "fixed", overflowY: "auto", opacity: placed ? 1 : 0, pointerEvents: placed ? "auto" : "none" }}
         >
           {matches.map((f) => (
             <li key={f.name}>
