@@ -2905,24 +2905,9 @@ export function CardGrid() {
     const id = window.setInterval(bump, 5 * 60 * 1000); // catch the Saturday rollover
     return () => { window.removeEventListener("focus", bump); document.removeEventListener("visibilitychange", onVis); window.clearInterval(id); };
   }, [badgeEnabled]);
-  const badgeCount = useMemo(() => {
-    if (!badgeEnabled || !weekHubFolder || !parsedSpacetime) return 0;
-    const sat = upcomingSaturdayIso();
-    const hubKey = folderMatchKey(weekHubFolder);
-    return parsedSpacetime.events.filter((e) => {
-      if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
-      const end = e.endDate ?? e.date;
-      return e.date <= sat && sat <= end; // include multi-day spans over Saturday
-    }).length;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badgeEnabled, weekHubFolder, parsedSpacetime, badgeTick]);
-  useEffect(() => {
-    // Only touch the native badge when the feature is ON — the disable path
-    // clears it explicitly in toggleBadge. (Calling the native command while
-    // disabled would hit UNUserNotificationCenter on every launch, which
-    // crashes an UNBUNDLED dev binary — no .app / main bundle.)
-    if (badgeEnabled) void badgeSet(badgeCount);
-  }, [badgeEnabled, badgeCount]);
+  // badgeCount + the native badgeSet effect live just below mwEvents — the
+  // badge must count the SAME filename-derived events the calendar shows
+  // (mwEvents), not the inert spacetime.yml parse. See below.
   const toggleBadge = useCallback(async (on: boolean) => {
     if (on) {
       const granted = await badgeRequestPermission();
@@ -3207,6 +3192,30 @@ export function CardGrid() {
   // (handleEventClick, openEventNote) can read it without re-binding.
   const mwEventIndexRef = useRef<Map<string, SpacetimeEvent>>(mwEventIndex);
   mwEventIndexRef.current = mwEventIndex;
+
+  // App-icon badge: how many events land on the upcoming (or current) Saturday
+  // in the Week Hub folder. Counts mwEvents — the live, FILENAME-derived events
+  // (the calendar's source of truth) — NOT parsedSpacetime, which parses the
+  // now-inert generated spacetime.yml and is empty in the decoupled model
+  // (that stale source is why the badge had gone blank).
+  const badgeCount = useMemo(() => {
+    if (!badgeEnabled || !weekHubFolder) return 0;
+    const sat = upcomingSaturdayIso();
+    const hubKey = folderMatchKey(weekHubFolder);
+    return mwEvents.filter((e) => {
+      if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
+      const end = e.endDate ?? e.date;
+      return e.date <= sat && sat <= end; // include multi-day spans over Saturday
+    }).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [badgeEnabled, weekHubFolder, mwEvents, badgeTick]);
+  useEffect(() => {
+    // Only touch the native badge when the feature is ON — the disable path
+    // clears it explicitly in toggleBadge. (Calling the native command while
+    // disabled would hit UNUserNotificationCenter on every launch, which
+    // crashes an UNBUNDLED dev binary — no .app / main bundle.)
+    if (badgeEnabled) void badgeSet(badgeCount);
+  }, [badgeEnabled, badgeCount]);
   // Drift: notes that ARE calendar events (date + time/all-day) but whose event
   // isn't in spacetime.mw. effectiveFolder hides them from every view; here we
   // collect them so the reconciliation indicator can flag them for the user to
