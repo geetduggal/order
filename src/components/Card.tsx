@@ -283,10 +283,10 @@ interface Props {
    *  for the read-only viewer; the app no longer shows a note × ). */
   onTogglePin?: () => void;
   onClosePile?: () => void;
-  /** Finance report → optionally create a 30-min calendar event per purchase,
-   *  tied to this folder. Passed only for a Notable Folder cover. Returns the
-   *  number of events created. */
-  onCreatePurchaseEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<number>;
+  /** Finance report → optionally create an all-day calendar event per purchase,
+   *  tied to this folder. Passed only for a Notable Folder cover. Returns how
+   *  many events were created and how many were skipped as duplicates. */
+  onCreatePurchaseEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<{ created: number; duplicates: number }>;
   /** File browser (backside) row actions — present only on the NF Main Doc. */
   onBrowserAddToPile?: (filename: string) => void;
   onBrowserRename?: (oldName: string, newName: string) => Promise<void> | void;

@@ -3633,30 +3633,45 @@ export function CardGrid() {
   // makes it an all-day event, and living in the folder ties it there. Returns
   // how many notes were actually written.
   const createPurchaseEvents = useCallback(
-    async (dirRel: string, accounts: string[], start: string, end: string): Promise<number> => {
+    async (dirRel: string, accounts: string[], start: string, end: string): Promise<{ created: number; duplicates: number }> => {
       const txns = await finance.fetchTransactions(accounts, start, end);
-      if (txns.length === 0) return 0;
+      if (txns.length === 0) return { created: 0, duplicates: 0 };
       const seg = dirRel.split("/").filter(Boolean).pop() ?? "";
       const folderRef = stripSortPrefix(seg);
       // Resolve the folder's on-disk dir from its loaded cover (matches the
       // container the rendered notes use — important on iOS); fall back to root.
       const dir = (folderRef && noteDirByRef(folderRef)) || (await vaultRoot());
-      let made = 0;
+      // The event filename is deterministic (date + title), so a re-run of the
+      // report — or the same purchase appearing twice in one fetch — would land
+      // on a basename that already exists. Skip those instead of piling up
+      // "… 2.md" copies, and report the count. `existing` seeds from the notes
+      // already in this folder; `seen` catches within-run repeats.
+      const existing = new Set(
+        (notesRef.current ?? [])
+          .filter((n) => { const p = n.path; const s = p.lastIndexOf("/"); return s >= 0 && p.slice(0, s) === dir; })
+          .map((n) => n.filename),
+      );
+      const seen = new Set<string>();
+      let created = 0;
+      let duplicates = 0;
       for (const t of txns) {
         const title = `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`;
+        const basename = basenameForEvent({ date: t.date }, title);
+        if (existing.has(basename) || seen.has(basename)) { duplicates++; continue; }
+        seen.add(basename);
         // Frontmatter is not consulted by the calendar (the filename is), but we
         // still stamp date/allDay/title so the note is self-describing and
         // Obsidian-Full-Calendar-compatible.
         const fm: Frontmatter = { allDay: true, date: t.date, title };
         try {
-          await uniqueWrite(dir, basenameForEvent({ date: t.date }, title), joinFrontmatter(fm, `# ${title}\n`));
-          made++;
+          await uniqueWrite(dir, basename, joinFrontmatter(fm, `# ${title}\n`));
+          created++;
         } catch (e) {
           console.error("purchase event write failed:", e);
         }
       }
-      if (made > 0) await reloadNotes();
-      return made;
+      if (created > 0) await reloadNotes();
+      return { created, duplicates };
     },
     [reloadNotes],
   );

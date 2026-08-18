@@ -18,8 +18,9 @@ export function FinanceReportModal({ dirRel, onClose, onCreateEvents }: {
   dirRel: string;
   onClose: () => void;
   /** When present, the "calendar events" option is offered; called after the
-   *  report is written to create one 30-min event per purchase in this folder. */
-  onCreateEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<number>;
+   *  report is written to create one all-day event per purchase in this folder.
+   *  Returns how many were created and how many were skipped as duplicates. */
+  onCreateEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<{ created: number; duplicates: number }>;
 }) {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -48,8 +49,10 @@ export function FinanceReportModal({ dirRel, onClose, onCreateEvents }: {
       const r = await finance.generateReport(accts, start, end, dirRel);
       let msg = `Wrote ${r.html_path.split("/").pop()} and its CSV — $${r.data.total_spend.toFixed(2)} total spend.`;
       if (makeEvents && onCreateEvents) {
-        const n = await onCreateEvents(dirRel, accts, start, end);
-        msg += ` Added ${n} calendar event${n === 1 ? "" : "s"}.`;
+        const { created, duplicates } = await onCreateEvents(dirRel, accts, start, end);
+        msg += ` Added ${created} calendar event${created === 1 ? "" : "s"}`;
+        if (duplicates > 0) msg += `; skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}`;
+        msg += ".";
       }
       setDone(msg);
     } catch (e) {
