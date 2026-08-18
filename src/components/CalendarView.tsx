@@ -49,6 +49,10 @@ export interface NoteMeta {
 interface Props {
   notes: NoteMeta[];
   initialView: CalendarRange;
+  /** ISO date the calendar opens on. CardGrid passes the upcoming Saturday for
+   *  the week view so entering it always lands on that week. The calendar
+   *  remounts on each view entry, so this applies every time. */
+  initialDate?: string;
   onMoveEvent: (path: string, patch: Frontmatter) => Promise<void>;
   /** Pointer x/y are forwarded so the parent can anchor an action menu
    *  next to the click instead of jumping straight into the note. */
@@ -272,14 +276,13 @@ function readPersistedHiddenDays(): number[] | null {
 }
 
 function mobileNarrowDefault(): number[] {
-  // Phone / narrow tablet: yesterday / today / tomorrow only — three
-  // adjacent columns with today in the middle once firstDay is
-  // derived. Computed from the device's local day so the cell
-  // alignment matches the user's wall clock on first launch.
-  const today = new Date().getDay();
-  const yesterday = (today + 6) % 7;
-  const tomorrow = (today + 1) % 7;
-  const visible = new Set([yesterday, today, tomorrow]);
+  // Phone / narrow tablet: three adjacent columns centered on SATURDAY
+  // (Fri / Sat / Sun). Order's week is Saturday-centric — the app badge and
+  // the weekly hub both key off the upcoming Saturday — so the narrow view
+  // opens with Saturday in the middle and visible, rather than today (which
+  // could hide Saturday entirely on, say, a Tuesday). Only a default: a
+  // persisted column selection still wins.
+  const visible = new Set([5, 6, 0]); // Fri, Sat, Sun
   return [0, 1, 2, 3, 4, 5, 6].filter((d) => !visible.has(d));
 }
 
@@ -298,7 +301,7 @@ function deriveFirstDay(hidden: ReadonlySet<number>): number {
 }
 
 export const CalendarView = forwardRef<CalendarViewHandle, Props>(function CalendarView(props, navRef) {
-  const { notes, initialView, onMoveEvent, onImportDay, onImportAppleDay } = props;
+  const { notes, initialView, initialDate, onMoveEvent, onImportDay, onImportAppleDay } = props;
   const apiRef = useRef<FullCalendar | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   // One-shot guard so the load-time "scroll to the next event" runs once per
@@ -655,6 +658,7 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         }}
         plugins={[dayGridPlugin, timeGridPlugin, multiMonthPlugin, interactionPlugin]}
         initialView={initialView}
+        initialDate={initialDate}
         // Multi-month opens on the CURRENT month (aligned to it, not January) and
         // runs 12 months forward as a single scrollable column, so "now" is first
         // and the future scrolls below — instead of a fixed Jan–Dec year grid.

@@ -512,6 +512,35 @@ fn event_time_json(t: &EventTime) -> serde_json::Value {
     }
 }
 
+/// Normalize an email for "is this the account's own inbox?" comparison. Gmail
+/// ignores dots and `+tags` in the local part and treats googlemail.com as
+/// gmail.com, so `geet.duggal+x@gmail.com` and `geetduggal@gmail.com` are the
+/// same inbox. A `+tag` is stripped for other domains too (widely supported);
+/// dots are preserved there since they're significant outside Gmail.
+pub fn normalize_email(email: &str) -> String {
+    let e = email.trim().to_lowercase();
+    let Some((local, domain)) = e.split_once('@') else { return e };
+    let domain = if domain == "googlemail.com" { "gmail.com" } else { domain };
+    let local = local.split('+').next().unwrap_or(local);
+    if domain == "gmail.com" {
+        format!("{}@{}", local.replace('.', ""), domain)
+    } else {
+        format!("{local}@{domain}")
+    }
+}
+
+/// Drop any attendee that resolves to `host` (the calendar owner) — inviting
+/// yourself to your own event should just create a plain event with no guests,
+/// not email you an invitation. Returns the real (external) guests only.
+pub fn attendees_excluding_self(host: &str, attendees: &[String]) -> Vec<String> {
+    let host_norm = normalize_email(host);
+    attendees
+        .iter()
+        .filter(|a| normalize_email(a) != host_norm)
+        .cloned()
+        .collect()
+}
+
 /// Build an events.insert/patch request body.
 pub fn event_json(
     summary: &str,
@@ -688,7 +717,10 @@ pub async fn gcal_push_event(app: tauri::AppHandle, input: PushEventInput) -> Re
     let token = fetch_access_token(&cfg, &input.host)?;
 
     let (start, end) = push_event_times(&input)?;
-    let body = event_json(&input.title, &input.description, &start, &end, &input.attendees);
+    // Self-invites become plain events: strip the owner's own address so Google
+    // doesn't email the user an invitation to their own calendar entry.
+    let guests = attendees_excluding_self(&input.host, &input.attendees);
+    let body = event_json(&input.title, &input.description, &start, &end, &guests);
 
     // List the day to find an existing natural-key match.
     let (tmin, tmax) = (local_rfc3339(&input.date, "00:00")?, local_rfc3339(&next_day(&input.date)?, "00:00")?);
@@ -835,6 +867,25 @@ pub fn parse_redirect_code(url: &str, expected_state: &str) -> Result<String, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn self_invite_is_stripped_gmail_normalized() {
+        // The account owner, in any Gmail dot/+tag/googlemail variant, is not a guest.
+        let host = "geetduggal@gmail.com";
+        let attendees = vec![
+            "Geet.Duggal@gmail.com".to_string(),      // dots + case
+            "geetduggal+order@googlemail.com".to_string(), // +tag + googlemail
+            "friend@example.com".to_string(),          // a real guest
+        ];
+        let guests = attendees_excluding_self(host, &attendees);
+        assert_eq!(guests, vec!["friend@example.com".to_string()]);
+    }
+
+    #[test]
+    fn self_only_invite_yields_no_guests() {
+        let guests = attendees_excluding_self("me@gmail.com", &["me@gmail.com".to_string()]);
+        assert!(guests.is_empty());
+    }
 
     #[test]
     fn parse_day_events_mixed() {

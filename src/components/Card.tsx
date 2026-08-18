@@ -61,7 +61,7 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, ArrowUpToLine as ArrowUpToLineIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon, Pin as PinIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon, Pin as PinIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
@@ -277,10 +277,16 @@ interface Props {
   listMode?: "none" | "cards" | "lines" | "masonry";
   onCycleList?: () => Promise<void> | void;
   /** File Piles (session-only). Present only for non-main cards in the
-   *  single-folder "Notable Folder view". onAddToPile moves this card to the
-   *  top of the folder's stream; onClosePile hides it for the session. */
-  onAddToPile?: () => void;
+   *  single-folder "Notable Folder view". onTogglePin adds/removes the `$ `
+   *  pin marker — durable top-of-folder ordering, the replacement for the old
+   *  session-only move-to-top. onClosePile hides a card for the session (kept
+   *  for the read-only viewer; the app no longer shows a note × ). */
+  onTogglePin?: () => void;
   onClosePile?: () => void;
+  /** Finance report → optionally create a 30-min calendar event per purchase,
+   *  tied to this folder. Passed only for a Notable Folder cover. Returns the
+   *  number of events created. */
+  onCreatePurchaseEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<number>;
   /** File browser (backside) row actions — present only on the NF Main Doc. */
   onBrowserAddToPile?: (filename: string) => void;
   onBrowserRename?: (oldName: string, newName: string) => Promise<void> | void;
@@ -327,8 +333,9 @@ export function Card(props: Props) {
     listMode,
     onCycleList,
     externalBodyVersion,
-    onAddToPile,
+    onTogglePin,
     onClosePile,
+    onCreatePurchaseEvents,
     onBrowserAddToPile,
     onBrowserRename,
     onBrowserDelete,
@@ -720,6 +727,15 @@ export function Card(props: Props) {
   useEffect(() => {
     if (!externalBodyVersion) return;
     if (inflight.current > 0) return;
+    // Never yank the document out from under an active edit. `dirty` means the
+    // user has unsaved keystrokes (typed within the save-debounce window); a
+    // replaceContent here would both reset the caret AND discard those
+    // keystrokes. The overwhelmingly common trigger for this effect is our OWN
+    // save re-entering as a bogus "external" change once the 6s self-write TTL
+    // has lapsed but the slow desktop poller finally ticks (~30s later) — in
+    // that case the disk already equals what the editor shows, so there is
+    // nothing to apply. Bail on dirty; the equality check below covers the rest.
+    if (dirty.current) return;
     void (async () => {
       try {
         const raw = await vaultFs.readText(toVaultRel(pathRef.current));
@@ -743,6 +759,12 @@ export function Card(props: Props) {
             setListItems(split.items);
           }
         }
+        // Re-check dirty AFTER the await — the user may have started typing
+        // while we read the disk. And skip the rebuild entirely when the disk
+        // already matches the editor (a no-op touch / stale self-write): a
+        // replaceContent with identical text still resets the ProseMirror
+        // selection, which is exactly the "cursor jumped" symptom.
+        if (dirty.current || editorNext === editorBodyRef.current) return;
         editorBodyRef.current = editorNext;
         milkdownRef.current?.replaceContent(editorNext);
       } catch { /* best-effort; if it fails, the next remount cycle will catch up */ }
@@ -1644,9 +1666,9 @@ export function Card(props: Props) {
               <TerminalIcon size={14} strokeWidth={2} /><span>{termOpen ? "Close terminal" : "Open terminal"}</span>
             </button>
           )}
-          {onAddToPile && (
-            <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { onAddToPile(); setMoreOpen(false); }}>
-              <ArrowUpToLineIcon size={14} strokeWidth={2} /><span>Move to top of pile</span>
+          {onTogglePin && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (isPinned ? " is-on" : "")} onClick={() => { onTogglePin(); setMoreOpen(false); }}>
+              <PinIcon size={14} strokeWidth={2} /><span>{isPinned ? "Unpin note" : "Pin note"}</span>
             </button>
           )}
           {!isMainDoc && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (
@@ -1956,6 +1978,7 @@ export function Card(props: Props) {
           <FinanceReportModal
             dirRel={(() => { const r = toVaultRel(pathRef.current); return r.includes("/") ? r.slice(0, r.lastIndexOf("/")) : ""; })()}
             onClose={() => setFinReportOpen(false)}
+            onCreateEvents={onCreatePurchaseEvents}
           />
         )}
       </div>

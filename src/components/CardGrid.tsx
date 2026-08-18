@@ -14,6 +14,7 @@ import { join } from "@tauri-apps/api/path";
 import { open as openDialog, confirm as tauriConfirm, message as tauriMessage } from "@tauri-apps/plugin-dialog";
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite, markSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
+import * as finance from "../lib/finance";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
@@ -1339,21 +1340,34 @@ export function CardGrid() {
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     const lastMtime = new Map<string, number>();
-    /** Read the file and compare to the in-memory body for that path —
-     *  return true only if the content actually differs. mtime-only
-     *  signals are very noisy on cloud-synced vaults (Dropbox / iCloud
-     *  touch files during sync without changing content), and bumping
-     *  No longer used as a filter — see reportExternal. Kept here in
-     *  case we want the comparison back as a "real-content" telemetry
-     *  signal later. */
-    void readKnownBody;
+    // readKnownBody is consulted in reportExternal to swallow no-op touches;
+    // markKnownBody is populated by the Card on load/save.
     void markKnownBody;
     async function reportExternal(paths: string[]) {
       if (cancelled) return;
       // Drop our own writes from the change set; anything remaining is
       // a genuine external mtime change.
       const external: string[] = [];
-      for (const p of paths) if (!consumeSelfWrite(p)) external.push(p);
+      for (const p of paths) {
+        // Fast path: within the 6s self-write TTL, definitely ours.
+        if (consumeSelfWrite(p)) continue;
+        // Slow path: the TTL may have lapsed before a slow poller tick (desktop
+        // polls every 30s) re-saw our own save, OR a cloud client (Dropbox /
+        // iCloud) touched the file's mtime without changing a byte. If the disk
+        // body still equals what we last wrote/loaded for this path, it is NOT
+        // a real external edit — swallow it so the open Card isn't rebuilt
+        // (cursor reset) and the pile isn't reloaded (masonry relayout). We
+        // ONLY suppress on an exact content match; an absent cache or any
+        // difference is reported, so a genuine external edit is never eaten.
+        const known = readKnownBody(p);
+        if (known !== undefined) {
+          try {
+            const { body } = splitFrontmatter(await vaultFs.readText(toVaultRel(p)));
+            if (body === known) continue;
+          } catch { /* fall through: report it */ }
+        }
+        external.push(p);
+      }
       // eslint-disable-next-line no-console
       console.log("[watcher] reportExternal", { incoming: paths.length, external: external.length, paths: external });
       if (external.length === 0) return;
@@ -1399,8 +1413,13 @@ export function CardGrid() {
           const paths = e.payload ?? [];
           // eslint-disable-next-line no-console
           console.log("[watcher] notify event", paths);
+          // reportExternal owns the reload decision: it filters our own writes
+          // (and no-op touches) and reloads ONLY when a genuinely external path
+          // remains — which covers external create / delete / modify alike.
+          // The old unconditional scheduleReload() here fired a full-vault
+          // metadata reload + masonry relayout on every autosave echo, which
+          // was a primary source of typing choppiness.
           void reportExternal(paths);
-          scheduleReload();
         });
       } catch (err) {
         // Non-fatal: poller below still gives us a freshness signal.
@@ -2086,6 +2105,10 @@ export function CardGrid() {
     setSidebarOpen((prev) => {
       const next = !prev;
       writeSidebarOpen(next);
+      // Opening the sidebar over a fullscreen card would leave the sidebar
+      // stranded behind the fixed-position card; collapse fullscreen so the
+      // sidebar the user just asked for is actually visible.
+      if (next) setFsCollapseNonce((n) => n + 1);
       return next;
     });
   }, []);
@@ -3534,22 +3557,33 @@ export function CardGrid() {
     });
   }, []);
 
-  const closeFromPile = useCallback((folder: string, path: string) => {
-    setPileHidden((prev) => {
-      const next = new Map(prev);
-      const s = new Set(next.get(folder) ?? []);
-      s.add(path);
-      next.set(folder, s);
-      return next;
-    });
-    setPileFront((prev) => {
-      const cur = prev.get(folder);
-      if (!cur || !cur.includes(path)) return prev;
-      const next = new Map(prev);
-      next.set(folder, cur.filter((p) => p !== path));
-      return next;
-    });
-  }, []);
+  // Durable pin: toggle the `$ ` sort marker on a note's filename. A pinned
+  // note sorts directly beneath its folder's cover (see the pile sort tiers),
+  // so this is the persistent replacement for the old session-only
+  // "move to top of pile". The rename is registered as a self-write so the
+  // watcher doesn't treat it as an external change and remount mid-action.
+  const togglePin = useCallback(async (path: string) => {
+    const rel = toVaultRel(path);
+    const slash = rel.lastIndexOf("/");
+    const dir = slash >= 0 ? rel.slice(0, slash) : "";
+    const base = slash >= 0 ? rel.slice(slash + 1) : rel;
+    const newBase = /^\$\s+/.test(base) ? base.replace(/^\$\s+/, "") : `$ ${base}`;
+    if (newBase === base) return;
+    const to = dir ? `${dir}/${newBase}` : newBase;
+    markSelfWrite(rel);
+    markSelfWrite(to);
+    try {
+      await vaultFs.rename(rel, to);
+    } catch (e) {
+      console.error("pin toggle failed:", e);
+      return;
+    }
+    // Keep the note on screen after reload mints its new path/id.
+    const newAbs = path.slice(0, path.length - base.length) + newBase;
+    setScrollTargetPath(newAbs);
+    setFocusedPath(newAbs);
+    await reloadNotes();
+  }, [reloadNotes]);
 
   // Resolve a file-browser row (folderRel + filename) to its loaded note path,
   // then surface it at the top of folderRef's pile.
@@ -3588,6 +3622,34 @@ export function CardGrid() {
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: next } : n) ?? null);
   }, []);
+
+  // Finance → calendar: create one 30-minute event per purchase, tied to the
+  // report's Notable Folder. Purchases carry no time (Plaid gives a date only),
+  // so same-day purchases are staggered from 09:00 in 30-minute blocks (times
+  // clamp at 23:59). Events are written into spacetime.mw — the calendar's
+  // source of truth — in a single edit, so N purchases cost one file write, not
+  // N navigations. Returns how many events were created.
+  const createPurchaseEvents = useCallback(
+    async (dirRel: string, accounts: string[], start: string, end: string): Promise<number> => {
+      const txns = await finance.fetchTransactions(accounts, start, end);
+      if (txns.length === 0) return 0;
+      const seg = dirRel.split("/").filter(Boolean).pop() ?? "";
+      const folderRef = stripSortPrefix(seg);
+      const BASE = "09:00";
+      const perDay = new Map<string, number>();
+      const events: SpacetimeEvent[] = txns.map((t) => {
+        const k = perDay.get(t.date) ?? 0;
+        perDay.set(t.date, k + 1);
+        const time = addMinutesToIsoTime(BASE, k * DEFAULT_EVENT_MINUTES);
+        const endTime = addMinutesToIsoTime(time, DEFAULT_EVENT_MINUTES);
+        const title = `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`;
+        return { date: t.date, time, endTime, allDay: false, title, ...(folderRef ? { folder: folderRef } : {}) };
+      });
+      await applyMwEdit((mw) => events.reduce((acc, ev) => mwAddEvent(acc, ev), mw));
+      return events.length;
+    },
+    [applyMwEdit],
+  );
 
   // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
   // no longer applied automatically: when the live mw diverges from the
@@ -4621,6 +4683,11 @@ export function CardGrid() {
     // Land focus + scroll on the new note. Both Pile and the
     // calendar views consume scrollTargetPath; the Card itself
     // picks up autoFocus on mount.
+    // Collapse any card currently in fullscreen so the new note isn't created
+    // behind it. The fresh card mounts AFTER this bump, takes the new nonce as
+    // its baseline, and so opens (and stays) fullscreen instead of
+    // self-collapsing — same contract createChat relies on.
+    setFsCollapseNonce((n) => n + 1);
     setFocusPath(path);
     setScrollTargetPath(path);
     setFocusedPath(path);
@@ -5844,12 +5911,15 @@ export function CardGrid() {
         vaultNotes={vaultNotesIndex}
         onNavigate={navigateToRef}
         onAddFilter={addFolderToFilter}
-        onRemoveFromFilter={inFilter ? () => removeFilter({ kind: "include", ref }) : undefined}
-        onClosePile={pile && !isMain ? () => closeFromPile(pile.folder, n.path) : undefined}
-        onAddToPile={pile && !isMain ? () => addToPile(pile.folder, n.path) : undefined}
+        // The × applies ONLY to a Notable Folder cover — it drops the folder
+        // from the filter, closing its section. Ordinary notes get no × at all.
+        onRemoveFromFilter={inFilter && isMain ? () => removeFilter({ kind: "include", ref }) : undefined}
+        // Durable pin replaces the old ephemeral move-to-top; notes only.
+        onTogglePin={!isMain ? () => togglePin(n.path) : undefined}
         onBrowserAddToPile={isMain ? (filename: string) => { addToPileByName(ref, vaultDirRelFor(n), filename); focusFolder(ref); } : undefined}
         onBrowserRename={isMain ? (oldName: string, newName: string) => renameVaultFile(vaultDirRelFor(n), oldName, newName) : undefined}
         onBrowserDelete={isMain ? (name: string) => deleteVaultFile(vaultDirRelFor(n), name) : undefined}
+        onCreatePurchaseEvents={isMain ? createPurchaseEvents : undefined}
         autoFocus={focusPath === n.path}
         wantFullscreen={fullscreenPath === n.path}
         collapseFullscreenSignal={fsCollapseNonce}
@@ -6588,6 +6658,9 @@ export function CardGrid() {
               key="week"
               notes={calendarNotes}
               initialView="timeGridWeek"
+              // Entering the week view always lands on the week containing the
+              // upcoming Saturday (= the current week until Saturday passes).
+              initialDate={upcomingSaturdayIso()}
               onMoveEvent={updateNoteFrontmatter}
               onEventClick={handleEventClick}
             onRenameEvent={renameEventTitle}

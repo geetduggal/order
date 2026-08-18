@@ -14,11 +14,18 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function FinanceReportModal({ dirRel, onClose }: { dirRel: string; onClose: () => void }) {
+export function FinanceReportModal({ dirRel, onClose, onCreateEvents }: {
+  dirRel: string;
+  onClose: () => void;
+  /** When present, the "calendar events" option is offered; called after the
+   *  report is written to create one 30-min event per purchase in this folder. */
+  onCreateEvents?: (dirRel: string, accounts: string[], start: string, end: string) => Promise<number>;
+}) {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [start, setStart] = useState(monthStartIso());
   const [end, setEnd] = useState(todayIso());
+  const [makeEvents, setMakeEvents] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -39,7 +46,12 @@ export function FinanceReportModal({ dirRel, onClose }: { dirRel: string; onClos
     try {
       const accts = selected.length ? selected : accounts;
       const r = await finance.generateReport(accts, start, end, dirRel);
-      setDone(`Wrote ${r.html_path.split("/").pop()} and its CSV — $${r.data.total_spend.toFixed(2)} total spend.`);
+      let msg = `Wrote ${r.html_path.split("/").pop()} and its CSV — $${r.data.total_spend.toFixed(2)} total spend.`;
+      if (makeEvents && onCreateEvents) {
+        const n = await onCreateEvents(dirRel, accts, start, end);
+        msg += ` Added ${n} calendar event${n === 1 ? "" : "s"}.`;
+      }
+      setDone(msg);
     } catch (e) {
       setError(typeof e === "string" ? e : String(e));
     } finally {
@@ -81,6 +93,12 @@ export function FinanceReportModal({ dirRel, onClose }: { dirRel: string; onClos
               </div>
             )}
           </div>
+          {onCreateEvents && (
+            <label className="order-fin-account" style={{ marginTop: 2 }}>
+              <input type="checkbox" checked={makeEvents} onChange={(e) => setMakeEvents(e.target.checked)} />
+              <span>Add a 30-min calendar event for each purchase (in this folder)</span>
+            </label>
+          )}
           {error && <div className="order-fin-error">{error}</div>}
           {done && <div className="order-fin-ok">{done}</div>}
         </div>
