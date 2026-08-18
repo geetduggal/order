@@ -3613,40 +3613,36 @@ export function CardGrid() {
    *  updates the in-memory mw note body so the calendar (which reads mwEvents)
    *  reflects the change on the next render; Effect 2 then mirrors to yml and
    *  reconciles any space changes. spacetime.mw is the single source of truth. */
-  const applyMwEdit = useCallback(async (transform: (mw: string) => string) => {
+  const applyMwEdit = useCallback(async (transform: (mw: string) => string): Promise<boolean> => {
     const mw = await readVault(spacetimeRootPathRef.current).catch(() => "");
-    if (!mw) return;
+    if (!mw) return false;
     const next = transform(mw);
-    if (next === mw) return;
+    if (next === mw) return false;
     await writeVault(spacetimeRootPathRef.current, next);
     setNotes((prev) => prev?.map((n) =>
       toVaultRel(n.path) === spacetimeRootPathRef.current ? { ...n, body: next } : n) ?? null);
+    return true;
   }, []);
 
-  // Finance → calendar: create one 30-minute event per purchase, tied to the
-  // report's Notable Folder. Purchases carry no time (Plaid gives a date only),
-  // so same-day purchases are staggered from 09:00 in 30-minute blocks (times
-  // clamp at 23:59). Events are written into spacetime.mw — the calendar's
-  // source of truth — in a single edit, so N purchases cost one file write, not
-  // N navigations. Returns how many events were created.
+  // Finance → calendar: create one all-day event per purchase, tied to the
+  // report's Notable Folder and landing on the purchase date. Events are
+  // written into spacetime.mw — the calendar's source of truth — in a single
+  // edit, so N purchases cost one file write. Returns how many were created
+  // (0 if the mw couldn't be read / no purchases in range).
   const createPurchaseEvents = useCallback(
     async (dirRel: string, accounts: string[], start: string, end: string): Promise<number> => {
       const txns = await finance.fetchTransactions(accounts, start, end);
       if (txns.length === 0) return 0;
       const seg = dirRel.split("/").filter(Boolean).pop() ?? "";
       const folderRef = stripSortPrefix(seg);
-      const BASE = "09:00";
-      const perDay = new Map<string, number>();
-      const events: SpacetimeEvent[] = txns.map((t) => {
-        const k = perDay.get(t.date) ?? 0;
-        perDay.set(t.date, k + 1);
-        const time = addMinutesToIsoTime(BASE, k * DEFAULT_EVENT_MINUTES);
-        const endTime = addMinutesToIsoTime(time, DEFAULT_EVENT_MINUTES);
-        const title = `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`;
-        return { date: t.date, time, endTime, allDay: false, title, ...(folderRef ? { folder: folderRef } : {}) };
-      });
-      await applyMwEdit((mw) => events.reduce((acc, ev) => mwAddEvent(acc, ev), mw));
-      return events.length;
+      const events: SpacetimeEvent[] = txns.map((t) => ({
+        date: t.date,
+        allDay: true,
+        title: `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`,
+        ...(folderRef ? { folder: folderRef } : {}),
+      }));
+      const wrote = await applyMwEdit((mw) => events.reduce((acc, ev) => mwAddEvent(acc, ev), mw));
+      return wrote ? events.length : 0;
     },
     [applyMwEdit],
   );

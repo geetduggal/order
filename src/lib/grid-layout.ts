@@ -54,11 +54,24 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       relayoutMany([...grid.querySelectorAll<HTMLElement>(":scope > .card-grid-cell")]);
     }
 
+    // A fullscreen card is position:fixed — OUT of the grid flow — so its cell
+    // span is irrelevant while it's up. Measuring it (offsetHeight) on every
+    // keystroke would still force a full-document synchronous layout across
+    // every mounted cell behind it: the exact typing lag that scales with
+    // folder size. Skip it; the ResizeObserver re-spans once on exit, when the
+    // card returns to flow at its new height (the is-fullscreen class is gone
+    // by the time that resize fires).
+    function cellIsFullscreen(cell: HTMLElement): boolean {
+      const card = cell.firstElementChild;
+      return card instanceof HTMLElement && card.classList.contains("is-fullscreen");
+    }
+
     // Observer-driven relayouts coalesce here: cells accumulate for the
     // current frame and flush as ONE read/write batch.
     const pending = new Set<HTMLElement>();
     let flushScheduled = false;
     function scheduleRelayout(cell: HTMLElement) {
+      if (cellIsFullscreen(cell)) return;
       pending.add(cell);
       if (flushScheduled) return;
       flushScheduled = true;
@@ -86,9 +99,13 @@ export function useGridLayout(grid: HTMLDivElement | null) {
       ro.observe(card);
       if (cardMOs.has(card)) return;
       const cmo = new MutationObserver(() => scheduleRelayout(cell));
-      cmo.observe(card, {
-        childList: true, subtree: true, characterData: true, attributes: true,
-      });
+      // childList/subtree only: a block added or removed changes the card's
+      // height (re-span needed). characterData + attributes fired on EVERY
+      // keystroke and selection change — height-irrelevant churn that forced a
+      // synchronous layout per character. The ResizeObserver already re-spans
+      // on any real height change (line wrap, block growth), so those are
+      // covered without the per-character storm.
+      cmo.observe(card, { childList: true, subtree: true });
       cardMOs.set(card, cmo);
     }
 
@@ -106,25 +123,41 @@ export function useGridLayout(grid: HTMLDivElement | null) {
     const mo = new MutationObserver(reattachAndRelayout);
     mo.observe(grid, { childList: true });
 
-    // Triggered on user input inside any editor child — harmless in
-    // the viewer (no editable surfaces) and load-bearing in the app
-    // (catches ProseMirror DOM changes RO misses).
+    // Input-driven relayout — a throttled fallback for the app only (the viewer
+    // has no editable surfaces). The ResizeObserver is the primary height
+    // signal, but iOS WKWebView's RO can lag a frame, so a low-frequency input
+    // catch-up keeps the card sized as you type. Throttled to ~150ms (leading +
+    // trailing) so a fast typing burst can't force a full-grid layout every
+    // frame — the core of the big-folder typing lag. `keyup` was a redundant
+    // second trigger per keystroke and is gone.
+    let inputLast = 0;
+    let inputTrailing: ReturnType<typeof setTimeout> | null = null;
+    function relayoutFromInput(cell: HTMLElement) {
+      inputLast = performance.now();
+      scheduleRelayout(cell);
+    }
     function onInput(e: Event) {
       const t = e.target;
       if (!(t instanceof Element)) return;
       const cell = t.closest(".card-grid-cell");
-      if (cell instanceof HTMLElement) scheduleRelayout(cell);
+      if (!(cell instanceof HTMLElement) || cellIsFullscreen(cell)) return;
+      const now = performance.now();
+      if (now - inputLast >= 150) {
+        relayoutFromInput(cell);
+      } else {
+        if (inputTrailing) clearTimeout(inputTrailing);
+        inputTrailing = setTimeout(() => { inputTrailing = null; relayoutFromInput(cell); }, 150);
+      }
     }
     grid.addEventListener("input", onInput, true);
-    grid.addEventListener("keyup", onInput, true);
 
     window.addEventListener("resize", relayoutAll);
     return () => {
       ro.disconnect();
       mo.disconnect();
       pending.clear();
+      if (inputTrailing) clearTimeout(inputTrailing);
       grid.removeEventListener("input", onInput, true);
-      grid.removeEventListener("keyup", onInput, true);
       window.removeEventListener("resize", relayoutAll);
     };
   }, [grid]);
