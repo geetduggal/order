@@ -3625,26 +3625,40 @@ export function CardGrid() {
   }, []);
 
   // Finance → calendar: create one all-day event per purchase, tied to the
-  // report's Notable Folder and landing on the purchase date. Events are
-  // written into spacetime.mw — the calendar's source of truth — in a single
-  // edit, so N purchases cost one file write. Returns how many were created
-  // (0 if the mw couldn't be read / no purchases in range).
+  // report's Notable Folder and landing on the purchase date. In the DECOUPLED
+  // model the calendar's source of truth is the FILESYSTEM — buildSpacetime
+  // derives events from each note's FILE NAME (event-filename.ts), NOT from
+  // spacetime.mw (a generated view, never a sync target). So each purchase is a
+  // dated note written into the folder's own directory: a date-only filename
+  // makes it an all-day event, and living in the folder ties it there. Returns
+  // how many notes were actually written.
   const createPurchaseEvents = useCallback(
     async (dirRel: string, accounts: string[], start: string, end: string): Promise<number> => {
       const txns = await finance.fetchTransactions(accounts, start, end);
       if (txns.length === 0) return 0;
       const seg = dirRel.split("/").filter(Boolean).pop() ?? "";
       const folderRef = stripSortPrefix(seg);
-      const events: SpacetimeEvent[] = txns.map((t) => ({
-        date: t.date,
-        allDay: true,
-        title: `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`,
-        ...(folderRef ? { folder: folderRef } : {}),
-      }));
-      const wrote = await applyMwEdit((mw) => events.reduce((acc, ev) => mwAddEvent(acc, ev), mw));
-      return wrote ? events.length : 0;
+      // Resolve the folder's on-disk dir from its loaded cover (matches the
+      // container the rendered notes use — important on iOS); fall back to root.
+      const dir = (folderRef && noteDirByRef(folderRef)) || (await vaultRoot());
+      let made = 0;
+      for (const t of txns) {
+        const title = `${t.merchant} — $${Math.abs(t.amount).toFixed(2)}`;
+        // Frontmatter is not consulted by the calendar (the filename is), but we
+        // still stamp date/allDay/title so the note is self-describing and
+        // Obsidian-Full-Calendar-compatible.
+        const fm: Frontmatter = { allDay: true, date: t.date, title };
+        try {
+          await uniqueWrite(dir, basenameForEvent({ date: t.date }, title), joinFrontmatter(fm, `# ${title}\n`));
+          made++;
+        } catch (e) {
+          console.error("purchase event write failed:", e);
+        }
+      }
+      if (made > 0) await reloadNotes();
+      return made;
     },
-    [applyMwEdit],
+    [reloadNotes],
   );
 
   // spacetime.mw hand-edit DETECTION (gated sync). Structural mw changes are
