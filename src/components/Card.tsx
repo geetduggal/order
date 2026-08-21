@@ -1053,6 +1053,25 @@ export function Card(props: Props) {
   // Stable so the memoized MilkdownSurface isn't re-rendered by every Card
   // state change (e.g. the save-status toggle) — see #33.
   const handleEditorDone = useCallback(() => { void flushNow(); }, [flushNow]);
+  const renameFile = useCallback(async (nextTitle: string) => {
+    const cur = pathRef.current;
+    const filename = cur.split("/").pop() ?? cur;
+    const marker = (filename.match(/^([!$]\s+)/) || [])[1] ?? "";
+    const isChat = /\.chat\.md$/i.test(filename);
+    const ext = isChat ? ".chat.md" : (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".md");
+    const stem = filename.slice(marker.length).replace(/\.chat\.md$/i, "").replace(/\.[a-z0-9]+$/i, "");
+    const safe = nextTitle.replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
+    const parsed = parseEventFilename(stem);
+    const newBase = parsed
+      ? marker + formatEventFilename(parsed, safe) + ext   // keep date/time token
+      : marker + safe + ext;
+    if (newBase === filename) return;
+    try {
+      const dir = await dirname(cur);
+      const newPath = await uniqueRename(dir, cur, newBase);
+      if (newPath !== cur) { pathRef.current = newPath; onRenamedRef.current?.(newPath); }
+    } catch (err) { console.warn("rename failed:", err); }
+  }, []);
 
   const handleChange = useCallback((markdown: string) => {
     pendingBody.current = markdown;
@@ -1431,25 +1450,6 @@ export function Card(props: Props) {
     }
     return raw.replace(/^\d{1,2}(?:\.\d{1,3})+\s+/, "");
   })();
-  const renameFile = useCallback(async (nextTitle: string) => {
-    const cur = pathRef.current;
-    const filename = cur.split("/").pop() ?? cur;
-    const marker = (filename.match(/^([!$]\s+)/) || [])[1] ?? "";
-    const isChat = /\.chat\.md$/i.test(filename);
-    const ext = isChat ? ".chat.md" : (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".md");
-    const stem = filename.slice(marker.length).replace(/\.chat\.md$/i, "").replace(/\.[a-z0-9]+$/i, "");
-    const safe = nextTitle.replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
-    const parsed = parseEventFilename(stem);
-    const newBase = parsed
-      ? marker + formatEventFilename(parsed, safe) + ext   // keep date/time token
-      : marker + safe + ext;
-    if (newBase === filename) return;
-    try {
-      const dir = await dirname(cur);
-      const newPath = await uniqueRename(dir, cur, newBase);
-      if (newPath !== cur) { pathRef.current = newPath; onRenamedRef.current?.(newPath); }
-    } catch (err) { console.warn("rename failed:", err); }
-  }, []);
   const commitName = () => {
     setNameEditing(false);
     const t = nameDraft.trim();
