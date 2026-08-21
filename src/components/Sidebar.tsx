@@ -97,6 +97,10 @@ interface Props {
   onToggleCategoryFilter?: (name: string, area: string) => void;
   /** Refs currently in the filter (same set used for NF rows). */
   filteredRefs?: Set<string>;
+  /** File-type lens: the set of active types ("chat"|"html"|"image") and its
+   *  toggler. Rendered as a small chip row at the top of the sidebar. */
+  fileTypeFilter?: Set<string>;
+  onToggleFileType?: (t: string) => void;
 }
 
 interface Taxonomy {
@@ -218,6 +222,8 @@ export function Sidebar({
   onToggleAreaFilter,
   onToggleCategoryFilter,
   filteredRefs,
+  fileTypeFilter,
+  onToggleFileType,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
 
@@ -251,6 +257,24 @@ export function Sidebar({
           is still threaded so callers don't need to know we moved
           the UI. */}
       {filters && <section className="sb-section sb-filters-slot">{filters}</section>}
+      {onToggleFileType && (
+        <section className="sb-section sb-filetypes">
+          <div className="sb-filetypes-row">
+            {([["chat", "Chat"], ["html", "HTML"], ["image", "Image"]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={"sb-filetype-chip" + (fileTypeFilter?.has(key) ? " is-on" : "")}
+                onClick={() => onToggleFileType(key)}
+                aria-pressed={fileTypeFilter?.has(key) ?? false}
+                title={fileTypeFilter?.has(key) ? `Showing only ${label}` : `Show only ${label}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="sb-section sb-filters">
         <DrillView

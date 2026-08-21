@@ -663,6 +663,20 @@ export function CardGrid() {
   // "Public only" toggle: show only `public: true` notes in the Pile
   // (off = public + private together). Persisted; survives filter changes.
   const [publicOnly, setPublicOnly] = useState<boolean>(readPublicOnly);
+  // Sidebar file-type lens: when non-empty, the Pile shows only notes matching
+  // one of the selected types (Chat = .chat.md, HTML = .html page, Image). OR
+  // across the selected types; empty = no restriction.
+  const [fileTypeFilter, setFileTypeFilter] = useState<Set<string>>(new Set());
+  const toggleFileType = useCallback((t: string) => {
+    setFileTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
+  }, []);
+  const matchesFileType = useCallback((filename: string): boolean => {
+    if (fileTypeFilter.size === 0) return true;
+    if (fileTypeFilter.has("chat") && /\.chat\.md$/i.test(filename)) return true;
+    if (fileTypeFilter.has("html") && /\.html?$/i.test(filename) && !/\.sheet\.html$/i.test(filename)) return true;
+    if (fileTypeFilter.has("image") && isImagePath(filename)) return true;
+    return false;
+  }, [fileTypeFilter]);
   // Pile pagination: cap initial Card mounts when nothing is filtered.
   // Card mounts ProseMirror per note, so unbounded Piles at 10^4 notes
   // are dead on arrival. `pileLimit = N` shows the N most-recent notes;
@@ -1288,6 +1302,14 @@ export function CardGrid() {
       setLoadErrorPath(attemptedRoot || (await vaultRoot().catch(() => "")));
     }
   }, []);
+
+  // Cmd+R: refresh Order's visuals — re-read the vault from disk (picking up any
+  // external edits) and force a masonry relayout — WITHOUT a full webview reload
+  // (Order is the page; a reload would tear down all editor state).
+  const refreshVisuals = useCallback(async () => {
+    await reloadNotes();
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  }, [reloadNotes]);
 
   // Per-path "external change" version counter. Bumped when the watcher
   // (or the polling fallback) reports a file changed and the change was
@@ -2149,6 +2171,8 @@ export function CardGrid() {
   // toggle — goHome is defined earlier and we don't want a stale
   // closure from the keydown effect's mount.
   const goHomeRef = useRef<(() => void) | null>(null);
+  const refreshVisualsRef = useRef<(() => void) | null>(null);
+  useEffect(() => { refreshVisualsRef.current = () => void refreshVisuals(); }, [refreshVisuals]);
   // Cmd+4 opens the terminal for the currently-focused Notable Folder —
   // same effect as clicking the terminal icon on that NF's card. It
   // dispatches a window event the matching Card listens for (forward-ref
@@ -2339,17 +2363,21 @@ export function CardGrid() {
         resetToDefaultRef.current?.();
         return;
       }
-      // Cmd+R mirrors the dock's Home toggle: if currently filtered
-      // to home only, clear all filters; otherwise jump to home.
-      // Overrides the platform's "reload" default — Order is the
-      // page, you don't reload the page from inside the page.
+      // Cmd+R refreshes Order's visuals (re-read the vault from disk + relayout).
+      // Cmd+Shift+R keeps the old Home toggle: filtered to home only → clear all
+      // filters; otherwise jump to home. Neither reloads the webview — Order is
+      // the page, you don't reload the page from inside the page.
       if (e.key === "r" || e.key === "R") {
         e.preventDefault();
-        const home = homeFolderRef.current;
-        const inc = includeSetRef.current;
-        const homeFiltered = !!home && inc.size === 1 && inc.has(home);
-        if (homeFiltered) resetToDefaultRef.current?.();
-        else goHomeRef.current?.();
+        if (e.shiftKey) {
+          const home = homeFolderRef.current;
+          const inc = includeSetRef.current;
+          const homeFiltered = !!home && inc.size === 1 && inc.has(home);
+          if (homeFiltered) resetToDefaultRef.current?.();
+          else goHomeRef.current?.();
+        } else {
+          refreshVisualsRef.current?.();
+        }
         return;
       }
       // Cmd/Ctrl+W drops the top Notable Folder from the pile (its section),
@@ -3462,6 +3490,11 @@ export function CardGrid() {
       const overrides = accepted.filter((r) => r.folder?.trim() && r.folder.trim() !== review.folder).length;
       const baseMsg = `Imported ${accepted.length} event(s) into ${review.folder || "home"}${overrides ? ` (${overrides} into other folders)` : ""}.`;
       const fullMsg = noteErrors.length > 0 ? `${baseMsg}\n${noteErrors.length} note(s) failed:\n${noteErrors.join("\n")}` : baseMsg;
+      // Surface the freshly-written event notes NOW rather than waiting for the
+      // filesystem watcher/poller to notice them (that lag is what made imports
+      // feel delayed). reloadNotes re-reads the vault so the calendar + pile
+      // update on the next paint.
+      await reloadNotes();
       await tauriMessage(fullMsg, { title: "Import", ...(noteErrors.length > 0 ? { kind: "warning" } : {}) });
     } catch (e) { await tauriMessage(`Import apply failed: ${String(e)}`, { title: "Import", kind: "error" }); }
     finally { setImportBusy(false); }
@@ -5793,7 +5826,9 @@ export function CardGrid() {
       return pileMode === "notes" ? !isNF : isNF;
     })
     // "Public only": drop notes without `public: true` in YAML.
-    .filter((n) => !publicOnly || n.frontmatter.public === true);
+    .filter((n) => !publicOnly || n.frontmatter.public === true)
+    // Sidebar file-type lens (Chat / HTML / Image); no-op when nothing selected.
+    .filter((n) => matchesFileType(n.filename));
 
   // Single-folder mode = exactly one include filter. In this mode the
   // folder reads like a "page": its Main Document gets the full-width
@@ -6813,6 +6848,8 @@ export function CardGrid() {
           onRenameFolder={handleRenameNotableFolder}
           order={vaultTaxonomy.areas}
           filteredRefs={includeSet}
+          fileTypeFilter={fileTypeFilter}
+          onToggleFileType={toggleFileType}
           onToggleAreaFilter={(name) => {
             if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
             else addInclude(name);

@@ -8488,3 +8488,53 @@ body.is-tile-dragging * {
 .order-card-image-name { font: inherit; font-size: 13px; color: var(--ink-faint); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; width: 100%; }
 .order-card-image-name:hover { border-color: var(--card-border); color: var(--ink); }
 .order-card-image-name:focus { outline: none; border-color: var(--coral); color: var(--ink); background: var(--card-bg); }
+
+
+/* Sidebar file-type lens chips (Chat / HTML / Image) — a subtle toggle row. */
+.sb-filetypes { padding-top: 2px; padding-bottom: 2px; }
+.sb-filetypes-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.sb-filetype-chip {
+  font-size: calc(11.5px * var(--text-scale, 1));
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--ink-faint);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sb-filetype-chip:hover { color: var(--ink); border-color: var(--ink-faint); }
+.sb-filetype-chip.is-on {
+  background: var(--accent, #4a7);
+  border-color: var(--accent, #4a7);
+  color: #fff;
+}
+
+/* Inline filename editor in the card header — subtle until hovered/focused. */
+.order-card-name {
+  max-width: 40ch;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: calc(11.5px * var(--text-scale, 1));
+  cursor: text;
+  min-width: 0;
+}
+.order-card-name:hover { color: var(--ink); border-color: var(--card-border); }
+.order-card-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-card-name-input {
+  max-width: 40ch;
+  padding: 1px 5px;
+  border: 1px solid var(--accent, #4a7);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--ink);
+  font-size: calc(11.5px * var(--text-scale, 1));
+  font-family: inherit;
+}

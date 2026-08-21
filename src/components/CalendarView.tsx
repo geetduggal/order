@@ -722,6 +722,11 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventDragStart={() => {
           document.body.classList.add("is-tile-dragging");
           document.addEventListener("selectstart", preventSelect);
+          // Clear any selection begun during the pre-drag threshold movement —
+          // user-select:none (added by the class) stops NEW selection but not an
+          // existing one, which otherwise stays highlighted as you drag over the
+          // hub's editor. (The tile-drag path already does this.)
+          try { window.getSelection()?.removeAllRanges(); } catch { /* ignore */ }
           const move = (e: PointerEvent) => {
             lastPointerRef.current = { x: e.clientX, y: e.clientY };
             highlightListZone(e.clientX, e.clientY);

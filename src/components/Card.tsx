@@ -23,7 +23,6 @@ const SheetSurface = lazy(() => import("./SheetSurface").then((m) => ({ default:
 const DrawingSurface = lazy(() => import("./DrawingSurface").then((m) => ({ default: m.DrawingSurface })));
 import { FrontmatterInspector } from "./FrontmatterInspector";
 import {
-  basenameForEvent,
   deriveNoteTitleFromBody,
   joinFrontmatter,
   splitFrontmatter,
@@ -406,6 +405,10 @@ export function Card(props: Props) {
   // surface's own toolbar).
   const [moreOpen, setMoreOpen] = useState(false);
   const [finReportOpen, setFinReportOpen] = useState(false);
+  // Inline filename editor (subtle chip in the header). Decoupled from the body
+  // so renaming is an explicit, deliberate act.
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   // The menu renders in a portal (fixed coords from the button) so it escapes
   // sibling cards' stacking contexts / overflow — otherwise a later card
   // paints over it.
@@ -998,47 +1001,17 @@ export function Card(props: Props) {
       // reaches the derived sidebar taxonomy / calendar.
       onPersistedRef.current?.(path, outFrontmatter, persistedBody);
 
-      // Auto-rename whenever the body's first line of text changes —
-      // heading or not. firstLineTitle strips leading markdown markers
-      // (#, -, *, >) so the filename always tracks the visible first
-      // line. Empty body skips rename (file keeps "Untitled" or the
-      // last name the user typed).
-      // Notable Folder Main Documents skip rename because their filename
-      // IS the folder's identity (other notes reference it via
-      // `folder: [[Books]]` and that link would break on rename).
+      // The filename is DECOUPLED from the body's first line. Editing a note's
+      // H1 no longer renames the file — that silently changed a note's identity
+      // and broke wikilinks (the confusion this fixes). The filename is edited
+      // explicitly via the card's inline name editor (renameFile below). We
+      // still mirror the body-derived title into the in-memory note so the
+      // pile / search label stays fresh without a reload, but never touch disk.
       const title = deriveNoteTitleFromBody(body);
-      const isMain = isMainDocPath(path);
-      if (!isMain && title && title !== lastTitleRef.current) {
-        const currentFilename = path.split("/").pop() ?? path;
-        // Preserve a reserved leading marker (`$ ` pinned) across the rename, and
-        // read the date from AFTER it — otherwise editing a pinned note's title
-        // would strip its pin and mis-read the date as "today".
-        const marker = (currentFilename.match(/^([!$]\s+)/) || [])[1] ?? "";
-        const afterMarker = currentFilename.slice(marker.length);
-        // Spacetime is the authority for an event's date, and the filename
-        // already mirrors it — so on a title edit, KEEP the filename's existing
-        // date and only swap the title part. Frontmatter date is vestigial and
-        // deliberately ignored (it must never override the spacetime date).
-        // Only a note with no date in its name at all falls back to today.
-        const fnDate = (afterMarker.match(/^(\d{4}-\d{2}-\d{2})/) || [])[1];
-        const desired = marker + basenameForEvent(fnDate, title);
-        if (desired !== currentFilename) {
-          try {
-            const dir = await dirname(path);
-            const newPath = await uniqueRename(dir, path, desired);
-            if (newPath !== path) {
-              pathRef.current = newPath;
-              onRenamedRef.current?.(newPath);
-            }
-          } catch (err) {
-            console.warn("rename failed:", err);
-          }
-        }
+      if (title && title !== lastTitleRef.current) {
         lastTitleRef.current = title;
         onTitleChangedRef.current?.(title);
       } else if (!title && lastTitleRef.current !== null) {
-        // Body went empty — leave the filename alone but stop tracking
-        // the old title so the next non-empty save triggers a rename.
         lastTitleRef.current = null;
       }
     } catch (err) {
@@ -1443,6 +1416,45 @@ export function Card(props: Props) {
     if (jd) return jd[1];
     return fmDateRaw;
   })();
+
+  // The human-editable part of the filename: the title AFTER any date/JD prefix
+  // and reserved marker. Editing it renames the file while preserving the date/
+  // time token, the marker, and the extension (.md / .chat.md).
+  const editableTitle = (() => {
+    const raw = (pathRef.current.split("/").pop() ?? "")
+      .replace(/\.chat\.md$/i, "").replace(/\.[a-z0-9]+$/i, "")
+      .replace(/^[!$]+\s*/, "");
+    const parsed = parseEventFilename(raw);
+    if (parsed) {
+      const token = formatEventFilename(parsed, "").trim();
+      return raw.slice(token.length).replace(/^\s+/, "");
+    }
+    return raw.replace(/^\d{1,2}(?:\.\d{1,3})+\s+/, "");
+  })();
+  const renameFile = useCallback(async (nextTitle: string) => {
+    const cur = pathRef.current;
+    const filename = cur.split("/").pop() ?? cur;
+    const marker = (filename.match(/^([!$]\s+)/) || [])[1] ?? "";
+    const isChat = /\.chat\.md$/i.test(filename);
+    const ext = isChat ? ".chat.md" : (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".md");
+    const stem = filename.slice(marker.length).replace(/\.chat\.md$/i, "").replace(/\.[a-z0-9]+$/i, "");
+    const safe = nextTitle.replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
+    const parsed = parseEventFilename(stem);
+    const newBase = parsed
+      ? marker + formatEventFilename(parsed, safe) + ext   // keep date/time token
+      : marker + safe + ext;
+    if (newBase === filename) return;
+    try {
+      const dir = await dirname(cur);
+      const newPath = await uniqueRename(dir, cur, newBase);
+      if (newPath !== cur) { pathRef.current = newPath; onRenamedRef.current?.(newPath); }
+    } catch (err) { console.warn("rename failed:", err); }
+  }, []);
+  const commitName = () => {
+    setNameEditing(false);
+    const t = nameDraft.trim();
+    if (t && t !== editableTitle) void renameFile(t);
+  };
   // First http(s) URL in the YAML → a small link-out pill beside the
   // date chip (replaces the old auto-open-frontmatter heuristic). Always
   // visible so it works on touch; opens via openExternalUrl so every
@@ -1487,6 +1499,33 @@ export function Card(props: Props) {
               : <CalendarIcon size={11} strokeWidth={2} />}
             {chipLabel && <span className="order-card-fm-date">{chipLabel}</span>}
           </button>
+          {!isMainDoc && !readOnly && !isImageNote && !isHtmlNote && (
+            nameEditing ? (
+              <input
+                className="order-card-name-input"
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commitName(); }
+                  if (e.key === "Escape") { e.preventDefault(); setNameEditing(false); }
+                }}
+                onBlur={commitName}
+                placeholder="File name…"
+                aria-label="File name"
+              />
+            ) : (
+              <button
+                type="button"
+                className="order-card-name"
+                onClick={(e) => { e.stopPropagation(); setNameDraft(editableTitle); setNameEditing(true); }}
+                title="Rename file"
+              >
+                <span className="order-card-name-text">{editableTitle || "Untitled"}</span>
+              </button>
+            )
+          )}
           {isPinned && (
             <span className="order-card-pin" title="Pinned" aria-label="Pinned">
               <PinIcon size={11} strokeWidth={2} fill="currentColor" />

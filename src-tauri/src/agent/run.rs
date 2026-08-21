@@ -113,28 +113,43 @@ fn gather_context(root: &Path, dir_rel: &str, current_chat: &str) -> (String, Ve
     let cutoff = chrono::Local::now().date_naive() - chrono::Duration::days(CHAT_WINDOW_DAYS);
     let current_name = Path::new(current_chat).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
+    // A lightweight index of the non-chat files in THIS folder (names only).
     let mut files = Vec::new();
-    let mut chats: Vec<(String, PathBuf)> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(&dir_abs) {
         for e in rd.flatten() {
             if e.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue; }
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') { continue; }
-            if name.ends_with(".chat.md") {
-                if name == current_name { continue; }
-                // date-prefixed filename → cheap window check
-                let in_window = name.get(0..10)
-                    .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                    .map(|d| d >= cutoff)
-                    .unwrap_or(true);
-                if in_window { chats.push((name, e.path())); }
-            } else {
-                files.push(name);
-            }
+            if name.starts_with('.') || name.ends_with(".chat.md") { continue; }
+            files.push(name);
         }
     }
     files.sort();
-    chats.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+
+    // Recent chats from the WHOLE vault (not just this folder), so a hands-free
+    // session has cross-folder continuity. Hidden dirs (.order-legacy/trash,
+    // .git, …) are pruned. Keyed by the date-prefixed filename for the window
+    // check + newest-first ordering; the vault-relative dir is shown for context.
+    let mut chats: Vec<(String, String, PathBuf)> = Vec::new();
+    for entry in walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() { continue; }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".chat.md") || name == current_name { continue; }
+        let in_window = name.get(0..10)
+            .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            .map(|d| d >= cutoff)
+            .unwrap_or(true);
+        if !in_window { continue; }
+        let rel_dir = entry.path().parent()
+            .and_then(|p| p.strip_prefix(root).ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        chats.push((name, rel_dir, entry.path().to_path_buf()));
+    }
+    chats.sort_by(|a, b| b.0.cmp(&a.0)); // newest first (date-prefixed name)
 
     let mut ctx = format!(
         "The current date and time is {}.\nYou are working in the notable folder `{}`.\n\n",
@@ -148,10 +163,11 @@ fn gather_context(root: &Path, dir_rel: &str, current_chat: &str) -> (String, Ve
     }
     let mut loaded = Vec::new();
     if !chats.is_empty() {
-        ctx.push_str(&format!("Recent chats in this folder (last {CHAT_WINDOW_DAYS} days), for continuity:\n\n"));
-        for (name, path) in chats.iter().take(8) {
+        ctx.push_str(&format!("Recent chats across the vault (last {CHAT_WINDOW_DAYS} days), newest first, for continuity:\n\n"));
+        for (name, rel_dir, path) in chats.iter().take(8) {
             if let Ok(body) = std::fs::read_to_string(path) {
-                ctx.push_str(&format!("--- chat: {name} ---\n{}\n\n", body.trim()));
+                let loc = if rel_dir.is_empty() { String::new() } else { format!(" (in {rel_dir})") };
+                ctx.push_str(&format!("--- chat: {name}{loc} ---\n{}\n\n", body.trim()));
                 loaded.push(name.clone());
             }
         }
