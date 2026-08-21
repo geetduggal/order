@@ -8538,3 +8538,7 @@ body.is-tile-dragging * {
   font-size: calc(11.5px * var(--text-scale, 1));
   font-family: inherit;
 }
+
+/* Fullscreen = a clean writing surface: drop the footer status strip (saved
+   indicator + folder chip / breadcrumb) so nothing sits below the prose. */
+.order-card.is-fullscreen .order-card-status { display: none; }
