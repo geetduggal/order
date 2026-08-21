@@ -670,9 +670,11 @@ export function CardGrid() {
   const toggleFileType = useCallback((t: string) => {
     setFileTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
   }, []);
-  const matchesFileType = useCallback((filename: string): boolean => {
+  const matchesFileType = useCallback((filename: string, isMain: boolean): boolean => {
     if (fileTypeFilter.size === 0) return true;
-    if (fileTypeFilter.has("markdown") && /\.md$/i.test(filename) && !/\.chat\.md$/i.test(filename)) return true;
+    // "Notes" = regular markdown, minus chats and the folder's main document —
+    // but pinned notes ($-prefixed) ARE ordinary notes, so they're included.
+    if (fileTypeFilter.has("notes") && /\.md$/i.test(filename) && !/\.chat\.md$/i.test(filename) && !isMain) return true;
     if (fileTypeFilter.has("chat") && /\.chat\.md$/i.test(filename)) return true;
     if (fileTypeFilter.has("html") && /\.html?$/i.test(filename) && !/\.sheet\.html$/i.test(filename)) return true;
     if (fileTypeFilter.has("image") && isImagePath(filename)) return true;
@@ -5829,7 +5831,7 @@ export function CardGrid() {
     // "Public only": drop notes without `public: true` in YAML.
     .filter((n) => !publicOnly || n.frontmatter.public === true)
     // Sidebar file-type lens (Chat / HTML / Image); no-op when nothing selected.
-    .filter((n) => matchesFileType(n.filename));
+    .filter((n) => matchesFileType(n.filename, isMainDoc(n)));
 
   // Single-folder mode = exactly one include filter. In this mode the
   // folder reads like a "page": its Main Document gets the full-width
