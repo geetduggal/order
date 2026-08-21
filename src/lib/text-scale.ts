@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 
 const KEY = "order.zoom";
 export const TEXT_SCALE_MIN = 0.6;
-export const TEXT_SCALE_MAX = 2.4;
+export const TEXT_SCALE_MAX = 10;
 export const TEXT_SCALE_STEP = 0.1;
 const EVENT = "order:text-scale";
 
@@ -44,9 +44,14 @@ export function applyTextScale(z: number): number {
   return v;
 }
 
-/** Step the current scale by `delta` (e.g. +/- TEXT_SCALE_STEP). */
+/** Step the current scale in the direction of `delta`. The magnitude is
+ *  PROPORTIONAL to the current scale (~15%, floored at TEXT_SCALE_STEP) so the
+ *  large ceiling stays reachable in a sane number of presses while fine control
+ *  is preserved near 1.0. */
 export function stepTextScale(delta: number): number {
-  return applyTextScale(getTextScale() + delta);
+  const cur = getTextScale();
+  const mag = Math.max(TEXT_SCALE_STEP, cur * 0.15);
+  return applyTextScale(cur + Math.sign(delta) * mag);
 }
 
 /** React hook: the current scale, kept in sync across the keyboard

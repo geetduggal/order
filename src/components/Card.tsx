@@ -1499,7 +1499,7 @@ export function Card(props: Props) {
               : <CalendarIcon size={11} strokeWidth={2} />}
             {chipLabel && <span className="order-card-fm-date">{chipLabel}</span>}
           </button>
-          {!isMainDoc && !readOnly && !isImageNote && !isHtmlNote && (
+          {!isMainDoc && !readOnly && !isImageNote && !isHtmlNote && !fullscreen && (
             nameEditing ? (
               <input
                 className="order-card-name-input"
