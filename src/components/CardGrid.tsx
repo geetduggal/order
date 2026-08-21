@@ -672,6 +672,7 @@ export function CardGrid() {
   }, []);
   const matchesFileType = useCallback((filename: string): boolean => {
     if (fileTypeFilter.size === 0) return true;
+    if (fileTypeFilter.has("markdown") && /\.md$/i.test(filename) && !/\.chat\.md$/i.test(filename)) return true;
     if (fileTypeFilter.has("chat") && /\.chat\.md$/i.test(filename)) return true;
     if (fileTypeFilter.has("html") && /\.html?$/i.test(filename) && !/\.sheet\.html$/i.test(filename)) return true;
     if (fileTypeFilter.has("image") && isImagePath(filename)) return true;

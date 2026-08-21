@@ -260,7 +260,7 @@ export function Sidebar({
       {onToggleFileType && (
         <section className="sb-section sb-filetypes">
           <div className="sb-filetypes-row">
-            {([["chat", "Chat"], ["html", "HTML"], ["image", "Image"]] as const).map(([key, label]) => (
+            {([["markdown", "Markdown"], ["chat", "Chat"], ["html", "HTML"], ["image", "Image"]] as const).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
