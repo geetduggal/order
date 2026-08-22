@@ -1298,9 +1298,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   position: absolute;
   top: 6px;
   left: 6px;
-  /* Stay within the card: 6px inset on both sides. The filename shrinks +
-     ellipsizes to fit rather than running off the right edge. */
-  max-width: calc(100% - 12px);
+  /* Stay within the card AND clear of the top-right control cluster
+     (fullscreen / ⋯ / audio) so a long filename ellipsizes before it instead of
+     colliding with those buttons on hover. ~94px covers the 3-icon cluster. */
+  max-width: calc(100% - 100px);
   min-width: 0;
   z-index: 3;
   display: flex;
