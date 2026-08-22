@@ -80,6 +80,11 @@ interface Props {
   recentFolders?: string[];
   /** Color lookup so each row can show a swatch matching the sidebar. */
   folderColorFor?: (ref: string) => string | undefined;
+  /** The editable filename title (the part after any date/JD prefix). When
+   *  onRenameFile is also given, a "Name" field renders above the YAML rows so
+   *  the file can be renamed here rather than from a cramped header chip. */
+  filename?: string;
+  onRenameFile?: (nextTitle: string) => void | Promise<void>;
 }
 
 /** Order's special-field registry: order in the UI + icon + label. */
@@ -127,6 +132,7 @@ function rewrapRef(prevRaw: unknown, next: string): string {
 export function FrontmatterInspector({
   frontmatter, onChange,
   folderCandidates, recentFolders, folderColorFor,
+  filename, onRenameFile,
 }: Props) {
   // Track the row currently being added so the picker doesn't re-open
   // every render. Stored as the chosen key (or "" for "free-form").
@@ -165,6 +171,27 @@ export function FrontmatterInspector({
 
   return (
     <div className="fm-inspector" role="group" aria-label="Frontmatter">
+      {onRenameFile && (
+        <div className="fm-filename">
+          <label className="fm-filename-label" htmlFor="fm-filename-input">Name</label>
+          <input
+            id="fm-filename-input"
+            className="fm-filename-input"
+            key={filename ?? ""}
+            defaultValue={filename ?? ""}
+            placeholder="File name"
+            aria-label="File name"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+              if (e.key === "Escape") { e.preventDefault(); (e.currentTarget).value = filename ?? ""; e.currentTarget.blur(); }
+            }}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v && v !== (filename ?? "")) void onRenameFile(v);
+            }}
+          />
+        </div>
+      )}
       <div className="fm-rows">
         {knownToShow.map(({ key, icon: Icon, label }) => {
           const isAlways = ALWAYS_SHOWN.has(key);

@@ -405,10 +405,7 @@ export function Card(props: Props) {
   // surface's own toolbar).
   const [moreOpen, setMoreOpen] = useState(false);
   const [finReportOpen, setFinReportOpen] = useState(false);
-  // Inline filename editor (subtle chip in the header). Decoupled from the body
-  // so renaming is an explicit, deliberate act.
-  const [nameEditing, setNameEditing] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
+
   // The menu renders in a portal (fixed coords from the button) so it escapes
   // sibling cards' stacking contexts / overflow — otherwise a later card
   // paints over it.
@@ -1450,11 +1447,7 @@ export function Card(props: Props) {
     }
     return raw.replace(/^\d{1,2}(?:\.\d{1,3})+\s+/, "");
   })();
-  const commitName = () => {
-    setNameEditing(false);
-    const t = nameDraft.trim();
-    if (t && t !== editableTitle) void renameFile(t);
-  };
+
   // First http(s) URL in the YAML → a small link-out pill beside the
   // date chip (replaces the old auto-open-frontmatter heuristic). Always
   // visible so it works on touch; opens via openExternalUrl so every
@@ -1499,33 +1492,6 @@ export function Card(props: Props) {
               : <CalendarIcon size={11} strokeWidth={2} />}
             {chipLabel && <span className="order-card-fm-date">{chipLabel}</span>}
           </button>
-          {!isMainDoc && !readOnly && !isImageNote && !isHtmlNote && !fullscreen && (
-            nameEditing ? (
-              <input
-                className="order-card-name-input"
-                autoFocus
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitName(); }
-                  if (e.key === "Escape") { e.preventDefault(); setNameEditing(false); }
-                }}
-                onBlur={commitName}
-                placeholder="File name…"
-                aria-label="File name"
-              />
-            ) : (
-              <button
-                type="button"
-                className="order-card-name"
-                onClick={(e) => { e.stopPropagation(); setNameDraft(editableTitle); setNameEditing(true); }}
-                title="Rename file"
-              >
-                <span className="order-card-name-text">{editableTitle || "Untitled"}</span>
-              </button>
-            )
-          )}
           {isPinned && (
             <span className="order-card-pin" title="Pinned" aria-label="Pinned">
               <PinIcon size={11} strokeWidth={2} fill="currentColor" />
@@ -1796,6 +1762,8 @@ export function Card(props: Props) {
             folderCandidates={availableFolders?.map((f) => f.name)}
             recentFolders={recentFolders}
             folderColorFor={(ref) => availableFolders?.find((f) => f.name === ref)?.color}
+            filename={editableTitle}
+            onRenameFile={(!isMainDoc && !readOnly && !isImageNote && !isHtmlNote) ? renameFile : undefined}
           />
         )}
         {showSpine ? (

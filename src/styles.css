@@ -8524,35 +8524,36 @@ body.is-tile-dragging * {
 }
 
 /* Inline filename editor in the card header — subtle until hovered/focused. */
-.order-card-name {
-  flex: 0 1 auto;
-  min-width: 2ch;
-  max-width: 40ch;
-  overflow: hidden;
-  display: inline-flex;
+/* Filename ("Name") field at the top of the frontmatter inspector — the note is
+   renamed here, above the YAML rows, after clicking the {date} chip. */
+.fm-filename {
+  display: flex;
   align-items: center;
-  padding: 1px 5px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-faint);
-  font-size: calc(11.5px * var(--text-scale, 1));
-  cursor: text;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule-soft, var(--card-border));
 }
-.order-card-name:hover { color: var(--ink); border-color: var(--card-border); }
-.order-card-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.order-card-name-input {
-  flex: 0 1 auto;
+.fm-filename-label {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+.fm-filename-input {
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 40ch;
-  padding: 1px 5px;
-  border: 1px solid var(--accent, #4a7);
+  padding: 3px 8px;
+  border: 1px solid var(--card-border);
   border-radius: 6px;
   background: var(--card-bg);
   color: var(--ink);
-  font-size: calc(11.5px * var(--text-scale, 1));
+  font-size: calc(13px * var(--text-scale, 1));
   font-family: inherit;
 }
+.fm-filename-input:focus { border-color: var(--accent, #4a7); outline: none; }
 
 /* Fullscreen = a clean writing surface: drop the footer status strip (saved
    indicator + folder chip / breadcrumb) so nothing sits below the prose. */
