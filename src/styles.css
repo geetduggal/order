@@ -1298,11 +1298,21 @@ input, textarea, select { outline: none; box-shadow: none; }
   position: absolute;
   top: 6px;
   left: 6px;
+  /* Stay within the card: 6px inset on both sides. The filename shrinks +
+     ellipsizes to fit rather than running off the right edge. */
+  max-width: calc(100% - 12px);
+  min-width: 0;
   z-index: 3;
   display: flex;
   align-items: center;
   gap: 2px;
 }
+/* The date/JD chip and the trailing icons keep their size; only the filename
+   gives up space when the row is tight. */
+.order-card-topleft > .order-card-fm-toggle,
+.order-card-topleft > .order-card-linkout,
+.order-card-topleft > .order-card-location,
+.order-card-topleft > .order-card-pin { flex: 0 0 auto; }
 /* Date toggle that drops in the FrontmatterInspector.
    One quiet metadata voice: small sans with tabular figures in the
    theme's ROYAL — every card carries a small print of the icon's blue.
@@ -8514,7 +8524,10 @@ body.is-tile-dragging * {
 
 /* Inline filename editor in the card header — subtle until hovered/focused. */
 .order-card-name {
+  flex: 0 1 auto;
+  min-width: 2ch;
   max-width: 40ch;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   padding: 1px 5px;
@@ -8524,11 +8537,12 @@ body.is-tile-dragging * {
   color: var(--ink-faint);
   font-size: calc(11.5px * var(--text-scale, 1));
   cursor: text;
-  min-width: 0;
 }
 .order-card-name:hover { color: var(--ink); border-color: var(--card-border); }
-.order-card-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-card-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .order-card-name-input {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 40ch;
   padding: 1px 5px;
   border: 1px solid var(--accent, #4a7);
