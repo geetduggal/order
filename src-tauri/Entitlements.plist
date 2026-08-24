@@ -9,6 +9,8 @@
 	     even though the app is not sandboxed. -->
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
+	<key>com.apple.security.personal-information.reminders</key>
+	<true/>
 	<!-- Microphone access for the agent's voice chat. Under the Hardened
 	     Runtime the mic is blocked without this even with the Info.plist usage
 	     string present. -->

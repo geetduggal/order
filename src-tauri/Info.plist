@@ -9,6 +9,10 @@
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar. Invitations are sent through Google, not Apple.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Order reads events from your selected calendars to import your day, and creates events you assign to a calendar.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Order mirrors events you flag with a reminder into your Reminders list so the system can notify you.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Order mirrors events you flag with a reminder into your Reminders list so the system can notify you.</string>
 	<!-- Voice chat with the in-app agent. Microphone captures what you say;
 	     speech recognition is used only when you pick the on-device (Apple)
 	     transcription engine — the default (Whisper) sends audio to OpenAI. -->

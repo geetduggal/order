@@ -50,7 +50,7 @@ objc2-foundation = { version = "0.3", features = [
 ] }
 objc2-event-kit = { version = "0.3", features = [
   "block2", "EKTypes", "EKObject", "EKCalendar", "EKCalendarItem", "EKEvent",
-  "EKParticipant", "EKSource",
+  "EKParticipant", "EKSource", "EKReminder", "EKAlarm",
 ] }
 
 [features]

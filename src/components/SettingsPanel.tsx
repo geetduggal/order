@@ -156,6 +156,16 @@ export function SettingsPanel({
   }, []);
   useEffect(() => { void refreshApple(); }, [refreshApple]);
 
+  // System Reminders (EventKit) — permission + status, mirrors Apple Calendar.
+  const [reminderStatus, setReminderStatus] = useState<string>("");
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [reminderErr, setReminderErr] = useState<string | null>(null);
+  const refreshReminder = useCallback(async () => {
+    try { const m = await import("../lib/apple-reminder"); setReminderStatus(await m.accessStatus()); }
+    catch (e) { setReminderErr(String(e)); }
+  }, []);
+  useEffect(() => { void refreshReminder(); }, [refreshReminder]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -674,6 +684,45 @@ export function SettingsPanel({
         </div>
           );
         })()}
+
+        <div className="settings-row" data-group="calendar">
+          <span className="settings-label">Reminders</span>
+          {reminderErr && <span className="settings-hint" style={{ color: "#d9534f" }}>{reminderErr}</span>}
+          {reminderStatus !== "unsupported" ? (
+            <span className="settings-value" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {reminderStatus !== "authorized" && reminderStatus !== "writeOnly" && (
+                <button
+                  type="button"
+                  className="settings-btn"
+                  disabled={reminderBusy || reminderStatus === "denied"}
+                  onClick={async () => {
+                    setReminderBusy(true); setReminderErr(null);
+                    try { const m = await import("../lib/apple-reminder"); await m.requestAccess(); await refreshReminder(); }
+                    catch (e) { setReminderErr(String(e)); } finally { setReminderBusy(false); }
+                  }}
+                >
+                  {reminderBusy ? "Requesting…" : "Grant Reminders access"}
+                </button>
+              )}
+              <button type="button" className="settings-btn" disabled={reminderBusy}
+                onClick={async () => { setReminderBusy(true); setReminderErr(null); try { await refreshReminder(); } finally { setReminderBusy(false); } }}>
+                Refresh
+              </button>
+              {reminderStatus && <span className="settings-hint" style={{ margin: 0 }}>access: {reminderStatus}</span>}
+            </span>
+          ) : (
+            <span className="settings-hint">System Reminders are available on macOS and iOS.</span>
+          )}
+          {reminderStatus === "denied" && (
+            <span className="settings-hint">
+              Reminders access was denied. Enable it in System Settings → Privacy &amp; Security →
+              Reminders (macOS) or Settings → Privacy → Reminders (iOS), then click Refresh.
+            </span>
+          )}
+          <span className="settings-hint">
+            Turn a dated event's ⋯ menu → “Set reminder” to mirror it into the system Reminders app.
+          </span>
+        </div>
 
         <div className="settings-row" data-group="calendar">
           <span className="settings-label">

@@ -60,11 +60,12 @@ import {
   restoreEmbedFences,
   type EmbedFenceRestore,
 } from "../lib/youtube";
-import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon, Pin as PinIcon } from "lucide-react";
+import { Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder as FolderIcon, FolderInput as FolderInputIcon, Link2, Trash2, X as XIcon, FolderOpen as FolderOpenIcon, Home as HomeIcon, List as ListIcon, LayoutGrid as LayoutGridIcon, AlignJustify as AlignJustifyIcon, ArrowUpRight, Copy as CopyIcon, Maximize2 as Maximize2Icon, Minimize2 as Minimize2Icon, EyeOff as EyeOffIcon, Terminal as TerminalIcon, Star as StarIcon, CalendarDays as CalendarIcon, Table as TableIcon, PenTool as PenToolIcon, MoreHorizontal as MoreHorizontalIcon, Code2 as CodeIcon, MapPin as MapPinIcon, DollarSign as DollarSignIcon, Pin as PinIcon, Bell as BellIcon } from "lucide-react";
 import { openExternalUrl } from "../lib/open-external";
 import { NotableFolderBackside } from "./NotableFolderBackside";
 import { OrderTerminal } from "./OrderTerminal";
 import { isIosSync } from "../lib/vault";
+import * as reminders from "../lib/apple-reminder";
 import { useTextScale } from "../lib/text-scale";
 import { CardSpeech } from "./CardSpeech";
 import { ChatSurface } from "./ChatSurface";
@@ -1450,6 +1451,34 @@ export function Card(props: Props) {
     }
     return raw.replace(/^\d{1,2}(?:\.\d{1,3})+\s+/, "");
   })();
+  // System-reminder toggle (macOS / iOS EventKit). Only meaningful for a DATED
+  // note; the date/time come from the filename (source of truth) with a
+  // frontmatter fallback. `reminder`/`reminderId` live in the note's YAML.
+  const reminderParsed = parseEventFilename(
+    (pathRef.current.split("/").pop() ?? "").replace(/\.md$/i, "").replace(/\.chat$/i, "").replace(/^[!$]+\s*/, ""),
+  );
+  const reminderDate = reminderParsed?.date ?? (typeof fmLive.date === "string" ? fmLive.date.slice(0, 10) : undefined);
+  const reminderTime = reminderParsed?.time ?? (typeof fmLive.startTime === "string" ? fmLive.startTime : undefined);
+  const reminderOn = fmLive.reminder === true;
+  const reminderId = typeof fmLive.reminderId === "string" ? fmLive.reminderId : "";
+  const toggleReminder = async () => {
+    if (!reminderDate) return;
+    try {
+      if (reminderOn) {
+        if (reminderId) await reminders.deleteReminder(reminderId);
+        await onSetFrontmatter?.({ reminder: null, reminderId: null });
+      } else {
+        const st = await reminders.accessStatus();
+        if (st !== "authorized" && st !== "writeOnly") {
+          const ok = await reminders.requestAccess().catch(() => false);
+          if (!ok) { setDeleteError("Enable Reminders access in Settings → Reminders."); return; }
+        }
+        const title = (editableTitle || deriveNoteTitleFromBody(editorBodyRef.current) || "Reminder").trim();
+        const id = await reminders.saveReminder({ title, date: reminderDate, time: reminderTime, id: reminderId || undefined });
+        await onSetFrontmatter?.({ reminder: true, reminderId: id });
+      }
+    } catch (e) { setDeleteError(`Reminder failed: ${String(e)}`); }
+  };
 
   // First http(s) URL in the YAML → a small link-out pill beside the
   // date chip (replaces the old auto-open-frontmatter heuristic). Always
@@ -1677,6 +1706,11 @@ export function Card(props: Props) {
           {onTogglePin && (
             <button type="button" role="menuitem" className={"order-card-more-item" + (isPinned ? " is-on" : "")} onClick={() => { onTogglePin(); setMoreOpen(false); }}>
               <PinIcon size={14} strokeWidth={2} /><span>{isPinned ? "Unpin note" : "Pin note"}</span>
+            </button>
+          )}
+          {reminderDate && onSetFrontmatter && (
+            <button type="button" role="menuitem" className={"order-card-more-item" + (reminderOn ? " is-on" : "")} onClick={() => { void toggleReminder(); setMoreOpen(false); }}>
+              <BellIcon size={14} strokeWidth={2} /><span>{reminderOn ? "Clear reminder" : "Set reminder"}</span>
             </button>
           )}
           {!isMainDoc && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (

@@ -7,6 +7,7 @@ mod fts;
 mod terminal;
 mod gcal;
 mod applecal;
+mod applereminder;
 mod badge;
 mod tts;
 mod stt;
@@ -270,6 +271,10 @@ pub fn run() {
             applecal::applecal_list_day_events,
             applecal::applecal_save_event,
             applecal::applecal_delete_event,
+            applereminder::reminder_access_status,
+            applereminder::reminder_request_access,
+            applereminder::reminder_save,
+            applereminder::reminder_delete,
             badge::badge_request_permission,
             badge::badge_set,
             tts::tts_voices,
