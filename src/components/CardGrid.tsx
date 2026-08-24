@@ -5,6 +5,7 @@
 // edits so the two views can mutate safely in parallel.
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
@@ -2104,6 +2105,9 @@ export function CardGrid() {
   // Cmd+K opens the centered command palette (open a folder by name).
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [ftsOpen, setFtsOpen] = useState(false);
+  // Cmd+Shift+H quick-capture: a hovering box that appends a bullet to the
+  // weekly-hub folder's main document.
+  const [quickHubOpen, setQuickHubOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
@@ -2359,8 +2363,14 @@ export function CardGrid() {
         toggleSidebar();
         return;
       }
-      // Cmd+Shift+H hides / shows the bottom dock for a distraction-free surface.
+      // Cmd+Shift+H: hovering quick-append to the weekly-hub main document.
       if ((e.key === "h" || e.key === "H") && e.shiftKey) {
+        e.preventDefault();
+        setQuickHubOpen(true);
+        return;
+      }
+      // Cmd+Shift+B: hide / show the bottom dock (distraction-free surface).
+      if ((e.key === "b" || e.key === "B") && e.shiftKey) {
         e.preventDefault();
         toggleDock();
         return;
@@ -2927,6 +2937,29 @@ export function CardGrid() {
     persistWeekHubFolder(ref);
     setWeekHubFolderState(ref);
   }, []);
+
+  // Append `text` as a list item to the weekly-hub folder's main document.
+  // The filename/dir is the source of truth: resolve the hub folder's cover via
+  // notePathByRef, append a bullet to the body, write it, and bump the mounted
+  // card so an open hub doc refreshes. Self-write is stamped by vaultFs.writeText.
+  const quickAppendToHub = useCallback(async (text: string): Promise<boolean> => {
+    const t = text.trim();
+    if (!t) return false;
+    const ref = weekHubFolderRef.current || homeFolderRef.current;
+    if (!ref) return false;
+    const path = notePathByRef(ref);
+    if (!path) return false;
+    const rel = toVaultRel(path);
+    try {
+      const raw = await vaultFs.readText(rel);
+      const { frontmatter, body } = splitFrontmatter(raw);
+      const nextBody = `${body.replace(/\s+$/, "")}\n- ${t}\n`;
+      await vaultFs.writeText(rel, joinFrontmatter(frontmatter, nextBody));
+      markKnownBody(path, nextBody);
+      bumpExternal([path]);
+      return true;
+    } catch (e) { console.error("quick append failed:", e); return false; }
+  }, [bumpExternal]);
 
   // ---- App-icon badge: count of events on the upcoming (or current) Saturday
   // in the Week Hub folder. Opt-in (Settings), updated as often as the app can
@@ -5493,7 +5526,11 @@ export function CardGrid() {
     // Resolve the Category's directory structurally — categories no longer
     // exist as notes on disk (placement is structural), so this must not
     // depend on a Category `.md` being present.
-    const catDir = await categoryDirFor(areaName, categoryName);
+    // Vault-RELATIVE category dir (not join(vaultRoot(),…)): on iOS the container
+    // UUID from vaultRoot() differs from the loaded notes' root, so an absolute
+    // path can't be stripped back to a vault-relative one and the write lands in
+    // the wrong place / fails — that's why folder creation was broken on iOS.
+    const catDir = categoryDirRel(areaName, categoryName);
     // Cap on-disk folder names at 78 chars so we don't bump into
     // path-length limits and so the filesystem stays browsable.
     const safe = dirBase.replace(/[\\/:*?"<>|]/g, "-").slice(0, 78).trim();
@@ -5508,7 +5545,7 @@ export function CardGrid() {
     };
     const body = `# ${base}\n`;
     const content = joinFrontmatter(frontmatter, body);
-    const nfDir = await join(catDir, safe);
+    const nfDir = catDir ? `${catDir}/${safe}` : safe;
     const path = await uniqueWrite(nfDir, mainDocFilename(safe), content);
     const filename = path.split("/").pop() ?? mainDocFilename(safe);
     // No spacetime write — placement on disk is the source of truth; the new
@@ -7357,6 +7394,13 @@ export function CardGrid() {
       )}
 
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+      {quickHubOpen && (
+        <QuickHubBar
+          target={weekHubFolder || homeFolderRef.current || ""}
+          onSubmit={quickAppendToHub}
+          onClose={() => setQuickHubOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -7381,10 +7425,12 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} ⌃ ←  /  →`, label: "Back / forward by the view's unit" },
     { keys: `${cmd} O  ·  ${cmd} K`, label: "Folder palette (folders + todo.txt)" },
     { keys: `${cmd} F  ·  /`, label: "Full-text search" },
-    { keys: `${cmd} R`, label: "Home ⇄ clear-filters toggle" },
+    { keys: `${cmd} R`, label: "Refresh visuals (re-read from disk)" },
+    { keys: `${cmd} ⇧ R`, label: "Home ⇄ clear-filters toggle" },
     { keys: `${cmd} 4`, label: "Terminal in the focused folder ($ on 4)" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
-    { keys: `${cmd} ⇧ H`, label: "Hide / show the dock" },
+    { keys: `${cmd} ⇧ H`, label: "Quick-add a line to the weekly hub" },
+    { keys: `${cmd} ⇧ B`, label: "Hide / show the dock" },
     { keys: `${cmd} ⇧ P`, label: "Publish panel" },
     { keys: `${cmd} T`, label: "Cycle theme" },
     { keys: `${cmd} '`, label: "Clear all filters" },
@@ -7848,3 +7894,49 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
   );
 }
 
+
+/** Cmd+Shift+H quick-capture: a hovering input that appends a bullet to the
+ *  weekly-hub folder's main document. Enter adds + closes; Shift+Enter adds +
+ *  stays open for rapid capture; Esc / click-away closes. */
+function QuickHubBar({ target, onSubmit, onClose }: {
+  target: string;
+  onSubmit: (text: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { requestAnimationFrame(() => inputRef.current?.focus()); }, []);
+  const commit = async (keepOpen: boolean) => {
+    const t = text.trim();
+    if (!t) { onClose(); return; }
+    setBusy(true);
+    const ok = await onSubmit(t);
+    setBusy(false);
+    if (!ok) return;
+    setText("");
+    if (keepOpen) { setAdded((n) => n + 1); inputRef.current?.focus(); }
+    else onClose();
+  };
+  return createPortal(
+    <div className="quickhub-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="quickhub-bar" role="dialog" aria-label="Quick add to weekly hub">
+        <span className="quickhub-target" title={`Appends to ${target || "the weekly hub"}`}>{target || "weekly hub"}</span>
+        <input
+          ref={inputRef}
+          className="quickhub-input"
+          value={text}
+          disabled={busy}
+          placeholder={added > 0 ? `Added ${added} — keep going…` : "Add a line to the weekly hub…"}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); void commit(e.shiftKey); }
+            if (e.key === "Escape") { e.preventDefault(); onClose(); }
+          }}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
