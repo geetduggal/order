@@ -1461,12 +1461,12 @@ export function Card(props: Props) {
   const reminderTime = reminderParsed?.time ?? (typeof fmLive.startTime === "string" ? fmLive.startTime : undefined);
   const reminderOn = fmLive.reminder === true;
   const reminderId = typeof fmLive.reminderId === "string" ? fmLive.reminderId : "";
-  const toggleReminder = async () => {
+  const toggleReminder = async (urgent: boolean) => {
     if (!reminderDate) return;
     try {
       if (reminderOn) {
         if (reminderId) await reminders.deleteReminder(reminderId);
-        await onSetFrontmatter?.({ reminder: null, reminderId: null });
+        await onSetFrontmatter?.({ reminder: null, reminderId: null, reminderUrgent: null });
       } else {
         const st = await reminders.accessStatus();
         if (st !== "authorized" && st !== "writeOnly") {
@@ -1474,8 +1474,8 @@ export function Card(props: Props) {
           if (!ok) { setDeleteError("Enable Reminders access in Settings → Reminders."); return; }
         }
         const title = (editableTitle || deriveNoteTitleFromBody(editorBodyRef.current) || "Reminder").trim();
-        const id = await reminders.saveReminder({ title, date: reminderDate, time: reminderTime, id: reminderId || undefined });
-        await onSetFrontmatter?.({ reminder: true, reminderId: id });
+        const id = await reminders.saveReminder({ title, date: reminderDate, time: reminderTime, id: reminderId || undefined, urgent });
+        await onSetFrontmatter?.({ reminder: true, reminderId: id, ...(urgent ? { reminderUrgent: true } : { reminderUrgent: null }) });
       }
     } catch (e) { setDeleteError(`Reminder failed: ${String(e)}`); }
   };
@@ -1709,9 +1709,20 @@ export function Card(props: Props) {
             </button>
           )}
           {reminderDate && onSetFrontmatter && (
-            <button type="button" role="menuitem" className={"order-card-more-item" + (reminderOn ? " is-on" : "")} onClick={() => { void toggleReminder(); setMoreOpen(false); }}>
-              <BellIcon size={14} strokeWidth={2} /><span>{reminderOn ? "Clear reminder" : "Set reminder"}</span>
-            </button>
+            reminderOn ? (
+              <button type="button" role="menuitem" className="order-card-more-item is-on" onClick={() => { void toggleReminder(false); setMoreOpen(false); }}>
+                <BellIcon size={14} strokeWidth={2} /><span>Clear reminder{fmLive.reminderUrgent === true ? " (urgent)" : ""}</span>
+              </button>
+            ) : (
+              <>
+                <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { void toggleReminder(false); setMoreOpen(false); }}>
+                  <BellIcon size={14} strokeWidth={2} /><span>Set reminder</span>
+                </button>
+                <button type="button" role="menuitem" className="order-card-more-item" onClick={() => { void toggleReminder(true); setMoreOpen(false); }}>
+                  <BellIcon size={14} strokeWidth={2} /><span>Set urgent reminder</span>
+                </button>
+              </>
+            )
           )}
           {!isMainDoc && onAssignFolder && (availableFolders?.length ?? 0) > 0 && (
             <button type="button" role="menuitem" className="order-card-more-item order-card-more-refolder" onClick={() => { setFolderPickQuery(""); setFolderPickOpen(true); setMoreOpen(false); }}>

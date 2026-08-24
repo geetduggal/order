@@ -16,6 +16,7 @@ import { open as openDialog, confirm as tauriConfirm, message as tauriMessage } 
 import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIosSync, syncVaultRoot } from "../lib/vault";
 import { vaultFs, consumeSelfWrite, markSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import * as finance from "../lib/finance";
+import * as reminders from "../lib/apple-reminder";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
@@ -5405,6 +5406,36 @@ export function CardGrid() {
     setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: next } : n)) ?? null);
   }, []);
 
+  // Toggle a system reminder for a CALENDAR EVENT from the event action menu.
+  // `urgent === null` clears; true/false sets normal/urgent. Resolves date/time
+  // from the backing note's filename (source of truth) and stores reminder state
+  // in its frontmatter — same contract as the card's ⋯ toggle.
+  const toggleEventReminder = useCallback(async (path: string, urgent: boolean | null) => {
+    const note = notesRef.current?.find((n) => n.path === path);
+    if (!note) return;
+    const fm = note.frontmatter;
+    const rid = typeof fm.reminderId === "string" ? fm.reminderId : "";
+    const base = (path.split("/").pop() ?? "").replace(/\.md$/i, "").replace(/\.chat$/i, "").replace(/^[!$]+\s*/, "");
+    const parsed = parseEventFilename(base);
+    const date = parsed?.date ?? (typeof fm.date === "string" ? fm.date.slice(0, 10) : undefined);
+    const time = parsed?.time ?? (typeof fm.startTime === "string" ? fm.startTime : undefined);
+    if (!date) return;
+    try {
+      if (urgent === null) {
+        if (rid) await reminders.deleteReminder(rid);
+        await handleSetFrontmatter(path, { reminder: null, reminderId: null, reminderUrgent: null });
+      } else {
+        const st = await reminders.accessStatus();
+        if (st !== "authorized" && st !== "writeOnly") {
+          const ok = await reminders.requestAccess().catch(() => false);
+          if (!ok) return;
+        }
+        const id = await reminders.saveReminder({ title: note.title || "Reminder", date, time, id: rid || undefined, urgent });
+        await handleSetFrontmatter(path, { reminder: true, reminderId: id, ...(urgent ? { reminderUrgent: true } : { reminderUrgent: null }) });
+      }
+    } catch (e) { console.error("event reminder toggle failed", e); }
+  }, [handleSetFrontmatter]);
+
   /** Rename a Notable Folder.
    *
    *  An NF lives at `<vault>/<Area>/<Category>/<Name>/<Name>.md`. The
@@ -7389,6 +7420,10 @@ export function CardGrid() {
           emails={eventMenu.emails}
           knownEmails={knownEmails}
           onSetEmails={(emails) => { void handleSetEmails(eventMenu.path, emails); }}
+          reminderOn={notesRef.current?.find((n) => n.path === eventMenu.path)?.frontmatter.reminder === true}
+          reminderUrgent={notesRef.current?.find((n) => n.path === eventMenu.path)?.frontmatter.reminderUrgent === true}
+          onSetReminder={eventMenu.date && !isTodoTxtPath(eventMenu.path) ? (urgent) => { void toggleEventReminder(eventMenu.path, urgent); setEventMenu(null); } : undefined}
+          onClearReminder={() => { void toggleEventReminder(eventMenu.path, null); setEventMenu(null); }}
           onCancel={() => setEventMenu(null)}
         />
       )}
@@ -7466,6 +7501,7 @@ function EventActionMenu({
   onOpen, onDelete, onMoveToDay, onAssignFolder, onRename, onCancel,
   startTime, endTime, allDay, onRetime,
   emails, knownEmails, onSetEmails,
+  reminderOn, reminderUrgent, onSetReminder, onClearReminder,
 }: {
   title: string;
   x: number;
@@ -7500,6 +7536,12 @@ function EventActionMenu({
   /** Commit a new full recipient list; writes to spacetime.mw. When omitted,
    *  the Recipients section is not shown. */
   onSetEmails?: (emails: string[]) => void;
+  /** System-reminder state + actions for this event. onSetReminder present ⇒
+   *  the reminder row is shown (only for real dated event notes). */
+  reminderOn?: boolean;
+  reminderUrgent?: boolean;
+  onSetReminder?: (urgent: boolean) => void;
+  onClearReminder?: () => void;
 }) {
   const [draftTitle, setDraftTitle] = useState(title);
   // Reset the draft when the popup opens for a different event.
@@ -7763,6 +7805,18 @@ function EventActionMenu({
             <datalist id="event-action-recip-options">
               {(knownEmails ?? []).map((m) => <option key={m} value={m} />)}
             </datalist>
+          </div>
+        )}
+        {onSetReminder && (
+          <div className="event-action-reminders" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            {reminderOn ? (
+              <button type="button" className="event-action-btn" onClick={onClearReminder}>Clear reminder{reminderUrgent ? " (urgent)" : ""}</button>
+            ) : (
+              <>
+                <button type="button" className="event-action-btn" onClick={() => onSetReminder(false)}>Set reminder</button>
+                <button type="button" className="event-action-btn" onClick={() => onSetReminder(true)}>Urgent reminder</button>
+              </>
+            )}
           </div>
         )}
         <button type="button" className="event-action-btn" onClick={onOpen}>Open</button>

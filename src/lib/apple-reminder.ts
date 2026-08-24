@@ -25,6 +25,8 @@ export interface SaveReminder {
   notes?: string;
   /** Existing calendarItemIdentifier to update in place. */
   id?: string;
+  /** High-priority / time-sensitive urgent reminder. */
+  urgent?: boolean;
 }
 
 /** Create or update a system reminder; resolves with its calendarItemIdentifier. */

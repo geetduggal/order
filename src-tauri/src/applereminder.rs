@@ -18,6 +18,10 @@ pub struct SaveReminderInput {
     pub notes: String,
     /// Existing calendarItemIdentifier to update in place (None = create).
     pub id: Option<String>,
+    /// Urgent = high priority (shows as "!!!" and can break through Focus as a
+    /// time-sensitive alert).
+    #[serde(default)]
+    pub urgent: bool,
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -138,6 +142,8 @@ mod imp {
             rem.setCalendar(Some(&cal));
             rem.setNotes(Some(&nsstr(&input.notes)));
             rem.setDueDateComponents(Some(&comps));
+            // High priority (1) for urgent, none (0) otherwise.
+            rem.setPriority(if input.urgent { 1 } else { 0 });
             // A fresh alarm at the due time so the system actually notifies.
             rem.setAlarms(None);
             rem.addAlarm(&EKAlarm::alarmWithAbsoluteDate(&due));
