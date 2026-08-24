@@ -120,6 +120,10 @@ struct VoiceConvo {
     cloud_voice: String,
     cloud_model: String,
     cloud_key: String,
+    // Agent model provider selection (mirrors agent_turn).
+    agent_provider: Option<String>,
+    agent_base_url: Option<String>,
+    agent_model: Option<String>,
 }
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 static VOICE_CONVO: std::sync::Mutex<Option<VoiceConvo>> = std::sync::Mutex::new(None);
@@ -155,6 +159,9 @@ pub fn voice_convo_start(
     #[allow(unused_variables)] cloud_voice: Option<String>,
     #[allow(unused_variables)] cloud_model: Option<String>,
     #[allow(unused_variables)] cloud_key: Option<String>,
+    #[allow(unused_variables)] agent_provider: Option<String>,
+    #[allow(unused_variables)] agent_base_url: Option<String>,
+    #[allow(unused_variables)] agent_model: Option<String>,
 ) {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
@@ -172,6 +179,9 @@ pub fn voice_convo_start(
             cloud_voice: cloud_voice.unwrap_or_default(),
             cloud_model: cloud_model.unwrap_or_default(),
             cloud_key: cloud_key.unwrap_or_default(),
+            agent_provider,
+            agent_base_url,
+            agent_model,
         });
     }
 }
@@ -191,12 +201,13 @@ pub fn voice_convo_stop() {
 /// turn so the app isn't suspended mid-think.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
-    let (chat_rel, api_key, voice_id, rate, cloud_engine, cloud_voice, cloud_model, cloud_key) = {
+    let (chat_rel, api_key, voice_id, rate, cloud_engine, cloud_voice, cloud_model, cloud_key, agent_provider, agent_base_url, agent_model) = {
         let g = VOICE_CONVO.lock().unwrap();
         match g.as_ref() {
             Some(c) => (
                 c.chat_rel.clone(), c.api_key.clone(), c.voice_id.clone(), c.rate,
                 c.cloud_engine.clone(), c.cloud_voice.clone(), c.cloud_model.clone(), c.cloud_key.clone(),
+                c.agent_provider.clone(), c.agent_base_url.clone(), c.agent_model.clone(),
             ),
             None => return, // no conversation armed → nowhere to record it
         }
@@ -223,7 +234,7 @@ fn run_background_turn(app: &tauri::AppHandle, utterance: &str) {
     // otherwise unprotected, so iOS could suspend us mid-turn; that's a big part of
     // why only the FIRST locked turn worked (it fit inside the initial grace).
     crate::tts::keepalive_begin();
-    let reply = crate::agent::run::run_turn_for(app, &api_key, &chat_rel, utterance);
+    let reply = crate::agent::run::run_turn_for(app, &api_key, &chat_rel, utterance, agent_provider.as_deref(), agent_base_url, agent_model.as_deref());
     let reply = match reply {
         Ok(r) => r,
         Err(_) => { crate::tts::keepalive_end(); return; }

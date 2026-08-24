@@ -5,6 +5,7 @@
 // forwards the live input level for the meter.
 
 import { invoke } from "@tauri-apps/api/core";
+import { agentModelArgs } from "./agent";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getOpenaiKey, ttsSupported, applyAudioOutput } from "./tts";
 
@@ -126,6 +127,9 @@ export function voiceConvoStart(
     cloudVoice: cloud?.voice ?? null,
     cloudModel: cloud?.model ?? null,
     cloudKey: cloud?.key ?? null,
+    agentProvider: agentModelArgs().provider,
+    agentBaseUrl: agentModelArgs().baseUrl,
+    agentModel: agentModelArgs().model,
   }).catch(() => {});
 }
 

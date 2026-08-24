@@ -272,3 +272,226 @@ fn extract_error(body: &str) -> String {
         .and_then(|v| v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).map(String::from))
         .unwrap_or_else(|| body.chars().take(300).collect())
 }
+
+// ---- OpenAI-compatible provider (OpenAI, xAI Grok, local Ollama/LM Studio) ----
+// One impl covers them all: they speak the same /chat/completions API with
+// function tool-calling. Only base_url + api_key + model differ. It maps the
+// shared Block/Msg representation to OpenAI's message shape and back, so the
+// agent loop and tools are untouched — full tool-use parity with Anthropic.
+
+pub struct OpenAiCompat {
+    api_key: String,
+    base_url: String, // e.g. https://api.openai.com/v1 (no trailing slash)
+}
+
+impl OpenAiCompat {
+    pub fn new(api_key: String, base_url: String) -> Self {
+        let base_url = base_url.trim_end_matches('/').to_string();
+        OpenAiCompat { api_key, base_url }
+    }
+}
+
+/// Map the shared Msg/Block history to OpenAI chat messages. Anthropic keeps
+/// tool_result blocks inside a user message; OpenAI wants them as separate
+/// `tool` role messages that follow the assistant's tool_calls — so we split
+/// them out, preserving order.
+fn to_openai_messages(system: &str, msgs: &[Msg]) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    if !system.is_empty() {
+        out.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    for m in msgs {
+        if m.role == "assistant" {
+            let mut text = String::new();
+            let mut tool_calls: Vec<serde_json::Value> = Vec::new();
+            for b in &m.content {
+                match b {
+                    Block::Text { text: t } => text.push_str(t),
+                    Block::ToolUse { id, name, input } => {
+                        tool_calls.push(serde_json::json!({
+                            "id": id,
+                            "type": "function",
+                            "function": { "name": name, "arguments": input.to_string() }
+                        }));
+                    }
+                    Block::ToolResult { .. } => {}
+                }
+            }
+            let mut msg = serde_json::json!({ "role": "assistant" });
+            // OpenAI requires content to be present (may be null when tool_calls exist).
+            msg["content"] = if text.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(text) };
+            if !tool_calls.is_empty() {
+                msg["tool_calls"] = serde_json::Value::Array(tool_calls);
+            }
+            out.push(msg);
+        } else {
+            // user (or system-ish) — Text becomes a user message; ToolResult
+            // blocks become `tool` messages (they follow the assistant call).
+            let mut text = String::new();
+            for b in &m.content {
+                match b {
+                    Block::ToolResult { tool_use_id, content, .. } => {
+                        out.push(serde_json::json!({
+                            "role": "tool",
+                            "tool_call_id": tool_use_id,
+                            "content": content,
+                        }));
+                    }
+                    Block::Text { text: t } => {
+                        if !text.is_empty() { text.push('\n'); }
+                        text.push_str(t);
+                    }
+                    Block::ToolUse { .. } => {}
+                }
+            }
+            if !text.is_empty() {
+                out.push(serde_json::json!({ "role": "user", "content": text }));
+            }
+        }
+    }
+    out
+}
+
+impl ModelProvider for OpenAiCompat {
+    fn stream(
+        &self,
+        req: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<(Vec<Block>, Usage), String> {
+        let messages = to_openai_messages(req.system, req.messages);
+        let tools: Vec<serde_json::Value> = req
+            .tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    }
+                })
+            })
+            .collect();
+        let mut body = serde_json::json!({
+            "model": req.model,
+            "messages": messages,
+            "max_tokens": req.max_tokens,
+            "stream": true,
+            "stream_options": { "include_usage": true },
+        });
+        if !tools.is_empty() {
+            body["tools"] = serde_json::Value::Array(tools);
+        }
+        let url = format!("{}/chat/completions", self.base_url);
+        let mut rb = agent_http()
+            .post(&url)
+            .set("content-type", "application/json");
+        // Local servers (Ollama / LM Studio) need no key; only send one if set.
+        if !self.api_key.trim().is_empty() {
+            rb = rb.set("authorization", &format!("Bearer {}", self.api_key));
+        }
+        let resp = rb.send_json(body);
+        let reader = match resp {
+            Ok(r) => r.into_reader(),
+            Err(ureq::Error::Status(code, r)) => {
+                let b = r.into_string().unwrap_or_default();
+                return Err(format!("model API {code}: {}", extract_error(&b)));
+            }
+            Err(e) => return Err(format!("model request failed: {e}")),
+        };
+        parse_openai_sse(BufReader::new(reader), on_text)
+    }
+}
+
+/// Accumulate an OpenAI streaming chat completion. Content deltas forward live;
+/// tool_call fragments accumulate by their `index` (id + name arrive on the
+/// first fragment, arguments stream as string pieces).
+fn parse_openai_sse(
+    reader: impl BufRead,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<(Vec<Block>, Usage), String> {
+    struct TC { id: String, name: String, args: String }
+    let mut text = String::new();
+    let mut calls: Vec<TC> = Vec::new();
+    let mut usage = Usage::default();
+
+    for line in reader.lines() {
+        let line = match line { Ok(l) => l, Err(e) => return Err(format!("stream read: {e}")) };
+        let data = match line.strip_prefix("data: ") { Some(d) => d.trim(), None => continue };
+        if data.is_empty() { continue; }
+        if data == "[DONE]" { break; }
+        let v: serde_json::Value = match serde_json::from_str(data) { Ok(v) => v, Err(_) => continue };
+        if let Some(u) = v.get("usage").filter(|u| !u.is_null()) {
+            usage.input_tokens = u.get("prompt_tokens").and_then(|n| n.as_u64()).unwrap_or(0) as u32;
+            usage.output_tokens = u.get("completion_tokens").and_then(|n| n.as_u64()).unwrap_or(0) as u32;
+        }
+        let Some(choice) = v.get("choices").and_then(|c| c.as_array()).and_then(|a| a.first()) else { continue };
+        if let Some(msg) = choice.get("error").and_then(|e| e.as_str()) {
+            return Err(format!("model stream error: {msg}"));
+        }
+        let Some(delta) = choice.get("delta") else { continue };
+        if let Some(c) = delta.get("content").and_then(|c| c.as_str()) {
+            if !c.is_empty() { text.push_str(c); on_text(c); }
+        }
+        if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+            for tc in tcs {
+                let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                while calls.len() <= idx { calls.push(TC { id: String::new(), name: String::new(), args: String::new() }); }
+                let slot = &mut calls[idx];
+                if let Some(id) = tc.get("id").and_then(|s| s.as_str()) {
+                    if !id.is_empty() { slot.id = id.to_string(); }
+                }
+                if let Some(f) = tc.get("function") {
+                    if let Some(n) = f.get("name").and_then(|s| s.as_str()) {
+                        if !n.is_empty() { slot.name.push_str(n); }
+                    }
+                    if let Some(a) = f.get("arguments").and_then(|s| s.as_str()) {
+                        slot.args.push_str(a);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut blocks = Vec::new();
+    if !text.is_empty() { blocks.push(Block::Text { text }); }
+    for (i, c) in calls.into_iter().enumerate() {
+        if c.name.is_empty() { continue; }
+        let input: serde_json::Value = if c.args.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&c.args).unwrap_or_else(|_| serde_json::json!({ "__truncated__": true }))
+        };
+        // Some local servers omit tool-call ids; synthesize a stable one so the
+        // tool_result can reference it.
+        let id = if c.id.is_empty() { format!("call_{i}") } else { c.id };
+        blocks.push(Block::ToolUse { id, name: c.name, input });
+    }
+    Ok((blocks, usage))
+}
+
+/// Pick a provider from a config string. "anthropic" (default) → Anthropic;
+/// "openai" / "grok" / "local" (and any other) → OpenAI-compatible with the
+/// matching default base URL when none is supplied.
+pub fn make_provider(
+    provider: Option<&str>,
+    api_key: String,
+    base_url: Option<String>,
+) -> Box<dyn ModelProvider> {
+    match provider.unwrap_or("anthropic") {
+        "anthropic" => Box::new(Anthropic::new(api_key)),
+        kind => {
+            let default_base = match kind {
+                "grok" | "xai" => "https://api.x.ai/v1",
+                "local" => "http://localhost:11434/v1",
+                _ => "https://api.openai.com/v1", // "openai" and anything else
+            };
+            let base = base_url
+                .map(|b| b.trim().to_string())
+                .filter(|b| !b.is_empty())
+                .unwrap_or_else(|| default_base.to_string());
+            Box::new(OpenAiCompat::new(api_key, base))
+        }
+    }
+}

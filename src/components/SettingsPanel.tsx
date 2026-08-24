@@ -9,7 +9,13 @@ import { X as XIcon, Folder as FolderIcon, Info as InfoIcon } from "lucide-react
 import { vaultRoot, defaultVaultRoot, getVaultOverride, isIos, isIosSync } from "../lib/vault";
 import { vaultFs } from "../lib/vault-fs";
 import { getOpenaiKey, setOpenaiKey, getElevenKey, setElevenKey, getElevenSelected, setElevenSelected, listElevenVoices, OPENAI_VOICES, getOpenaiSelected, setOpenaiSelected, getUnrealKey, setUnrealKey, getUnrealSelected, setUnrealSelected, UNREAL_VOICES, getAudioOutput, setAudioOutput, type AudioOutput } from "../lib/tts";
-import { getAgentKey, setAgentKey } from "../lib/agent";
+import {
+  getAgentProvider, setAgentProvider,
+  getAgentKeyFor, setAgentKeyFor,
+  getAgentModelFor, setAgentModelFor,
+  getAgentBaseUrlFor, setAgentBaseUrlFor,
+  AGENT_DEFAULT_MODEL, type AgentProvider,
+} from "../lib/agent";
 import { getSttEngine, setSttEngine, type SttEngine } from "../lib/voice";
 import { costBreakdown, formatUSD, resetUsage, USAGE_EVENT } from "../lib/usage";
 // Pure localStorage helper — static-imported so the checkbox toggle is
@@ -45,7 +51,14 @@ export function SettingsPanel({
   // Cloud text-to-speech API keys (optional premium voices).
   const [openaiKey, setOpenaiKeyState] = useState<string>(() => getOpenaiKey());
   const [elevenKey, setElevenKeyState] = useState<string>(() => getElevenKey());
-  const [anthropicKey, setAnthropicKeyState] = useState<string>(() => getAgentKey());
+  const [agentProvider, setAgentProviderState] = useState<AgentProvider>(() => getAgentProvider());
+  const [agentKeyVal, setAgentKeyVal] = useState<string>(() => getAgentKeyFor(getAgentProvider()));
+  const [agentModelVal, setAgentModelVal] = useState<string>(() => getAgentModelFor(getAgentProvider()));
+  const [agentBaseVal, setAgentBaseVal] = useState<string>(() => getAgentBaseUrlFor(getAgentProvider()));
+  const switchAgentProvider = (p: AgentProvider) => {
+    setAgentProviderState(p); setAgentProvider(p);
+    setAgentKeyVal(getAgentKeyFor(p)); setAgentModelVal(getAgentModelFor(p)); setAgentBaseVal(getAgentBaseUrlFor(p));
+  };
   const [sttEngine, setSttEngineState] = useState<SttEngine>(() => getSttEngine());
   const [audioOut, setAudioOutState] = useState<AudioOutput>(() => getAudioOutput());
   // Re-render the usage meter whenever a chat/dictation/read-aloud is recorded.
@@ -527,15 +540,45 @@ export function SettingsPanel({
         <div className="settings-row" data-group="voice">
           <span className="settings-label">Agent</span>
           <span className="settings-value">
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+              <span style={{ color: "var(--ink-faint)" }}>Provider</span>
+              <select className="settings-input" style={{ maxWidth: 210 }} value={agentProvider}
+                onChange={(e) => switchAgentProvider(e.target.value as AgentProvider)}>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI</option>
+                <option value="grok">Grok (xAI)</option>
+                <option value="local">Local (Ollama / LM Studio)</option>
+              </select>
+            </div>
+            {agentProvider !== "local" && (
+              <input
+                className="settings-input"
+                type="password"
+                placeholder={agentProvider === "anthropic" ? "Anthropic API key (sk-ant-…)" : agentProvider === "grok" ? "xAI API key (xai-…)" : "OpenAI API key (sk-…)"}
+                value={agentKeyVal}
+                onChange={(e) => { setAgentKeyVal(e.target.value); setAgentKeyFor(agentProvider, e.target.value); }}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            )}
             <input
               className="settings-input"
-              type="password"
-              placeholder="Anthropic API key (sk-ant-…)"
-              value={anthropicKey}
-              onChange={(e) => { setAnthropicKeyState(e.target.value); setAgentKey(e.target.value); }}
-              autoComplete="off"
+              style={{ marginTop: 8 }}
+              placeholder={AGENT_DEFAULT_MODEL[agentProvider] ? `Model (default ${AGENT_DEFAULT_MODEL[agentProvider]})` : agentProvider === "anthropic" ? "Model (default claude-sonnet-5)" : "Model (e.g. llama3.1)"}
+              value={agentModelVal}
+              onChange={(e) => { setAgentModelVal(e.target.value); setAgentModelFor(agentProvider, e.target.value); }}
               spellCheck={false}
             />
+            {agentProvider !== "anthropic" && (
+              <input
+                className="settings-input"
+                style={{ marginTop: 8 }}
+                placeholder={agentProvider === "local" ? "Base URL (e.g. http://localhost:11434/v1)" : "Base URL override (optional)"}
+                value={agentBaseVal}
+                onChange={(e) => { setAgentBaseVal(e.target.value); setAgentBaseUrlFor(agentProvider, e.target.value); }}
+                spellCheck={false}
+              />
+            )}
             <div className="settings-stt-engine" style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 8, fontSize: "0.9rem" }}>
               <span style={{ color: "var(--ink-faint)" }}>Voice input:</span>
               <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>

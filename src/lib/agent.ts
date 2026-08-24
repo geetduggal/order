@@ -7,15 +7,58 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-// ---- API key (same localStorage pattern as the TTS voice keys) -------------
-const AGENT_KEY = "order.agent.anthropic_key";
+// ---- API keys + provider selection (same localStorage pattern as TTS keys) --
+// Multiple providers share the OpenAI Chat Completions API (OpenAI, xAI Grok,
+// local Ollama/LM Studio); Anthropic is its own. Keys are stored per provider;
+// getAgentKey() returns the CURRENTLY SELECTED provider's key so every existing
+// caller (hasKey checks, voice) works unchanged.
+const AGENT_KEY = "order.agent.anthropic_key"; // legacy Anthropic key location
+const PROVIDER_KEY = "order.agent.provider";
 const lsGet = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
 const lsSet = (k: string, v: string) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* non-fatal */ } };
 export const AGENT_KEY_EVENT = "order:agent-key-changed";
-export function getAgentKey(): string { return lsGet(AGENT_KEY); }
-export function setAgentKey(v: string): void {
-  lsSet(AGENT_KEY, v.trim());
+
+export type AgentProvider = "anthropic" | "openai" | "grok" | "local";
+export const AGENT_PROVIDERS: AgentProvider[] = ["anthropic", "openai", "grok", "local"];
+/** Model used when a provider's model field is left blank ("" → Rust's default). */
+export const AGENT_DEFAULT_MODEL: Record<AgentProvider, string> = {
+  anthropic: "", openai: "gpt-4o", grok: "grok-2-latest", local: "",
+};
+
+export function getAgentProvider(): AgentProvider {
+  const p = lsGet(PROVIDER_KEY);
+  return (AGENT_PROVIDERS as string[]).includes(p) ? (p as AgentProvider) : "anthropic";
+}
+export function setAgentProvider(v: AgentProvider): void {
+  lsSet(PROVIDER_KEY, v);
   try { window.dispatchEvent(new Event(AGENT_KEY_EVENT)); } catch { /* noop */ }
+}
+
+const keyStore = (p: AgentProvider) => (p === "anthropic" ? AGENT_KEY : `order.agent.key.${p}`);
+export function getAgentKeyFor(p: AgentProvider): string { return lsGet(keyStore(p)); }
+export function setAgentKeyFor(p: AgentProvider, v: string): void {
+  lsSet(keyStore(p), v.trim());
+  try { window.dispatchEvent(new Event(AGENT_KEY_EVENT)); } catch { /* noop */ }
+}
+export function getAgentModelFor(p: AgentProvider): string { return lsGet(`order.agent.model.${p}`); }
+export function setAgentModelFor(p: AgentProvider, v: string): void { lsSet(`order.agent.model.${p}`, v.trim()); }
+export function getAgentBaseUrlFor(p: AgentProvider): string { return lsGet(`order.agent.baseurl.${p}`); }
+export function setAgentBaseUrlFor(p: AgentProvider, v: string): void { lsSet(`order.agent.baseurl.${p}`, v.trim()); }
+
+/** The selected provider's key (back-compatible with the old single-key API). */
+export function getAgentKey(): string { return getAgentKeyFor(getAgentProvider()); }
+export function setAgentKey(v: string): void { setAgentKeyFor(getAgentProvider(), v); }
+
+/** The effective model for the selected provider (stored, else per-provider default). */
+export function getAgentModel(): string {
+  const p = getAgentProvider();
+  return getAgentModelFor(p) || AGENT_DEFAULT_MODEL[p] || "";
+}
+export function getAgentBaseUrl(): string { return getAgentBaseUrlFor(getAgentProvider()); }
+
+/** Provider/base-url/model args passed to every agent command. */
+export function agentModelArgs(): { provider: string; baseUrl: string | null; model: string | null } {
+  return { provider: getAgentProvider(), baseUrl: getAgentBaseUrl() || null, model: getAgentModel() || null };
 }
 
 // ---- One preview row in a write-approval batch (mirrors Rust ApprovalItem) --
@@ -64,6 +107,7 @@ export function runTurn(chatPath: string, userText: string, opts?: { alreadyReco
     title: null,
     userText,
     recordUser: !opts?.alreadyRecorded,
+    ...agentModelArgs(),
   });
 }
 
@@ -82,6 +126,7 @@ export function suggestChatTitle(chatPath: string): Promise<string | null> {
   return invoke<string | null>("agent_chat_title", {
     apiKey: getAgentKey(),
     chatPath,
+    ...agentModelArgs(),
   });
 }
 

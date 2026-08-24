@@ -5,7 +5,7 @@
 //! `agent-stream` events; the UI never sees a filesystem path it constructed.
 
 use super::chat;
-use super::provider::{Anthropic, Block, CompletionRequest, Msg, ModelProvider, DEFAULT_MODEL, MAX_TOKENS};
+use super::provider::{make_provider, Block, CompletionRequest, Msg, ModelProvider, DEFAULT_MODEL, MAX_TOKENS};
 use super::tools;
 use crate::vault_fs::VaultState;
 use serde::Serialize;
@@ -194,6 +194,7 @@ fn request_approval(app: &AppHandle, state: &AgentState, chat_rel: &str, items: 
 fn run_turn(
     app: &AppHandle,
     provider: &dyn ModelProvider,
+    model: &str,
     root: &Path,
     chat_rel: &str,
     dir_rel: &str,
@@ -235,7 +236,7 @@ fn run_turn(
             emit(app, chat_rel, serde_json::json!({ "kind": "cancelled" }));
             break;
         }
-        let req = CompletionRequest { system: &system, messages: &messages, tools: &tool_defs, model: DEFAULT_MODEL, max_tokens: MAX_TOKENS };
+        let req = CompletionRequest { system: &system, messages: &messages, tools: &tool_defs, model, max_tokens: MAX_TOKENS };
         let mut on_text = |t: &str| emit(app, chat_rel, serde_json::json!({ "kind": "text", "text": t }));
         let (blocks, usage) = provider.stream(&req, &mut on_text)?;
         total_in += usage.input_tokens;
@@ -343,6 +344,9 @@ pub fn run_turn_for(
     api_key: &str,
     chat_rel: &str,
     user_text: &str,
+    provider_kind: Option<&str>,
+    base_url: Option<String>,
+    model: Option<&str>,
 ) -> Result<String, String> {
     app.state::<AgentState>().cancel.store(false, Ordering::Relaxed);
     let root = vault_root(app)?;
@@ -350,8 +354,9 @@ pub fn run_turn_for(
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
-    let provider = Anthropic::new(api_key.to_string());
-    run_turn(app, &provider, &root, chat_rel, &dir_rel, user_text, true)
+    let model = model.map(|m| m.trim()).filter(|m| !m.is_empty()).unwrap_or(DEFAULT_MODEL).to_string();
+    let provider = make_provider(provider_kind, api_key.to_string(), base_url);
+    run_turn(app, provider.as_ref(), &model, &root, chat_rel, &dir_rel, user_text, true)
 }
 
 /// Capture a user utterance into the chat record WITHOUT running a turn. Used in
@@ -396,6 +401,12 @@ pub async fn agent_turn(
     // capture-first records the utterance the moment it's spoken and passes false
     // here so it isn't duplicated; typed input (and the default) pass true.
     record_user: Option<bool>,
+    // Model provider selection (from Settings): "anthropic" (default), "openai",
+    // "grok", "local". base_url overrides the provider's default endpoint; model
+    // names the exact model. Absent → Anthropic + DEFAULT_MODEL.
+    provider: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
 ) -> Result<TurnResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         // Fresh turn: clear any stale barge-in cancel from a previous turn.
@@ -413,8 +424,9 @@ pub async fn agent_turn(
             }
         };
         let dir_rel = Path::new(&chat_rel).parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-        let provider = Anthropic::new(api_key);
-        let text = match run_turn(&app, &provider, &root, &chat_rel, &dir_rel, &user_text, record_user.unwrap_or(true)) {
+        let model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let provider = make_provider(provider.as_deref(), api_key, base_url);
+        let text = match run_turn(&app, provider.as_ref(), &model, &root, &chat_rel, &dir_rel, &user_text, record_user.unwrap_or(true)) {
             Ok(t) => t,
             Err(e) => { emit(&app, &chat_rel, serde_json::json!({ "kind": "error", "message": e.clone() })); return Err(e); }
         };
@@ -446,6 +458,9 @@ pub async fn agent_chat_title(
     app: AppHandle,
     api_key: String,
     chat_path: String,
+    provider: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
 ) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         if api_key.trim().is_empty() {
@@ -459,8 +474,9 @@ pub async fn agent_chat_title(
         if convo.chars().filter(|c| !c.is_whitespace()).count() < 120 {
             return Ok(None);
         }
-        let provider = Anthropic::new(api_key);
-        suggest_title(&provider, &convo)
+        let model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let provider = make_provider(provider.as_deref(), api_key, base_url);
+        suggest_title(provider.as_ref(), &model, &convo)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -468,7 +484,7 @@ pub async fn agent_chat_title(
 
 /// One-shot title generation. The topic is almost always set early, so we cap
 /// the transcript to bound cost; `max_tokens` is tiny.
-fn suggest_title(provider: &Anthropic, convo: &str) -> Result<Option<String>, String> {
+fn suggest_title(provider: &dyn ModelProvider, model: &str, convo: &str) -> Result<Option<String>, String> {
     let snippet: String = convo.chars().take(8000).collect();
     let system = "You name a saved conversation with a short file title. \
 Reply with ONLY the title: 2 to 6 words, Title Case, no quotes, no punctuation, \
@@ -479,7 +495,7 @@ If there is no clear topic, reply with the single word NONE.";
         system,
         messages: &messages,
         tools: &[],
-        model: DEFAULT_MODEL,
+        model,
         max_tokens: 24,
     };
     let (blocks, _usage) = provider.stream(&req, &mut |_| {})?;
