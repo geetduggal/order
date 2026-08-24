@@ -1546,6 +1546,10 @@ input, textarea, select { outline: none; box-shadow: none; }
   outline: none;
   padding: 0;
   font-family: var(--serif);
+  /* Explicit caret color: currentColor can resolve to something invisible in
+     a few themes (Crepe only sets caret-color on code/image blocks). Pin it to
+     the theme's ink so the text cursor is always visible. */
+  caret-color: var(--ink);
   /* Note text size is user-adjustable via the rail zoom buttons, which
      set --text-scale. font-size (not CSS zoom) keeps ProseMirror's caret
      hit-testing correct. */
@@ -2625,11 +2629,18 @@ iframe.order-youtube-embed {
   font-weight: 500;
   letter-spacing: 0.01em;
   text-align: center;
-  padding: 0 4px;
+  padding: 0 5px;
   max-width: 100%;
+  /* Wrap to fill the square box (up to 3 lines) instead of truncating a long
+     Area/Category name on a single line and wasting the box's height. */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
   position: relative;
   z-index: 1;
 }
@@ -8555,6 +8566,33 @@ body.is-tile-dragging * {
 }
 .fm-filename-input:focus { border-color: var(--accent, #4a7); outline: none; }
 
-/* Fullscreen = a clean writing surface: drop the footer status strip (saved
-   indicator + folder chip / breadcrumb) so nothing sits below the prose. */
-.order-card.is-fullscreen .order-card-status { display: none; }
+/* Fullscreen: keep the folder chip + breadcrumb visible (so you can see AND
+   change which notable folder a note/chat is in) but drop the noisy save-state
+   indicator so the footer stays quiet. */
+.order-card.is-fullscreen .order-card-status .is-saved,
+.order-card.is-fullscreen .order-card-status .is-saving { display: none; }
+
+/* Code-block caret follows the theme ink too (Crepe's outline var isn't remapped per theme). */
+.milkdown-host .cm-editor .cm-content { caret-color: var(--ink); }
+
+/* Subtle, right-aligned "clear all filters" below the file-type chips. */
+.sb-clear-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+.sb-clear-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: calc(11px * var(--text-scale, 1));
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s, color 0.12s;
+}
+.sb-clear-all:hover { opacity: 1; color: var(--coral, var(--ink)); }
+
+/* Full-width audio scrubber on its own row — much easier to scrub to a time. */
+.tts-dock-scrubrow { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.tts-dock-scrubrow .tts-dock-range { flex: 1 1 auto; min-width: 0; height: 6px; accent-color: var(--royal); cursor: pointer; }
+.tts-dock-scrubrow .tts-dock-time { flex: 0 0 auto; }

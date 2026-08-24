@@ -197,6 +197,7 @@ export function CardSpeech({ getText, notePath }: Props) {
               <button type="button" className="tts-dock-x" onClick={() => setError(null)} aria-label="Dismiss"><XIcon size={12} strokeWidth={2.4} /></button>
             </div>
           ) : (
+            <>
             <div className="tts-dock-row">
               {/* transport */}
               <button type="button" className="tts-dock-btn tts-dock-play" onClick={playPause} disabled={pending}
@@ -212,22 +213,15 @@ export function CardSpeech({ getText, notePath }: Props) {
                 </button>
               )}
 
-              {/* time + scrubber (stored file only), else a running elapsed time */}
-              {canSeek ? (
-                <div className="tts-dock-scrub">
-                  <span className="tts-dock-time">{fmt(cur)}</span>
-                  <input type="range" className="tts-dock-range" min={0} max={dur || 0} step={0.1} value={Math.min(cur, dur || 0)}
-                         onChange={(e) => seekTo(parseFloat(e.target.value))} aria-label="Seek" />
-                  <span className="tts-dock-time">{fmt(dur)}</span>
-                </div>
-              ) : (
-                <span className="tts-dock-time tts-dock-elapsed">{pending ? "Loading…" : fmt(cur)}</span>
-              )}
-
+              {/* Forward-skip stays with the transport controls; the scrubber gets
+                  its OWN full-width row below (tts-dock-scrubrow) so it isn't cramped. */}
               {canSeek && (
                 <button type="button" className="tts-dock-btn tts-dock-skip" onClick={() => skip(10)} title="Forward 10s" aria-label="Forward 10 seconds">
                   <RotateCw size={15} strokeWidth={2.2} />
                 </button>
+              )}
+              {!canSeek && (
+                <span className="tts-dock-time tts-dock-elapsed">{pending ? "Loading…" : fmt(cur)}</span>
               )}
 
               {/* speed */}
@@ -244,6 +238,15 @@ export function CardSpeech({ getText, notePath }: Props) {
                 <XIcon size={15} strokeWidth={2.2} />
               </button>
             </div>
+            {canSeek && (
+              <div className="tts-dock-scrubrow">
+                <span className="tts-dock-time">{fmt(cur)}</span>
+                <input type="range" className="tts-dock-range" min={0} max={dur || 0} step={0.1} value={Math.min(cur, dur || 0)}
+                       onChange={(e) => seekTo(parseFloat(e.target.value))} aria-label="Seek" />
+                <span className="tts-dock-time">{fmt(dur)}</span>
+              </div>
+            )}
+            </>
           )}
           {showHint && !error && (
             <div className="tts-dock-hint">

@@ -1178,7 +1178,10 @@ export function Card(props: Props) {
   const handleWikiNavigate = useCallback((name: string) => {
     const res = resolveWikilink(name, vaultNotes ?? []);
     if (res.kind === "broken") return;
-    const ref = res.ref.filename.replace(/\.md$/i, "");
+    // Strip the reserved leading marker (`! ` cover / `$ ` pinned) so the ref is
+    // the folder/note's plain name — otherwise a cover resolves to "! 32.04
+    // Order", which matches nothing and adds a dead filter pill.
+    const ref = stripSortPrefix(res.ref.filename.replace(/\.md$/i, ""));
     if (res.kind === "folder") (onAddFilter ?? onNavigate)?.(ref);
     else onNavigate?.(ref);
   }, [vaultNotes, onNavigate, onAddFilter]);

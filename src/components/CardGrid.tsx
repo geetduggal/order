@@ -903,6 +903,13 @@ export function CardGrid() {
   // includes always compose with OR). Kept as a distinct name for the
   // list-render prop contract.
   const addFolderToFilter = navigateToRef;
+  // Clear EVERYTHING the sidebar filters by: folder include/exclude pills AND
+  // the Notes/Chat/HTML/Image file-type lens. Routes through resetToDefault so
+  // the pile doesn't explode to an unbounded list (it lands on Week).
+  const clearAllFilters = useCallback(() => {
+    setFileTypeFilter(new Set());
+    resetToDefault();
+  }, [resetToDefault]);
   /** Pick a folder from the command palette: switch to the Pile,
    *  add it as an include, pin its Main Document, and scroll to it —
    *  so Cmd+K lands you ON that page. */
@@ -4750,6 +4757,13 @@ export function CardGrid() {
     if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
       setFilters((prev) => [...prev, { kind: "include", ref: folderRef }]);
     }
+    // Always-open guarantee: undo any lens that would hide the new note — the
+    // file-type filter, a "folders-only" pile, a public-only lens (when the
+    // note is private), or an exclude on its folder.
+    setFileTypeFilter((prev) => (prev.size ? new Set() : prev));
+    setPileMode((m) => (m === "folders" ? "all" : m));
+    if (frontmatter.public !== true) setPublicOnly((v) => { if (v) writePublicOnly(false); return false; });
+    if (folderRef) setFilters((prev) => prev.filter((f) => !(f.kind === "exclude" && f.ref === folderRef)));
     // Land focus + scroll on the new note. Both Pile and the
     // calendar views consume scrollTargetPath; the Card itself
     // picks up autoFocus on mount.
@@ -4839,6 +4853,11 @@ export function CardGrid() {
       setFocusedFolder(fref);
       markFolderRecent(fref);
     }
+    // Always-open guarantee (same as createNote): no lens hides a new chat.
+    setFileTypeFilter((prev) => (prev.size ? new Set() : prev));
+    setPileMode((m) => (m === "folders" ? "all" : m));
+    setPublicOnly((v) => { if (v) writePublicOnly(false); return false; });
+    if (folderRef) setFilters((prev) => prev.filter((f) => !(f.kind === "exclude" && f.ref === folderRef)));
     setFocusPath(path);
     setScrollTargetPath(path);
     setFocusedPath(path);
@@ -6853,6 +6872,8 @@ export function CardGrid() {
           filteredRefs={includeSet}
           fileTypeFilter={fileTypeFilter}
           onToggleFileType={toggleFileType}
+          onClearAll={clearAllFilters}
+          clearActive={filters.length > 0 || fileTypeFilter.size > 0}
           onToggleAreaFilter={(name) => {
             if (includeSet.has(name)) removeFilter({ kind: "include", ref: name });
             else addInclude(name);
@@ -6867,7 +6888,6 @@ export function CardGrid() {
                 filters={filters}
                 onRemove={removeFilter}
                 onReorder={setFilters}
-                onClear={resetToDefault}
                 stickyRef={view === "pile" ? (homeFolderRef.current ?? undefined) : undefined}
                 onJump={(ref) => {
                   setFocusedFolder(ref);

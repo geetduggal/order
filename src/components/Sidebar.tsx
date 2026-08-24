@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTextScale } from "../lib/text-scale";
 import type { LucideIcon } from "lucide-react";
-import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, X, FilterX } from "lucide-react";
 import { folderColor, folderIcon } from "../lib/folders";
 import { stripJdPrefix } from "../lib/johnny-decimal";
 import { useTileDrag } from "../lib/use-tile-drag";
@@ -101,6 +101,10 @@ interface Props {
    *  toggler. Rendered as a small chip row at the top of the sidebar. */
   fileTypeFilter?: Set<string>;
   onToggleFileType?: (t: string) => void;
+  /** Clear ALL filters (folder pills + file-type lens). Shown as a subtle
+   *  right-aligned control below the file-type chips when `clearActive`. */
+  onClearAll?: () => void;
+  clearActive?: boolean;
 }
 
 interface Taxonomy {
@@ -224,6 +228,8 @@ export function Sidebar({
   filteredRefs,
   fileTypeFilter,
   onToggleFileType,
+  onClearAll,
+  clearActive,
 }: Props) {
   const [drill, setDrill] = useState<DrillState>({ kind: "areas" });
 
@@ -273,6 +279,13 @@ export function Sidebar({
               </button>
             ))}
           </div>
+          {onClearAll && clearActive && (
+            <div className="sb-clear-row">
+              <button type="button" className="sb-clear-all" onClick={onClearAll} title="Clear all filters">
+                <FilterX size={12} strokeWidth={2} /> Clear filters
+              </button>
+            </div>
+          )}
         </section>
       )}
 
