@@ -523,20 +523,23 @@ mod apple {
                 1 => (true, 1),
                 2 => (true, 0),
                 _ => {
+                    // auto: built-in speaker whenever there's no external route
+                    // (mirrors tts::route_output — !ext, so a null/unsettled route
+                    // still forces the loud speaker instead of the earpiece).
                     let route: *mut AnyObject = msg_send![session, currentRoute];
-                    if route.is_null() { (false, 0) } else {
+                    let mut ext = false;
+                    if !route.is_null() {
                         let outs: *mut AnyObject = msg_send![route, outputs];
                         let cnt: usize = if outs.is_null() { 0 } else { msg_send![outs, count] };
-                        let (mut recv, mut ext) = (false, false);
                         for i in 0..cnt {
                             let p: *mut AnyObject = msg_send![outs, objectAtIndex: i];
                             if p.is_null() { continue; }
                             let pt: Retained<NSString> = msg_send![p, portType];
                             let s = pt.to_string();
-                            if s == "Receiver" { recv = true; } else if s != "Speaker" { ext = true; }
+                            if s != "Receiver" && s != "Speaker" { ext = true; }
                         }
-                        (recv && !ext, 1)
                     }
+                    (!ext, 1)
                 }
             };
             if apply {

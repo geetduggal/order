@@ -348,20 +348,25 @@ mod imp {
         let (apply, ov): (bool, usize) = match super::AUDIO_OUTPUT_PREF.load(Ordering::Relaxed) {
             1 => (true, 1), // speaker: force built-in speaker
             2 => (true, 0), // receiver: OverrideNone → VoiceChat's earpiece default
-            _ => {          // auto: speaker only if on the built-in Receiver, no headset
+            _ => {          // auto: the loud built-in speaker whenever there is NO
+                            // external route (AirPods / wired / CarPlay). Forcing the
+                            // speaker when already on it is a harmless no-op, and it
+                            // fixes the case where VoiceChat pins playback to the quiet
+                            // earpiece before currentRoute settles to "Receiver".
                 let route: *mut AnyObject = msg_send![session, currentRoute];
-                if route.is_null() { return; }
-                let outs: *mut AnyObject = msg_send![route, outputs];
-                let cnt: usize = if outs.is_null() { 0 } else { msg_send![outs, count] };
-                let (mut recv, mut ext) = (false, false);
-                for i in 0..cnt {
-                    let p: *mut AnyObject = msg_send![outs, objectAtIndex: i];
-                    if p.is_null() { continue; }
-                    let pt: Retained<NSString> = msg_send![p, portType];
-                    let s = pt.to_string();
-                    if s == "Receiver" { recv = true; } else if s != "Speaker" { ext = true; }
+                let mut ext = false;
+                if !route.is_null() {
+                    let outs: *mut AnyObject = msg_send![route, outputs];
+                    let cnt: usize = if outs.is_null() { 0 } else { msg_send![outs, count] };
+                    for i in 0..cnt {
+                        let p: *mut AnyObject = msg_send![outs, objectAtIndex: i];
+                        if p.is_null() { continue; }
+                        let pt: Retained<NSString> = msg_send![p, portType];
+                        let s = pt.to_string();
+                        if s != "Receiver" && s != "Speaker" { ext = true; }
+                    }
                 }
-                (recv && !ext, 1)
+                (!ext, 1)
             }
         };
         if apply {
