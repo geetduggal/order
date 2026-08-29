@@ -8633,7 +8633,6 @@ body.is-tile-dragging * {
 
 /* Week-view Frontier-captures toggle — a subtle chip pinned top-right. */
 .frontier-toggle {
-  position: absolute; top: 8px; right: 12px; z-index: 6;
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 10px; border-radius: 999px;
   border: 1px solid var(--card-border, var(--rule));
@@ -8643,13 +8642,15 @@ body.is-tile-dragging * {
 .frontier-toggle.is-on { color: var(--ink); }
 .frontier-toggle:not(.is-on) { opacity: 0.6; text-decoration: line-through; }
 
-/* Week-view chips row + bulk-move bar. */
+/* Week-view chips row + bulk-move bar — a normal-flow header ABOVE the
+   calendar (the calendar self-measures its height from its own top edge, so a
+   header here just shifts it down cleanly — no fighting the sticky toolbar). */
 .week-view { position: relative; }
-.week-chips { position: absolute; top: 8px; right: 12px; z-index: 6; display: flex; gap: 6px; }
-.week-chips .frontier-toggle { position: static; top: auto; right: auto; }
+.week-chips { display: flex; gap: 6px; justify-content: flex-end; align-items: center; padding: 4px 12px 0; }
+.week-chips .frontier-toggle { position: static; }
 .bulk-move-bar {
-  position: absolute; top: 40px; right: 12px; z-index: 6;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  margin: 6px 12px 0;
   padding: 6px 10px; border-radius: 10px;
   border: 1px solid var(--card-border, var(--rule));
   background: var(--card-bg, var(--bg));
