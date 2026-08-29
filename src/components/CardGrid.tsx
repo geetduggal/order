@@ -6813,7 +6813,7 @@ export function CardGrid() {
           // (a Notable Folder's main doc stacked above the grid, with list↔
           // calendar drag-drop) is gone in favor of the Frontier model: quick
           // captures land as dated notes/events directly in the Frontier folder.
-          <>
+          <div className="week-view">
           <div className="week-chips">
             {frontierFolder && (
               <button
@@ -6878,7 +6878,7 @@ export function CardGrid() {
             onImportDay={(iso) => { void startImport(iso); }}
             onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
-          </>
+          </div>
         )}
         {view === "month" && (
           <CalendarView

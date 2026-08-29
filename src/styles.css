@@ -8644,6 +8644,7 @@ body.is-tile-dragging * {
 .frontier-toggle:not(.is-on) { opacity: 0.6; text-decoration: line-through; }
 
 /* Week-view chips row + bulk-move bar. */
+.week-view { position: relative; }
 .week-chips { position: absolute; top: 8px; right: 12px; z-index: 6; display: flex; gap: 6px; }
 .week-chips .frontier-toggle { position: static; top: auto; right: auto; }
 .bulk-move-bar {
