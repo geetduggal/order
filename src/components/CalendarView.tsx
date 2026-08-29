@@ -26,7 +26,7 @@ import type {
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { Frontmatter } from "../lib/frontmatter";
 import { isoDate, isoTime, toIsoDateValue, addMinutesToIsoTime, DEFAULT_EVENT_MINUTES } from "../lib/frontmatter";
-import { overListZone, emitEventToList, highlightListZone, clearListZoneHighlight } from "../lib/list-cal-dnd";
+import { clearListZoneHighlight } from "../lib/list-cal-dnd";
 
 // Cancel text selection while dragging an event (module-level = stable ref).
 const preventSelect = (e: Event) => e.preventDefault();
@@ -317,7 +317,6 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   // highlight the Week hub list zone when the event is over it — and so the drop
   // uses the real release point (FullCalendar's eventDragStop jsEvent coords are
   // unreliable), not a stale one.
-  const eventDragMoveRef = useRef<((e: PointerEvent) => void) | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   useImperativeHandle(navRef, () => ({
     prev: () => apiRef.current?.getApi()?.prev(),
@@ -723,16 +722,8 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           document.body.classList.add("is-tile-dragging");
           document.addEventListener("selectstart", preventSelect);
           // Clear any selection begun during the pre-drag threshold movement —
-          // user-select:none (added by the class) stops NEW selection but not an
-          // existing one, which otherwise stays highlighted as you drag over the
-          // hub's editor. (The tile-drag path already does this.)
+          // user-select:none stops NEW selection but not an existing one.
           try { window.getSelection()?.removeAllRanges(); } catch { /* ignore */ }
-          const move = (e: PointerEvent) => {
-            lastPointerRef.current = { x: e.clientX, y: e.clientY };
-            highlightListZone(e.clientX, e.clientY);
-          };
-          eventDragMoveRef.current = move;
-          window.addEventListener("pointermove", move);
         }}
         // Drag a timed event up onto the Week hub's list zone → move it there:
         // emit for the list to append + CardGrid to delete. Dropped outside the
@@ -740,22 +731,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventDragStop={(info) => {
           document.body.classList.remove("is-tile-dragging");
           document.removeEventListener("selectstart", preventSelect);
-          if (eventDragMoveRef.current) {
-            window.removeEventListener("pointermove", eventDragMoveRef.current);
-            eventDragMoveRef.current = null;
-          }
           clearListZoneHighlight();
-          const p = lastPointerRef.current;
           lastPointerRef.current = null;
-          const start = info.event.start;
-          if (!p || !start || !overListZone(p.x, p.y)) return;
-          emitEventToList({
-            title: info.event.title || "Untitled",
-            date: isoDate(start),
-            time: info.event.allDay ? "" : isoTime(start),
-            path: info.event.id,
-            hasNote: !info.event.id.startsWith("mw-event:"),
-          });
+          // The old drag-to-the-weekly-hub-list handoff is gone with the Frontier
+          // change; normal reschedule still happens via eventDrop, untouched.
         }}
         eventContent={renderEventContent}
         // Weekly-hub all-day events get the "high bit" card treatment in the

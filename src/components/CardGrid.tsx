@@ -82,7 +82,6 @@ import {
 } from "../lib/todo-txt";
 import { rewriteWikilinksForRename } from "../lib/wikilink";
 import { applyJohnnyDecimal, getJohnnyDecimal, setJohnnyDecimal as persistJohnnyDecimal, stripJdPrefix, isJohnnyDecimalName, nextJdFolderId, assignMissingJdIds } from "../lib/johnny-decimal";
-import { WeekHub } from "./WeekHub";
 import { getWeekHubFolder, setWeekHubFolder as persistWeekHubFolder } from "../lib/week-hub";
 import { getBadgeEnabled, setBadgeEnabled as persistBadgeEnabled, badgeRequestPermission, badgeSet, upcomingSaturdayIso } from "../lib/badge";
 import { slugify, dedupeSlug } from "../lib/slug";
@@ -2929,14 +2928,14 @@ export function CardGrid() {
 
   // Weekly Hub — which Notable Folder's Main Doc accompanies the Week view.
   // Fixed-folder mode today; the per-week seam lives in lib/week-hub.ts.
-  const [weekHubFolder, setWeekHubFolderState] = useState<string>(() => getWeekHubFolder());
+  const [frontierFolder, setFrontierFolderState] = useState<string>(() => getWeekHubFolder());
   // Ref mirror so empty-deps callbacks (createNote, new-event flow) can read the
   // current hub folder without re-subscribing.
-  const weekHubFolderRef = useRef<string>(weekHubFolder);
-  weekHubFolderRef.current = weekHubFolder;
-  const changeWeekHubFolder = useCallback((ref: string) => {
+  const frontierFolderRef = useRef<string>(frontierFolder);
+  frontierFolderRef.current = frontierFolder;
+  const changeFrontierFolder = useCallback((ref: string) => {
     persistWeekHubFolder(ref);
-    setWeekHubFolderState(ref);
+    setFrontierFolderState(ref);
   }, []);
 
   // Append `text` as a list item to the weekly-hub folder's main document.
@@ -2946,7 +2945,7 @@ export function CardGrid() {
   const quickAppendToHub = useCallback(async (text: string): Promise<boolean> => {
     const t = text.trim();
     if (!t) return false;
-    const ref = weekHubFolderRef.current || homeFolderRef.current;
+    const ref = frontierFolderRef.current || homeFolderRef.current;
     if (!ref) return false;
     const path = notePathByRef(ref);
     if (!path) return false;
@@ -3271,16 +3270,16 @@ export function CardGrid() {
   // now-inert generated spacetime.yml and is empty in the decoupled model
   // (that stale source is why the badge had gone blank).
   const badgeCount = useMemo(() => {
-    if (!badgeEnabled || !weekHubFolder) return 0;
+    if (!badgeEnabled || !frontierFolder) return 0;
     const sat = upcomingSaturdayIso();
-    const hubKey = folderMatchKey(weekHubFolder);
+    const hubKey = folderMatchKey(frontierFolder);
     return mwEvents.filter((e) => {
       if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
       const end = e.endDate ?? e.date;
       return e.date <= sat && sat <= end; // include multi-day spans over Saturday
     }).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badgeEnabled, weekHubFolder, mwEvents, badgeTick]);
+  }, [badgeEnabled, frontierFolder, mwEvents, badgeTick]);
   useEffect(() => {
     // Only touch the native badge when the feature is ON — the disable path
     // clears it explicitly in toggleBadge. (Calling the native command while
@@ -3460,7 +3459,7 @@ export function CardGrid() {
       const { classifyImports } = await import("../lib/gcal-import");
       const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
       const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
-      setImportReview({ date: dateIso, provider: "google", account, rows, folder: weekHubFolderRef.current || homeFolderRef.current || "" });
+      setImportReview({ date: dateIso, provider: "google", account, rows, folder: frontierFolderRef.current || homeFolderRef.current || "" });
     } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
   }, []);
 
@@ -3477,7 +3476,7 @@ export function CardGrid() {
       const { classifyImports } = await import("../lib/gcal-import");
       const dayEvents = mwEventsRefForImport.current.filter((e) => e.date === dateIso);
       const rows = classifyImports(fetched, dayEvents).map((r) => ({ ...r, accept: r.isNew }));
-      setImportReview({ date: dateIso, provider: "apple", rows, folder: weekHubFolderRef.current || homeFolderRef.current || "" });
+      setImportReview({ date: dateIso, provider: "apple", rows, folder: frontierFolderRef.current || homeFolderRef.current || "" });
     } catch (e) { await tauriMessage(`Import failed: ${String(e)}`, { title: "Import", kind: "error" }); }
   }, []);
 
@@ -4732,7 +4731,7 @@ export function CardGrid() {
       const focused = pileRef.current?.focusedFolder ?? null;
       if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
       else if (focused && noteDirByRef(focused)) folderRef = focused;
-      else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
+      else if (frontierFolderRef.current) folderRef = frontierFolderRef.current;
       else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     }
     // New note's directory = the folder's directory in the space tree
@@ -4829,7 +4828,7 @@ export function CardGrid() {
     const focused = pileRef.current?.focusedFolder ?? null;
     if (activeIncludes.length >= 1) folderRef = activeIncludes[0];
     else if (focused && noteDirByRef(focused)) folderRef = focused;   // folder at the top of the pile
-    else if (weekHubFolderRef.current) folderRef = weekHubFolderRef.current;
+    else if (frontierFolderRef.current) folderRef = frontierFolderRef.current;
     else if (homeFolderRef.current) folderRef = homeFolderRef.current;
     const absDir = (folderRef && noteDirByRef(folderRef)) || root;
     const dirRel = toVaultRel(absDir);
@@ -4928,7 +4927,7 @@ export function CardGrid() {
         startTime: d.startTime,
         endTime: d.endTime,
         title: d.title,
-        ...(weekHubFolderRef.current ? { folder: `[[${weekHubFolderRef.current}]]` } : {}),
+        ...(frontierFolderRef.current ? { folder: `[[${frontierFolderRef.current}]]` } : {}),
       });
     };
     const onEventToList = (e: Event) => {
@@ -6327,7 +6326,7 @@ export function CardGrid() {
   // The weekly-hub folder's all-day events render as prominent "high bits"
   // in the all-day band. Match by normalized folder key so renames of the
   // number prefix etc. still line up.
-  const hubKey = weekHubFolder ? folderMatchKey(weekHubFolder) : null;
+  const hubKey = frontierFolder ? folderMatchKey(frontierFolder) : null;
   const isHubFolder = (folder?: string | null) => !!hubKey && !!folder && folderMatchKey(folder) === hubKey;
   const markdownCalendarNotes: NoteMeta[] = (() => {
     const out: NoteMeta[] = [];
@@ -6513,7 +6512,7 @@ export function CardGrid() {
       return;
     }
     // New events default to the Week Hub folder (then home).
-    const home = weekHubFolderRef.current || homeFolderRef.current;
+    const home = frontierFolderRef.current || homeFolderRef.current;
     setView("pile");
     if (home) {
       setFilters([{ kind: "include", ref: home }]);
@@ -6802,57 +6801,29 @@ export function CardGrid() {
             onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
         )}
-        {view === "week" && (() => {
-          // Weekly Hub: the configured folder's Main Doc sits above the week
-          // grid. `weekHubFolder` is the fixed-mode folder (fixed today; the
-          // per-week resolver seam lives in lib/week-hub.ts). Its editable card
-          // is the SAME cardNode used in the pile — editing writes to the main
-          // doc exactly as anywhere else.
-          const hubNote = weekHubFolder
-            ? (notes?.find((n) => isMainDoc(n) && folderMatchKey(stripSortPrefix(n.filename.replace(/\.md$/i, ""))) === folderMatchKey(weekHubFolder)) ?? null)
-            : null;
-          const grid = (
-            <CalendarView
-              ref={calendarHandleRef}
-              key="week"
-              notes={calendarNotes}
-              initialView="timeGridWeek"
-              // Entering the week view always lands on the week containing the
-              // upcoming Saturday (= the current week until Saturday passes).
-              initialDate={upcomingSaturdayIso()}
-              onMoveEvent={updateNoteFrontmatter}
-              onEventClick={handleEventClick}
+        {view === "week" && (
+          // Week view is now just the calendar. The old two-zone "weekly hub"
+          // (a Notable Folder's main doc stacked above the grid, with list↔
+          // calendar drag-drop) is gone in favor of the Frontier model: quick
+          // captures land as dated notes/events directly in the Frontier folder.
+          <CalendarView
+            ref={calendarHandleRef}
+            key="week"
+            notes={calendarNotes}
+            initialView="timeGridWeek"
+            // Entering the week view always lands on the week containing the
+            // upcoming Saturday (= the current week until Saturday passes).
+            initialDate={upcomingSaturdayIso()}
+            onMoveEvent={updateNoteFrontmatter}
+            onEventClick={handleEventClick}
             onRenameEvent={renameEventTitle}
-              onCreate={promptCreate}
-              currentView="week"
-              onSelectView={setView}
-              onImportDay={(iso) => { void startImport(iso); }}
-              onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
-            />
-          );
-          return (
-            <WeekHub
-              mobile={isIosSync()}
-              docConfigured={!!hubNote}
-              grid={grid}
-              doc={hubNote ? cardNode(hubNote) : (
-                <div className="week-hub-prompt">
-                  <span className="week-hub-prompt-label">Weekly hub</span>
-                  <input
-                    className="week-hub-prompt-input"
-                    list="week-hub-folder-options"
-                    placeholder="Pin a folder's document above the week…"
-                    defaultValue=""
-                    onChange={(e) => { const v = e.target.value.trim(); if (availableFolderRefs.some((f) => f.name === v)) changeWeekHubFolder(v); }}
-                  />
-                  <datalist id="week-hub-folder-options">
-                    {availableFolderRefs.map((f) => <option key={f.name} value={f.name} />)}
-                  </datalist>
-                </div>
-              )}
-            />
-          );
-        })()}
+            onCreate={promptCreate}
+            currentView="week"
+            onSelectView={setView}
+            onImportDay={(iso) => { void startImport(iso); }}
+            onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
+          />
+        )}
         {view === "month" && (
           <CalendarView
             ref={calendarHandleRef}
@@ -7040,8 +7011,8 @@ export function CardGrid() {
           johnnyDecimalBusy={jdBusy}
           onToggleJohnnyDecimal={applyJohnnyDecimalMode}
           onAssignMissingJdIds={handleAssignMissingJdIds}
-          weekHubFolder={weekHubFolder}
-          onSetWeekHubFolder={changeWeekHubFolder}
+          frontierFolder={frontierFolder}
+          onSetFrontierFolder={changeFrontierFolder}
           folderOptions={availableFolderRefs.map((f) => f.name)}
           badgeEnabled={badgeEnabled}
           badgeCount={badgeCount}
@@ -7261,7 +7232,7 @@ export function CardGrid() {
         <div className="settings-overlay" onMouseDown={() => { if (!importBusy) setImportReview(null); }}>
           <div className="settings-panel import-review-panel" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="settings-title">Import {importReview.date} from {importReview.provider === "apple" ? "the system calendar" : "Google"}</h2>
-            <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events default to the weekly hub folder — override any event with its own notable folder below.</p>
+            <p className="mw-orphan-hint">{importReview.account ? `From ${importReview.account}. ` : ""}New events are pre-checked; events you already have are unchecked. Accepted events default to the Frontier folder — override any event with its own notable folder below.</p>
             <datalist id="import-folder-options">
               {notableFolders.map((f) => <option key={f.path} value={f.name} />)}
             </datalist>
@@ -7281,7 +7252,7 @@ export function CardGrid() {
                   </label>
                   <input className="settings-input import-review-folder" list="import-folder-options"
                     placeholder={importReview.folder || "home"}
-                    title="Folder for this event (defaults to the weekly hub)"
+                    title="Folder for this event (defaults to the Frontier folder)"
                     disabled={!r.accept}
                     value={r.folder ?? ""}
                     onChange={(e) => setImportReview((rv) => rv ? { ...rv, rows: rv.rows.map((x, j) => j === i ? { ...x, folder: e.target.value } : x) } : rv)} />
@@ -7322,7 +7293,7 @@ export function CardGrid() {
         const callerFolder = parseRef(titlePrompt.patch.folder) ?? null;
         const filterDefault = notableIncludes.length === 1 ? notableIncludes[0] : null;
         // New events default to the Week Hub folder (then home).
-        const defaultFolder = callerFolder ?? filterDefault ?? weekHubFolderRef.current ?? homeFolderRef.current ?? null;
+        const defaultFolder = callerFolder ?? filterDefault ?? frontierFolderRef.current ?? homeFolderRef.current ?? null;
         return (
           <CreateEventPrompt
             availableFolders={availableFolderRefs}
@@ -7431,7 +7402,7 @@ export function CardGrid() {
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {quickHubOpen && (
         <QuickHubBar
-          target={weekHubFolder || homeFolderRef.current || ""}
+          target={frontierFolder || homeFolderRef.current || ""}
           onSubmit={quickAppendToHub}
           onClose={() => setQuickHubOpen(false)}
         />

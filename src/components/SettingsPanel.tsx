@@ -27,7 +27,7 @@ import * as finance from "../lib/finance";
 export function SettingsPanel({
   onChangeVault, onClose,
   johnnyDecimal, johnnyDecimalBusy, onToggleJohnnyDecimal, onAssignMissingJdIds,
-  weekHubFolder, onSetWeekHubFolder, folderOptions,
+  frontierFolder, onSetFrontierFolder, folderOptions,
   badgeEnabled, badgeCount, onToggleBadge,
 }: {
   onChangeVault: (path: string | null) => Promise<void>;
@@ -36,8 +36,8 @@ export function SettingsPanel({
   johnnyDecimalBusy: boolean;
   onToggleJohnnyDecimal: (enable: boolean) => Promise<void>;
   onAssignMissingJdIds: () => Promise<void>;
-  weekHubFolder: string;
-  onSetWeekHubFolder: (ref: string) => void;
+  frontierFolder: string;
+  onSetFrontierFolder: (ref: string) => void;
   folderOptions: string[];
   badgeEnabled: boolean;
   badgeCount: number;
@@ -317,27 +317,27 @@ export function SettingsPanel({
         </div>
 
         <div className="settings-row" data-group="calendar">
-          <span className="settings-label">Weekly hub</span>
+          <span className="settings-label">Frontier</span>
           <span className="settings-value">
             <input
               // Uncontrolled (keyed to the current setting so external changes
               // reflect) so partial typing shows; commit only a real folder or
               // empty, so a half-typed name never thrashes the setting.
-              key={weekHubFolder}
+              key={frontierFolder}
               className="settings-input"
               list="settings-week-hub-options"
               placeholder="Notable folder (blank = off)"
-              defaultValue={weekHubFolder}
+              defaultValue={frontierFolder}
               onChange={(e) => {
                 const v = e.target.value.trim();
-                if (v === "" || folderOptions.includes(v)) onSetWeekHubFolder(v);
+                if (v === "" || folderOptions.includes(v)) onSetFrontierFolder(v);
               }}
             />
             <datalist id="settings-week-hub-options">
               {folderOptions.map((f) => <option key={f} value={f} />)}
             </datalist>
-            {weekHubFolder && (
-              <button type="button" className="settings-btn" onClick={() => onSetWeekHubFolder("")}>Clear</button>
+            {frontierFolder && (
+              <button type="button" className="settings-btn" onClick={() => onSetFrontierFolder("")}>Clear</button>
             )}
           </span>
           <span className="settings-hint">
@@ -365,7 +365,7 @@ export function SettingsPanel({
             {" "}<strong>Saturday</strong> in the Week Hub folder — a quick glance at your
             weekend load. Turning this on asks iOS/macOS for notification permission (that's
             what makes <em>Order</em> appear under Settings → Notifications); grant it, then
-            the badge shows.{!weekHubFolder && <> Set a <strong>Weekly hub</strong> folder
+            the badge shows.{!frontierFolder && <> Set a <strong>Frontier</strong> folder
             above so there's something to count (the count is 0 until then).</>}
           </span>
         </div>
