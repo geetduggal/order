@@ -668,6 +668,14 @@ export function CardGrid() {
   // one of the selected types (Chat = .chat.md, HTML = .html page, Image). OR
   // across the selected types; empty = no restriction.
   const [fileTypeFilter, setFileTypeFilter] = useState<Set<string>>(new Set());
+  // Show/hide the Frontier folder's quick-captures on the calendar (they render
+  // subtler; this toggle removes them entirely to declutter). Persisted.
+  const [showFrontier, setShowFrontier] = useState<boolean>(() => {
+    try { return localStorage.getItem("order.calendar.show_frontier") !== "0"; } catch { return true; }
+  });
+  const toggleShowFrontier = useCallback(() => {
+    setShowFrontier((v) => { const n = !v; try { localStorage.setItem("order.calendar.show_frontier", n ? "1" : "0"); } catch { /* noop */ } return n; });
+  }, []);
   const toggleFileType = useCallback((t: string) => {
     setFileTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
   }, []);
@@ -3297,12 +3305,21 @@ export function CardGrid() {
   // (that stale source is why the badge had gone blank).
   const badgeCount = useMemo(() => {
     if (!badgeEnabled || !frontierFolder) return 0;
+    // The Frontier inbox count for the CURRENT WEEK (Sun–Sat containing the
+    // upcoming Saturday) — i.e. how many captured/imported items still sit in
+    // the Frontier folder this week, waiting to be filed away.
     const sat = upcomingSaturdayIso();
+    const end = sat;
+    const start = (() => {
+      const d = new Date(`${sat}T00:00:00`);
+      d.setDate(d.getDate() - 6); // Saturday minus 6 = the week's Sunday
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    })();
     const hubKey = folderMatchKey(frontierFolder);
     return mwEvents.filter((e) => {
       if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
-      const end = e.endDate ?? e.date;
-      return e.date <= sat && sat <= end; // include multi-day spans over Saturday
+      const evEnd = e.endDate ?? e.date;
+      return e.date <= end && evEnd >= start; // overlaps the current week
     }).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [badgeEnabled, frontierFolder, mwEvents, badgeTick]);
@@ -6391,7 +6408,7 @@ export function CardGrid() {
         title: ev.title,
         frontmatter: fm,
         color: ev.folder ? folderColor(ev.folder) : undefined,
-        highBit: isHubFolder(ev.folder) && (ev.allDay ?? !ev.time),
+        frontier: isHubFolder(ev.folder),
       });
     }
     return out;
@@ -6472,14 +6489,15 @@ export function CardGrid() {
             title: cleanTitle || "Untitled",
             frontmatter: fm,
             color: nf ? folderColor(nf) : undefined,
-            highBit: isHubFolder(nf) && i.allDay,
+            frontier: isHubFolder(nf),
           };
         })
     : [];
 
   // markdownCalendarNotes already holds every mw event (mw is the source of
   // truth); todo.txt is a parallel calendar source merged in alongside it.
-  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
+  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes]
+    .filter((n) => showFrontier || !n.frontier);
 
   /** The new-note flow — extracted so the dock button can call it.
    *
@@ -6774,6 +6792,17 @@ export function CardGrid() {
           // (a Notable Folder's main doc stacked above the grid, with list↔
           // calendar drag-drop) is gone in favor of the Frontier model: quick
           // captures land as dated notes/events directly in the Frontier folder.
+          <>
+          {frontierFolder && (
+            <button
+              type="button"
+              className={"frontier-toggle" + (showFrontier ? " is-on" : "")}
+              onClick={toggleShowFrontier}
+              title={showFrontier ? "Hide Frontier captures" : "Show Frontier captures"}
+            >
+              {showFrontier ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
+            </button>
+          )}
           <CalendarView
             ref={calendarHandleRef}
             key="week"
@@ -6791,6 +6820,7 @@ export function CardGrid() {
             onImportDay={(iso) => { void startImport(iso); }}
             onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
+          </>
         )}
         {view === "month" && (
           <CalendarView

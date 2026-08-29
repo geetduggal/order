@@ -43,7 +43,8 @@ export interface NoteMeta {
   /** "High bit for the day": an all-day event in the weekly-hub folder,
    *  rendered as a prominent card in the all-day band. Set upstream (where
    *  the hub folder is known); consumed as a class in the all-day strip. */
-  highBit?: boolean;
+  /** A Frontier-folder quick-capture — rendered subtler/lighter. */
+  frontier?: boolean;
 }
 
 interface Props {
@@ -116,7 +117,7 @@ function notesToEvents(notes: NoteMeta[]): EventInput[] {
     // highBit only carries on genuinely all-day events (the hub's "high
     // bits" live in the all-day band); a timed hub event stays normal.
     const location = typeof note.frontmatter.location === "string" ? note.frontmatter.location.trim() : "";
-    const extendedProps = { completed, folderColor: note.color ?? null, highBit: allDay && note.highBit === true, location };
+    const extendedProps = { completed, folderColor: note.color ?? null, frontier: note.frontier === true, location };
 
     if (allDay) {
       events.push({
@@ -737,14 +738,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
           // change; normal reschedule still happens via eventDrop, untouched.
         }}
         eventContent={renderEventContent}
-        // Weekly-hub all-day events get the "high bit" card treatment in the
-        // Day / Week all-day band (see .order-event-highbit). Scoped to the
-        // time-grid views — month/year already lead with all-day events.
+        // Frontier-folder quick-captures render subtler/lighter (see
+        // .order-event-frontier) so the inbox doesn't visually dominate.
         eventClassNames={(arg) =>
-          arg.event.extendedProps?.highBit &&
-          (arg.view.type === "timeGridDay" || arg.view.type === "timeGridWeek")
-            ? ["order-event-highbit"]
-            : []
+          arg.event.extendedProps?.frontier ? ["order-event-frontier"] : []
         }
         dayHeaderContent={(arg) => {
           const iso = arg.date.toISOString().slice(0, 10);

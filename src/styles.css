@@ -8620,3 +8620,25 @@ body.is-tile-dragging * {
 .quickadd-openafter { display: flex; align-items: center; gap: 7px; font-size: calc(12.5px * var(--text-scale, 1)); color: var(--ink-faint); cursor: pointer; }
 .quickadd-openafter input { margin: 0; }
 .quickadd-hint { font-family: var(--mono); opacity: 0.7; }
+
+
+/* Frontier-folder quick-captures: subtler/lighter so the inbox doesn't dominate
+   the calendar. Dashed hairline + reduced opacity; brightens on hover. */
+.fc-shell .fc-event.order-event-frontier {
+  opacity: 0.62;
+  border-style: dashed;
+}
+.fc-shell .fc-event.order-event-frontier:hover { opacity: 1; }
+.fc-shell .fc-event.order-event-frontier .order-event-title { font-weight: 500; }
+
+/* Week-view Frontier-captures toggle — a subtle chip pinned top-right. */
+.frontier-toggle {
+  position: absolute; top: 8px; right: 12px; z-index: 6;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--card-border, var(--rule));
+  background: var(--card-bg, var(--bg)); color: var(--ink-faint);
+  font-size: calc(11.5px * var(--text-scale, 1)); letter-spacing: 0.02em; cursor: pointer;
+}
+.frontier-toggle.is-on { color: var(--ink); }
+.frontier-toggle:not(.is-on) { opacity: 0.6; text-decoration: line-through; }
