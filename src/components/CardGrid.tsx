@@ -6834,30 +6834,45 @@ export function CardGrid() {
               {selectMode ? <Check size={12} strokeWidth={2.4} /> : null} Select
             </button>
           </div>
-          {selectMode && (
-            <div className="bulk-move-bar" role="group" aria-label="Move selected events">
-              <span className="bulk-move-count">{selectedEventIds.size} selected</span>
-              <input
-                className="bulk-move-input"
-                list="bulk-move-folder-options"
-                placeholder="Move all to folder…"
-                value={bulkFolderQuery}
-                disabled={selectedEventIds.size === 0}
-                onChange={(e) => setBulkFolderQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const v = bulkFolderQuery.trim();
-                    if (v && availableFolderRefs.some((f) => f.name === v)) void bulkMoveSelected(v);
-                  }
-                  if (e.key === "Escape") exitSelectMode();
-                }}
-              />
-              <datalist id="bulk-move-folder-options">
-                {availableFolderRefs.map((f) => <option key={f.name} value={f.name} />)}
-              </datalist>
-              <button type="button" className="bulk-move-cancel" onClick={exitSelectMode}>Done</button>
-            </div>
-          )}
+          {selectMode && (() => {
+            const q = bulkFolderQuery.trim().toLowerCase();
+            const matches = (q
+              ? availableFolderRefs.filter((f) => f.name.toLowerCase().includes(q))
+              : availableFolderRefs
+            ).slice(0, 8);
+            return (
+              <div className="bulk-move-bar" role="group" aria-label="Move selected events">
+                <div className="bulk-move-row">
+                  <span className="bulk-move-count">{selectedEventIds.size} selected</span>
+                  <input
+                    className="bulk-move-input"
+                    placeholder="Move all to folder…"
+                    value={bulkFolderQuery}
+                    disabled={selectedEventIds.size === 0}
+                    onChange={(e) => setBulkFolderQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && matches[0] && selectedEventIds.size > 0) { e.preventDefault(); void bulkMoveSelected(matches[0].name); }
+                      if (e.key === "Escape") exitSelectMode();
+                    }}
+                  />
+                  <button type="button" className="bulk-move-cancel" onClick={exitSelectMode}>Done</button>
+                </div>
+                {selectedEventIds.size > 0 && (
+                  <ul className="bulk-move-list">
+                    {matches.map((f) => (
+                      <li key={f.name}>
+                        <button type="button" className="bulk-move-option" onClick={() => void bulkMoveSelected(f.name)}>
+                          <span className="bulk-move-swatch" style={{ background: f.color }} />
+                          {f.name}
+                        </button>
+                      </li>
+                    ))}
+                    {matches.length === 0 && <li className="bulk-move-empty">No folder matches “{bulkFolderQuery}”.</li>}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
           <CalendarView
             ref={calendarHandleRef}
             key="week"

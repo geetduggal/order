@@ -8646,16 +8646,35 @@ body.is-tile-dragging * {
    calendar (the calendar self-measures its height from its own top edge, so a
    header here just shifts it down cleanly — no fighting the sticky toolbar). */
 .week-view { position: relative; }
-.week-chips { display: flex; gap: 6px; justify-content: flex-end; align-items: center; padding: 4px 12px 0; }
+/* Chips + bulk bar sit ABOVE the calendar with their own opaque background and
+   high stacking, so the calendar's events/toolbar can never paint over them. */
+.week-chips {
+  position: relative; z-index: 40;
+  display: flex; gap: 6px; justify-content: flex-end; align-items: center;
+  padding: 6px 12px 8px; background: var(--bg);
+}
 .week-chips .frontier-toggle { position: static; }
 .bulk-move-bar {
-  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
-  margin: 6px 12px 0;
-  padding: 6px 10px; border-radius: 10px;
+  position: relative; z-index: 40;
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px; border-radius: 10px;
   border: 1px solid var(--card-border, var(--rule));
   background: var(--card-bg, var(--bg));
   box-shadow: var(--shadow-pop, 0 6px 22px rgba(0,0,0,0.18));
 }
+.bulk-move-row { display: flex; align-items: center; gap: 8px; }
+.bulk-move-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.bulk-move-option {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--card-border, var(--rule));
+  background: var(--bg-elev); color: var(--ink);
+  font-size: calc(12px * var(--text-scale, 1)); cursor: pointer;
+}
+.bulk-move-option:hover { border-color: var(--accent, #4a7); }
+.bulk-move-swatch { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.bulk-move-empty { font-size: calc(12px * var(--text-scale, 1)); color: var(--ink-faint); }
 .bulk-move-count { font-size: calc(11.5px * var(--text-scale, 1)); color: var(--ink-faint); white-space: nowrap; }
 .bulk-move-input { min-width: 0; width: 180px; font-size: calc(12.5px * var(--text-scale, 1)); padding: 4px 8px; border-radius: 7px; border: 1px solid var(--card-border, var(--rule)); background: var(--bg-elev); color: var(--ink); }
 .bulk-move-cancel { font-size: calc(12px * var(--text-scale, 1)); padding: 4px 10px; border-radius: 7px; border: 1px solid var(--card-border, var(--rule)); background: transparent; color: var(--ink-faint); cursor: pointer; }
