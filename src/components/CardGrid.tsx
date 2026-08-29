@@ -676,6 +676,14 @@ export function CardGrid() {
   const toggleShowFrontier = useCallback(() => {
     setShowFrontier((v) => { const n = !v; try { localStorage.setItem("order.calendar.show_frontier", n ? "1" : "0"); } catch { /* noop */ } return n; });
   }, []);
+  // Week-view bulk select: pick many events, then move them all to one folder.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const [bulkFolderQuery, setBulkFolderQuery] = useState("");
+  const toggleSelectEvent = useCallback((id: string) => {
+    setSelectedEventIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }, []);
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setSelectedEventIds(new Set()); setBulkFolderQuery(""); }, []);
   const toggleFileType = useCallback((t: string) => {
     setFileTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
   }, []);
@@ -5371,6 +5379,19 @@ export function CardGrid() {
     }
   }, [applyMwEdit, moveNoteToFolder]);
 
+  // Bulk-move every selected calendar event to `folderName`, then exit select
+  // mode. Sequential (each is a file move + mw update); one reload at the end.
+  const bulkMoveSelected = useCallback(async (folderName: string) => {
+    const ids = [...selectedEventIds];
+    if (ids.length === 0 || !folderName) { exitSelectMode(); return; }
+    for (const id of ids) {
+      try { await handleAssignFolder(id, folderName); }
+      catch (e) { console.error("bulk move failed for", id, e); }
+    }
+    exitSelectMode();
+    await reloadNotes();
+  }, [selectedEventIds, handleAssignFolder, exitSelectMode, reloadNotes]);
+
   const knownEmails = useMemo(() => distinctEmails(mwEvents), [mwEvents]);
 
   /** Commit a new recipient list onto the event's spacetime.mw line. Updates
@@ -6793,15 +6814,49 @@ export function CardGrid() {
           // calendar drag-drop) is gone in favor of the Frontier model: quick
           // captures land as dated notes/events directly in the Frontier folder.
           <>
-          {frontierFolder && (
+          <div className="week-chips">
+            {frontierFolder && (
+              <button
+                type="button"
+                className={"frontier-toggle" + (showFrontier ? " is-on" : "")}
+                onClick={toggleShowFrontier}
+                title={showFrontier ? "Hide Frontier captures" : "Show Frontier captures"}
+              >
+                {showFrontier ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
+              </button>
+            )}
             <button
               type="button"
-              className={"frontier-toggle" + (showFrontier ? " is-on" : "")}
-              onClick={toggleShowFrontier}
-              title={showFrontier ? "Hide Frontier captures" : "Show Frontier captures"}
+              className={"frontier-toggle" + (selectMode ? " is-on" : "")}
+              onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+              title={selectMode ? "Exit select mode" : "Select events to move in bulk"}
             >
-              {showFrontier ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
+              {selectMode ? <Check size={12} strokeWidth={2.4} /> : null} Select
             </button>
+          </div>
+          {selectMode && (
+            <div className="bulk-move-bar" role="group" aria-label="Move selected events">
+              <span className="bulk-move-count">{selectedEventIds.size} selected</span>
+              <input
+                className="bulk-move-input"
+                list="bulk-move-folder-options"
+                placeholder="Move all to folder…"
+                value={bulkFolderQuery}
+                disabled={selectedEventIds.size === 0}
+                onChange={(e) => setBulkFolderQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const v = bulkFolderQuery.trim();
+                    if (v && availableFolderRefs.some((f) => f.name === v)) void bulkMoveSelected(v);
+                  }
+                  if (e.key === "Escape") exitSelectMode();
+                }}
+              />
+              <datalist id="bulk-move-folder-options">
+                {availableFolderRefs.map((f) => <option key={f.name} value={f.name} />)}
+              </datalist>
+              <button type="button" className="bulk-move-cancel" onClick={exitSelectMode}>Done</button>
+            </div>
           )}
           <CalendarView
             ref={calendarHandleRef}
@@ -6813,6 +6868,9 @@ export function CardGrid() {
             initialDate={upcomingSaturdayIso()}
             onMoveEvent={updateNoteFrontmatter}
             onEventClick={handleEventClick}
+            selectMode={selectMode}
+            selectedIds={selectedEventIds}
+            onToggleSelect={toggleSelectEvent}
             onRenameEvent={renameEventTitle}
             onCreate={promptCreate}
             currentView="week"
@@ -7585,15 +7643,36 @@ function EventActionMenu({
     const el = menuRef.current;
     if (!el) return;
     const pad = 8;
-    const r = el.getBoundingClientRect();
-    let nl = r.left;
-    let nt = r.top;
-    if (r.right > window.innerWidth - pad) nl = window.innerWidth - r.width - pad;
-    if (r.bottom > window.innerHeight - pad) nt = window.innerHeight - r.height - pad;
-    nl = Math.max(pad, nl);
-    nt = Math.max(pad, nt);
-    if (Math.round(nl) !== Math.round(r.left)) el.style.left = `${nl}px`;
-    if (Math.round(nt) !== Math.round(r.top)) el.style.top = `${nt}px`;
+    // Clamp against the VISUAL viewport, not window.innerHeight — on mobile the
+    // soft keyboard shrinks the visual viewport, and clamping to the full window
+    // height left the menu (and its folder dropdown) stranded behind the
+    // keyboard, far from the tapped event (#34 mobile). Re-place on keyboard
+    // show/hide + scroll so the box tracks back near the event.
+    const place = () => {
+      const vv = window.visualViewport;
+      const vw = vv ? vv.width : window.innerWidth;
+      const vh = vv ? vv.height : window.innerHeight;
+      const vx = vv ? vv.offsetLeft : 0;
+      const vy = vv ? vv.offsetTop : 0;
+      const r = el.getBoundingClientRect();
+      let nl = r.left;
+      let nt = r.top;
+      if (r.right > vx + vw - pad) nl = vx + vw - r.width - pad;
+      if (r.bottom > vy + vh - pad) nt = vy + vh - r.height - pad;
+      nl = Math.max(vx + pad, nl);
+      nt = Math.max(vy + pad, nt);
+      if (Math.round(nl) !== Math.round(r.left)) el.style.left = `${nl}px`;
+      if (Math.round(nt) !== Math.round(r.top)) el.style.top = `${nt}px`;
+    };
+    place();
+    const raf = requestAnimationFrame(place); // re-place once real height is known
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+    };
   }, [folderOpen, draftAllDay, weekDays.length, emails?.length, left, top]);
   return (
     <div className="event-action-overlay" onClick={onCancel}>

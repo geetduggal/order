@@ -58,6 +58,11 @@ interface Props {
   /** Pointer x/y are forwarded so the parent can anchor an action menu
    *  next to the click instead of jumping straight into the note. */
   onEventClick?: (path: string, coords?: { x: number; y: number }) => void;
+  /** Bulk-select mode: clicking an event toggles selection instead of opening
+   *  the action menu. `selectedIds` drives the highlight. */
+  selectMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
   /** Double-click an event's title to rename it inline. */
   onRenameEvent?: (path: string, title: string) => void;
   onCreate?: (patch: Frontmatter) => Promise<void>;
@@ -477,6 +482,8 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
   function handleEventClick(arg: EventClickArg) {
     // Click without drag (FullCalendar fires eventDrop instead for drags).
     if (!arg.event.id) return;
+    // Bulk-select mode: a click just toggles selection — no menu, no rename.
+    if (props.selectMode) { props.onToggleSelect?.(arg.event.id); return; }
     const e = arg.jsEvent as MouseEvent;
     const coords = { x: e.clientX, y: e.clientY };
     const id = arg.event.id;
@@ -740,9 +747,13 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
         eventContent={renderEventContent}
         // Frontier-folder quick-captures render subtler/lighter (see
         // .order-event-frontier) so the inbox doesn't visually dominate.
-        eventClassNames={(arg) =>
-          arg.event.extendedProps?.frontier ? ["order-event-frontier"] : []
-        }
+        eventClassNames={(arg) => {
+          const cls: string[] = [];
+          if (arg.event.extendedProps?.frontier) cls.push("order-event-frontier");
+          if (props.selectMode) cls.push("order-event-selectable");
+          if (props.selectedIds?.has(arg.event.id)) cls.push("order-event-selected");
+          return cls;
+        }}
         dayHeaderContent={(arg) => {
           const iso = arg.date.toISOString().slice(0, 10);
           const isTimeGrid = arg.view.type === "timeGridDay" || arg.view.type === "timeGridWeek";
