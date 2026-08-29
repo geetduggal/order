@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare } from "lucide-react";
+import type { ClipboardEvent as ReactClipboardEvent } from "react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare, Image as ImageIcon } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -100,7 +101,6 @@ import {
 import { planVaultMigration } from "../lib/vault-migrate";
 import { extractBaseBlock } from "../lib/list-base";
 import type { ListItem, ListNoteRef } from "../lib/list-folder";
-import { ITEM_TO_CALENDAR, EVENT_TO_LIST, type ItemToCalendarDetail, type EventToListDetail } from "../lib/list-cal-dnd";
 
 const SIDEBAR_OPEN_KEY = "order.sidebar.open";
 // The sidebar is an overlay/wall of UI on a phone, so on a narrow screen it
@@ -2105,9 +2105,9 @@ export function CardGrid() {
   // Cmd+K opens the centered command palette (open a folder by name).
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [ftsOpen, setFtsOpen] = useState(false);
-  // Cmd+Shift+H quick-capture: a hovering box that appends a bullet to the
-  // weekly-hub folder's main document.
-  const [quickHubOpen, setQuickHubOpen] = useState(false);
+  // Cmd+Shift+A quick-add: a hovering box that captures a dated note or image
+  // straight into the Frontier folder (also the dock's + button).
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
@@ -2176,7 +2176,7 @@ export function CardGrid() {
   }, [handleChangeVault, loadErrorPath, pickVaultIos]);
   // Forward-ref to createNote so Cmd+N can invoke it from the keyboard
   // useEffect above the declaration site without a TS forward-ref error.
-  const createNoteRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
+  const createNoteRef = useRef<((p: Frontmatter, opts?: { open?: boolean }) => Promise<string | null>) | null>(null);
   const promptCreateRef = useRef<((p: Frontmatter) => Promise<void>) | null>(null);
   // Forward-ref so the keyboard handler (declared above resetToDefault)
   // can invoke the latest version for Cmd+'.
@@ -2363,10 +2363,10 @@ export function CardGrid() {
         toggleSidebar();
         return;
       }
-      // Cmd+Shift+H: hovering quick-append to the weekly-hub main document.
-      if ((e.key === "h" || e.key === "H") && e.shiftKey) {
+      // Cmd+Shift+A: hovering quick-add (dated note or image) to the Frontier.
+      if ((e.key === "a" || e.key === "A") && e.shiftKey) {
         e.preventDefault();
-        setQuickHubOpen(true);
+        setQuickAddOpen(true);
         return;
       }
       // Cmd+Shift+B: hide / show the bottom dock (distraction-free surface).
@@ -2942,24 +2942,50 @@ export function CardGrid() {
   // The filename/dir is the source of truth: resolve the hub folder's cover via
   // notePathByRef, append a bullet to the body, write it, and bump the mounted
   // card so an open hub doc refreshes. Self-write is stamped by vaultFs.writeText.
-  const quickAppendToHub = useCallback(async (text: string): Promise<boolean> => {
-    const t = text.trim();
-    if (!t) return false;
-    const ref = frontierFolderRef.current || homeFolderRef.current;
-    if (!ref) return false;
-    const path = notePathByRef(ref);
-    if (!path) return false;
-    const rel = toVaultRel(path);
-    try {
-      const raw = await vaultFs.readText(rel);
-      const { frontmatter, body } = splitFrontmatter(raw);
-      const nextBody = `${body.replace(/\s+$/, "")}\n- ${t}\n`;
-      await vaultFs.writeText(rel, joinFrontmatter(frontmatter, nextBody));
-      markKnownBody(path, nextBody);
-      bumpExternal([path]);
-      return true;
-    } catch (e) { console.error("quick append failed:", e); return false; }
-  }, [bumpExternal]);
+  // Nearest half-hour to now (HH:MM), clamped to 23:30 so a late capture never
+  // rolls a quick note into the next day.
+  const nearestHalfHour = (): string => {
+    const d = new Date();
+    const mins = Math.min(23 * 60 + 30, Math.round((d.getHours() * 60 + d.getMinutes()) / 30) * 30);
+    return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+  };
+
+  // Frontier quick-capture: create a dated note OR image directly in the
+  // Frontier folder (the inbox), stamped at the nearest half-hour of capture.
+  // Text → a `YYYY-MM-DD HHMM Title.md` event; image → a `YYYY-MM-DD HHMM
+  // Name.ext` first-class dated media file (now a calendar entry too, see
+  // buildSpacetime). `open` optionally lands you in the new note. Returns the
+  // created path (or null).
+  const quickCapture = useCallback(async (input: { text?: string; imageFile?: File; open: boolean }): Promise<string | null> => {
+    const date = isoDate();
+    const time = nearestHalfHour();
+    const folderRef = frontierFolderRef.current || homeFolderRef.current || null;
+    if (input.imageFile) {
+      try {
+        const root = await vaultRoot();
+        const dir = (folderRef && noteDirByRef(folderRef)) || root;
+        const dirRel = toVaultRel(dir);
+        const orig = input.imageFile.name || "Image.png";
+        const ext = (orig.match(/\.[a-z0-9]+$/i)?.[0] || ".png").toLowerCase();
+        const stem = orig.replace(/\.[a-z0-9]+$/i, "").replace(/[\\/:*?"<>|]/g, "-").trim() || "Image";
+        const base = `${date} ${time.replace(":", "")} ${stem}${ext}`;
+        const rel = dirRel ? `${dirRel}/${base}` : base;
+        const bytes = new Uint8Array(await input.imageFile.arrayBuffer());
+        await vaultFs.writeBinary(rel, Array.from(bytes));
+        const path = await join(dir, base);
+        await reloadNotes();
+        if (input.open) { setView("pile"); setFocusPath(path); setScrollTargetPath(path); setFocusedPath(path); }
+        return path;
+      } catch (e) { console.error("quick image capture failed:", e); return null; }
+    }
+    const title = (input.text || "").trim();
+    if (!title) return null;
+    return (await createNoteRef.current?.({
+      date, startTime: time, endTime: addMinutesToIsoTime(time, DEFAULT_EVENT_MINUTES),
+      allDay: false, title,
+      ...(folderRef ? { folder: `[[${folderRef}]]` } : {}),
+    }, { open: input.open })) ?? null;
+  }, [reloadNotes]);
 
   // ---- App-icon badge: count of events on the upcoming (or current) Saturday
   // in the Week Hub folder. Opt-in (Settings), updated as often as the app can
@@ -4685,7 +4711,7 @@ export function CardGrid() {
     setTitlePrompt({ patch });
   }, []);
 
-  const createNote = useCallback(async (patch: Frontmatter): Promise<void> => {
+  const createNote = useCallback(async (patch: Frontmatter, opts?: { open?: boolean }): Promise<string | null> => {
     // Every create — dock + button, Cmd+N, calendar drag/click — makes
     // a real .md file. The file is the durable source of truth; with
     // todo.txt mode on, the mirror sync reflects it into todo.txt as a
@@ -4782,38 +4808,32 @@ export function CardGrid() {
       };
       await applyMwEdit((mw) => mwAddEvent(mw, ev));
     }
-    // Visibility safety net: if a filter is active and the new note's
-    // folder isn't part of the include set, additively add it so the
-    // card lands on screen instead of being hidden behind a filter
-    // the user just authored under. Keeps the user's existing filter
-    // intent intact (doesn't clear) — additive, like a wikilink click.
-    if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
-      setFilters((prev) => [...prev, { kind: "include", ref: folderRef }]);
+    // A quick-capture create (opts.open === false) writes the file + registers
+    // the event, but does NOT navigate/open — the item just appears on the
+    // calendar/pile in place. Everything below is the "open it now" path.
+    if (opts?.open !== false) {
+      // Visibility safety net: if a filter is active and the new note's
+      // folder isn't part of the include set, additively add it so the
+      // card lands on screen instead of being hidden behind a filter
+      // the user just authored under.
+      if (folderRef && includeSetRef.current.size > 0 && !includeSetRef.current.has(folderRef)) {
+        setFilters((prev) => [...prev, { kind: "include", ref: folderRef }]);
+      }
+      // Always-open guarantee: undo any lens that would hide the new note.
+      setFileTypeFilter((prev) => (prev.size ? new Set() : prev));
+      setPileMode((m) => (m === "folders" ? "all" : m));
+      if (frontmatter.public !== true) setPublicOnly((v) => { if (v) writePublicOnly(false); return false; });
+      if (folderRef) setFilters((prev) => prev.filter((f) => !(f.kind === "exclude" && f.ref === folderRef)));
+      // Collapse any fullscreen card so the new note isn't created behind it,
+      // then land focus + scroll + fullscreen on it.
+      setFsCollapseNonce((n) => n + 1);
+      setFocusPath(path);
+      setScrollTargetPath(path);
+      setFocusedPath(path);
+      setFullscreenPath(path);
+      requestFullscreenPersistent(path);
     }
-    // Always-open guarantee: undo any lens that would hide the new note — the
-    // file-type filter, a "folders-only" pile, a public-only lens (when the
-    // note is private), or an exclude on its folder.
-    setFileTypeFilter((prev) => (prev.size ? new Set() : prev));
-    setPileMode((m) => (m === "folders" ? "all" : m));
-    if (frontmatter.public !== true) setPublicOnly((v) => { if (v) writePublicOnly(false); return false; });
-    if (folderRef) setFilters((prev) => prev.filter((f) => !(f.kind === "exclude" && f.ref === folderRef)));
-    // Land focus + scroll on the new note. Both Pile and the
-    // calendar views consume scrollTargetPath; the Card itself
-    // picks up autoFocus on mount.
-    // Collapse any card currently in fullscreen so the new note isn't created
-    // behind it. The fresh card mounts AFTER this bump, takes the new nonce as
-    // its baseline, and so opens (and stays) fullscreen instead of
-    // self-collapsing — same contract createChat relies on.
-    setFsCollapseNonce((n) => n + 1);
-    setFocusPath(path);
-    setScrollTargetPath(path);
-    setFocusedPath(path);
-    // Open the freshly-created note straight into fullscreen so you land in it.
-    setFullscreenPath(path);
-    requestFullscreenPersistent(path); // durable intent — survives a slow mount
-    // Stay in whichever view triggered the create — calendar views
-    // re-render with the new event at its date/time; Pile sorts it
-    // into place by date+startTime.
+    return path;
   }, [applyMwEdit]);
   // Start an agent conversation: Rust mints the `.chat.md` (filename format
   // lives in the core, so the frontend never constructs a path), we drop it at
@@ -4913,37 +4933,6 @@ export function CardGrid() {
   useEffect(() => { createNoteRef.current = createNote; }, [createNote]);
   useEffect(() => { promptCreateRef.current = promptCreate; }, [promptCreate]);
 
-  // Drag-and-drop between the Week hub list and the calendar (move, not copy).
-  // list card → 30-min event (created here, in the hub folder); calendar event
-  // → list card (deleted here — spacetime + backing note; the hub list appends
-  // the title itself). See lib/list-cal-dnd.ts.
-  useEffect(() => {
-    const onItemToCal = (e: Event) => {
-      const d = (e as CustomEvent<ItemToCalendarDetail>).detail;
-      if (!d?.title || !d.date || !d.startTime) return;
-      void createNote({
-        date: d.date,
-        allDay: false,
-        startTime: d.startTime,
-        endTime: d.endTime,
-        title: d.title,
-        ...(frontierFolderRef.current ? { folder: `[[${frontierFolderRef.current}]]` } : {}),
-      });
-    };
-    const onEventToList = (e: Event) => {
-      const d = (e as CustomEvent<EventToListDetail>).detail;
-      // The list appends the title as plain text; here we just remove the event
-      // from the calendar (spacetime + backing note). No note preservation, no
-      // wikilink.
-      if (d?.path) void deleteEventNote(d.path);
-    };
-    window.addEventListener(ITEM_TO_CALENDAR, onItemToCal);
-    window.addEventListener(EVENT_TO_LIST, onEventToList);
-    return () => {
-      window.removeEventListener(ITEM_TO_CALENDAR, onItemToCal);
-      window.removeEventListener(EVENT_TO_LIST, onEventToList);
-    };
-  }, [createNote, deleteEventNote]);
 
   // Reconcile orphan event notes INTO spacetime.mw (the inverse of removing
   // them). The event is rebuilt from the note's own frontmatter — date, time,
@@ -6502,27 +6491,6 @@ export function CardGrid() {
    *  filter to it, land in its pile with the cursor in the new
    *  card. A calendar has no pile context, so home is the one
    *  predictable destination. */
-  const handleNewNote = () => {
-    if (pileMode === "folders") {
-      setPileMode(() => { writePileMode("all"); return "all"; });
-    }
-    const patch: Frontmatter = { date: isoDate(), startTime: isoTime(), allDay: false };
-    if (view === "pile") {
-      void createNote(patch);
-      return;
-    }
-    // New events default to the Week Hub folder (then home).
-    const home = frontierFolderRef.current || homeFolderRef.current;
-    setView("pile");
-    if (home) {
-      setFilters([{ kind: "include", ref: home }]);
-      setFocusedFolder(home);
-    } else {
-      setFilters([]);
-    }
-    void createNote({ ...patch, ...(home ? { folder: `[[${home}]]` } : {}) });
-  };
-
   return (
     <div
       className={"shell" + (sidebarOpen ? " sidebar-open" : " sidebar-closed")}
@@ -6535,9 +6503,9 @@ export function CardGrid() {
         <button
           type="button"
           className="dock-btn dock-btn-new"
-          onClick={handleNewNote}
-          title="New note"
-          aria-label="New note"
+          onClick={() => setQuickAddOpen(true)}
+          title="Quick add (⌘⇧A)"
+          aria-label="Quick add"
         >
           +
         </button>
@@ -7400,11 +7368,11 @@ export function CardGrid() {
       )}
 
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-      {quickHubOpen && (
-        <QuickHubBar
+      {quickAddOpen && (
+        <QuickAddBar
           target={frontierFolder || homeFolderRef.current || ""}
-          onSubmit={quickAppendToHub}
-          onClose={() => setQuickHubOpen(false)}
+          onCapture={quickCapture}
+          onClose={() => setQuickAddOpen(false)}
         />
       )}
     </div>
@@ -7435,7 +7403,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} ⇧ R`, label: "Home ⇄ clear-filters toggle" },
     { keys: `${cmd} 4`, label: "Terminal in the focused folder ($ on 4)" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
-    { keys: `${cmd} ⇧ H`, label: "Quick-add a line to the weekly hub" },
+    { keys: `${cmd} ⇧ A`, label: "Quick-add a note or image to the Frontier" },
     { keys: `${cmd} ⇧ B`, label: "Hide / show the dock" },
     { keys: `${cmd} ⇧ P`, label: "Publish panel" },
     { keys: `${cmd} T`, label: "Cycle theme" },
@@ -7920,46 +7888,94 @@ function CreateEventPrompt({ onSubmit, onCancel, availableFolders, defaultFolder
 }
 
 
-/** Cmd+Shift+H quick-capture: a hovering input that appends a bullet to the
- *  weekly-hub folder's main document. Enter adds + closes; Shift+Enter adds +
- *  stays open for rapid capture; Esc / click-away closes. */
-function QuickHubBar({ target, onSubmit, onClose }: {
+/** Cmd+Shift+A quick-add: a hovering box that captures a dated note or image
+ *  straight into the Frontier folder. Enter adds + closes; Cmd+Enter (or the
+ *  "open after" toggle) adds + opens the new note; Esc / click-away closes.
+ *  Paste, drag-drop, or pick an image to capture it as a dated media file. */
+function QuickAddBar({ target, onCapture, onClose }: {
   target: string;
-  onSubmit: (text: string) => Promise<boolean>;
+  onCapture: (input: { text?: string; imageFile?: File; open: boolean }) => Promise<string | null>;
   onClose: () => void;
 }) {
+  const OPEN_KEY = "order.quickadd.open_after";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(0);
+  const [openAfter, setOpenAfter] = useState<boolean>(() => {
+    try { return localStorage.getItem(OPEN_KEY) === "1"; } catch { return false; }
+  });
+  const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { requestAnimationFrame(() => inputRef.current?.focus()); }, []);
-  const commit = async (keepOpen: boolean) => {
+  const setOpenPref = (v: boolean) => { setOpenAfter(v); try { localStorage.setItem(OPEN_KEY, v ? "1" : "0"); } catch { /* noop */ } };
+
+  const captureImage = async (file: File, open: boolean) => {
+    setBusy(true);
+    const path = await onCapture({ imageFile: file, open });
+    setBusy(false);
+    if (path === null) return;
+    if (open) onClose(); else { setAdded((n) => n + 1); inputRef.current?.focus(); }
+  };
+  const commitText = async (open: boolean) => {
     const t = text.trim();
     if (!t) { onClose(); return; }
     setBusy(true);
-    const ok = await onSubmit(t);
+    const path = await onCapture({ text: t, open });
     setBusy(false);
-    if (!ok) return;
+    if (path === null) return;
     setText("");
-    if (keepOpen) { setAdded((n) => n + 1); inputRef.current?.focus(); }
-    else onClose();
+    if (open) onClose(); else { setAdded((n) => n + 1); inputRef.current?.focus(); }
   };
+  const onPaste = (e: ReactClipboardEvent) => {
+    const img = Array.from(e.clipboardData.items).find((it) => it.kind === "file" && it.type.startsWith("image/"));
+    if (img) { const f = img.getAsFile(); if (f) { e.preventDefault(); void captureImage(f, openAfter); } }
+  };
+
   return createPortal(
-    <div className="quickhub-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="quickhub-bar" role="dialog" aria-label="Quick add to weekly hub">
-        <span className="quickhub-target" title={`Appends to ${target || "the weekly hub"}`}>{target || "weekly hub"}</span>
-        <input
-          ref={inputRef}
-          className="quickhub-input"
-          value={text}
-          disabled={busy}
-          placeholder={added > 0 ? `Added ${added} — keep going…` : "Add a line to the weekly hub…"}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); void commit(e.shiftKey); }
-            if (e.key === "Escape") { e.preventDefault(); onClose(); }
-          }}
-        />
+    <div className="quickadd-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div
+        className={"quickadd-bar" + (dragOver ? " is-dragover" : "")}
+        role="dialog"
+        aria-label="Quick add to the Frontier"
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault(); setDragOver(false);
+          const f = Array.from(e.dataTransfer.files).find((x) => x.type.startsWith("image/"));
+          if (f) void captureImage(f, openAfter);
+        }}
+      >
+        <div className="quickadd-row">
+          <span className="quickadd-target" title={`Captures into ${target || "the Frontier"}`}>{target || "Frontier"}</span>
+          <input
+            ref={inputRef}
+            className="quickadd-input"
+            value={text}
+            disabled={busy}
+            placeholder={added > 0 ? `Added ${added} — keep going…` : "Capture a note… (or paste / drop an image)"}
+            onChange={(e) => setText(e.target.value)}
+            onPaste={onPaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void commitText(e.metaKey || e.ctrlKey || openAfter); }
+              if (e.key === "Escape") { e.preventDefault(); onClose(); }
+            }}
+          />
+          <button type="button" className="quickadd-img-btn" title="Add an image" disabled={busy} onClick={() => fileRef.current?.click()}>
+            <ImageIcon size={16} strokeWidth={2} />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void captureImage(f, openAfter); e.currentTarget.value = ""; }}
+          />
+        </div>
+        <label className="quickadd-openafter">
+          <input type="checkbox" checked={openAfter} onChange={(e) => setOpenPref(e.target.checked)} />
+          <span>Open after adding <span className="quickadd-hint">(⌘↵)</span></span>
+        </label>
       </div>
     </div>,
     document.body,

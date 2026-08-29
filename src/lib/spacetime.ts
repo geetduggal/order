@@ -165,10 +165,15 @@ export function buildSpacetime(
   for (const n of notes) {
     // SOURCE OF TRUTH = THE FILE NAME. An event's date/time is parsed from the
     // basename per the dated-filename convention (see event-filename.ts); YAML date
-    // fields are no longer read. Only markdown notes are events; strip `.md` (and a
-    // `.chat` sub-extension) before parsing.
-    if (!/\.md$/i.test(n.filename)) continue;
-    const base = n.filename.replace(/\.md$/i, "").replace(/\.chat$/i, "");
+    // fields are no longer read. Any dated note OR weather-resistant media file
+    // (image / drawing / sheet / pdf / html / txt) is a first-class calendar
+    // entry — strip its extension (and a `.chat` / `.sheet` sub-extension) first.
+    const extMatch = n.filename.match(/\.(md|txt|html?|pdf|png|jpe?g|gif|webp|heic|heif|excalidraw)$/i);
+    if (!extMatch) continue;
+    const base = n.filename
+      .replace(/\.(md|txt|html?|pdf|png|jpe?g|gif|webp|heic|heif|excalidraw)$/i, "")
+      .replace(/\.chat$/i, "")
+      .replace(/\.sheet$/i, "");
     const parsed = parseEventFilename(base);
     if (!parsed) continue; // not a dated name → not an event
     const fm = n.frontmatter;

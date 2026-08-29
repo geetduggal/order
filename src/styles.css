@@ -8598,15 +8598,25 @@ body.is-tile-dragging * {
 .tts-dock-scrubrow .tts-dock-time { flex: 0 0 auto; }
 
 /* Cmd+Shift+H hovering quick-append bar for the weekly hub. */
-.quickhub-scrim { position: fixed; inset: 0; z-index: 400; display: flex; justify-content: center; align-items: flex-start; padding-top: 15vh; background: rgba(0,0,0,0.25); }
-.quickhub-bar {
-  display: flex; align-items: center; gap: 10px;
+/* Cmd+Shift+A / dock-+ quick-add: a hovering capture bar for the Frontier. */
+.quickadd-scrim { position: fixed; inset: 0; z-index: 400; display: flex; justify-content: center; align-items: flex-start; padding-top: 15vh; background: rgba(0,0,0,0.25); }
+.quickadd-bar {
+  display: flex; flex-direction: column; gap: 8px;
   width: min(560px, calc(100vw - 32px));
-  padding: 10px 14px;
+  padding: 12px 14px;
   background: var(--card-bg, var(--bg));
   border: 1px solid var(--card-border, var(--rule));
   border-radius: 14px;
   box-shadow: var(--shadow-pop, 0 10px 40px rgba(0,0,0,0.3));
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
-.quickhub-target { flex: 0 0 auto; font-size: calc(11px * var(--text-scale, 1)); color: var(--ink-faint); font-family: var(--mono); max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quickhub-input { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--ink); font-size: calc(15px * var(--text-scale, 1)); font-family: inherit; outline: none; }
+.quickadd-bar.is-dragover { border-color: var(--accent, #4a7); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #4a7) 40%, transparent); }
+.quickadd-row { display: flex; align-items: center; gap: 10px; }
+.quickadd-target { flex: 0 0 auto; font-size: calc(11px * var(--text-scale, 1)); color: var(--ink-faint); font-family: var(--mono); max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quickadd-input { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--ink); font-size: calc(15px * var(--text-scale, 1)); font-family: inherit; outline: none; }
+.quickadd-img-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--card-border, var(--rule)); background: transparent; color: var(--ink-faint); cursor: pointer; }
+.quickadd-img-btn:hover { color: var(--ink); background: var(--bg-elev); }
+.quickadd-img-btn:disabled { opacity: 0.4; cursor: default; }
+.quickadd-openafter { display: flex; align-items: center; gap: 7px; font-size: calc(12.5px * var(--text-scale, 1)); color: var(--ink-faint); cursor: pointer; }
+.quickadd-openafter input { margin: 0; }
+.quickadd-hint { font-family: var(--mono); opacity: 0.7; }
