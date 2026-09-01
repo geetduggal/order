@@ -8704,7 +8704,18 @@ body.is-tile-dragging * {
 .event-action-title-static { font-size: calc(15px * var(--text-scale, 1)); font-weight: 600; color: var(--ink); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Frontier list mode — all open Frontier items in one editable list. */
-.frontier-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px calc(96px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.frontier-list {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 0 8px calc(96px + env(safe-area-inset-bottom));
+  /* Bound the height so the list scrolls WITHIN the app shell (iOS locks body
+     scroll; the calendar self-bounds the same way). From just below the chips
+     row down to the viewport bottom; the padding-bottom keeps the last items
+     above the floating dock. */
+  max-height: calc(100dvh - 104px - env(safe-area-inset-top, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 .frontier-list-empty { padding: 24px 12px; color: var(--ink-faint); font-size: calc(13px * var(--text-scale, 1)); text-align: center; }
 .frontier-list-item {
   display: flex; align-items: center; gap: 10px; width: 100%;
