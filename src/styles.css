@@ -8715,3 +8715,6 @@ body.is-tile-dragging * {
 .frontier-list-when { flex: 0 0 auto; min-width: 8.5em; font-family: var(--mono); font-size: calc(11.5px * var(--text-scale, 1)); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .frontier-list-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
 .frontier-list-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(14px * var(--text-scale, 1)); }
+.frontier-list-item.is-selected { background: color-mix(in srgb, var(--accent, #4a7) 14%, transparent); }
+.frontier-list-check { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--card-border, var(--rule)); color: var(--accent, #4a7); }
+.frontier-list-check.is-on { border-color: var(--accent, #4a7); background: color-mix(in srgb, var(--accent, #4a7) 18%, transparent); }

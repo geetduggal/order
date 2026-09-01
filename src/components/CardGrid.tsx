@@ -6900,9 +6900,10 @@ export function CardGrid() {
                     <button
                       key={n.path}
                       type="button"
-                      className="frontier-list-item"
-                      onClick={(e) => handleEventClick(n.path, { x: e.clientX, y: e.clientY })}
+                      className={"frontier-list-item" + (selectMode && selectedEventIds.has(n.path) ? " is-selected" : "")}
+                      onClick={(e) => (selectMode ? toggleSelectEvent(n.path) : handleEventClick(n.path, { x: e.clientX, y: e.clientY }))}
                     >
+                      {selectMode && <span className={"frontier-list-check" + (selectedEventIds.has(n.path) ? " is-on" : "")}>{selectedEventIds.has(n.path) ? <Check size={12} strokeWidth={2.6} /> : null}</span>}
                       <span className="frontier-list-when">{d}{t ? ` ${t}` : ""}</span>
                       {n.color && <span className="frontier-list-dot" style={{ background: n.color }} />}
                       <span className="frontier-list-title">{n.title || "Untitled"}</span>
@@ -6912,7 +6913,7 @@ export function CardGrid() {
               </div>
             );
           })()}
-          {!frontierListMode && selectMode && (() => {
+          {selectMode && (() => {
             const q = bulkFolderQuery.trim().toLowerCase();
             const matches = (q
               ? availableFolderRefs.filter((f) => f.name.toLowerCase().includes(q))
