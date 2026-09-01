@@ -7477,6 +7477,7 @@ export function CardGrid() {
           // Pile's notes.
           currentFolder={eventMenu.folder}
           availableFolders={foldersByRecency}
+          recentFolders={recentFolders}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
           onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
           onMoveToDay={(iso) => {
@@ -7580,6 +7581,7 @@ function EventActionMenu({
   startTime, endTime, allDay, onRetime,
   emails, knownEmails, onSetEmails,
   reminderOn, reminderUrgent, onSetReminder, onClearReminder,
+  recentFolders,
 }: {
   title: string;
   x: number;
@@ -7620,6 +7622,8 @@ function EventActionMenu({
   reminderUrgent?: boolean;
   onSetReminder?: (urgent: boolean) => void;
   onClearReminder?: () => void;
+  /** Most-recent-first folder refs for the standard picker. */
+  recentFolders?: string[];
 }) {
   const [draftTitle, setDraftTitle] = useState(title);
   // Reset the draft when the popup opens for a different event.
@@ -7819,51 +7823,19 @@ function EventActionMenu({
         )}
         {availableFolders.length > 0 && (
           <div className="event-action-folder">
-            {folderOpen ? (
-              <>
-                <input
-                  ref={folderInputRef}
-                  className="event-action-folder-input"
-                  value={folderQuery}
-                  placeholder="Move to folder…"
-                  onChange={(e) => setFolderQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") { e.preventDefault(); setFolderOpen(false); setFolderQuery(""); }
-                    if (e.key === "Enter" && folderMatches[0]) {
-                      e.preventDefault();
-                      void onAssignFolder(folderMatches[0].name);
-                    }
-                  }}
-                />
-                {folderMatches.length > 0 && (
-                  <ul className="event-action-folder-list">
-                    {folderMatches.map((f) => (
-                      <li key={f.name}>
-                        <button
-                          type="button"
-                          className={"event-action-folder-option" + (f.name === currentFolder ? " is-current" : "")}
-                          onClick={() => { void onAssignFolder(f.name); }}
-                        >
-                          <span className="event-action-folder-swatch" style={{ background: f.color }} />
-                          {f.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            ) : (
-              <button
-                type="button"
-                className="event-action-folder-chip"
-                style={currentFolderColor ? { color: currentFolderColor, borderColor: currentFolderColor + "55" } : undefined}
-                onClick={() => setFolderOpen(true)}
-                title={currentFolder ? `Change folder — currently ${currentFolder}` : "Assign folder"}
-              >
-                <FolderIcon size={11} strokeWidth={2} />
-                <span className="event-action-folder-name">{currentFolder ?? "Assign folder…"}</span>
-              </button>
-            )}
+            {/* The one standard notable-folder picker (recents-first, color
+                swatches, measure-positioned dropdown) — same as the card. */}
+            <FolderPicker
+              current={currentFolder}
+              available={availableFolders}
+              open={folderOpen}
+              query={folderQuery}
+              onOpen={() => { setFolderQuery(""); setFolderOpen(true); }}
+              onClose={() => setFolderOpen(false)}
+              onQueryChange={setFolderQuery}
+              onAssign={async (name) => { setFolderOpen(false); if (name) await onAssignFolder(name); }}
+              recents={recentFolders}
+            />
           </div>
         )}
         {onSetEmails && (
