@@ -364,10 +364,20 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
       const fcEl = shellRef.current?.querySelector(".fc") as HTMLElement | null;
       if (!fcEl) return;
       const top = fcEl.getBoundingClientRect().top;
-      // Minimal bottom clearance — the hovering dock is translucent and floats,
-      // so the grid runs almost to the bottom edge (immersive) and the dock
-      // overlays its lowest strip rather than reserving a big empty gap.
-      const DOCK = 34;
+      // Bottom clearance for the hovering dock. On desktop it's minimal
+      // (immersive; the translucent dock overlays the grid's lowest strip). On
+      // a phone the dock is taller and opaque enough that the last events of the
+      // day hid behind it — reserve the dock's real height + the home-indicator
+      // safe area so scrolling to the bottom lands those events fully in view.
+      // Read the real safe-area inset once (iPhone home indicator ≈ 34px) via a
+      // probe element, so the reserved space is right on every device.
+      const probe = document.createElement("div");
+      probe.style.cssText = "position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none";
+      document.body.appendChild(probe);
+      const safeBottom = probe.getBoundingClientRect().height;
+      probe.remove();
+      const narrow = window.innerWidth <= 768;
+      const DOCK = narrow ? 92 + safeBottom : 34;
       setCalHeight(Math.max(360, Math.round(window.innerHeight - top - DOCK)));
     };
     const raf = requestAnimationFrame(measure);

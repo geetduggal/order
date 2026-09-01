@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare, Image as ImageIcon } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare, Image as ImageIcon, Trash2 } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -668,13 +668,14 @@ export function CardGrid() {
   // one of the selected types (Chat = .chat.md, HTML = .html page, Image). OR
   // across the selected types; empty = no restriction.
   const [fileTypeFilter, setFileTypeFilter] = useState<Set<string>>(new Set());
-  // Show/hide the Frontier folder's quick-captures on the calendar (they render
-  // subtler; this toggle removes them entirely to declutter). Persisted.
-  const [showFrontier, setShowFrontier] = useState<boolean>(() => {
-    try { return localStorage.getItem("order.calendar.show_frontier") !== "0"; } catch { return true; }
+  // Frontier-ONLY filter: when on, the calendar shows exclusively the events
+  // currently on the Frontier (the inbox to process). Persisted. Toggled by the
+  // Frontier chip and the ⌘⇧F shortcut.
+  const [frontierOnly, setFrontierOnly] = useState<boolean>(() => {
+    try { return localStorage.getItem("order.calendar.frontier_only") === "1"; } catch { return false; }
   });
-  const toggleShowFrontier = useCallback(() => {
-    setShowFrontier((v) => { const n = !v; try { localStorage.setItem("order.calendar.show_frontier", n ? "1" : "0"); } catch { /* noop */ } return n; });
+  const toggleFrontierOnly = useCallback(() => {
+    setFrontierOnly((v) => { const n = !v; try { localStorage.setItem("order.calendar.frontier_only", n ? "1" : "0"); } catch { /* noop */ } return n; });
   }, []);
   // Week-view bulk select: pick many events, then move them all to one folder.
   const [selectMode, setSelectMode] = useState(false);
@@ -2383,6 +2384,18 @@ export function CardGrid() {
       if ((e.key === "a" || e.key === "A") && e.shiftKey) {
         e.preventDefault();
         setQuickAddOpen(true);
+        return;
+      }
+      // Cmd+Shift+F: toggle the Frontier-only calendar filter (jump to the Week
+      // view when enabling it from elsewhere).
+      if ((e.key === "f" || e.key === "F") && e.shiftKey) {
+        e.preventDefault();
+        setFrontierOnly((v) => {
+          const n = !v;
+          try { localStorage.setItem("order.calendar.frontier_only", n ? "1" : "0"); } catch { /* noop */ }
+          if (n && viewRef.current === "pile") setView("week");
+          return n;
+        });
         return;
       }
       // Cmd+Shift+B: hide / show the bottom dock (distraction-free surface).
@@ -5392,6 +5405,20 @@ export function CardGrid() {
     await reloadNotes();
   }, [selectedEventIds, handleAssignFolder, exitSelectMode, reloadNotes]);
 
+  // Delete every selected calendar event (single confirm), then exit select mode.
+  const bulkDeleteSelected = useCallback(async () => {
+    const ids = [...selectedEventIds];
+    if (ids.length === 0) { exitSelectMode(); return; }
+    const ok = await tauriConfirm(`Delete ${ids.length} selected event${ids.length === 1 ? "" : "s"}? This can't be undone.`, { title: "Delete events?", kind: "warning" });
+    if (!ok) return;
+    for (const id of ids) {
+      try { await deleteEventNote(id); }
+      catch (e) { console.error("bulk delete failed for", id, e); }
+    }
+    exitSelectMode();
+    await reloadNotes();
+  }, [selectedEventIds, deleteEventNote, exitSelectMode, reloadNotes]);
+
   const knownEmails = useMemo(() => distinctEmails(mwEvents), [mwEvents]);
 
   /** Commit a new recipient list onto the event's spacetime.mw line. Updates
@@ -6517,8 +6544,12 @@ export function CardGrid() {
 
   // markdownCalendarNotes already holds every mw event (mw is the source of
   // truth); todo.txt is a parallel calendar source merged in alongside it.
-  const calendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes]
-    .filter((n) => showFrontier || !n.frontier);
+  const allCalendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
+  // How many events are currently on the Frontier (the inbox count shown in UI).
+  const frontierCount = allCalendarNotes.filter((n) => n.frontier).length;
+  const calendarNotes: NoteMeta[] = frontierOnly
+    ? allCalendarNotes.filter((n) => n.frontier)
+    : allCalendarNotes;
 
   /** The new-note flow — extracted so the dock button can call it.
    *
@@ -6818,11 +6849,12 @@ export function CardGrid() {
             {frontierFolder && (
               <button
                 type="button"
-                className={"frontier-toggle" + (showFrontier ? " is-on" : "")}
-                onClick={toggleShowFrontier}
-                title={showFrontier ? "Hide Frontier captures" : "Show Frontier captures"}
+                className={"frontier-toggle" + (frontierOnly ? " is-on" : "")}
+                onClick={toggleFrontierOnly}
+                title={frontierOnly ? "Showing only Frontier events — click to show all (⌘⇧F)" : "Show only Frontier events (⌘⇧F)"}
               >
-                {showFrontier ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
+                {frontierOnly ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
+                <span className="frontier-count">{frontierCount}</span>
               </button>
             )}
             <button
@@ -6855,6 +6887,9 @@ export function CardGrid() {
                       if (e.key === "Escape") exitSelectMode();
                     }}
                   />
+                  <button type="button" className="bulk-move-delete" disabled={selectedEventIds.size === 0} onClick={() => void bulkDeleteSelected()} title="Delete selected events">
+                    <Trash2 size={13} strokeWidth={2} /> Delete
+                  </button>
                   <button type="button" className="bulk-move-cancel" onClick={exitSelectMode}>Done</button>
                 </div>
                 {selectedEventIds.size > 0 && (
@@ -7507,6 +7542,7 @@ function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: `${cmd} 4`, label: "Terminal in the focused folder ($ on 4)" },
     { keys: `${cmd} ;`, label: "Toggle sidebar" },
     { keys: `${cmd} ⇧ A`, label: "Quick-add a note or image to the Frontier" },
+    { keys: `${cmd} ⇧ F`, label: "Toggle the Frontier-only calendar filter" },
     { keys: `${cmd} ⇧ B`, label: "Hide / show the dock" },
     { keys: `${cmd} ⇧ P`, label: "Publish panel" },
     { keys: `${cmd} T`, label: "Cycle theme" },
