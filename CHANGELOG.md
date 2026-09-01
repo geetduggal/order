@@ -13,6 +13,74 @@ month's release; the patch digit increments for fixes within the same month.
 
 ## [Unreleased]
 
+## [2026.8.7] - 2026-08-31
+
+The Frontier calendar method, multi-provider AI chat, system Reminders, and a
+large batch of editing/calendar refinements.
+
+### The Frontier (was the Weekly Hub)
+- **The two-zone Weekly Hub is gone.** The Week view is just the calendar. The
+  hub concept lives on as the **Frontier** — still a Notable Folder (Settings →
+  Frontier) that quick-captures and imports default into: an inbox to process.
+- **Quick-add** (`⌘⇧A`, and the dock's **+** button) captures a dated note or
+  image straight into the Frontier at the nearest half-hour. Paste / drop / pick
+  an image to capture it as a dated media file; "Open after adding" + `⌘↵` open
+  the new note; plain `↵` keeps the box open for rapid capture.
+- **Dated images / drawings / sheets / PDFs are first-class calendar entries**
+  now, not just pile cards.
+- **Frontier filter** (`⌘⇧F` or the Week-view chip) shows only Frontier events,
+  with a live count badge that matches the app-icon badge (current-week inbox).
+- **Frontier list mode** — every open Frontier item (or the whole week when the
+  filter is off) as one scrollable, editable list.
+- **Select mode** — multi-select events (calendar or list) to **move them all to
+  a folder** or **delete** them in one action.
+- Frontier captures render subtler on the calendar so the inbox doesn't dominate.
+
+### Events are filename-first
+- **Renaming an event renames the FILE** per the spacetime-slash convention
+  (keeps the date/time token, marker, extension; swaps the label) — it never
+  writes a `title:` field or the H1, and the change shows immediately. An event's
+  calendar title is derived from the file name.
+- Opening an event edits its **name + YAML in the same frontmatter inspector used
+  on note cards** (no more double-click-to-rename); the calendar's folder picker
+  is the one standard notable-folder picker (recents + color).
+
+### AI providers
+- Chat with **OpenAI, Grok (xAI), or a local model** (Ollama / LM Studio) in
+  addition to Anthropic — full agentic tool-use parity, chosen in Settings with
+  per-provider key / model / base-URL.
+
+### Reminders
+- Set a **system reminder** (iOS / macOS EventKit) on any dated note or event
+  from its ⋯ menu / the event modal, with an **urgent** (high-priority,
+  time-sensitive) option. Settings → Reminders grants access.
+
+### Notes & editing
+- **The filename is decoupled from the body's first line** — editing an H1 no
+  longer renames the file (which silently changed a note's identity and broke
+  wikilinks). Rename via a **Name field in the frontmatter inspector**.
+- **Fixed typing lag in large folders** — the pile no longer forces a full-grid
+  relayout on every keystroke; fullscreen cards skip relayout entirely.
+- Sidebar **file-type filters** (Notes / Chat / HTML / Image) with a subtle
+  clear-all; near-unrestricted zoom; a caret that's visible in every theme.
+
+### Marker convention
+- The `!` main-document and `$` pinned-note markers are consistent end to end —
+  publishing, wikilinks, the pile, list-of-lists embedding, and event parsing all
+  strip the reserved prefix.
+
+### Finance
+- The report can optionally create an **all-day calendar event per purchase**
+  tied to its Notable Folder (decoupled dated notes; duplicates skipped).
+
+### Voice & platform
+- Voice output **defaults to the loudspeaker** on built-in audio (was routing to
+  the earpiece); hands-free chat pulls **recent chats from the whole vault**.
+- Fixes: iOS app badge counts filename-derived events; iOS Notable-Folder
+  creation; folder-picker positioning on mobile; self-invite Google events stay
+  invite-free; imports refresh the UI immediately; `⌘R` refreshes; `⌘⇧H`
+  quick-append; and the agent no longer loops on a truncated large write.
+
 ## [2026.8.6] - 2026-08-14
 
 The event model becomes filename-first, plus a round of hands-free voice fixes.
