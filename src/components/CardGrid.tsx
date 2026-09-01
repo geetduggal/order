@@ -7810,9 +7810,8 @@ function EventActionMenu({
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Title is a plain, non-editable header. Editing (name + YAML) happens
-            in the SAME FrontmatterInspector notes use, shown below on open. */}
-        <div className="event-action-title-static">{title || "Untitled"}</div>
+        {/* No repeated title header — the FrontmatterInspector's Name field (the
+            same one notes use) is the single place the event's name is shown/edited. */}
         {noteFrontmatter && onSetNoteFrontmatter && (
           <FrontmatterInspector
             frontmatter={noteFrontmatter}
