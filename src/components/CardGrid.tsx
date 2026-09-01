@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { ClipboardEvent as ReactClipboardEvent } from "react";
-import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Upload as UploadIcon, Settings as SettingsIcon, Files, FileText, ZoomIn, ZoomOut, Moon, MoonStar, Sun, SunMoon, Monitor, Terminal as TerminalIcon, Type as TypeIcon, Flag, TreePine, Rocket, Globe, Lock, Folder as FolderIcon, ChevronsRight, Search as SearchIcon, PanelRight, Home as HomeIcon, Calendar as CalendarIcon, CalendarDays, CalendarRange, CalendarClock, Layers, X as XCircle, Check, FilterX, MessageSquare, Image as ImageIcon, Trash2, Bell as BellIcon, BellOff as BellOffIcon } from "lucide-react";
 import { useTextScale, stepTextScale, TEXT_SCALE_MIN, TEXT_SCALE_MAX, TEXT_SCALE_STEP } from "../lib/text-scale";
 import { useTheme, toggleTheme, nextTheme, themeLabel } from "../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
@@ -3564,6 +3564,10 @@ export function CardGrid() {
       // add all events to spacetime.mw in one edit (tagged with the source
       // account email so they're recognized as that calendar's events).
       const noteErrors: string[] = [];
+      // Default reminders apply to imported events too — checked once here so we
+      // never re-prompt for access per row.
+      const wantReminders = getRemindersDefault()
+        && ["authorized", "writeOnly"].includes(await reminders.accessStatus());
       for (const r of accepted) {
         try {
           const effFolder = folderFor(r);
@@ -3577,6 +3581,12 @@ export function CardGrid() {
             ...(r.location?.trim() ? { location: r.location.trim() } : {}),
             title: r.title,
           };
+          if (wantReminders) {
+            try {
+              const id = await reminders.saveReminder({ title: r.title, date: r.date, time: r.time });
+              fm.reminder = true; fm.reminderId = id;
+            } catch (e) { console.error("import reminder failed:", e); }
+          }
           const body = `# ${r.title}\n${r.description ? `\n${r.description}\n` : ""}`;
           await uniqueWrite(dir, basenameForEvent({ date: r.date, time: r.time, endTime: r.endTime, endDate: r.endDate }, r.title), joinFrontmatter(fm, body));
         } catch (e) {
@@ -5543,6 +5553,28 @@ export function CardGrid() {
     } catch (e) { console.error("event reminder toggle failed", e); }
   }, [handleSetFrontmatter]);
 
+  // Bulk set/clear reminders for every selected event, then exit select mode.
+  const bulkSetReminders = useCallback(async (on: boolean) => {
+    const ids = [...selectedEventIds];
+    if (ids.length === 0) { exitSelectMode(); return; }
+    if (on) {
+      const st = await reminders.accessStatus();
+      if (st !== "authorized" && st !== "writeOnly") {
+        const ok = await reminders.requestAccess().catch(() => false);
+        if (!ok) { exitSelectMode(); return; }
+      }
+    }
+    for (const id of ids) {
+      const already = notesRef.current?.find((n) => n.path === id)?.frontmatter.reminder === true;
+      try {
+        if (on && !already) await toggleEventReminder(id, false);
+        else if (!on && already) await toggleEventReminder(id, null);
+      } catch (e) { console.error("bulk reminder failed for", id, e); }
+    }
+    exitSelectMode();
+    await reloadNotes();
+  }, [selectedEventIds, toggleEventReminder, exitSelectMode, reloadNotes]);
+
   /** Rename a Notable Folder.
    *
    *  An NF lives at `<vault>/<Area>/<Category>/<Name>/<Name>.md`. The
@@ -6995,6 +7027,12 @@ export function CardGrid() {
                       if (e.key === "Escape") exitSelectMode();
                     }}
                   />
+                  <button type="button" className="bulk-move-remind" disabled={selectedEventIds.size === 0} onClick={() => void bulkSetReminders(true)} title="Set reminders for selected events">
+                    <BellIcon size={13} strokeWidth={2} /> Remind
+                  </button>
+                  <button type="button" className="bulk-move-remind" disabled={selectedEventIds.size === 0} onClick={() => void bulkSetReminders(false)} title="Clear reminders for selected events">
+                    <BellOffIcon size={13} strokeWidth={2} /> Clear
+                  </button>
                   <button type="button" className="bulk-move-delete" disabled={selectedEventIds.size === 0} onClick={() => void bulkDeleteSelected()} title="Delete selected events">
                     <Trash2 size={13} strokeWidth={2} /> Delete
                   </button>
