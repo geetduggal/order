@@ -8731,3 +8731,31 @@ body.is-tile-dragging * {
 .frontier-list-check.is-on { border-color: var(--accent, #4a7); background: color-mix(in srgb, var(--accent, #4a7) 18%, transparent); }
 /* Inline FolderPicker options (event menu): in-flow, not floating. */
 .order-card-folder-options.is-inline { position: static; margin-top: 4px; max-height: 220px; overflow-y: auto; box-shadow: none; }
+
+/* ---- Settings: fix scroll competition + roomier controls ---- */
+/* Only the settings-content scrolls; lock the background page while open. */
+body.settings-open { overflow: hidden; }
+.settings-overlay { touch-action: none; overscroll-behavior: none; }
+.settings-panel { overflow: hidden; }              /* panel is the frame; content scrolls */
+.settings-content { overscroll-behavior: contain; touch-action: pan-y; padding-bottom: 8px; }
+
+/* Labeled radio groups (voice input/output, and any future ones) — a clear
+   label above a comfortable wrapping row of options, not a cramped inline run. */
+.settings-radiogroup { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.settings-radiogroup-label { font-size: calc(12px * var(--text-scale, 1)); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+.settings-radiogroup-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-radio {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 7px 12px; border-radius: 9px;
+  border: 1px solid var(--card-border, var(--rule)); background: var(--card-bg, var(--bg-elev));
+  font-size: calc(13.5px * var(--text-scale, 1)); color: var(--ink); white-space: nowrap;
+}
+.settings-radio:hover { border-color: var(--royal); }
+.settings-radio input { margin: 0; }
+
+/* Voice picker lists (OpenAI / ElevenLabs / Unreal) — give the checkboxes room. */
+.tts-voice-picker { margin-top: 10px; }
+.tts-voice-picker-head { font-size: calc(12px * var(--text-scale, 1)); color: var(--ink-faint); margin-bottom: 6px; }
+.tts-voice-picker-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tts-voice-pick { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--card-border, var(--rule)); background: var(--card-bg, var(--bg-elev)); font-size: calc(13px * var(--text-scale, 1)); cursor: pointer; }
+.tts-voice-pick input { margin: 0; }

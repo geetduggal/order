@@ -38,3 +38,12 @@ export function saveReminder(input: SaveReminder): Promise<string> {
 export function deleteReminder(id: string): Promise<string> {
   return invoke<string>("reminder_delete", { id });
 }
+
+// User preference: add a system reminder to every new dated event by default.
+const DEFAULT_KEY = "order.reminders.default_on";
+export function getRemindersDefault(): boolean {
+  try { return localStorage.getItem(DEFAULT_KEY) === "1"; } catch { return false; }
+}
+export function setRemindersDefault(on: boolean): void {
+  try { localStorage.setItem(DEFAULT_KEY, on ? "1" : "0"); } catch { /* non-fatal */ }
+}

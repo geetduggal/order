@@ -22,6 +22,7 @@ import { costBreakdown, formatUSD, resetUsage, USAGE_EVENT } from "../lib/usage"
 // SYNCHRONOUS (a dynamic import defers setState a tick, and the controlled
 // checkbox reverts in between, so the box won't tick).
 import { toggleIncludedCalendar as toggleAppleCalendar } from "../lib/apple-cal";
+import { getRemindersDefault, setRemindersDefault } from "../lib/apple-reminder";
 import * as finance from "../lib/finance";
 
 export function SettingsPanel({
@@ -72,6 +73,12 @@ export function SettingsPanel({
   // Group the settings into a few tabs so the panel never becomes a long scroll.
   // Rows carry a data-group; the active tab hides the rest (see settings CSS).
   type SettingsTab = "vault" | "calendar" | "voice" | "finance" | "usage";
+  // Lock the background scroll while Settings is open so the panel's own scroll
+  // doesn't compete with the page behind it.
+  useEffect(() => {
+    document.body.classList.add("settings-open");
+    return () => document.body.classList.remove("settings-open");
+  }, []);
   const [tab, setTab] = useState<SettingsTab>("vault");
   const TABS: { key: SettingsTab; label: string }[] = [
     { key: "vault", label: "Vault" },
@@ -171,6 +178,7 @@ export function SettingsPanel({
 
   // System Reminders (EventKit) — permission + status, mirrors Apple Calendar.
   const [reminderStatus, setReminderStatus] = useState<string>("");
+  const [remindDefault, setRemindDefault] = useState<boolean>(() => getRemindersDefault());
   const [reminderBusy, setReminderBusy] = useState(false);
   const [reminderErr, setReminderErr] = useState<string | null>(null);
   const refreshReminder = useCallback(async () => {
@@ -579,24 +587,26 @@ export function SettingsPanel({
                 spellCheck={false}
               />
             )}
-            <div className="settings-stt-engine" style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 8, fontSize: "0.9rem" }}>
-              <span style={{ color: "var(--ink-faint)" }}>Voice input:</span>
-              <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
-                <input type="radio" name="stt-engine" checked={sttEngine === "whisper"}
-                  onChange={() => { setSttEngineState("whisper"); setSttEngine("whisper"); }} />
-                <span>Whisper (OpenAI)</span>
-              </label>
-              <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
-                <input type="radio" name="stt-engine" checked={sttEngine === "native"}
-                  onChange={() => { setSttEngineState("native"); setSttEngine("native"); }} />
-                <span>On-device (Apple)</span>
-              </label>
+            <div className="settings-radiogroup">
+              <span className="settings-radiogroup-label">Voice input</span>
+              <div className="settings-radiogroup-opts">
+                <label className="settings-radio">
+                  <input type="radio" name="stt-engine" checked={sttEngine === "whisper"}
+                    onChange={() => { setSttEngineState("whisper"); setSttEngine("whisper"); }} />
+                  <span>Whisper (OpenAI)</span>
+                </label>
+                <label className="settings-radio">
+                  <input type="radio" name="stt-engine" checked={sttEngine === "native"}
+                    onChange={() => { setSttEngineState("native"); setSttEngine("native"); }} />
+                  <span>On-device (Apple)</span>
+                </label>
+              </div>
             </div>
-            <div className="settings-stt-engine" style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: "0.9rem" }}>
-              <span style={{ color: "var(--ink-faint)" }}>Voice output:</span>
-              <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="settings-radiogroup">
+              <span className="settings-radiogroup-label">Voice output</span>
+              <div className="settings-radiogroup-opts">
                 {([["auto", "Auto"], ["speaker", "Speaker"], ["receiver", "Earpiece"]] as [AudioOutput, string][]).map(([val, label]) => (
-                  <label key={val} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  <label key={val} className="settings-radio">
                     <input type="radio" name="audio-output" checked={audioOut === val}
                       onChange={() => { setAudioOutState(val); setAudioOutput(val); }} />
                     <span>{label}</span>
@@ -762,8 +772,16 @@ export function SettingsPanel({
               Reminders (macOS) or Settings → Privacy → Reminders (iOS), then click Refresh.
             </span>
           )}
+          <label className="settings-toggle" style={{ marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={remindDefault}
+              onChange={(e) => { setRemindDefault(e.target.checked); setRemindersDefault(e.target.checked); }}
+            />
+            <span>Add a reminder to every new event automatically</span>
+          </label>
           <span className="settings-hint">
-            Turn a dated event's ⋯ menu → “Set reminder” to mirror it into the system Reminders app.
+            When on, creating a dated event also sets a system reminder (Reminders access must be granted). Rescheduling the event moves its reminder too. You can also set one per event from its ⋯ menu → “Set reminder”.
           </span>
         </div>
 

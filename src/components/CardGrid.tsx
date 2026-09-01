@@ -18,6 +18,7 @@ import { vaultRoot, walkVaultMarkdown, setVaultOverride, toVaultRel, isIos, isIo
 import { vaultFs, consumeSelfWrite, markSelfWrite, markKnownBody, readKnownBody } from "../lib/vault-fs";
 import * as finance from "../lib/finance";
 import * as reminders from "../lib/apple-reminder";
+import { getRemindersDefault } from "../lib/apple-reminder";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
@@ -4390,6 +4391,25 @@ export function CardGrid() {
    *  the action menu. spacetime.mw is the source of truth, so the mw event is
    *  updated first; any backing note's frontmatter is kept in sync, and a
    *  todo.txt line is rewritten in place. */
+  // Keep a system reminder in step with its event's schedule: after an event
+  // file is renamed to a new date/time, re-save the reminder (same id) at the
+  // new due time. No-op unless the note already carries a reminderId.
+  const syncEventReminder = useCallback(async (notePath: string | null) => {
+    if (!notePath) return;
+    try {
+      const rel = toVaultRel(notePath);
+      const raw = await vaultFs.readText(rel).catch(() => "");
+      if (!raw) return;
+      const { frontmatter } = splitFrontmatter(raw);
+      if (frontmatter.reminder !== true || typeof frontmatter.reminderId !== "string") return;
+      const base = (rel.split("/").pop() ?? "").replace(/\.md$/i, "").replace(/\.chat$/i, "").replace(/^[!$]+\s*/, "");
+      const parsed = parseEventFilename(base);
+      if (!parsed?.date) return;
+      const title = parsed.title || (typeof frontmatter.title === "string" ? frontmatter.title : "Reminder");
+      await reminders.saveReminder({ title, date: parsed.date, time: parsed.time, id: frontmatter.reminderId, urgent: frontmatter.reminderUrgent === true });
+    } catch (e) { console.error("reminder resync failed:", e); }
+  }, []);
+
   const retimeEvent = useCallback(async (
     path: string,
     patch: { startTime?: string; endTime?: string; allDay?: boolean },
@@ -4414,7 +4434,8 @@ export function CardGrid() {
     // name is the source of truth). No spacetime.mw / frontmatter write.
     const chip = eventChipRef.current.get(path);
     if (!chip?.notePath) return;
-    await renameEventFile(chip.notePath, { startTime, endTime, allDay });
+    const retimedPath = await renameEventFile(chip.notePath, { startTime, endTime, allDay });
+    void syncEventReminder(retimedPath);
     await reloadNotes();
   }, [reloadNotes]);
 
@@ -4859,6 +4880,25 @@ export function CardGrid() {
         ...(createEmails && createEmails.length ? { emails: createEmails } : {}),
       };
       await applyMwEdit((mw) => mwAddEvent(mw, ev));
+    }
+    // Default reminders: when enabled in Settings, every new DATED event gets a
+    // system reminder (only if Reminders access is already granted — we never
+    // prompt on a create). The reminder's id is stored on the note so a later
+    // reschedule keeps it in step (see syncEventReminder).
+    if (isDatedEvent && sched.date && getRemindersDefault()) {
+      try {
+        const st = await reminders.accessStatus();
+        if (st === "authorized" || st === "writeOnly") {
+          const id = await reminders.saveReminder({ title: titleForName, date: sched.date, time: sched.time });
+          const raw = await vaultFs.readText(toVaultRel(path)).catch(() => "");
+          if (raw) {
+            const { frontmatter: fm2, body: body2 } = splitFrontmatter(raw);
+            const nextFm = { ...fm2, reminder: true, reminderId: id };
+            await vaultFs.writeText(toVaultRel(path), joinFrontmatter(nextFm, body2));
+            setNotes((prev) => prev?.map((n) => (n.path === path ? { ...n, frontmatter: nextFm } : n)) ?? null);
+          }
+        }
+      } catch (e) { console.error("default reminder failed:", e); }
     }
     // A quick-capture create (opts.open === false) writes the file + registers
     // the event, but does NOT navigate/open — the item just appears on the
@@ -5704,8 +5744,9 @@ export function CardGrid() {
     // events have no file to rename — skip.
     const chip = eventChipRef.current.get(path);
     if (!chip?.notePath) return;
-    await renameEventFile(chip.notePath, patch);
+    const newPath = await renameEventFile(chip.notePath, patch);
     await reloadNotes();
+    void syncEventReminder(newPath);
     // mutateTodoTxtFromPatch is a stable useCallback declared just below; it is
     // intentionally omitted from deps to avoid a temporal-dead-zone reference.
   }, [reloadNotes]);
