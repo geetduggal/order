@@ -8699,3 +8699,19 @@ body.is-tile-dragging * {
 }
 .event-action-fm-toggle:hover, .event-action-fm-toggle.is-on { border-color: var(--card-border, var(--rule)); background: var(--bg-elev); }
 .event-action-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Event menu: non-editable title header above the frontmatter inspector. */
+.event-action-title-static { font-size: calc(15px * var(--text-scale, 1)); font-weight: 600; color: var(--ink); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Frontier list mode — all open Frontier items in one editable list. */
+.frontier-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px calc(96px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.frontier-list-empty { padding: 24px 12px; color: var(--ink-faint); font-size: calc(13px * var(--text-scale, 1)); text-align: center; }
+.frontier-list-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 12px; border: none; border-bottom: 1px solid var(--rule-soft, var(--card-border)); border-radius: 0;
+  background: transparent; color: var(--ink); cursor: pointer; text-align: left;
+}
+.frontier-list-item:hover { background: var(--bg-elev); }
+.frontier-list-when { flex: 0 0 auto; min-width: 8.5em; font-family: var(--mono); font-size: calc(11.5px * var(--text-scale, 1)); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.frontier-list-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.frontier-list-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(14px * var(--text-scale, 1)); }

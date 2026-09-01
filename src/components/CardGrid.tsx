@@ -21,6 +21,7 @@ import * as reminders from "../lib/apple-reminder";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useGridLayout } from "../lib/grid-layout";
 import { Card, FolderPicker } from "./Card";
+import { FrontmatterInspector } from "./FrontmatterInspector";
 import { ImageInspector } from "./ImageInspector";
 import { LazyCell } from "./LazyCell";
 import { FtsOverlay } from "./FtsOverlay";
@@ -677,6 +678,9 @@ export function CardGrid() {
   const toggleFrontierOnly = useCallback(() => {
     setFrontierOnly((v) => { const n = !v; try { localStorage.setItem("order.calendar.frontier_only", n ? "1" : "0"); } catch { /* noop */ } return n; });
   }, []);
+  // Frontier LIST mode: show all open Frontier items as a single editable list
+  // (instead of the calendar grid), each row opening the same event menu.
+  const [frontierListMode, setFrontierListMode] = useState(false);
   // Week-view bulk select: pick many events, then move them all to one folder.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
@@ -3324,26 +3328,26 @@ export function CardGrid() {
   // (the calendar's source of truth) — NOT parsedSpacetime, which parses the
   // now-inert generated spacetime.yml and is empty in the decoupled model
   // (that stale source is why the badge had gone blank).
-  const badgeCount = useMemo(() => {
-    if (!badgeEnabled || !frontierFolder) return 0;
-    // The Frontier inbox count for the CURRENT WEEK (Sun–Sat containing the
-    // upcoming Saturday) — i.e. how many captured/imported items still sit in
-    // the Frontier folder this week, waiting to be filed away.
+  // Events currently on the Frontier for the CURRENT WEEK (Sun–Sat of the
+  // upcoming Saturday) — the inbox-to-process count. ONE definition, used by
+  // both the app-icon badge and the in-UI Frontier chip so they always agree.
+  const frontierWeekCount = useMemo(() => {
+    if (!frontierFolder) return 0;
     const sat = upcomingSaturdayIso();
-    const end = sat;
     const start = (() => {
       const d = new Date(`${sat}T00:00:00`);
-      d.setDate(d.getDate() - 6); // Saturday minus 6 = the week's Sunday
+      d.setDate(d.getDate() - 6);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     })();
     const hubKey = folderMatchKey(frontierFolder);
     return mwEvents.filter((e) => {
       if (!e.folder || folderMatchKey(e.folder) !== hubKey) return false;
       const evEnd = e.endDate ?? e.date;
-      return e.date <= end && evEnd >= start; // overlaps the current week
+      return e.date <= sat && evEnd >= start;
     }).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badgeEnabled, frontierFolder, mwEvents, badgeTick]);
+  }, [frontierFolder, mwEvents, badgeTick]);
+  const badgeCount = badgeEnabled ? frontierWeekCount : 0;
   useEffect(() => {
     // Only touch the native badge when the feature is ON — the disable path
     // clears it explicitly in toggleBadge. (Calling the native command while
@@ -6546,7 +6550,7 @@ export function CardGrid() {
   // truth); todo.txt is a parallel calendar source merged in alongside it.
   const allCalendarNotes: NoteMeta[] = [...markdownCalendarNotes, ...todoCalendarNotes];
   // How many events are currently on the Frontier (the inbox count shown in UI).
-  const frontierCount = allCalendarNotes.filter((n) => n.frontier).length;
+  // (Frontier chip count = frontierWeekCount, computed above — matches the badge.)
   const calendarNotes: NoteMeta[] = frontierOnly
     ? allCalendarNotes.filter((n) => n.frontier)
     : allCalendarNotes;
@@ -6854,7 +6858,7 @@ export function CardGrid() {
                 title={frontierOnly ? "Showing only Frontier events — click to show all (⌘⇧F)" : "Show only Frontier events (⌘⇧F)"}
               >
                 {frontierOnly ? <Check size={12} strokeWidth={2.4} /> : null} Frontier
-                <span className="frontier-count">{frontierCount}</span>
+                <span className="frontier-count">{frontierWeekCount}</span>
               </button>
             )}
             <button
@@ -6865,8 +6869,50 @@ export function CardGrid() {
             >
               {selectMode ? <Check size={12} strokeWidth={2.4} /> : null} Select
             </button>
+            {frontierFolder && (
+              <button
+                type="button"
+                className={"frontier-toggle" + (frontierListMode ? " is-on" : "")}
+                onClick={() => setFrontierListMode((v) => !v)}
+                title={frontierListMode ? "Back to the calendar" : "See all open Frontier items as a list"}
+              >
+                {frontierListMode ? <Check size={12} strokeWidth={2.4} /> : null} List
+              </button>
+            )}
           </div>
-          {selectMode && (() => {
+          {frontierFolder && frontierListMode && (() => {
+            const hubKey = folderMatchKey(frontierFolder);
+            const items = allCalendarNotes
+              .filter((n) => n.frontier)
+              .sort((a, b) => {
+                const ak = `${a.frontmatter.date ?? ""} ${a.frontmatter.startTime ?? ""}`;
+                const bk = `${b.frontmatter.date ?? ""} ${b.frontmatter.startTime ?? ""}`;
+                return bk.localeCompare(ak); // newest first
+              });
+            void hubKey;
+            return (
+              <div className="frontier-list">
+                {items.length === 0 && <div className="frontier-list-empty">Nothing on the Frontier — inbox clear.</div>}
+                {items.map((n) => {
+                  const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "";
+                  const t = n.frontmatter.allDay === true ? "" : (typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "");
+                  return (
+                    <button
+                      key={n.path}
+                      type="button"
+                      className="frontier-list-item"
+                      onClick={(e) => handleEventClick(n.path, { x: e.clientX, y: e.clientY })}
+                    >
+                      <span className="frontier-list-when">{d}{t ? ` ${t}` : ""}</span>
+                      {n.color && <span className="frontier-list-dot" style={{ background: n.color }} />}
+                      <span className="frontier-list-title">{n.title || "Untitled"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          {!frontierListMode && selectMode && (() => {
             const q = bulkFolderQuery.trim().toLowerCase();
             const matches = (q
               ? availableFolderRefs.filter((f) => f.name.toLowerCase().includes(q))
@@ -6908,6 +6954,7 @@ export function CardGrid() {
               </div>
             );
           })()}
+          {!frontierListMode && (
           <CalendarView
             ref={calendarHandleRef}
             key="week"
@@ -6928,6 +6975,7 @@ export function CardGrid() {
             onImportDay={(iso) => { void startImport(iso); }}
             onImportAppleDay={appleImportReady ? (iso) => { void startAppleImport(iso); } : undefined}
           />
+          )}
           </div>
         )}
         {view === "month" && (
@@ -7478,6 +7526,8 @@ export function CardGrid() {
           currentFolder={eventMenu.folder}
           availableFolders={foldersByRecency}
           recentFolders={recentFolders}
+          noteFrontmatter={notesRef.current?.find((n) => n.path === eventMenu.path)?.frontmatter}
+          onSetNoteFrontmatter={(patch) => { void handleSetFrontmatter(eventMenu.path, patch); }}
           onOpen={() => { openEventNote(eventMenu.path); setEventMenu(null); }}
           onDelete={() => { void deleteEventNote(eventMenu.path); setEventMenu(null); }}
           onMoveToDay={(iso) => {
@@ -7581,7 +7631,7 @@ function EventActionMenu({
   startTime, endTime, allDay, onRetime,
   emails, knownEmails, onSetEmails,
   reminderOn, reminderUrgent, onSetReminder, onClearReminder,
-  recentFolders,
+  recentFolders, noteFrontmatter, onSetNoteFrontmatter,
 }: {
   title: string;
   x: number;
@@ -7624,15 +7674,11 @@ function EventActionMenu({
   onClearReminder?: () => void;
   /** Most-recent-first folder refs for the standard picker. */
   recentFolders?: string[];
+  /** The event's backing-note frontmatter + patcher — drives the same
+   *  FrontmatterInspector used on note cards. Absent for note-less mw events. */
+  noteFrontmatter?: Frontmatter;
+  onSetNoteFrontmatter?: (patch: Record<string, unknown | null>) => void;
 }) {
-  const [draftTitle, setDraftTitle] = useState(title);
-  const [fmOpen, setFmOpen] = useState(false);
-  // Reset the draft when the popup opens for a different event.
-  useEffect(() => { setDraftTitle(title); }, [title]);
-  const commit = () => {
-    const next = draftTitle.trim();
-    if (next && next !== title) void onRename(next);
-  };
   // Time editor drafts — mirror the event's current start / end / all-day.
   const [draftAllDay, setDraftAllDay] = useState(!!allDay);
   const [draftStart, setDraftStart] = useState(startTime ?? "");
@@ -7743,38 +7789,19 @@ function EventActionMenu({
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Title/name is edited in a collapsible frontmatter section (matching
-            how notes edit their name), not a double-click inline rename. */}
-        <div className="event-action-head">
-          <button
-            type="button"
-            className={"event-action-fm-toggle" + (fmOpen ? " is-on" : "")}
-            onClick={() => setFmOpen((v) => !v)}
-            title={fmOpen ? "Hide details" : "Edit name"}
-            aria-expanded={fmOpen}
-          >
-            <CalendarIcon size={12} strokeWidth={2} />
-            <span className="event-action-head-title">{draftTitle || "Untitled"}</span>
-          </button>
-        </div>
-        {fmOpen && (
-          <div className="fm-inspector">
-            <div className="fm-filename">
-              <label className="fm-filename-label" htmlFor="event-action-name-input">Name</label>
-              <input
-                id="event-action-name-input"
-                className="fm-filename-input"
-                autoFocus
-                value={draftTitle}
-                onChange={(e) => setDraftTitle(e.target.value)}
-                onBlur={commit}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
-                  if (e.key === "Escape") { e.preventDefault(); setDraftTitle(title); setFmOpen(false); }
-                }}
-              />
-            </div>
-          </div>
+        {/* Title is a plain, non-editable header. Editing (name + YAML) happens
+            in the SAME FrontmatterInspector notes use, shown below on open. */}
+        <div className="event-action-title-static">{title || "Untitled"}</div>
+        {noteFrontmatter && onSetNoteFrontmatter && (
+          <FrontmatterInspector
+            frontmatter={noteFrontmatter}
+            onChange={onSetNoteFrontmatter}
+            folderCandidates={availableFolders.map((f) => f.name)}
+            recentFolders={recentFolders}
+            folderColorFor={(ref) => availableFolders.find((f) => f.name === ref)?.color}
+            filename={title}
+            onRenameFile={(t) => { void onRename(t); }}
+          />
         )}
         {onRetime && (
           <div className="event-action-time" role="group" aria-label="Event time">
