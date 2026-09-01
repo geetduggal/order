@@ -495,31 +495,10 @@ export const CalendarView = forwardRef<CalendarViewHandle, Props>(function Calen
     // Bulk-select mode: a click just toggles selection — no menu, no rename.
     if (props.selectMode) { props.onToggleSelect?.(arg.event.id); return; }
     const e = arg.jsEvent as MouseEvent;
-    const coords = { x: e.clientX, y: e.clientY };
-    const id = arg.event.id;
-    const now = Date.now();
-    // Double = detail>=2 (mouse) OR a second quick tap on the same event (touch,
-    // where detail stays 1). Must beat the 300ms menu delay below.
-    const prev = lastClickRef.current;
-    const isDouble = e.detail >= 2 || (!!prev && prev.id === id && now - prev.t < 280);
-    lastClickRef.current = { id, t: now };
-    // Double-click a titled event → rename it inline. Cancel the pending
-    // single-click menu so its overlay doesn't cover the title.
-    if (props.onRenameEvent && isDouble) {
-      if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; }
-      lastClickRef.current = null;
-      startInlineTitleEdit(arg.el, id, arg.event.title);
-      return;
-    }
-    // Single click → open the action menu. When rename is supported, wait a beat
-    // so a following double-click/tap can pre-empt it (the menu's fixed overlay
-    // would otherwise swallow the second click). Without rename, open at once.
-    if (!props.onRenameEvent) { props.onEventClick?.(id, coords); return; }
-    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
-    clickTimerRef.current = setTimeout(() => {
-      clickTimerRef.current = null;
-      props.onEventClick?.(id, coords);
-    }, 300);
+    // Single click opens the action menu. Renaming now lives in the menu's
+    // frontmatter section (matching notes), so there's no double-click-to-rename
+    // path to defer against — open immediately.
+    props.onEventClick?.(arg.event.id, { x: e.clientX, y: e.clientY });
   }
 
   // Turn an event's `.order-event-title` into an inline-editable field.

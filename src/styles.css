@@ -8687,3 +8687,15 @@ body.is-tile-dragging * {
 .bulk-move-delete:disabled { opacity: 0.4; cursor: default; }
 .frontier-count { margin-left: 4px; min-width: 16px; padding: 0 5px; border-radius: 999px; background: var(--coral, #d9534f); color: #fff; font-size: calc(10px * var(--text-scale, 1)); font-variant-numeric: tabular-nums; line-height: 1.5; text-align: center; }
 .frontier-toggle.is-on .frontier-count { background: rgba(255,255,255,0.28); }
+
+/* Event menu: title header + frontmatter (Name) expansion — mirrors the note
+   {date}-chip → frontmatter pattern. */
+.event-action-head { display: flex; align-items: center; margin-bottom: 6px; }
+.event-action-fm-toggle {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
+  padding: 3px 8px; border-radius: 7px;
+  border: 1px solid transparent; background: transparent; color: var(--ink);
+  font-size: calc(14px * var(--text-scale, 1)); font-weight: 600; cursor: text;
+}
+.event-action-fm-toggle:hover, .event-action-fm-toggle.is-on { border-color: var(--card-border, var(--rule)); background: var(--bg-elev); }
+.event-action-head-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

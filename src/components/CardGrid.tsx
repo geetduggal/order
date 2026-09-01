@@ -7626,6 +7626,7 @@ function EventActionMenu({
   recentFolders?: string[];
 }) {
   const [draftTitle, setDraftTitle] = useState(title);
+  const [fmOpen, setFmOpen] = useState(false);
   // Reset the draft when the popup opens for a different event.
   useEffect(() => { setDraftTitle(title); }, [title]);
   const commit = () => {
@@ -7742,17 +7743,39 @@ function EventActionMenu({
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <input
-          type="text"
-          className="event-action-menu-title"
-          value={draftTitle}
-          onChange={(e) => setDraftTitle(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
-            if (e.key === "Escape") { e.preventDefault(); setDraftTitle(title); onCancel(); }
-          }}
-        />
+        {/* Title/name is edited in a collapsible frontmatter section (matching
+            how notes edit their name), not a double-click inline rename. */}
+        <div className="event-action-head">
+          <button
+            type="button"
+            className={"event-action-fm-toggle" + (fmOpen ? " is-on" : "")}
+            onClick={() => setFmOpen((v) => !v)}
+            title={fmOpen ? "Hide details" : "Edit name"}
+            aria-expanded={fmOpen}
+          >
+            <CalendarIcon size={12} strokeWidth={2} />
+            <span className="event-action-head-title">{draftTitle || "Untitled"}</span>
+          </button>
+        </div>
+        {fmOpen && (
+          <div className="fm-inspector">
+            <div className="fm-filename">
+              <label className="fm-filename-label" htmlFor="event-action-name-input">Name</label>
+              <input
+                id="event-action-name-input"
+                className="fm-filename-input"
+                autoFocus
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
+                  if (e.key === "Escape") { e.preventDefault(); setDraftTitle(title); setFmOpen(false); }
+                }}
+              />
+            </div>
+          </div>
+        )}
         {onRetime && (
           <div className="event-action-time" role="group" aria-label="Event time">
             <label className="event-action-allday">
