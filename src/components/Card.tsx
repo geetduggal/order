@@ -2060,9 +2060,13 @@ interface FolderPickerProps {
    *  top of the dropdown so the picker reads as "recents first" — same
    *  contract as FolderAutocomplete. */
   recents?: string[];
+  /** Render the options list INLINE (in flow) instead of a floating portal —
+   *  for hosts that already manage their own positioning/keyboard (e.g. the
+   *  event action menu), where a floating dropdown mispositions. */
+  inline?: boolean;
 }
 
-export function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign, recents }: FolderPickerProps) {
+export function FolderPicker({ current, available, open, query, onOpen, onClose, onQueryChange, onAssign, recents, inline }: FolderPickerProps) {
   // The dropdown is position:fixed (positioned from the input's rect) so it
   // escapes the card grid's overflow clipping / stacking and never sits
   // behind sibling cards.
@@ -2085,6 +2089,7 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
   // below, hugging the input from just above, and tracks the visual viewport.
   useLayoutEffect(() => {
     if (!open) { setPlaced(false); return; }
+    if (inline) { setPlaced(true); return; }
     let raf = 0;
     let didPlace = false;
     const place = () => {
@@ -2211,7 +2216,19 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
         onBlur={onClose}
         placeholder="Assign folder…"
       />
-      {matches.length > 0 && createPortal(
+      {matches.length > 0 && (inline ? (
+        // Inline: render in flow; the host manages positioning/keyboard.
+        <ul className="order-card-folder-options is-inline">
+          {matches.map((f) => (
+            <li key={f.name}>
+              <button type="button" className="order-card-folder-option" onMouseDown={(e) => { e.preventDefault(); void onAssign(f.name); }}>
+                <span className="order-card-folder-swatch" style={{ background: f.color }} />
+                <span className="order-card-folder-option-name">{f.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : createPortal(
         // Rendered into <body> so NO card ancestor (transform / overflow /
         // stacking context) can clip or trap it — fixed coords come from
         // the input's on-screen rect. top/left/maxHeight are set imperatively
@@ -2236,7 +2253,7 @@ export function FolderPicker({ current, available, open, query, onOpen, onClose,
           ))}
         </ul>,
         document.body,
-      )}
+      ))}
     </span>
   );
 }

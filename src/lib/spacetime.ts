@@ -179,9 +179,13 @@ export function buildSpacetime(
     const fm = n.frontmatter;
     const { date, time, endTime, endDate, allDay } = parsed;
     const folder = folderOf(n);
-    // Title prefers the note's first `# ` header (how the note actually reads), then
-    // the filename's label, then the derived fallback.
-    const title = firstMajorHeader(n.body) ?? (parsed.title || noteTitle(fm, n.body, base));
+    // Title comes from the FILE NAME's label — the single source of truth in the
+    // spacetime-slash convention. Nothing here reads the `title:` frontmatter
+    // field. Fall back to the H1, then a derived name, only when the filename
+    // carries no label (e.g. a bare `YYYY-MM-DD.md`).
+    const title = (parsed.title && parsed.title.trim())
+      ? parsed.title.trim()
+      : (firstMajorHeader(n.body) ?? noteTitle(fm, n.body, base));
     // Invitees live in the note's OWN frontmatter (`invitees` / `recipients` /
     // `emails`) — orthogonal to scheduling, which is the filename.
     const rawInvitees = fm.invitees ?? fm.recipients ?? fm.emails;

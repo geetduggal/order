@@ -4351,30 +4351,40 @@ export function CardGrid() {
       ) ?? null);
       return;
     }
-    // An event's title is its note's `# ` header (buildSpacetime reads the H1 first),
-    // so renaming = rewriting the H1 (+ keep a `title:` in sync). No spacetime.mw write
-    // — the calendar derives from the file. The file NAME's label is only a fallback,
-    // left as-is so a title edit doesn't churn the path (and remount the card).
+    // Renaming an event = renaming its FILE per the spacetime-slash convention
+    // (keep the date/time token, any $/! marker, and the extension; swap only the
+    // title label). We do NOT touch a `title:` field or the H1 — the file name is
+    // the single source of truth. State updates optimistically so the new name
+    // shows immediately.
     const chip = eventChipRef.current.get(path);
-    if (!chip?.notePath) return;
-    const { notePath } = chip;
-    const raw = await readVault(toVaultRel(notePath)).catch(() => "");
-    if (raw) {
-      const { frontmatter, body } = splitFrontmatter(raw);
-      const nextFm: Frontmatter = { ...frontmatter, title: cleanTitle };
-      const lines = body.split(/\r?\n/);
-      let h1Replaced = false;
-      for (let i = 0; i < lines.length; i++) {
-        const t = lines[i].trim();
-        if (!t) continue;
-        if (t.startsWith("#")) { lines[i] = `# ${cleanTitle}`; h1Replaced = true; }
-        break;
-      }
-      const newBody = h1Replaced ? lines.join("\n") : `# ${cleanTitle}\n${body}`;
-      await writeVault(toVaultRel(notePath), joinFrontmatter(nextFm, newBody));
-      await reloadNotes();
+    const notePath = chip?.notePath ?? (path.startsWith("mw-event:") ? null : path);
+    if (!notePath) return;
+    const rel = toVaultRel(notePath);
+    const slash = rel.lastIndexOf("/");
+    const dirRel = slash >= 0 ? rel.slice(0, slash) : "";
+    const filename = slash >= 0 ? rel.slice(slash + 1) : rel;
+    const marker = (filename.match(/^([!$]\s+)/) || [])[1] ?? "";
+    const isChat = /\.chat\.md$/i.test(filename);
+    const ext = isChat ? ".chat.md" : (filename.match(/\.[a-z0-9]+$/i)?.[0] ?? ".md");
+    const stem = filename.slice(marker.length).replace(/\.chat\.md$/i, "").replace(/\.[a-z0-9]+$/i, "");
+    const parsed = parseEventFilename(stem);
+    const safe = cleanTitle.replace(/[\\/:*?"<>|]/g, "-").trim() || "Untitled";
+    let newBase = marker + (parsed ? formatEventFilename(parsed, safe) : safe) + ext;
+    if (newBase === filename) return;
+    // Avoid clobbering a sibling that already has the target name.
+    for (let i = 2; i < 999; i++) {
+      const cand = dirRel ? `${dirRel}/${newBase}` : newBase;
+      if (!(await vaultFs.exists(cand))) break;
+      const stem2 = parsed ? formatEventFilename(parsed, `${safe} ${i}`) : `${safe} ${i}`;
+      newBase = marker + stem2 + ext;
     }
-  }, [reloadNotes]);
+    const newRel = dirRel ? `${dirRel}/${newBase}` : newBase;
+    try { await vaultFs.rename(rel, newRel); }
+    catch (e) { console.error("event rename failed", e); return; }
+    const newPath = notePath.slice(0, notePath.length - filename.length) + newBase;
+    setNotes((prev) => prev?.map((n) => (n.path === notePath ? { ...n, path: newPath, filename: newBase } : n)) ?? null);
+    setEventMenu((m) => (m && m.path === path ? { ...m, path: newPath, title: safe } : m));
+  }, []);
 
   /** Change a calendar event's start/end time (or flip it to all-day) from
    *  the action menu. spacetime.mw is the source of truth, so the mw event is
@@ -6881,18 +6891,28 @@ export function CardGrid() {
             )}
           </div>
           {frontierFolder && frontierListMode && (() => {
-            const hubKey = folderMatchKey(frontierFolder);
+            // Frontier filter ON → all OPEN Frontier items (the inbox, any date).
+            // Frontier filter OFF → every event in the CURRENT week (Sun–Sat).
+            const sat = upcomingSaturdayIso();
+            const weekStart = (() => {
+              const d = new Date(`${sat}T00:00:00`); d.setDate(d.getDate() - 6);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            })();
+            const inWeek = (n: NoteMeta) => {
+              const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date.slice(0, 10) : "";
+              const end = typeof n.frontmatter.endDate === "string" ? n.frontmatter.endDate.slice(0, 10) : d;
+              return !!d && d <= sat && end >= weekStart;
+            };
             const items = allCalendarNotes
-              .filter((n) => n.frontier)
+              .filter((n) => (frontierOnly ? n.frontier : inWeek(n)))
               .sort((a, b) => {
                 const ak = `${a.frontmatter.date ?? ""} ${a.frontmatter.startTime ?? ""}`;
                 const bk = `${b.frontmatter.date ?? ""} ${b.frontmatter.startTime ?? ""}`;
                 return bk.localeCompare(ak); // newest first
               });
-            void hubKey;
             return (
               <div className="frontier-list">
-                {items.length === 0 && <div className="frontier-list-empty">Nothing on the Frontier — inbox clear.</div>}
+                {items.length === 0 && <div className="frontier-list-empty">{frontierOnly ? "Nothing on the Frontier — inbox clear." : "No events this week."}</div>}
                 {items.map((n) => {
                   const d = typeof n.frontmatter.date === "string" ? n.frontmatter.date : "";
                   const t = n.frontmatter.allDay === true ? "" : (typeof n.frontmatter.startTime === "string" ? n.frontmatter.startTime : "");
@@ -7886,6 +7906,7 @@ function EventActionMenu({
               onQueryChange={setFolderQuery}
               onAssign={async (name) => { setFolderOpen(false); if (name) await onAssignFolder(name); }}
               recents={recentFolders}
+              inline
             />
           </div>
         )}
